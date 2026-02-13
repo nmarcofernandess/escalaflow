@@ -1,0 +1,34 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+.npm
+
+# Build
+dist/
+out/
+*.tsbuildinfo
+
+# Cache
+.cache/
+.eslintcache
+
+# Dados locais
+data/escalaflow.db
+data/escalaflow.db-wal
+data/escalaflow.db-shm
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Misc
+*.log
+*.local
+*.bak
+*.tmp
+*.temp
