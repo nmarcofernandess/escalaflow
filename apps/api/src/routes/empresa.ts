@@ -18,11 +18,11 @@ empresaRoutes.put('/empresa', async (c) => {
   const empresa = db.prepare('SELECT id FROM empresa LIMIT 1').get() as { id: number } | undefined
 
   if (empresa) {
-    db.prepare('UPDATE empresa SET nome = ?, cidade = ?, estado = ? WHERE id = ?')
-      .run(body.nome, body.cidade, body.estado, empresa.id)
+    db.prepare('UPDATE empresa SET nome = ?, corte_semanal = ?, tolerancia_semanal_min = ? WHERE id = ?')
+      .run(body.nome, body.corte_semanal, body.tolerancia_semanal_min, empresa.id)
   } else {
-    db.prepare('INSERT INTO empresa (nome, cidade, estado) VALUES (?, ?, ?)')
-      .run(body.nome, body.cidade, body.estado)
+    db.prepare('INSERT INTO empresa (nome, corte_semanal, tolerancia_semanal_min) VALUES (?, ?, ?)')
+      .run(body.nome, body.corte_semanal, body.tolerancia_semanal_min)
   }
 
   const updated = db.prepare('SELECT * FROM empresa LIMIT 1').get()

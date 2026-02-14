@@ -4,8 +4,8 @@ const DDL = `
 CREATE TABLE IF NOT EXISTS empresa (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
-    cidade TEXT NOT NULL,
-    estado TEXT NOT NULL
+    corte_semanal TEXT NOT NULL DEFAULT 'SEG_DOM' CHECK (corte_semanal IN ('SEG_DOM', 'TER_SEG', 'QUA_TER', 'QUI_QUA', 'SEX_QUI', 'SAB_SEX', 'DOM_SAB')),
+    tolerancia_semanal_min INTEGER NOT NULL DEFAULT 30
 );
 
 CREATE TABLE IF NOT EXISTS tipos_contrato (
@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS escalas (
     data_fim TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'RASCUNHO' CHECK (status IN ('RASCUNHO', 'OFICIAL', 'ARQUIVADA')),
     pontuacao INTEGER,
+    cobertura_percent REAL DEFAULT 0,
+    violacoes_hard INTEGER DEFAULT 0,
+    violacoes_soft INTEGER DEFAULT 0,
+    equilibrio REAL DEFAULT 0,
     criada_em TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -74,7 +78,8 @@ CREATE TABLE IF NOT EXISTS alocacoes (
     status TEXT NOT NULL CHECK (status IN ('TRABALHO', 'FOLGA', 'INDISPONIVEL')),
     hora_inicio TEXT,
     hora_fim TEXT,
-    minutos INTEGER
+    minutos INTEGER,
+    UNIQUE(escala_id, colaborador_id, data)
 );
 `
 

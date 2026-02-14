@@ -5,8 +5,8 @@ import type { DiaSemana, Turno, StatusEscala, TipoExcecao, StatusAlocacao, Sever
 export interface Empresa {
   id: number
   nome: string
-  cidade: string
-  estado: string
+  corte_semanal: string
+  tolerancia_semanal_min: number
 }
 
 export interface TipoContrato {
@@ -89,9 +89,18 @@ export interface Violacao {
   data: string | null
 }
 
+export interface Indicadores {
+  cobertura_percent: number      // 0-100
+  violacoes_hard: number
+  violacoes_soft: number
+  equilibrio: number             // 0-100
+  pontuacao: number              // 0-100
+}
+
 export interface EscalaCompleta {
   escala: Escala
   alocacoes: Alocacao[]
+  indicadores: Indicadores
   violacoes: Violacao[]
 }
 

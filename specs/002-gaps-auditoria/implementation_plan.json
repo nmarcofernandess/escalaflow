@@ -1,0 +1,392 @@
+{
+  "status": "complete",
+  "plan": {
+    "feature": "Gaps de Auditoria — Backend Robusto + Export",
+    "workflow_type": "standard",
+    "phases": [
+      {
+        "id": "phase-0",
+        "name": "Foundation: Schema Empresa + Seed CLT",
+        "description": "Corrigir estrutura de dados base antes de qualquer lógica. Empresa precisa de corte_semanal e tolerancia_semanal_min. Tipos de contrato precisam dos valores corretos conforme BUILD doc.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "phase-0-subtask-1",
+            "description": "Alterar DDL da tabela empresa: remover cidade/estado, adicionar corte_semanal (TEXT NOT NULL DEFAULT 'SEG_DOM') e tolerancia_semanal_min (INTEGER NOT NULL DEFAULT 30). Dropar tabela antiga e recriar (sem dados reais).",
+            "files_to_modify": ["apps/api/src/db/schema.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npm run dev na pasta api",
+                "Deletar apps/api/db.sqlite se existir",
+                "Rodar seed novamente (API cria tabelas ao iniciar)",
+                "SELECT * FROM empresa via sqlite3 apps/api/db.sqlite → deve ter colunas: id, nome, corte_semanal, tolerancia_semanal_min",
+                "npx tsc --noEmit → 0 erros"
+              ]
+            },
+            "status": "complete"
+          },
+          {
+            "id": "phase-0-subtask-2",
+            "description": "Corrigir INSERT de empresa em seed.ts para (nome, corte_semanal, tolerancia_semanal_min) VALUES ('Supermercado Fernandes', 'SEG_DOM', 30)",
+            "files_to_modify": ["apps/api/src/db/seed.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "steps": [
+                "Rodar seed novamente",
+                "SELECT * FROM empresa → deve retornar: id=1, nome='Supermercado Fernandes', corte_semanal='SEG_DOM', tolerancia_semanal_min=30"
+              ]
+            },
+            "status": "complete"
+          },
+          {
+            "id": "phase-0-subtask-3",
+            "description": "Corrigir 4 valores de tipos_contrato em seed.ts: CLT 36h (dias_trabalho 6→5), CLT 30h (max_minutos_dia 480→360, trabalha_domingo 0→1), Estagiario 20h (max_minutos_dia 360→240). CLT 44h já está correto.",
+            "files_to_modify": ["apps/api/src/db/seed.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "steps": [
+                "Rodar seed novamente",
+                "SELECT * FROM tipos_contrato → verificar: CLT 36h (dias_trabalho=5), CLT 30h (max_minutos_dia=360, trabalha_domingo=1), Estagiario 20h (max_minutos_dia=240)"
+              ]
+            },
+            "status": "complete"
+          },
+          {
+            "id": "phase-0-subtask-4",
+            "description": "Atualizar interface Empresa em shared/types.ts: remover cidade/estado, adicionar corte_semanal (string) e tolerancia_semanal_min (number)",
+            "files_to_modify": ["packages/shared/src/types.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "typecheck",
+              "command": "npx tsc --noEmit",
+              "expected": "0 errors (pode ter erros temporários em routes/empresa.ts e EmpresaConfig.tsx até corrigir eles)"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-0-subtask-5",
+            "description": "Atualizar GET e PUT em routes/empresa.ts: remover cidade/estado dos queries SQL, adicionar corte_semanal e tolerancia_semanal_min. UPDATE empresa SET nome=?, corte_semanal=?, tolerancia_semanal_min=? WHERE id=?",
+            "files_to_modify": ["apps/api/src/routes/empresa.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "GET /api/empresa → retorna { id, nome, corte_semanal, tolerancia_semanal_min }",
+                "PUT /api/empresa com { nome, corte_semanal, tolerancia_semanal_min } → 200 OK"
+              ]
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-0-subtask-6",
+            "description": "Atualizar EmpresaConfig.tsx: remover campos cidade/estado do form, adicionar select corte_semanal (opções: SEG_DOM, TER_SEG, QUA_QUI, QUI_SEX, SEX_SAB, SAB_DOM) e input tolerancia_semanal_min (number, min 0, max 100, default 30)",
+            "files_to_modify": ["apps/web/src/paginas/EmpresaConfig.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npm run dev na pasta web",
+                "npx tsc --noEmit → 0 erros",
+                "Abrir http://localhost:5173/empresa",
+                "Formulário mostra campos: Nome (text), Corte Semanal (select), Tolerância Semanal (number)",
+                "Salvar valores → PUT /api/empresa funciona"
+              ]
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-0-subtask-7",
+            "description": "Remover hardcoded TOLERANCIA_MIN=30 do motor/gerador.ts (linha 525). Adicionar parametro opcional 'tolerancia?: number' na função gerarProposta(). Se não fornecido, usar default 30.",
+            "files_to_modify": ["apps/api/src/motor/gerador.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "typecheck",
+              "command": "npx tsc --noEmit",
+              "expected": "0 errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-0-subtask-8",
+            "description": "Atualizar POST /api/escalas/gerar-escala em routes/escalas.ts (linha 26): buscar empresa do banco, ler tolerancia_semanal_min e passar para gerarProposta(setorId, dataInicio, dataFim, db, empresa.tolerancia_semanal_min)",
+            "files_to_modify": ["apps/api/src/routes/escalas.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "POST /api/escalas/gerar-escala → motor usa tolerancia do banco",
+                "Mudar tolerancia_semanal_min para 60 na empresa",
+                "Gerar escala novamente → verificar que validação usa 60min (pode checar violações R7)"
+              ]
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-1",
+        "name": "Motor Output: Indicadores",
+        "description": "Expor indicadores que o motor já calcula internamente. Persistir no banco. Exibir no frontend.",
+        "depends_on": ["phase-0"],
+        "subtasks": [
+          {
+            "id": "phase-1-subtask-1",
+            "description": "Adicionar interface Indicadores em shared/types.ts com campos: cobertura_percent (number), violacoes_hard (number), violacoes_soft (number), equilibrio (number), pontuacao (number). Adicionar campo 'indicadores: Indicadores' em interface EscalaCompleta.",
+            "files_to_modify": ["packages/shared/src/types.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "typecheck",
+              "command": "npx tsc --noEmit",
+              "expected": "0 errors (pode ter erros temporários em routes/escalas.ts até adicionar indicadores na response)"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-1-subtask-2",
+            "description": "Adicionar campos de indicadores na DDL da tabela escalas em schema.ts: cobertura_percent REAL DEFAULT 0, violacoes_hard INTEGER DEFAULT 0, violacoes_soft INTEGER DEFAULT 0, equilibrio REAL DEFAULT 0. Dropar tabela se necessário (sem dados reais).",
+            "files_to_modify": ["apps/api/src/db/schema.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "steps": [
+                "Deletar db.sqlite e recriar via seed",
+                "SELECT * FROM escalas → verificar que tem colunas: cobertura_percent, violacoes_hard, violacoes_soft, equilibrio"
+              ]
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-1-subtask-3",
+            "description": "Atualizar MotorResultado interface em gerador.ts: adicionar campos cobertura_percent, violacoes_hard, violacoes_soft, equilibrio. Na FASE 7 SCORING (linhas 699-741), retornar esses valores no objeto de resultado.",
+            "files_to_modify": ["apps/api/src/motor/gerador.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "typecheck",
+              "command": "npx tsc --noEmit",
+              "expected": "0 errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-1-subtask-4",
+            "description": "Atualizar POST /api/escalas/gerar-escala (linhas 50-59): incluir indicadores na response EscalaCompleta. Persistir cobertura_percent, violacoes_hard, violacoes_soft, equilibrio nas colunas da tabela escalas via INSERT.",
+            "files_to_modify": ["apps/api/src/routes/escalas.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "POST /api/escalas/gerar-escala → response tem campo indicadores { cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, pontuacao }",
+                "SELECT * FROM escalas → indicadores persistidos no banco"
+              ]
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-1-subtask-5",
+            "description": "Atualizar GET /api/escalas/:id (linha 71): retornar indicadores lidos do banco (campos cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, pontuacao). Montar objeto indicadores na response.",
+            "files_to_modify": ["apps/api/src/routes/escalas.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "GET /api/escalas/:id → response tem campo indicadores com 5 valores"
+              ]
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-2",
+        "name": "Revalidação: Ajustar + Oficializar",
+        "description": "Extrair função de validação. Ajustar recalcula violações. Oficializar bloqueia se tem HARD.",
+        "depends_on": ["phase-1"],
+        "subtasks": [
+          {
+            "id": "phase-2-subtask-1",
+            "description": "Criar arquivo validador.ts em apps/api/src/motor/. Extrair função validarEscala(escalaId: number, db: Database) que: lê alocacoes do banco, roda validações R1-R8 (reutilizar lógica de gerador.ts linhas 524-694), calcula scoring (linhas 699-741), retorna { violacoes: Violacao[], indicadores: Indicadores }.",
+            "files_to_modify": [],
+            "files_to_create": ["apps/api/src/motor/validador.ts"],
+            "patterns_from": ["apps/api/src/motor/gerador.ts"],
+            "verification": {
+              "type": "typecheck",
+              "command": "npx tsc --noEmit",
+              "expected": "0 errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-2-subtask-2",
+            "description": "Atualizar POST /api/escalas/:id/ajustar (linhas 114-139): após UPSERT das alocacoes, chamar validarEscala(escalaId, db). Retornar EscalaCompleta completa { escala, alocacoes, indicadores, violacoes }. Atualizar indicadores na tabela escalas via UPDATE.",
+            "files_to_modify": ["apps/api/src/routes/escalas.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "POST /api/escalas/:id/ajustar com ajustes que corrigem violação → response mostra violacoes vazias e pontuacao maior",
+                "POST /api/escalas/:id/ajustar com ajustes que criam violação → response mostra violacoes e pontuacao menor",
+                "SELECT * FROM escalas → indicadores atualizados"
+              ]
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-2-subtask-3",
+            "description": "Atualizar PUT /api/escalas/:id/oficializar (linha 98): substituir TODO por lógica real. Chamar validarEscala(escalaId, db). Se indicadores.violacoes_hard > 0, retornar 409 { error: 'Escala tem N violacoes criticas. Corrija antes de oficializar.' }. Se ok, oficializar (status='OFICIAL').",
+            "files_to_modify": ["apps/api/src/routes/escalas.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "Criar escala com violação HARD (ex: 8+ dias consecutivos) → PUT oficializar → 409 Conflict com mensagem de erro",
+                "Criar escala sem violação HARD → PUT oficializar → 200 OK, status='OFICIAL'"
+              ]
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-3",
+        "name": "Export: Imprimir Escala",
+        "description": "Componente de exportação HTML self-contained para imprimir escala. Output físico do sistema.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "phase-3-subtask-1",
+            "description": "Criar componente ExportarEscala.tsx em apps/web/src/componentes/. Recebe props: { escala, alocacoes, setor, colaboradores }. Renderiza HTML self-contained com: header (ESCALA: [SETOR] — [DATA_INICIO] a [DATA_FIM] | Pontuacao: [X] | Status: [STATUS]), grid (tabela pessoa x 7 dias com horarios ou F/I), footer (legenda + timestamp + 'EscalaFlow v2'). CSS inline minimalista (sem Tailwind CDN). Suporta window.print() via botão.",
+            "files_to_modify": [],
+            "files_to_create": ["apps/web/src/componentes/ExportarEscala.tsx"],
+            "patterns_from": ["apps/web/src/componentes/EscalaGrid.tsx"],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "Renderizar componente com dados mock → HTML aparece corretamente",
+                "Clicar botão imprimir → abre preview de impressão do navegador",
+                "Verificar que CSS inline funciona (sem dependências externas)"
+              ]
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-3-subtask-2",
+            "description": "Adicionar botão 'Imprimir' na EscalaPagina.tsx (aba Oficial e aba Simulacao). Ao clicar, renderiza ExportarEscala em modal ou nova janela e chama window.print(). Passar dados: escala, alocacoes, setor, colaboradores.",
+            "files_to_modify": ["apps/web/src/paginas/EscalaPagina.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "npm run dev",
+                "Gerar escala → ir na aba Oficial",
+                "Clicar botão 'Imprimir' → abre preview de impressão",
+                "Imprimir para PDF → verificar que tabela é legível em A4 paisagem",
+                "Repetir na aba Simulacao"
+              ]
+            },
+            "status": "pending"
+          },
+          {
+            "id": "phase-3-subtask-3",
+            "description": "Adicionar rendering dos 5 cards de indicadores na EscalaPagina.tsx (aba Simulacao e aba Oficial). Consumir escala.indicadores para exibir: Pontuação (X/100), Cobertura (X%), Violações Críticas (N), Violações Leves (N), Equilíbrio (X/100). Usar componentes Card do shadcn ou estilo similar.",
+            "files_to_modify": ["apps/web/src/paginas/EscalaPagina.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "build+manual",
+              "steps": [
+                "npx tsc --noEmit → 0 erros",
+                "npm run dev",
+                "Gerar escala → aba Simulacao mostra 5 cards com indicadores reais",
+                "Oficializar → aba Oficial também mostra indicadores"
+              ]
+            },
+            "status": "pending"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "total_phases": 4,
+      "total_subtasks": 18,
+      "estimated_complexity": "medium",
+      "critical_path": [
+        "phase-0-subtask-1",
+        "phase-0-subtask-2",
+        "phase-0-subtask-3",
+        "phase-0-subtask-4",
+        "phase-0-subtask-5",
+        "phase-0-subtask-6",
+        "phase-0-subtask-7",
+        "phase-0-subtask-8",
+        "phase-1-subtask-1",
+        "phase-1-subtask-2",
+        "phase-1-subtask-3",
+        "phase-1-subtask-4",
+        "phase-1-subtask-5",
+        "phase-2-subtask-1",
+        "phase-2-subtask-2",
+        "phase-2-subtask-3"
+      ],
+      "parallel_track": ["phase-3-subtask-1", "phase-3-subtask-2", "phase-3-subtask-3"]
+    },
+    "risks": [
+      {
+        "risk": "Deletar banco SQLite durante migration de schema empresa e escalas",
+        "mitigation": "Banco é local sem dados reais. OK dropar e recriar. Não há produção ainda."
+      },
+      {
+        "risk": "Extrair validarEscala() significa copiar lógica de gerador.ts. Risco de duplicação ou quebra.",
+        "mitigation": "Criar validador.ts separado. Extrair lógica em função pura. gerador.ts pode chamar validador.ts se necessário no futuro."
+      },
+      {
+        "risk": "window.print() é ambiente-dependente. Pode não funcionar em todos navegadores ou mobile.",
+        "mitigation": "Testar em Chrome/Firefox. Documentar que é feature desktop. Fallback: abrir HTML em nova aba e imprimir manualmente."
+      },
+      {
+        "risk": "HTML self-contained sem Tailwind CDN pode ficar verboso com CSS inline.",
+        "mitigation": "CSS minimalista. Usar apenas table, border, padding. ~50 linhas de CSS inline são aceitáveis."
+      },
+      {
+        "risk": "Corrigir seed de tipos_contrato pode afetar escalas já geradas em testes.",
+        "mitigation": "Dropar db.sqlite e recriar. Não há dados de teste críticos ainda."
+      }
+    ],
+    "notes": [
+      "Fase 0 é bloqueante para Fases 1 e 2. Fase 3 pode rodar em paralelo.",
+      "Total de 18 subtasks, estimativa: ~2-3 turnos por subtask em média = ~6-10 horas de coding.",
+      "Cada subtask tem verificação clara (build+manual ou typecheck).",
+      "Arquivo único validador.ts elimina duplicação de lógica de validação.",
+      "Indicadores persistidos no banco evitam recálculo desnecessário no GET.",
+      "ExportarEscala é componente reutilizável para futuras features (ex: exportar múltiplas escalas)."
+    ]
+  },
+  "completed_at": "2026-02-14T23:50:00Z"
+}

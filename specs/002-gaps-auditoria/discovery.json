@@ -1,0 +1,290 @@
+{
+  "status": "complete",
+  "findings": {
+    "overview": {
+      "task": "002-gaps-auditoria",
+      "workflow": "standard",
+      "total_gaps": 6,
+      "phase_distribution": {
+        "fase_0": ["gap_1_empresa_schema", "gap_2_seed_clt"],
+        "fase_1": ["gap_3_indicadores"],
+        "fase_2": ["gap_4_ajustar_revalida", "gap_5_oficializar_hard"],
+        "fase_3": ["gap_6_exportar_escala"]
+      }
+    },
+    "files_to_modify": [
+      {
+        "path": "apps/api/src/db/schema.ts",
+        "gaps": ["gap_1_empresa_schema"],
+        "critical_lines": [4, 5, 6, 7, 8, 9],
+        "pattern": "DDL table empresa",
+        "action": "Substituir colunas 'cidade TEXT' e 'estado TEXT' por 'corte_semanal TEXT NOT NULL DEFAULT SEG_DOM' e 'tolerancia_semanal_min INTEGER NOT NULL DEFAULT 30'",
+        "current": "id, nome, cidade, estado",
+        "target": "id, nome, corte_semanal, tolerancia_semanal_min",
+        "dependencies": ["seed.ts", "types.ts", "empresa.ts route", "EmpresaConfig.tsx"]
+      },
+      {
+        "path": "apps/api/src/db/seed.ts",
+        "gaps": ["gap_1_empresa_schema", "gap_2_seed_clt"],
+        "critical_lines": [
+          { "gap": "gap_1", "lines": [12, 13, 14] },
+          { "gap": "gap_2", "lines": [26, 27, 28, 29, 30] }
+        ],
+        "pattern": "Seed data insertion",
+        "actions": [
+          "Linha 12-14: Mudar INSERT para (nome, corte_semanal, tolerancia_semanal_min) VALUES ('Supermercado Fernandes', 'SEG_DOM', 30)",
+          "Linha 27: CLT 44h dias_trabalho de 6 MANTÉM, max_minutos_dia de 600 MANTÉM (e correto)",
+          "Linha 28: CLT 36h dias_trabalho de 6 CORRIGE para 5, max_minutos_dia de 480 MANTÉM",
+          "Linha 29: CLT 30h max_minutos_dia de 480 CORRIGE para 360, trabalha_domingo de 0 CORRIGE para 1",
+          "Linha 30: Estagiario 20h max_minutos_dia de 360 MANTÉM"
+        ],
+        "corrections_table": {
+          "CLT_44h": { "dias_trabalho": "6 ✓", "max_minutos_dia": "600 ✓", "trabalha_domingo": "1 ✓" },
+          "CLT_36h": { "dias_trabalho": "6 → 5 (CORRIGIR)", "max_minutos_dia": "480 ✓", "trabalha_domingo": "1 ✓" },
+          "CLT_30h": { "dias_trabalho": "5 ✓", "max_minutos_dia": "480 → 360 (CORRIGIR)", "trabalha_domingo": "0 → 1 (CORRIGIR)" },
+          "Estagiario_20h": { "dias_trabalho": "5 ✓", "max_minutos_dia": "360 ✓", "trabalha_domingo": "0 ✓" }
+        }
+      },
+      {
+        "path": "packages/shared/src/types.ts",
+        "gaps": ["gap_1_empresa_schema", "gap_3_indicadores"],
+        "critical_lines": {
+          "gap_1": [5, 6, 7, 8, 9, 10],
+          "gap_3": [92, 93, 94, 95, 96]
+        },
+        "pattern": "Interface definitions",
+        "actions": [
+          "Gap 1 — Linhas 5-10: Empresa interface — remover cidade/estado, adicionar corte_semanal e tolerancia_semanal_min",
+          "Gap 3 — Linhas 92-96: Adicionar nova interface Indicadores acima de EscalaCompleta com campos: cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, pontuacao",
+          "Gap 3 — Linha 94: Adicionar campo 'indicadores: Indicadores' na interface EscalaCompleta"
+        ],
+        "typescript": {
+          "Empresa_before": "export interface Empresa { id, nome, cidade, estado }",
+          "Empresa_after": "export interface Empresa { id, nome, corte_semanal, tolerancia_semanal_min }",
+          "Indicadores_new": "export interface Indicadores { cobertura_percent: number; violacoes_hard: number; violacoes_soft: number; equilibrio: number; pontuacao: number }",
+          "EscalaCompleta_before": "export interface EscalaCompleta { escala, alocacoes, violacoes }",
+          "EscalaCompleta_after": "export interface EscalaCompleta { escala, alocacoes, indicadores, violacoes }"
+        }
+      },
+      {
+        "path": "apps/api/src/routes/empresa.ts",
+        "gaps": ["gap_1_empresa_schema"],
+        "critical_lines": [21, 22, 24, 25],
+        "pattern": "Hono route handlers",
+        "action": "Atualizar queries: remover cidade, estado; adicionar corte_semanal, tolerancia_semanal_min em INSERT e UPDATE",
+        "sql_current": "UPDATE empresa SET nome = ?, cidade = ?, estado = ? WHERE id = ?",
+        "sql_target": "UPDATE empresa SET nome = ?, corte_semanal = ?, tolerancia_semanal_min = ? WHERE id = ?"
+      },
+      {
+        "path": "apps/api/src/motor/gerador.ts",
+        "gaps": ["gap_1_empresa_schema", "gap_3_indicadores"],
+        "critical_lines": {
+          "gap_1": [525],
+          "gap_3": [30, 31, 32, 33, 34, 762]
+        },
+        "pattern": "Motor logic with hardcoded values and scoring",
+        "actions": [
+          "Gap 1 — Linha 525: Remover 'const TOLERANCIA_MIN = 30' (hardcoded). Receber via parametro da chamada. Função gerarProposta() precisa aceitar parametro tolerancia_semanal_min",
+          "Gap 3 — Linha 30-34: Adicionar campos ao MotorResultado interface: cobertura_percent, violacoes_hard, violacoes_soft, equilibrio",
+          "Gap 3 — Linha 699-741 (FASE 7 SCORING): Ja calcula indicadores corretamente, apenas expor no return",
+          "Gap 3 — Linha 762: Retornar { alocacoes, violacoes, pontuacao, cobertura, violacoes_hard, violacoes_soft, equilibrio }"
+        ],
+        "gerador_signature": {
+          "current": "export function gerarProposta(setorId: number, dataInicio: string, dataFim: string, db: Database): MotorResultado",
+          "target": "export function gerarProposta(setorId: number, dataInicio: string, dataFim: string, db: Database, tolerancia?: number): MotorResultado"
+        }
+      },
+      {
+        "path": "apps/api/src/routes/escalas.ts",
+        "gaps": ["gap_1_empresa_schema", "gap_3_indicadores", "gap_4_ajustar_revalida", "gap_5_oficializar_hard"],
+        "critical_lines": {
+          "gap_1": [26],
+          "gap_3": [26, 50, 56],
+          "gap_4": [114, 138, 139],
+          "gap_5": [98]
+        },
+        "pattern": "Hono route handlers for escala operations",
+        "actions": [
+          "Gap 1 — Linha 26: Passar empresa.tolerancia_semanal_min para gerarProposta(setorId, ..., db, tolerancia)",
+          "Gap 3 — Linhas 50-59: Incluir indicadores na response EscalaCompleta. Persistir cobertura_percent, violacoes_hard, violacoes_soft, equilibrio nas colunas da tabela escalas",
+          "Gap 3 — Linhas 71: GET /escalas/:id também precisa retornar indicadores (ler do banco ou recalcular)",
+          "Gap 4 — Linhas 114-139: POST /ajustar deve retornar EscalaCompleta completa (não apenas alocacoes). Chamar validarEscala() extraida e retornar indicadores",
+          "Gap 5 — Linha 98: Substituir TODO por lógica: 'Se violacoes_hard > 0, retornar 409 com mensagem de erro'"
+        ]
+      },
+      {
+        "path": "apps/web/src/paginas/EmpresaConfig.tsx",
+        "gaps": ["gap_1_empresa_schema"],
+        "critical_lines": [27, 28, 29, 36, 37, 44, 100, 101, 108, 109],
+        "pattern": "React component with form state",
+        "action": "Remover campos cidade/estado. Adicionar campos corte_semanal (select: SEG_DOM, TER_SEG, etc) e tolerancia_semanal_min (number input). Atualizar useState, useEffect e handleSalvar",
+        "form_fields": {
+          "remove": ["cidade", "estado"],
+          "add": [
+            "corte_semanal: select with values ['SEG_DOM', 'TER_SEG', 'QUA_QUI', 'QUI_SEX', 'SEX_SAB', 'SAB_DOM']",
+            "tolerancia_semanal_min: number input, min 0, max 100, default 30"
+          ]
+        }
+      },
+      {
+        "path": "apps/web/src/paginas/EscalaPagina.tsx",
+        "gaps": ["gap_3_indicadores", "gap_6_exportar_escala"],
+        "critical_lines": {
+          "gap_3": [35, 75, 99],
+          "gap_6": [8, 35, 99, 200]
+        },
+        "pattern": "React component with tabs and cards",
+        "actions": [
+          "Gap 3 — Adicionar rendering dos 5 cards de indicadores (pontuacao, cobertura, violacoes_hard, violacoes_soft, equilibrio) na aba Simulacao após gerar",
+          "Gap 6 — Adicionar botao 'Imprimir' que abre componente ExportarEscala. Utilizar window.print() ou abrir em nova aba"
+        ]
+      },
+      {
+        "path": "apps/web/src/componentes/ExportarEscala.tsx",
+        "gaps": ["gap_6_exportar_escala"],
+        "critical_lines": [],
+        "pattern": "New React component (will create)",
+        "action": "Criar novo componente que renderiza HTML self-contained com tabela pessoa x dia. Layout: header (empresa, periodo, pontuacao), grid, footer (legenda). Suporta window.print() ou exporta como HTML",
+        "wire": {
+          "header": "ESCALA: [SETOR] — [DATA_INICIO] a [DATA_FIM] | Pontuacao: [VALUE] | Status: [STATUS]",
+          "body": "Tabela 7 colunas (pessoa + SEG TER QUA QUI SEX SAB DOM), rows por colaborador",
+          "cell_format": "[HORA_INICIO]-[HORA_FIM]  OR  F (folga)  OR  I (indisponivel)",
+          "footer": "Legenda: F=Folga, I=Indisponivel | Gerada em: [DATETIME] | EscalaFlow v2"
+        }
+      }
+    ],
+    "patterns": {
+      "database": "better-sqlite3, migrations via DDL em schema.ts, seed.ts com transaction pattern",
+      "api": "Hono micro-framework, routes em 'routes/' prefixadas por modulo, request bodies typed via shared/types.ts",
+      "validacao_db": "SQLite CHECK constraints em DDL (enum via check), default values, NOT NULL constraints",
+      "motor": "Função pura gerarProposta() retorna MotorResultado { alocacoes, violacoes, pontuacao }. Não persistira nada. Routes persistem",
+      "frontend": "React + React Router, componentes em 'componentes/', paginas em 'paginas/', servicos em 'servicos/'. useApiData hook para fetch/cache",
+      "state_management": "React hooks (useState) em component level. Sem Redux/Context ainda. Serviços via api.get/put/post",
+      "tipos": "Interfaces em packages/shared/src/types.ts, constants em packages/shared/src/constants.ts. Tudo snake_case ponta a ponta",
+      "testing": "Nao identificado. Arquivos .test.ts não encontrados"
+    },
+    "dependencies_graph": {
+      "gap_1_empresa_schema": {
+        "blocks": ["gap_3_indicadores", "gap_4_ajustar_revalida", "gap_5_oficializar_hard"],
+        "reason": "Motor precisa ler tolerancia do banco, o banco precisa ter a coluna"
+      },
+      "gap_2_seed_clt": {
+        "blocks": ["gap_4_ajustar_revalida", "gap_5_oficializar_hard"],
+        "reason": "Dados de teste corretos são prerequisito para testar validacao"
+      },
+      "gap_3_indicadores": {
+        "blocks": ["gap_4_ajustar_revalida", "gap_5_oficializar_hard", "gap_6_exportar_escala"],
+        "reason": "Frontend e rotas dependem de indicadores em response"
+      },
+      "gap_4_ajustar_revalida": {
+        "blocks": ["gap_5_oficializar_hard"],
+        "reason": "Oficializar usa validacao extraida de ajustar"
+      },
+      "gap_5_oficializar_hard": {
+        "blocks": [],
+        "reason": "Independente após gap 4"
+      },
+      "gap_6_exportar_escala": {
+        "blocks": [],
+        "reason": "Completamente independente de outros gaps"
+      }
+    },
+    "shared_function": {
+      "validarEscala": {
+        "location": "apps/api/src/motor/validador.ts (criar novo arquivo ou adicionar em gerador.ts)",
+        "signature": "function validarEscala(escalaId: number, db: Database): { violacoes: Violacao[], cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, pontuacao }",
+        "usage": [
+          "POST /escalas/:id/ajustar — apos UPSERT, recalcular validacao e retornar EscalaCompleta",
+          "PUT /escalas/:id/oficializar — antes de oficializar, checar se violacoes_hard > 0"
+        ],
+        "reutiliza": "A logica de validacao (R1-R8) ja existe em gerador.ts linhas 524-694. Extrair em funcao pura"
+      }
+    },
+    "schema_changes": {
+      "empresa_table": {
+        "alter": "DROP TABLE empresa; CREATE TABLE empresa (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, corte_semanal TEXT NOT NULL DEFAULT 'SEG_DOM', tolerancia_semanal_min INTEGER NOT NULL DEFAULT 30);",
+        "reason": "SQLite nao suporta ALTER COLUMN, apenas PRAGMA foreign_keys. Mais simples dropar e recriar sem dados"
+      },
+      "escalas_table": {
+        "alter": "ALTER TABLE escalas ADD COLUMN cobertura_percent REAL DEFAULT 0; ALTER TABLE escalas ADD COLUMN violacoes_hard INTEGER DEFAULT 0; ALTER TABLE escalas ADD COLUMN violacoes_soft INTEGER DEFAULT 0; ALTER TABLE escalas ADD COLUMN equilibrio REAL DEFAULT 0;",
+        "reason": "Persistir indicadores para nao recalcular no GET /escalas/:id"
+      }
+    },
+    "risks": [
+      {
+        "gap": "gap_1",
+        "risk": "Alterar schema de empresa em producao sem dados reais = ok. Mas se houver dados, precisara migration. Atualmente sqlite sem backup, pode dropar",
+        "mitigation": "Confirmar que e ambiente dev only. Deletar db.sqlite antigo apos recriar"
+      },
+      {
+        "gap": "gap_1",
+        "risk": "corte_semanal precisa de enum constraint. Pode hardcodar as opcoes como CHECK ou usar seed para documentar",
+        "mitigation": "Adicionar CHECK constraint no DDL: CHECK (corte_semanal IN ('SEG_DOM', 'TER_SEG', ...))"
+      },
+      {
+        "gap": "gap_3",
+        "risk": "MotorResultado interface change eh breaking change para cualquier codigo que consome. Mas e interno (so routes/escalas.ts consome)",
+        "mitigation": "Mudanca interna, sem impact no frontend se indicadores sao opcionais em EscalaCompleta. Colocar default values"
+      },
+      {
+        "gap": "gap_4",
+        "risk": "Extrair validarEscala() significa copiar ou refatorar logica. Se copiar, mantem duplicacao. Se refatorar, pode quebrar gerador.ts",
+        "mitigation": "Extrair como funcao pura em novo arquivo validador.ts. gerador.ts chama validarEscala(). Sem duplicacao"
+      },
+      {
+        "gap": "gap_5",
+        "risk": "409 Conflict eh status atipico para validation. Poderia ser 422 Unprocessable. Depende do contrato da API",
+        "mitigation": "PRD especifica 409. Manter conforme PRD"
+      },
+      {
+        "gap": "gap_6",
+        "risk": "HTML self-contained = sem Tailwind via CDN. Estilos inline pode ficar verbose. window.print() e ambiente dependente",
+        "mitigation": "CSS inline minimalista. Testar em navegador (Chrome print preview). Fallback: abrir em nova aba + print manual"
+      },
+      {
+        "risk": "npm run tsc --noEmit passando mas lintagem TypeScript ainda pode encontrar novos erros apos mudancas",
+        "mitigation": "Rodar tsc apos cada fase. Arrumar erros antes de commitar"
+      }
+    ],
+    "critical_hotspots": [
+      {
+        "file": "apps/api/src/motor/gerador.ts",
+        "line": 525,
+        "issue": "TOLERANCIA_MIN hardcoded = 30. Nao lê do banco",
+        "fix": "Receber como parametro de gerarProposta() que le de empresa.tolerancia_semanal_min"
+      },
+      {
+        "file": "apps/api/src/db/seed.ts",
+        "lines": [28, 29, 30],
+        "issue": "Valores de CLT 36h, CLT 30h, Estagiario inconsistentes com PRD",
+        "fix": "Corrigir 4 valores conforme tabela em PRD linha 62-68"
+      },
+      {
+        "file": "apps/api/src/routes/escalas.ts",
+        "line": 98,
+        "issue": "TODO comment — oficializar nao checa violacoes HARD",
+        "fix": "Implementar validarEscala() e retornar 409 se violacoes_hard > 0"
+      },
+      {
+        "file": "apps/api/src/routes/escalas.ts",
+        "line": 139,
+        "issue": "POST ajustar retorna { alocacoes } apenas. Sem indicadores, sem violacoes",
+        "fix": "Chamar validarEscala() e retornar EscalaCompleta { escala, alocacoes, indicadores, violacoes }"
+      },
+      {
+        "file": "packages/shared/src/types.ts",
+        "line": 92,
+        "issue": "EscalaCompleta nao tem indicadores. Interface desatualizada vs BUILD doc",
+        "fix": "Adicionar interface Indicadores e campo indicadores em EscalaCompleta"
+      }
+    ],
+    "file_count": {
+      "to_modify": 8,
+      "to_create": 1,
+      "backend_files": 6,
+      "frontend_files": 3,
+      "shared_files": 1
+    }
+  },
+  "completed_at": "2026-02-14T23:45:00Z"
+}
