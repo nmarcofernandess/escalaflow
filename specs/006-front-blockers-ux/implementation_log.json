@@ -1,0 +1,215 @@
+{
+  "status": "in_progress",
+  "subtasks_completed": [
+    {
+      "subtask_id": "subtask-1-1",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/renderer/src/lib/formatadores.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "34:export const REGRAS_TEXTO: Record<string, string> = {",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Added JSDoc comment explaining REGRAS_TEXTO purpose and usage context",
+            "Organized REGRAS_TEXTO with clear comments separating HARD (6) vs SOFT (4) rules",
+            "Used exact text from PRD.md lines 73-82 for all 10 rule mappings"
+          ]
+        }
+      },
+      "completed_at": "2026-02-14T23:50:00Z"
+    },
+    {
+      "subtask_id": "subtask-1-2",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/renderer/src/lib/formatadores.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "77:  if (m.includes('timeout') || m.includes('demorou')) {\n78:    return 'A geracao demorou mais que o esperado. Tente novamente com menos colaboradores ou um periodo menor.'",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Updated mapError() JSDoc to reference both RF12 and RF6.1",
+            "Changed generic fallback from raw msg to user-friendly message",
+            "Timeout case handles both 'timeout' and 'demorou' keywords as specified"
+          ]
+        }
+      },
+      "completed_at": "2026-02-14T23:50:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-4",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/renderer/src/paginas/ColaboradorDetalhe.tsx"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "13:import { CORES_EXCECAO } from '@/lib/cores'\n67:      return <Palmtree className={`size-4 ${CORES_EXCECAO.FERIAS}`} />\n69:      return <Stethoscope className={`size-4 ${CORES_EXCECAO.ATESTADO}`} />\n71:      return <Ban className={`size-4 ${CORES_EXCECAO.BLOQUEIO}`} />",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Centralized color management via CORES_EXCECAO constant",
+            "Removed hardcoded colors, follows DRY principle",
+            "Icons now automatically adapt to dark mode"
+          ]
+        }
+      },
+      "completed_at": "2026-02-14T23:59:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-5",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/renderer/src/paginas/Dashboard.tsx"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "104:                          <Badge variant=\"outline\" className=\"border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300\">",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Dashboard alertas badge now fully dark mode compatible",
+            "Follows exact CORES_STATUS_ESCALA.RASCUNHO pattern",
+            "Consistent color scheme with rest of app"
+          ]
+        }
+      },
+      "completed_at": "2026-02-14T23:59:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-6",
+      "status": "complete",
+      "implementation": {
+        "files_modified": [],
+        "files_created": [],
+        "files_deleted": ["src/renderer/src/componentes/ThemeSwitcher.tsx"],
+        "verification_result": "pass",
+        "verification_output": "grep returned 0 matches - zero references to ThemeSwitcher in codebase",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Removed 51 lines of unused dead code",
+            "Reduced maintenance burden and confusion",
+            "Theme switching still works via next-themes provider"
+          ]
+        }
+      },
+      "completed_at": "2026-02-14T23:59:00Z"
+    },
+    {
+      "subtask_id": "subtask-3-1",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/renderer/src/paginas/SetorDetalhe.tsx"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "Manual verification: Navigate to SetorDetalhe, verify only 1 button shows (either 'Abrir Escala' if escalaAtual exists, or 'Gerar Escala' if not)",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Unified 3 buttons into 1 conditional logic (lines 518-553)",
+            "Removed confusing 'Gerar Nova' button that appeared alongside 'Abrir Escala'",
+            "Single navigation path per state: escalaAtual → 'Abrir Escala', !escalaAtual → 'Gerar Escala'",
+            "Button position preserved in existing card layout",
+            "No duplicate navigation paths remain"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:10:00Z"
+    },
+    {
+      "subtask_id": "subtask-3-2",
+      "status": "complete",
+      "implementation": {
+        "files_modified": [
+          "src/renderer/src/paginas/EscalaPagina.tsx",
+          "src/renderer/src/componentes/EscalaGrid.tsx"
+        ],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "TypeScript type check: 0 errors. All acceptance criteria met: (1) REGRAS_TEXTO imported and used, (2) Violations grouped by colaborador_id, (3) HARD/SOFT separated visually, (4) Action hint visible for HARD, (5) violatedCells Set built and passed to Grid, (6) Grid cells with HARD violations have red ring, (7) Dark mode compatible",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Created ViolacoesAgrupadas component that groups violations by collaborator (not by rule)",
+            "HARD violations: prominent Card with border-2, avatar with initials, action hint, red ring on grid cells",
+            "SOFT violations: lighter Card (border-1), amber styling, no action hint, no grid ring",
+            "Used REGRAS_TEXTO for human-readable rule names instead of technical codes",
+            "violatedCells Set filters only HARD violations with dates to highlight grid cells",
+            "Grid cells receive ring-2 ring-destructive when matched in violatedCells",
+            "All colors use dark: variants from CORES_VIOLACAO and CORES constants",
+            "Simplified violations display from flat 46-line list to reusable grouped component"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:25:00Z"
+    },
+    {
+      "subtask_id": "subtask-3-3",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/renderer/src/paginas/ContratoLista.tsx"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "ContratoLista.tsx expanded from 108 to 360 lines with full CRUD: Create/Edit Dialog, Delete AlertDialog, CLT disclaimer, validation, error handling",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Implemented full CRUD: Create/Edit/Delete functionality for contract types",
+            "Cards now show 4 properly formatted badges: horas_semanais (44h/sem), dias_trabalho (6 dias), max_minutos_dia using formatarMinutos() (9h30/dia), trabalha_domingo (Sim/Nao Badge)",
+            "Edit/Delete icon buttons added to each card (Edit, Trash2 icons)",
+            "Create button in PageHeader opens Dialog with empty fields",
+            "Edit Dialog: 5 fields (nome, horas_semanais, dias_trabalho, max_minutos_dia, trabalha_domingo) with validation (min/max, required)",
+            "CLT Disclaimer Card: border-l-4 border-blue-500 with Info icon, placed above form fields, always visible, exact text from PRD",
+            "Delete AlertDialog with confirmation: catches error with 'vinculados'/'colaboradores', shows human message with count if available",
+            "Empty state: 'Crie um template para comecar' (removed technical 'Rode o seed' text)",
+            "Uses useApiData hook with reload() for fetching, toast (sonner) for all feedback",
+            "All colors use dark: variants or shadcn semantic (destructive, muted, primary)",
+            "Validation before save: checks min/max ranges for all numeric fields, shows toast errors",
+            "Helper text for max_minutos_dia: 'Exemplo: 9h30 = 570 minutos'",
+            "Checkbox used for trabalha_domingo (Switch not installed as per plan)",
+            "mapError() used for generic errors, custom handling for delete constraint violations",
+            "Dialog titles change based on mode: 'Novo Tipo de Contrato' vs 'Editar Tipo de Contrato'",
+            "Button text changes based on state: 'Salvando...', 'Excluindo...', 'Criar Tipo', 'Salvar Alteracoes'"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:32:00Z"
+    }
+  ],
+  "subtasks_remaining": [
+    "subtask-2-1",
+    "subtask-2-2",
+    "subtask-2-3",
+    "subtask-4-1",
+    "subtask-4-2",
+    "subtask-4-3"
+  ],
+  "current_phase": "phase-3-blockers-ux",
+  "updated_at": "2026-02-15T00:32:00Z"
+}

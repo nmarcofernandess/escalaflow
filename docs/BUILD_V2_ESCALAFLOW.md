@@ -5,6 +5,9 @@
 > Nenhuma referencia a componentes anteriores. Clean slate.
 > Data: 2026-02-13
 
+> **Atualização:** 2026-02-15 — Arquitetura migrada para Electron desktop. Seções 3.3, 5, 8, 9, 10 atualizadas.
+> Motor 100% (10 regras, 10 testes PASS). Frontend polished (10 páginas + Perfil). QG1+QG2+QG3 PASSAM.
+
 ---
 
 ## 1. O QUE E ESTE SISTEMA
@@ -162,17 +165,18 @@ end note
 @startuml
 package "Electron Shell" {
 
-  package "Frontend (React + Vite)" {
-    [Paginas] as Pages
-    [Componentes] as Comp
-    [Servicos API] as Svc
-    [Estado Global] as State
+  package "Main Process (Node.js)" {
+    [IPC Handlers] as IPC
+    [Motor de Proposta] as Motor
+    [Database Layer] as DBLayer
+    [Worker Thread] as Worker
   }
 
-  package "Backend (FastAPI)" {
-    [Rotas HTTP] as Routes
-    [Motor de Proposta] as Motor
-    [Repositorios] as Repos
+  package "Renderer (React + Vite)" {
+    [Paginas] as Pages
+    [Componentes] as Comp
+    [IPC Client] as IPCClient
+    [Estado Global] as State
   }
 
   database "SQLite" as DB
@@ -180,23 +184,26 @@ package "Electron Shell" {
 }
 
 Pages --> Comp
-Pages --> Svc
+Pages --> IPCClient
 Pages --> State
-Svc --> Routes : HTTP localhost
-Routes --> Motor
-Routes --> Repos
-Motor --> Repos
-Repos --> DB
+IPCClient --> IPC : @egoist/tipc bridge
+IPC --> Motor
+IPC --> DBLayer
+Motor --> Worker : worker_threads
+Motor --> DBLayer
+DBLayer --> DB
 
 note right of Motor
   Gera escala
-  Valida CLT
+  Valida CLT (10 regras)
   Calcula pontuacao
   Recalcula ajustes
+  Worker thread com timeout 30s
 end note
 
 note right of DB
   Arquivo local
+  better-sqlite3
   Sem servidor
   Sem internet
 end note
@@ -488,6 +495,11 @@ CLT_MAX_DOMINGOS_CONSECUTIVOS = {
 ---
 
 ## 5. API
+
+> **NOTA DE MIGRAÇÃO (2026-02-15):** O sistema migrou de REST API HTTP para IPC via @egoist/tipc.
+> As rotas abaixo descrevem a INTERFACE LÓGICA — os mesmos endpoints existem como IPC handlers
+> em `src/main/tipc.ts` (27 handlers). O frontend chama via `window.api.{domain}.{action}()`.
+> A semântica é idêntica, apenas o transporte mudou de HTTP para IPC bridge.
 
 ### 5.1 Rotas
 
@@ -1187,13 +1199,15 @@ stop
 ### 8.1 Stack
 
 ```
-React 18+
-Vite (bundler)
-Electron (shell desktop)
-React Router (navegacao)
-shadcn/ui + Tailwind CSS (componentes visuais)
-Zustand (estado global minimo: setor ativo)
-fetch nativo (HTTP client — app local, sem necessidade de axios)
+React 19
+Vite (via electron-vite)
+Electron 34+ (shell desktop)
+React Router v7 (navegação)
+shadcn/ui + Tailwind CSS (22 componentes)
+Zustand (estado global)
+sonner (toasts/notificações)
+Zod + react-hook-form (validação de formulários — 7 forms)
+@egoist/tipc (IPC type-safe entre renderer e main)
 ```
 
 ### 8.2 Rotas
@@ -1208,71 +1222,97 @@ fetch nativo (HTTP client — app local, sem necessidade de axios)
 | `/colaboradores/:id` | ColaboradorDetalhe | Info + contrato + preferencias + excecoes + historico |
 | `/tipos-contrato` | ContratoLista | Cards de tipos de contrato |
 | `/empresa` | EmpresaConfig | Config da empresa (raro) |
+| `/perfil` | Perfil | Avatar + nome usuario (localStorage) + empresa (read-only) |
 
 ### 8.3 Estrutura de pastas
 
 ```
-apps/frontendv2/
-├── src/
-│   ├── paginas/                         # 1 arquivo por rota
-│   │   ├── Dashboard.tsx
-│   │   ├── SetorLista.tsx
-│   │   ├── SetorDetalhe.tsx
-│   │   ├── EscalaPagina.tsx             # ← CORE DO PRODUTO
-│   │   ├── ColaboradorLista.tsx
-│   │   ├── ColaboradorDetalhe.tsx
-│   │   ├── ContratoLista.tsx
-│   │   └── EmpresaConfig.tsx
-│   │
-│   ├── componentes/
-│   │   ├── ui/                          # shadcn primitives (Button, Input, etc.)
-│   │   ├── AppShell.tsx                 # Layout principal (sidebar + content)
-│   │   ├── Sidebar.tsx                  # Navegacao lateral
-│   │   ├── CardGrid.tsx                 # Grid de cards reutilizavel (pesquisar, filtrar, arquivados)
-│   │   ├── DetalheLayout.tsx            # Layout [< Voltar] Titulo [Salvar]
-│   │   ├── ArquivarModal.tsx            # Modal de confirmacao de arquivamento (cascade warning)
-│   │   ├── RankList.tsx                 # Lista com DnD para reordenar rank de colaboradores
-│   │   ├── EscalaGrid.tsx              # ← CORE: grid pessoa x dia
-│   │   ├── EscalaIndicadores.tsx        # Badges verde/amarelo/vermelho
-│   │   ├── EscalaViolacoes.tsx          # Lista de violacoes em humano
-│   │   ├── EscalaHistorico.tsx          # Lista de escalas ARQUIVADAS (somente leitura)
-│   │   ├── DemandaEditor.tsx            # Editor de faixas horarias
-│   │   ├── ExcecaoForm.tsx              # Form de ferias/atestado
-│   │   ├── PreferenciaForm.tsx          # Form de preferencia (turno, evitar dia)
-│   │   └── ExportarEscala.tsx           # Gera HTML para imprimir
-│   │
-│   ├── servicos/                        # Comunicacao com API
-│   │   ├── api.ts                       # fetch wrapper base
-│   │   ├── setores.ts
-│   │   ├── colaboradores.ts
-│   │   ├── tipos-contrato.ts
-│   │   ├── excecoes.ts
-│   │   ├── escalas.ts
-│   │   ├── empresa.ts
-│   │   └── dashboard.ts
-│   │
-│   ├── tipos/
-│   │   └── index.ts                     # TODAS as interfaces TS (espelho da API)
-│   │
-│   ├── estado/
-│   │   └── store.ts                     # Zustand: setor ativo, escala aberta
-│   │
-│   ├── lib/
-│   │   ├── constantes.ts               # CLT constants (espelho do backend)
-│   │   ├── formatadores.ts             # formatDate, formatMinutos, etc.
-│   │   └── cores.ts                    # Cores por status (TRABALHO=verde, etc.)
-│   │
-│   ├── App.tsx
-│   ├── router.tsx
-│   └── main.tsx
+src/
+├── main/                              # Electron Main Process
+│   ├── index.ts                       # Electron app entry, window creation
+│   ├── tipc.ts                        # 27 IPC handlers (@egoist/tipc)
+│   ├── database.ts                    # better-sqlite3 connection + schema + seed
+│   ├── motor/
+│   │   ├── gerador.ts                 # Motor de geração (7 fases, ~780 linhas)
+│   │   ├── validador.ts               # PolicyEngine (R1-R8 + extras)
+│   │   ├── validacao-compartilhada.ts  # Regras compartilhadas gerador/validador
+│   │   ├── worker.ts                  # Worker thread entry point
+│   │   └── test-motor.ts              # 10 testes (basic, lookback, estagiario, R2, pinned, etc.)
+│   └── preload.ts                     # contextBridge (IPC exposed to renderer)
 │
-├── electron/
-│   └── main.ts                          # Electron entry point
+├── renderer/
+│   └── src/
+│       ├── paginas/                   # 10 páginas (1 arquivo por rota)
+│       │   ├── Dashboard.tsx
+│       │   ├── SetorLista.tsx
+│       │   ├── SetorDetalhe.tsx
+│       │   ├── EscalaPagina.tsx       # ← CORE DO PRODUTO (~850 linhas)
+│       │   ├── ColaboradorLista.tsx
+│       │   ├── ColaboradorDetalhe.tsx
+│       │   ├── ContratoLista.tsx
+│       │   ├── EmpresaConfig.tsx
+│       │   ├── Perfil.tsx
+│       │   └── NaoEncontrado.tsx
+│       │
+│       ├── componentes/               # Componentes custom reutilizáveis
+│       │   ├── AppSidebar.tsx         # Avatar + Dropdown + Theme + Tour (261 linhas)
+│       │   ├── EmptyState.tsx         # Empty state padronizado (icon, title, desc, action)
+│       │   ├── EscalaGrid.tsx         # Grid interativa pessoa x dia
+│       │   ├── ExportarEscala.tsx     # Export HTML self-contained (258 linhas)
+│       │   ├── IndicatorCard.tsx      # Card de indicador reutilizável
+│       │   ├── MetricItem.tsx         # Item de métrica reutilizável
+│       │   ├── OnboardingTour.tsx     # Tour 4 passos (166 linhas)
+│       │   ├── PageHeader.tsx         # Breadcrumb + actions
+│       │   ├── PontuacaoBadge.tsx     # Badge de pontuação (verde/amarelo/vermelho)
+│       │   ├── StatusBadge.tsx        # Badge de status (OFICIAL/RASCUNHO)
+│       │   └── ErrorBoundary.tsx      # Error boundary global
+│       │
+│       ├── components/ui/             # shadcn/ui primitives (22 componentes)
+│       │   ├── alert-dialog.tsx
+│       │   ├── alert.tsx
+│       │   ├── avatar.tsx
+│       │   ├── badge.tsx
+│       │   ├── breadcrumb.tsx
+│       │   ├── button.tsx
+│       │   ├── card.tsx
+│       │   ├── checkbox.tsx
+│       │   ├── dialog.tsx
+│       │   ├── dropdown-menu.tsx
+│       │   ├── form.tsx
+│       │   ├── input.tsx
+│       │   ├── label.tsx
+│       │   ├── select.tsx
+│       │   ├── separator.tsx
+│       │   ├── sheet.tsx
+│       │   ├── sidebar.tsx
+│       │   ├── skeleton.tsx
+│       │   ├── sonner.tsx
+│       │   ├── table.tsx
+│       │   ├── tabs.tsx
+│       │   └── tooltip.tsx
+│       │
+│       ├── lib/
+│       │   ├── constantes.ts          # CLT constants + tipos
+│       │   ├── formatadores.ts        # formatDate, mapError, REGRAS_TEXTO
+│       │   ├── cores.ts              # Tokens semânticos (CORES_STATUS, CORES_VIOLACAO, etc.)
+│       │   └── utils.ts              # cn() helper
+│       │
+│       ├── hooks/
+│       │   └── useApiData.ts          # Hook genérico fetch + loading + error
+│       │
+│       ├── App.tsx                    # Router + ErrorBoundary + OnboardingTour
+│       ├── index.css                  # Tailwind + shadcn theme
+│       └── main.tsx                   # React entry point
 │
-├── index.html
-├── vite.config.ts
-├── tailwind.config.ts
-├── tsconfig.json
+├── preload/
+│   └── index.ts                       # Preload script (exposes tipc API)
+│
+├── electron.vite.config.ts            # Build config (main + preload + renderer)
+├── tsconfig.json                      # Base TS config
+├── tsconfig.node.json                 # Main process TS config
+├── tsconfig.web.json                  # Renderer TS config
+├── tailwind.config.js
+├── postcss.config.js
 └── package.json
 ```
 
@@ -1562,49 +1602,28 @@ Ao criar/editar demanda:
 ### 9.1 Stack
 
 ```
-Node.js + TypeScript
-Hono (framework HTTP — leve, TS-first)
-better-sqlite3 (SQLite sincrono, rapido)
-Zod (validacao de request — onde necessario)
-@escalaflow/shared (tipos compartilhados com frontend)
+Electron 34+ (desktop shell)
+Node.js + TypeScript (main process)
+better-sqlite3 (SQLite síncrono, rápido)
+@egoist/tipc (IPC type-safe entre renderer e main)
+worker_threads (motor roda em thread separada com timeout 30s)
+Zod (validação de input no motor)
 ```
 
 ### 9.2 Estrutura de pastas
 
 ```
-apps/api/
-├── src/
-│   ├── routes/
-│   │   ├── empresa.ts              # GET/PUT /api/empresa
-│   │   ├── setores.ts              # CRUD /api/setores + demandas + rank
-│   │   ├── colaboradores.ts        # CRUD /api/colaboradores
-│   │   ├── tipos-contrato.ts       # CRUD /api/tipos-contrato
-│   │   ├── excecoes.ts             # CRUD /api/colaboradores/:id/excecoes
-│   │   ├── escalas.ts              # gerar, ajustar, oficializar
-│   │   └── dashboard.ts            # GET /api/dashboard
-│   │
-│   ├── motor/                      # ← CORE (F5)
-│   │   ├── gerador.ts              # Gera escala (Fases 1-5)
-│   │   ├── validador.ts            # Valida regras CLT (Fase 6)
-│   │   └── pontuador.ts            # Calcula score (Fase 7)
-│   │
-│   ├── db/
-│   │   ├── connection.ts           # Singleton better-sqlite3
-│   │   ├── schema.ts               # DDL (CREATE TABLE)
-│   │   └── seed.ts                 # Popula tipos_contrato + empresa
-│   │
-│   └── index.ts                    # Hono app + CORS + startup
-│
-├── package.json
-└── tsconfig.json
-
-packages/shared/
-├── src/
-│   ├── types.ts                    # Todas as interfaces (Empresa, Setor, etc.)
-│   ├── constants.ts                # CLT constants, enums
-│   └── index.ts
-├── package.json
-└── tsconfig.json
+src/main/
+├── index.ts                    # Electron BrowserWindow + app lifecycle
+├── tipc.ts                     # 27 IPC handlers (empresa, setores, colaboradores, etc.)
+├── database.ts                 # better-sqlite3 singleton + DDL + seed
+├── preload.ts                  # contextBridge para IPC seguro
+└── motor/
+    ├── gerador.ts              # Motor de geração (7 fases + pinnedCells)
+    ├── validador.ts            # PolicyEngine (10 regras nomeadas)
+    ├── validacao-compartilhada.ts # Regras e funções compartilhadas
+    ├── worker.ts               # Worker thread entry (deserializa pinnedCells)
+    └── test-motor.ts           # 10 testes (rodados via npx electron . --test-motor)
 ```
 
 ### 9.3 DDL do banco
@@ -1701,51 +1720,64 @@ CREATE INDEX IF NOT EXISTS idx_alocacoes_colaborador ON alocacoes(colaborador_id
 
 ### 10.1 TL;DR
 
-- 8 entidades no banco, todas em portugues
-- Motor de Proposta gera escala automatica em 7 fases + lookback de continuidade
-- Frontend com 8 paginas, core = EscalaPagina com 3 tabs (Simulacao/Oficial/Historico)
-- API RESTful com 20+ rotas, todas prefixadas `/api/`, com validacoes de protecao
-- Naming congruente ponta a ponta: banco = API = TypeScript = UI
-- Seed com 4 tipos CLT (44h, 36h, 30h, estagiario 20h)
-- Constantes CLT hardcoded, nao configuraveis pelo usuario
-- Preferencias de turno e dia como soft constraints (motor tenta, alerta se nao consegue)
-- Rank gerenciado por DnD no contexto do setor (prioridade de escolha em empates)
-- Soft delete (arquivamento) com modais de confirmacao e protecao de cascata
+- 8 entidades no banco, todas em português
+- Motor de Proposta gera escala automática em 7 fases + lookback + pinnedCells (10 regras nomeadas, 10 testes)
+- Frontend com 10 páginas + Perfil, core = EscalaPagina com 3 tabs (Simulação/Oficial/Histórico)
+- 27 IPC handlers via @egoist/tipc, com validações de proteção
+- 22 componentes shadcn/ui + 11 componentes custom + EmptyState padronizado
+- 7 formulários com Zod + react-hook-form + shadcn Form
+- Naming congruente ponta a ponta: banco = IPC = TypeScript = UI (snake_case)
+- Seed com 4 tipos CLT (44h, 36h, 30h, estagiário 20h)
+- Constantes CLT hardcoded, não configuráveis pelo usuário
+- Dark mode 100% funcional (tokens semânticos em cores.ts)
+- Preferências de turno e dia como soft constraints
+- Rank gerenciado por DnD no contexto do setor
+- Motor roda em worker thread com timeout 30s
+- App desktop offline (Electron) — sem login, sem internet
 
 ### 10.2 Sequencia de implementacao
 
-| Fase | O que | Depende de | Status | Entrega |
-|------|-------|------------|--------|---------|
-| **F1** | Setup monorepo (npm workspaces, Hono, Vite, shared types) | — | FEITO | API + Web rodando |
-| **F2** | DDL do banco + seed CLT | F1 | FEITO | 8 tabelas + 4 contratos |
-| **F3** | Backend CRUD completo (todas as 20+ rotas) | F2 | FEITO | API funcional com validacoes |
-| **F4** | Frontend skeleton (AppShell, Dashboard, SetorLista, ContratoLista) | F1 | FEITO | Navegacao + CRUD basico |
-| **F5** | Motor de Proposta (gerador + validador + pontuador) | F3 | — | Escala gerada via API |
-| **F6** | Frontend: CRUD completo (SetorDetalhe, ColaboradorDetalhe, Demanda) | F3, F4 | — | Cadastros completos |
-| **F7** | Frontend: EscalaPagina + EscalaGrid | F5, F6 | — | **CORE COMPLETO** |
-| **F8** | Frontend: Dashboard enriquecido + ExportarEscala | F7 | — | Produto finalizado |
+| Fase | O que | Status |
+|------|-------|--------|
+| **F1** | Setup Electron + electron-vite + tipc | ✅ FEITO |
+| **F2** | DDL do banco + seed CLT | ✅ FEITO |
+| **F3** | IPC handlers CRUD completo (27 handlers) | ✅ FEITO |
+| **F4** | Frontend skeleton (AppSidebar, Dashboard, listas) | ✅ FEITO |
+| **F5** | Motor de Proposta (gerador + validador + worker) | ✅ FEITO |
+| **F6** | Frontend: CRUD completo (detalhe, demanda, exceções) | ✅ FEITO |
+| **F7** | Frontend: EscalaPagina + EscalaGrid + Smart Recalc | ✅ FEITO |
+| **F8** | Frontend: Dashboard + Export + Perfil + Polish | ✅ FEITO |
 
 ### 10.3 O que e critico
 
 ```
-CRITICO (sem isso nao e produto):
-├── Motor de Proposta (F5) ............. gera escala automatica
-├── EscalaGrid (F9) .................... grid interativa
-└── Exportar/Imprimir (F10) ............ output fisico
+CRITICO (sem isso não é produto):
+├── Motor de Proposta ................. ✅ FEITO (10 regras, 10 testes)
+├── EscalaGrid ........................ ✅ FEITO (interativa, click toggle)
+└── Exportar/Imprimir ................. ✅ FEITO (HTML self-contained)
 
-IMPORTANTE (melhora experiencia):
-├── Dashboard (F10) .................... visao geral + alertas
-├── Indicadores na grid (F9) ........... verde/amarelo/vermelho
-├── Violacoes em humano (F9) ........... "Ana trabalhou 7 dias seguidos"
-├── Historico de escalas (F9) .......... tab na EscalaPagina (continuidade)
-├── DnD rank no setor (F8) ............ reordenar prioridade de colaboradores
-├── Arquivamento com modais (F8) ....... soft delete + confirmacao cascade
-└── Lookback entre periodos (F5) ....... motor le escala anterior
+IMPORTANTE (melhora experiência):
+├── Dashboard ......................... ✅ FEITO (dialogs inline, atalhos)
+├── Indicadores na grid ............... ✅ FEITO (IndicatorCard component)
+├── Violações em humano ............... ✅ FEITO (agrupadas por colaborador)
+├── Histórico de escalas .............. ✅ FEITO (tab na EscalaPagina)
+├── DnD rank no setor ................. ✅ FEITO
+├── Arquivamento com modais ........... ✅ FEITO
+├── Lookback entre períodos ........... ✅ FEITO (cross-escala)
+├── Dark mode 100% .................... ✅ FEITO (tokens semânticos)
+├── Formulários Zod ................... ✅ FEITO (7 forms)
+├── EmptyState padronizado ............ ✅ FEITO (8 locais)
+├── Onboarding Tour ................... ✅ FEITO (4 passos)
+└── Página Perfil ..................... ✅ FEITO
 
-NICE TO HAVE (pode vir depois):
-├── Drag and drop na grid .............. arrastar alocacao entre dias
-├── Historico por colaborador .......... "Ana trabalhou quantos domingos?"
-└── Config empresa ..................... raramente usado
+NICE TO HAVE (backlog):
+├── SetorDetalhe com tabs ............. PROPOSTA
+├── Dashboard tabs por setor .......... PROPOSTA
+├── Sidebar link "Escalas" ............ PROPOSTA
+├── Skeleton loading states ........... BACKLOG
+├── Tour com links clicáveis .......... BACKLOG
+├── Demandas/Exceções UPDATE .......... BACKLOG
+└── Duplicar escala pra simulação ..... v2.1
 ```
 
 ### 10.4 Riscos

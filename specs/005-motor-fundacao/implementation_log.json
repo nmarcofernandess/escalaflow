@@ -1,0 +1,322 @@
+{
+  "status": "complete",
+  "subtasks_completed": [
+    {
+      "subtask_id": "subtask-1-1",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/test-motor.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Added TestResult interface and TestFn type for structured test output",
+            "Refactored inline tests into named functions returning TestResult",
+            "Added runner with PASS/FAIL/SKIP summary output",
+            "Preserved runMotorTest(db) export signature for Electron integration"
+          ]
+        }
+      },
+      "completed_at": "2026-02-14T23:55:00Z"
+    },
+    {
+      "subtask_id": "subtask-1-2",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/gerador.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. Only change in gerador.ts: line 270 >= changed to >. Confirmed all 3 uses of CLT.MAX_DIAS_CONSECUTIVOS now consistently use > (lines 255, 270, 405).",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": []
+        }
+      },
+      "completed_at": "2026-02-14T23:56:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-1",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/validacao-compartilhada.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. getWeeks() now accepts optional corte_semanal param with backward compat default to SEG.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Added JSDoc comment explaining corte_semanal format and default behavior",
+            "Used DiaSemana type for startDay variable for type safety"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:10:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-2",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/gerador.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. Motor now queries empresa.corte_semanal in FASE 1 and passes to getWeeks in FASE 3.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Default to SEG_DOM if empresa not found for backward compatibility",
+            "Stored corteSemanal for later use in validarRegras (FASE 6/7)"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:12:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-3",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/validacao-compartilhada.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. Expected TS errors in validador.ts did NOT occur because validador already has all 3 new fields in its typed SQL result (lines 31-46). ColabComContrato in gerador.ts is also a structural superset.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "R_ESTAGIARIO_DOMINGO placed after R3 as R3b (logically related to domingo rules)",
+            "R_CONTRATO_MAX_DIA placed after R4 as R4b (logically related to jornada rules)",
+            "calcMetaDiariaMin exported with JSDoc explaining its purpose",
+            "corte_semanal passed through to getWeeks inside R5"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:18:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-4",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/gerador.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. gerador.ts now imports and uses calcMetaDiariaMin, passes corteSemanal to validarRegras.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Replaced inline formula Math.round((c.horas_semanais * 60) / c.dias_trabalho) with calcMetaDiariaMin(c.horas_semanais, c.dias_trabalho)",
+            "Confirmed ColabComContrato is structural superset of expanded ColabValidacao (has all 3 new fields from JOIN)"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:20:00Z"
+    },
+    {
+      "subtask_id": "subtask-2-5",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/gerador.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. FASE 4.5 repair now filters pinned cells from candidates, skips repair if all candidates are pinned.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Added unpinned filter after scoring array creation",
+            "Edge case handled: all candidates pinned -> continue (skip repair, FASE 6 flags R1 violation)",
+            "Comment explains the rationale (gestora owns impossible streak)"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:22:00Z"
+    },
+    {
+      "subtask_id": "subtask-3-1",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/validador.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. Validador now loads lookback from previous OFICIAL escala, loads empresa.corte_semanal, and passes both to validarRegras.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Lookback pattern copied exactly from gerador.ts FASE 1 (lines 106-150)",
+            "Added isDomingo import for domingo consecutive counting",
+            "Empresa query fetches both corte_semanal and tolerancia_semanal_min",
+            "Graceful fallback: no OFICIAL escala = diasConsec:0, domConsec:0 (same as before)",
+            "Typed SQL result already has all 3 new ColabValidacao fields (confirmed at lines 31-46)"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:35:00Z"
+    },
+    {
+      "subtask_id": "subtask-3-2",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/tipc.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. Both escalas.gerar and escalas.ajustar worker spawns now have 30s timeout via withTimeout helper.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "Created generic withTimeout<T> helper function with JSDoc",
+            "Refactored escalas.ajustar: Worker instantiation separated from Promise for clean timeout wrapping",
+            "Refactored escalas.gerar: Same pattern - Worker instantiation separated from Promise",
+            "On timeout: worker.terminate() called before reject to prevent dangling threads",
+            "Humanized error message in Portuguese for end-user display"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:37:00Z"
+    },
+    {
+      "subtask_id": "subtask-3-3",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/gerador.ts", "src/main/tipc.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. Input validation added to gerarProposta (3 checks) and escalas.ajustar handler (1 check).",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": [
+            "gerador.ts: Added setor existence check (ativo=1), date order validation, colab count check",
+            "tipc.ts: Added empty alocacoes array check in escalas.ajustar",
+            "Error messages in Portuguese matching existing error message conventions",
+            "Validation runs before any heavy processing (early return on failure)"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:39:00Z"
+    },
+    {
+      "subtask_id": "subtask-4-1",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/gerador.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. All 5 motor phases verified for pinnedCells handling.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [
+            "FASE 3 line 208: non-domingo workers (trabalha_domingo=false) had Sunday forced to FOLGA without checking isPinned. A pinned TRABALHO on Sunday would be silently overwritten."
+          ],
+          "improvements_made": [
+            "Added isPinned guard to FASE 3 non-domingo Sunday folga assignment (line 208)",
+            "Updated comment to explain: pinned estagiario on Sunday is preserved, validation R3b flags it as HARD violation"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T00:50:00Z"
+    },
+    {
+      "subtask_id": "subtask-4-2",
+      "status": "complete",
+      "implementation": {
+        "files_modified": [],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. worker.ts compiles cleanly with zero changes needed.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": []
+        }
+      },
+      "completed_at": "2026-02-15T00:52:00Z"
+    },
+    {
+      "subtask_id": "subtask-5-1",
+      "status": "complete",
+      "implementation": {
+        "files_modified": ["src/main/motor/test-motor.ts"],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit completed with 0 errors. npm run build succeeded. All 6 placeholder SKIP tests replaced with real implementations. 8 total tests: basic-4-setores, pinned-folga-basic, lookback-cross-escala, estagiario-domingo, r2-descanso-11h, pinned-conflito-7-consecutivos, cobertura-impossivel, corte-semanal-qui-qua.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [
+            "Unused import 'Alocacao' detected by IDE diagnostics"
+          ],
+          "improvements_made": [
+            "Removed unused Alocacao import",
+            "Added diaSemana, isDomingo, timeToMin imports from validacao-compartilhada for test logic",
+            "Each DB-mutating test (lookback, cobertura, corte_semanal) has try/finally cleanup",
+            "testLookback: INSERT mock OFICIAL escala with 5-day streak, verify 0 R1 violations, DELETE in finally",
+            "testEstagiarioDomingo: Query estagiarios from DB, verify NO trabalha_domingo=false colab has TRABALHO on Sunday",
+            "testR2Descanso: Check all consecutive work day pairs for 11h (660min) gap between hora_fim and hora_inicio",
+            "testPinnedConflito: Pin 7 consecutive TRABALHO (Mon-Sun), verify all 7 preserved AND R1 HARD violation exists",
+            "testCoberturaImpossivel: Bump demanda min_pessoas to 10 for setor 4 (2 colabs), verify cobertura < 100%, SOFT not HARD, restore in finally",
+            "testCorteSemanal: UPDATE empresa corte_semanal to QUI_QUA, verify 0 HARD, verify weeks split on QUI, restore in finally"
+          ]
+        }
+      },
+      "completed_at": "2026-02-15T01:05:00Z"
+    },
+    {
+      "subtask_id": "subtask-5-2",
+      "status": "complete",
+      "implementation": {
+        "files_modified": [],
+        "files_created": [],
+        "verification_result": "pass",
+        "verification_output": "npx tsc --noEmit: 0 errors. npm run build: succeeded (main 81.10kB, preload 0.40kB, renderer 1494.69kB). No files outside scope touched.",
+        "self_critique": {
+          "pattern_adherence": true,
+          "error_handling": true,
+          "code_cleanliness": true,
+          "issues_found": [],
+          "improvements_made": []
+        },
+        "verification_details": {
+          "typecheck": "npx tsc --noEmit: 0 errors across all files modified in phases 1-5 (gerador.ts, validador.ts, validacao-compartilhada.ts, worker.ts, test-motor.ts, tipc.ts)",
+          "build": "npm run build: electron-vite build succeeded. Main bundle 81.10kB, preload 0.40kB, renderer index.html + CSS + JS",
+          "scope_verification": "Only src/main/motor/* and src/main/tipc.ts modified across all 5 phases. No frontend, no schema, no shared types changed."
+        }
+      },
+      "completed_at": "2026-02-15T01:06:00Z"
+    }
+  ],
+  "subtasks_remaining": [],
+  "current_phase": "phase-5-test-expansion",
+  "updated_at": "2026-02-15T01:06:00Z"
+}

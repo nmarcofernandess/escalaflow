@@ -1,0 +1,46 @@
+export const CORES_STATUS_ESCALA = {
+  OFICIAL:
+    'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300',
+  RASCUNHO:
+    'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300',
+  ARQUIVADA: 'border-muted-foreground/20 bg-muted text-muted-foreground',
+  SEM_ESCALA: 'border-muted-foreground/20 bg-muted text-muted-foreground',
+} as const
+
+export const CORES_ALOCACAO = {
+  TRABALHO:
+    'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+  TRABALHO_DOMINGO:
+    'bg-sky-100 dark:bg-sky-950/30 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+  FOLGA:
+    'bg-muted/60 dark:bg-muted/40 text-muted-foreground border-border dark:border-muted-foreground/20',
+  INDISPONIVEL:
+    'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+} as const
+
+export const CORES_EXCECAO = {
+  FERIAS: 'text-emerald-600 dark:text-emerald-400',
+  ATESTADO: 'text-amber-600 dark:text-amber-400',
+  BLOQUEIO: 'text-red-600 dark:text-red-400',
+} as const
+
+export const CORES_VIOLACAO = {
+  HARD: {
+    border: 'border-red-200 dark:border-red-800',
+    bg: 'bg-red-50/50 dark:bg-red-950/30',
+    text: 'text-red-800 dark:text-red-300',
+    textLight: 'text-red-700 dark:text-red-400',
+  },
+  SOFT: {
+    border: 'border-amber-200 dark:border-amber-800',
+    bg: 'bg-amber-50/50 dark:bg-amber-950/30',
+    text: 'text-amber-800 dark:text-amber-300',
+    textLight: 'text-amber-700 dark:text-amber-400',
+  },
+} as const
+
+/** Gender avatar colors used across the app */
+export const CORES_GENERO = {
+  F: 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300',
+  M: 'bg-sky-100 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300',
+} as const

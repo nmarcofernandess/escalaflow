@@ -1,0 +1,421 @@
+{
+  "status": "complete",
+  "architectural_decisions": {
+    "smart_recalc": {
+      "chosen": "Option A — Modify gerarProposta to accept pinnedCells",
+      "justification": "Option A is the only approach that truly regenerates the schedule around pinned cells while reusing the existing 549-line motor. Option B (separate regenerarAoRedor) duplicates phase 3/4/5 logic and creates a maintenance nightmare. Option C (upsert+revalidate) fails CA2 because it cannot redistribute other collaborators when one cell changes. With Option A, we add a pinnedCells: Map<string, StatusAlocacao> parameter (key = 'colabId-date'). The motor skips pinned cells in phases 3-5 (folga distribution, domingo rotation, hour allocation) but still runs validation R1-R8 on them. This means a single toggle triggers a full regeneration that respects the manual edit.",
+      "implementation": "1. Add optional pinnedCells parameter to gerarProposta(). 2. In Phase 2 (availability map), initialize pinned cells with their pinned status instead of default TRABALHO. 3. In Phase 3 (folga distribution), skip pinned cells when choosing folga days. 4. In Phase 4 (domingo rotation), skip pinned cells. 5. In Phase 5 (hour allocation), skip pinned cells that have hora_inicio/hora_fim, but assign hours to pinned TRABALHO cells that lack them (FOLGA->TRABALHO toggle case). 6. Validation/scoring runs on everything including pinned. 7. Update escalas.ajustar handler to call gerarProposta with pinned cells instead of just upsert+revalidate."
+    },
+    "grid_interactivity": {
+      "chosen": "Wire existing onCelulaClick prop with optimistic UI + backend recalc",
+      "justification": "EscalaGrid already has the onCelulaClick prop (line 49) and button click handler (line 271-275). EscalaPagina just never passes it. We add a handler in EscalaPagina that: (1) shows loading state on the cell, (2) calls escalasService.ajustar with the toggled status, (3) replaces escalaCompleta with the response. For FOLGA->TRABALHO, we send status='TRABALHO' without hours — the backend motor assigns hours during Phase 5.",
+      "implementation": "1. Add handleCelulaClick to EscalaPagina. 2. Add ajustando state and loading cell tracking. 3. Pass onCelulaClick to EscalaGrid in SimulacaoResult. 4. Add per-cell loading indicator in EscalaGrid. 5. INDISPONIVEL cells are not clickable (exception-based)."
+    },
+    "theme": {
+      "chosen": "next-themes ThemeProvider (already in package.json, never wired)",
+      "justification": "next-themes is already a dependency. CSS variables for .dark are already defined in index.css. The integration path is minimal: wrap App in ThemeProvider, create ThemeSwitcher component, add to sidebar dropdown. Hardcoded Tailwind colors in cores.ts (e.g., bg-emerald-50) work in dark mode because Tailwind's opacity-based colors adapt well. Only truly problematic ones would be explicit color values, which we don't have.",
+      "implementation": "1. Add ThemeProvider wrapper in main.tsx. 2. Create ThemeSwitcher.tsx with Light/Dark/System options. 3. Add to AppSidebar footer dropdown. 4. Persist via next-themes (localStorage by default). 5. Audit cores.ts for dark mode compatibility — add dark: variants where needed."
+    },
+    "onboarding": {
+      "chosen": "Custom lightweight modal-stepper, no new dependency",
+      "justification": "A full tour library like react-joyride adds 50KB+ for what is essentially a 4-step modal. The RH users need a simple 'how this works' guide, not a complex highlight-based tour. A modal with numbered steps, illustrations via lucide icons, and a 'Don't show again' checkbox stored in localStorage is sufficient and aligns with the shadcn/ui aesthetic.",
+      "implementation": "1. Create OnboardingTour.tsx with Dialog + step content. 2. 4 steps: Cadastro, Gerar, Ajustar, Oficializar. 3. Track in localStorage (onboarding_complete). 4. Show on first visit to Dashboard or EscalaPagina. 5. Add 'Como Funciona?' button in sidebar Help menu to re-trigger."
+    }
+  },
+  "plan": {
+    "feature": "Finalize EscalaFlow v2 — Motor + UX + Recalc",
+    "workflow_type": "feature",
+    "phases": [
+      {
+        "id": "phase-1-ux-foundation",
+        "name": "UX Foundation (Theme + Sidebar + Loading)",
+        "description": "Low-risk, high-visibility UX improvements. Sets up theming infrastructure that all subsequent work benefits from. Install missing shadcn/ui components, wire next-themes, enhance sidebar, improve loading/error states.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "subtask-1-1",
+            "description": "Install missing shadcn/ui components: dropdown-menu and avatar. Run shadcn CLI to add these components to src/renderer/src/components/ui/.",
+            "files_to_modify": [],
+            "files_to_create": [
+              "src/renderer/src/components/ui/dropdown-menu.tsx",
+              "src/renderer/src/components/ui/avatar.tsx"
+            ],
+            "patterns_from": ["src/renderer/src/components/ui/alert-dialog.tsx"],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No type errors related to dropdown-menu or avatar"
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-1-2",
+            "description": "Wire next-themes ThemeProvider in main.tsx. Wrap the entire app (inside StrictMode, outside HashRouter) with ThemeProvider from next-themes. Set attribute='class' (to toggle .dark class on html element), defaultTheme='system', storageKey='escalaflow-theme'. The .dark CSS variables in index.css already exist.",
+            "files_to_modify": ["src/renderer/src/main.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Run app, open DevTools, check that html element gets class='dark' when system is dark mode. Verify ThemeProvider is in component tree."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-1-3",
+            "description": "Create ThemeSwitcher.tsx component. Uses useTheme() from next-themes. Shows 3 options: Light (Sun icon), Dark (Moon icon), System (Monitor icon). Current theme is highlighted. Uses shadcn DropdownMenu for the switcher UI. Compact enough to fit in sidebar footer.",
+            "files_to_modify": [],
+            "files_to_create": ["src/renderer/src/componentes/ThemeSwitcher.tsx"],
+            "patterns_from": ["src/renderer/src/componentes/PontuacaoBadge.tsx"],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No errors"
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-1-4",
+            "description": "Enhance AppSidebar with Avatar + Dropdown in footer. Replace the plain 'Empresa' text footer with: (1) Avatar showing company initials (from empresa.nome, fetched via IPC), (2) DropdownMenu with items: Theme (sub-menu with ThemeSwitcher), Ajuda (opens onboarding tour), and Sobre (version info). Use SidebarFooter + SidebarMenu + SidebarMenuButton pattern from shadcn sidebar docs. Import Avatar, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger.",
+            "files_to_modify": ["src/renderer/src/componentes/AppSidebar.tsx"],
+            "files_to_create": [],
+            "patterns_from": ["src/renderer/src/componentes/AppSidebar.tsx"],
+            "verification": {
+              "type": "manual",
+              "instructions": "Run app, verify sidebar footer shows avatar with company initials, dropdown opens with Theme/Ajuda/Sobre items, theme switching works from dropdown."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-1-5",
+            "description": "Audit and fix dark mode colors in cores.ts. Current colors use Tailwind utility classes like bg-emerald-50, bg-red-50, text-emerald-800. These need dark: variants for proper contrast. Add dark mode variants: e.g., TRABALHO becomes 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'. Do the same for FOLGA, INDISPONIVEL, TRABALHO_DOMINGO, and all violation colors. Also check EscalaGrid for any hardcoded color classes that need dark variants.",
+            "files_to_modify": [
+              "src/renderer/src/lib/cores.ts",
+              "src/renderer/src/componentes/EscalaGrid.tsx"
+            ],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Switch to dark mode. Verify EscalaGrid cells are readable, violation cards have proper contrast, status badges are visible. No white-on-white or dark-on-dark text."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-1-6",
+            "description": "Improve loading states in EscalaPagina. Replace the simple 'Gerando...' button text with a proper loading overlay: (1) When gerando=true, show a Card with Loader2 spinner + text 'Gerando escala para [setor.nome]...' centered. (2) Disable all controls during generation. (3) Add subtle animation. Also improve error toast messages to be more human-readable (e.g., 'Nao foi possivel gerar a escala. Verifique se o setor tem colaboradores e faixas de demanda cadastradas.').",
+            "files_to_modify": ["src/renderer/src/paginas/EscalaPagina.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Click Gerar Escala. Verify loading overlay appears with spinner and descriptive message. Verify error messages are human-readable (test with setor that has no collaborators)."
+            },
+            "status": "complete"
+          }
+        ]
+      },
+      {
+        "id": "phase-2-motor-validation",
+        "name": "Motor Quality Validation & Fixes",
+        "description": "Test the motor with realistic seed data, identify and fix bugs in folga distribution, domingo rotation, coverage, and consecutive day handling. Create test cases document. This phase is critical before building Smart Recalc (phase 3) because we need a working motor first.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "subtask-2-1",
+            "description": "Create test cases document with expected results for each setor. Document: (1) Caixa (8 colabs, 3 demanda faixas + 1 SAB extra, mix of contracts including estagiario who cannot work Sundays). (2) Acougue (3 colabs, 2 faixas — tight staffing). (3) Padaria (3 colabs, 2 faixas, one on vacation in April). (4) Hortifruti (2 colabs, 2 faixas — very tight). For each, specify expected: max consecutive days <= 6, domingo rotation within limits, coverage targets, and which preferences should be honored.",
+            "files_to_modify": [],
+            "files_to_create": ["specs/004-finalize-v2/test-cases.md"],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Document exists with clear expected outcomes per setor."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-2-2",
+            "description": "Create a motor test script that runs gerarProposta for all 4 setores and outputs quality metrics. Script: (1) Opens DB, (2) calls gerarProposta for each setor with a 30-day March period, (3) prints per-setor: pontuacao, cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, plus lists all HARD violations. (4) Exits with code 1 if any HARD violations exist. This script runs in Node directly (not worker thread) for debugging. Place it in src/main/motor/test-motor.ts with a run command in package.json.",
+            "files_to_modify": ["package.json"],
+            "files_to_create": ["src/main/motor/test-motor.ts"],
+            "patterns_from": ["src/main/motor/worker.ts"],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsx src/main/motor/test-motor.ts",
+              "expected": "Output shows metrics for all 4 setores. Identify any HARD violations."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-2-3",
+            "description": "Fix motor bugs identified by test script (RF2-RF5). This subtask is CONDITIONAL on subtask-2-2 results. Common expected issues based on code review: (1) Phase 3 folga stagger may not distribute evenly when colabs have different contracts (dias_trabalho varies: 6 for CLT44h, 5 for CLT36h/30h/Estagiario). (2) Phase 4.5 repair pass is too aggressive — it forces FOLGA on day 7 without considering if that creates a worse coverage hole. Consider adding a smarter repair that swaps a nearby TRABALHO day instead. (3) Phase 5 hour allocation may not spread evenly across faixas when deficit is equal. Fix bugs in gerador.ts, keeping changes minimal and focused.",
+            "files_to_modify": ["src/main/motor/gerador.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsx src/main/motor/test-motor.ts",
+              "expected": "0 HARD violations across all 4 setores. Pontuacao > 80 for each. Cobertura > 90%."
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-2-4",
+            "description": "Improve folga distribution quality (RF3). Focus on Phase 3 improvements: (1) Better stagger scoring — current penalizes by folgasPorDia*50 but doesn't consider total colabs per setor (penalty should be relative). (2) Honor evitar_dia_semana more aggressively — current gives +100 score but if CLT consecutive constraint forces redistribution, the preference may be lost. Add a second pass that tries to swap folgas to honor preferences without violating R1. (3) Ensure partial weeks at start/end of period get proportional folgas.",
+            "files_to_modify": ["src/main/motor/gerador.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsx src/main/motor/test-motor.ts",
+              "expected": "PREFERENCIA_DIA violations reduced. Folga distribution more even across days."
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-2-5",
+            "description": "Improve domingo rotation quality (RF4). Focus on Phase 4 improvements: (1) Verify gender balance — current sorts by domTotalState then rank, but if only 1 F and 2 M work Sundays, the F works every Sunday until hitting MAX_DOMINGOS_CONSECUTIVOS[F]=1. This is correct but may surprise users — add a validation note. (2) Ensure Estagiario (trabalha_domingo=false) is correctly excluded. (3) Verify lookback works — if previous OFICIAL had colab working 1 Sunday consecutively, motor should count it.",
+            "files_to_modify": ["src/main/motor/gerador.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsx src/main/motor/test-motor.ts",
+              "expected": "0 RODIZIO_DOMINGO violations. Domingos distributed fairly across eligible colabs."
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-3-smart-recalc",
+        "name": "Smart Recalc (Motor Pinned Cells + IPC Handler)",
+        "description": "Implement the core architectural change: modify gerarProposta to accept pinned cells, update the escalas.ajustar IPC handler to use regeneration instead of simple upsert+revalidate, and ensure the worker thread supports pinned cells.",
+        "depends_on": ["phase-2-motor-validation"],
+        "subtasks": [
+          {
+            "id": "subtask-3-1",
+            "description": "Add pinnedCells parameter to gerarProposta. Signature becomes: gerarProposta(setor_id, data_inicio, data_fim, db, tolerancia_min?, pinnedCells?: Map<string, {status: StatusAlocacao, hora_inicio?: string|null, hora_fim?: string|null}>). Key = 'colabId-date'. Implementation: (1) In Phase 2, if cell is pinned, use pinned status instead of default. If pinned status is INDISPONIVEL, treat as INDISPONIVEL. (2) In Phase 3, skip pinned cells when choosing folga days — they are 'immovable'. But still count them toward folgasSemana calculations. (3) In Phase 4, skip pinned cells for domingo scheduling — pinned TRABALHO on Sunday stays, pinned FOLGA on Sunday stays. (4) In Phase 4.5, skip pinned cells during repair. (5) In Phase 5, skip pinned TRABALHO cells that already have hora_inicio/hora_fim. For pinned TRABALHO without hours (FOLGA->TRABALHO toggle), assign hours normally. (6) Validation and scoring still run on everything.",
+            "files_to_modify": ["src/main/motor/gerador.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsx src/main/motor/test-motor.ts",
+              "expected": "Motor still produces 0 HARD violations with no pinned cells (backward compatible). Test with pinned cells produces valid output."
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-3-2",
+            "description": "Update worker.ts to support pinnedCells. Add pinnedCells to WorkerInput interface (serialized as array of [key, value] pairs since Map is not serializable). Worker deserializes to Map before calling gerarProposta.",
+            "files_to_modify": ["src/main/motor/worker.ts"],
+            "files_to_create": [],
+            "patterns_from": ["src/main/motor/worker.ts"],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-3-3",
+            "description": "Rewrite escalas.ajustar IPC handler for Smart Recalc. Current handler (tipc.ts lines 470-516) does upsert+revalidate. New handler: (1) Receive adjusted alocacoes (the manual changes). (2) Load existing escala to get setor_id, data_inicio, data_fim. (3) Build pinnedCells Map from the adjusted alocacoes (these are the manual edits that must be preserved). (4) Spawn worker thread with pinnedCells parameter. (5) Worker runs gerarProposta with pinned cells — regenerates everything around the pins. (6) Delete old alocacoes for this escala, insert new ones from motor result. (7) Update escala indicators. (8) Return full EscalaCompleta. This makes ajustar run in worker thread (non-blocking) just like gerar. Keep the old upsert+revalidate logic as a fallback comment for reference.",
+            "files_to_modify": ["src/main/tipc.ts"],
+            "files_to_create": [],
+            "patterns_from": ["src/main/tipc.ts"],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-3-4",
+            "description": "Update test-motor.ts to include a pinned-cells test case. After the basic generation tests, add a test: (1) Generate escala for Caixa (setor 1). (2) Pin 2 cells: one FOLGA->TRABALHO toggle, one TRABALHO->FOLGA toggle. (3) Call gerarProposta with pinnedCells. (4) Verify: pinned cells have the expected status, other cells are redistributed, 0 HARD violations, score is reasonable. This validates the Smart Recalc architecture end-to-end (at motor level, not IPC level).",
+            "files_to_modify": ["src/main/motor/test-motor.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsx src/main/motor/test-motor.ts",
+              "expected": "Pinned cells test passes. Pinned cells preserved. 0 HARD violations."
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-4-grid-interactive",
+        "name": "Interactive Grid (Click Toggle + Recalc)",
+        "description": "Wire the EscalaGrid click handler to toggle TRABALHO/FOLGA and trigger Smart Recalc. Add per-cell loading states. This phase connects the frontend to the Smart Recalc backend built in phase 3.",
+        "depends_on": ["phase-3-smart-recalc"],
+        "subtasks": [
+          {
+            "id": "subtask-4-1",
+            "description": "Add cell click handler to EscalaPagina and pass to SimulacaoResult. Implement handleCelulaClick(colaboradorId, data, statusAtual): (1) If statusAtual is INDISPONIVEL, return (can't toggle exceptions). (2) Determine new status: TRABALHO->FOLGA, FOLGA->TRABALHO. (3) Set ajustando state with cell coordinates for loading indicator. (4) Call escalasService.ajustar with the single cell change. (5) On success, replace escalaCompleta with response (full regenerated schedule). (6) On error, show toast with human-readable message. (7) Clear ajustando state. Add ajustando state: {celula: {colaboradorId: number, data: string} | null}. Pass handleCelulaClick and ajustando to SimulacaoResult, which passes them to EscalaGrid.",
+            "files_to_modify": ["src/renderer/src/paginas/EscalaPagina.tsx"],
+            "files_to_create": [],
+            "patterns_from": ["src/renderer/src/paginas/EscalaPagina.tsx"],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-4-2",
+            "description": "Add per-cell loading indicator to EscalaGrid. Accept new prop: loadingCell?: {colaboradorId: number, data: string} | null. When a cell matches loadingCell, show a small Loader2 spinner instead of the normal content. Cell should also have reduced opacity during loading. INDISPONIVEL cells should have cursor-not-allowed and not respond to clicks (already handled by the handler returning early, but add visual cue).",
+            "files_to_modify": ["src/renderer/src/componentes/EscalaGrid.tsx"],
+            "files_to_create": [],
+            "patterns_from": ["src/renderer/src/componentes/EscalaGrid.tsx"],
+            "verification": {
+              "type": "manual",
+              "instructions": "Click a TRABALHO cell in Simulacao tab. Verify: (1) Cell shows spinner during recalc. (2) After recalc, cell shows FOLGA. (3) Other cells may have changed (redistributed). (4) Indicators update. (5) INDISPONIVEL cells are not clickable."
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-4-3",
+            "description": "Add visual feedback for cell changes after recalc. When escalaCompleta updates after an ajustar call, cells that changed compared to the previous state should briefly flash/highlight. Implementation: (1) Store previous alocacoes in a ref before calling ajustar. (2) After update, compute diff (cells where status or hora_inicio changed). (3) Pass changedCells set to EscalaGrid. (4) EscalaGrid adds a transition animation class to changed cells (e.g., ring-2 ring-primary that fades out after 1.5s). This gives the gestora immediate visual feedback of what the recalc changed.",
+            "files_to_modify": [
+              "src/renderer/src/paginas/EscalaPagina.tsx",
+              "src/renderer/src/componentes/EscalaGrid.tsx"
+            ],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Toggle a cell. After recalc, verify changed cells briefly highlight with a ring/flash animation. The cell you clicked should change, and any redistributed cells should also flash."
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-5-onboarding-polish",
+        "name": "Onboarding Tour + Final Polish",
+        "description": "Add the onboarding tour for first-time users, final error message improvements, and end-to-end validation that all features work together.",
+        "depends_on": ["phase-1-ux-foundation"],
+        "subtasks": [
+          {
+            "id": "subtask-5-1",
+            "description": "Create OnboardingTour.tsx component. Uses shadcn Dialog with 4 steps: (1) 'Bem-vindo ao EscalaFlow' — overview of what the system does (icon: CalendarDays). (2) 'Cadastre seu setor' — explain Setores > Colaboradores > Demandas flow (icon: Building2). (3) 'Gere a escala' — explain Simulacao tab, click Gerar (icon: Zap). (4) 'Ajuste e oficialize' — explain click-to-toggle, review indicators, oficializar (icon: CheckCircle2). Each step has a title, description (2-3 sentences in simple Portuguese), and icon. Navigation: Previous / Next / Concluir buttons. 'Nao mostrar novamente' checkbox on last step. State stored in localStorage key 'escalaflow-onboarding-v1'.",
+            "files_to_modify": [],
+            "files_to_create": ["src/renderer/src/componentes/OnboardingTour.tsx"],
+            "patterns_from": ["src/renderer/src/componentes/ExportarEscala.tsx"],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-5-2",
+            "description": "Integrate OnboardingTour into the app. (1) Import and render OnboardingTour in App.tsx (or Dashboard.tsx) — it self-manages visibility based on localStorage. (2) Add 'Como Funciona?' item in AppSidebar dropdown that resets localStorage and opens the tour. (3) Tour should be accessible from the Help/Ajuda dropdown item added in subtask-1-4.",
+            "files_to_modify": [
+              "src/renderer/src/App.tsx",
+              "src/renderer/src/componentes/AppSidebar.tsx"
+            ],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Clear localStorage. Open app. Verify tour appears automatically. Complete it. Close and reopen — tour should NOT appear. Click Help > Como Funciona in sidebar — tour should reappear."
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-5-3",
+            "description": "Improve error messages throughout the app to be human-readable (RF12). Audit all toast.error calls in EscalaPagina.tsx and escalas service calls. Map technical errors to friendly messages: (1) 'Setor nao tem colaboradores ativos' -> 'Cadastre ao menos 1 colaborador ativo neste setor antes de gerar a escala.' (2) 'Setor nao tem faixas de demanda' -> 'Defina as faixas de demanda (horarios e quantidade minima de pessoas) antes de gerar.' (3) 'Escala tem N violacoes criticas' -> 'A escala tem N problemas que violam a legislacao trabalhista. Corrija-os antes de oficializar.' (4) Network/IPC errors -> 'Erro de comunicacao com o sistema. Tente novamente.' Create a utility function mapError(err: Error): string in a new file or in formatadores.ts.",
+            "files_to_modify": [
+              "src/renderer/src/lib/formatadores.ts",
+              "src/renderer/src/paginas/EscalaPagina.tsx"
+            ],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Test error scenarios: generate with empty setor, oficializar with HARD violations. Verify error messages are friendly Portuguese, no stack traces, no technical jargon."
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-5-4",
+            "description": "Validate auto-fill period (RF15) works correctly. Verify: (1) dataInicio defaults to first day of next month. (2) dataFim defaults to last day of next month. (3) If current month is February, next month March has 31 days. (4) Leap year handling. This is marked DONE in discovery but needs explicit verification and any edge case fixes.",
+            "files_to_modify": [],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Open EscalaPagina. Verify date inputs are pre-filled with next month's range. Check the dates are correct (first and last day)."
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-6-e2e-validation",
+        "name": "End-to-End Validation & Production Readiness",
+        "description": "Full validation of all features working together. Run through the complete user journey (CA5). Ensure 0 HARD violations, score > 80, interactive grid works, theme works, tour works. Fix any integration issues discovered.",
+        "depends_on": ["phase-4-grid-interactive", "phase-5-onboarding-polish"],
+        "subtasks": [
+          {
+            "id": "subtask-6-1",
+            "description": "Run complete user journey test (CA5). In the running app: (1) Verify dashboard loads with setor summaries. (2) Navigate to Caixa setor > Escala. (3) Click Gerar Escala with default dates. (4) Verify: indicators show (pontuacao > 80, cobertura > 90%, 0 HARD violations). (5) Click a TRABALHO cell -> toggles to FOLGA -> indicators update < 1s. (6) Click a FOLGA cell -> toggles to TRABALHO with assigned hours -> indicators update. (7) Verify the manually toggled cell is preserved (not overwritten by recalc). (8) Oficializar the escala. (9) Check Oficial tab shows it. (10) Generate a new escala -> old one moves to Historico. (11) Switch theme Light/Dark/System. (12) Print/export works.",
+            "files_to_modify": [],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "manual",
+              "instructions": "Execute all 12 steps of the user journey. All must pass."
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-6-2",
+            "description": "Run motor validation for all 4 setores with March 2026 period. Verify RF16-RF19: (1) 0 HARD violations per setor (RF17). (2) Pontuacao > 80 per setor (RF18). (3) Cobertura > 90% per setor (RF19). (4) Document results in test-cases.md with actual numbers. If any setor fails, fix motor and re-run.",
+            "files_to_modify": ["specs/004-finalize-v2/test-cases.md"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsx src/main/motor/test-motor.ts",
+              "expected": "All 4 setores: 0 HARD violations, pontuacao > 80, cobertura > 90%"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-6-3",
+            "description": "Final TypeScript check and build verification. Run full type check and Electron build to ensure everything compiles. Fix any type errors or build issues.",
+            "files_to_modify": [],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit && npm run build",
+              "expected": "0 type errors. Build completes without errors."
+            },
+            "status": "pending"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "total_phases": 6,
+      "total_subtasks": 22,
+      "estimated_complexity": "high"
+    },
+    "risk_mitigation": {
+      "motor_regression": "Every motor change is verified by running test-motor.ts. If a fix introduces a new HARD violation, it's caught immediately.",
+      "smart_recalc_complexity": "Option A adds a parameter to an existing function rather than creating new logic. The motor's 7 phases remain structurally unchanged. Each phase just adds a 'if pinned, skip' guard. This is the minimal-invasive approach.",
+      "grid_ux_responsiveness": "Smart Recalc runs in a worker thread (just like initial generation). The UI shows a per-cell loading spinner during recalc. If recalc takes > 1s for 30-day periods, we can optimize by only regenerating the affected week (future optimization, not in this plan).",
+      "dark_mode_visual_bugs": "Phase 1 addresses dark mode before any new components are built, so all subsequent UI work (grid, onboarding) is built with dark mode already working.",
+      "backward_compatibility": "pinnedCells parameter is optional (defaults to undefined/empty). All existing IPC handlers and worker calls work unchanged. escalas.gerar still works without pinned cells."
+    }
+  },
+  "completed_at": "2026-02-15T02:15:00Z"
+}

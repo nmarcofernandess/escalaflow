@@ -11,6 +11,14 @@ dist/
 out/
 *.tsbuildinfo
 
+# Electron distributables
+*.dmg
+*.exe
+*.AppImage
+*.snap
+*.deb
+*.rpm
+
 # Cache
 .cache/
 .eslintcache

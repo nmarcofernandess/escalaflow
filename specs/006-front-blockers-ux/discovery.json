@@ -1,0 +1,297 @@
+{
+  "status": "complete",
+  "completed_at": "2026-02-14T23:30:00Z",
+  "files_analyzed": [
+    "src/renderer/src/lib/cores.ts",
+    "src/renderer/src/lib/formatadores.ts",
+    "src/renderer/src/componentes/PontuacaoBadge.tsx",
+    "src/renderer/src/componentes/ThemeSwitcher.tsx",
+    "src/renderer/src/componentes/PageHeader.tsx",
+    "src/renderer/src/componentes/StatusBadge.tsx",
+    "src/renderer/src/paginas/EscalaPagina.tsx",
+    "src/renderer/src/paginas/SetorDetalhe.tsx",
+    "src/renderer/src/paginas/ContratoLista.tsx",
+    "src/renderer/src/paginas/ColaboradorLista.tsx",
+    "src/renderer/src/paginas/ColaboradorDetalhe.tsx",
+    "src/renderer/src/paginas/Dashboard.tsx",
+    "src/renderer/src/servicos/tipos-contrato.ts",
+    "src/renderer/src/hooks/useApiData.ts",
+    "src/shared/types.ts",
+    "src/shared/constants.ts",
+    "src/renderer/src/components/ui/alert-dialog.tsx",
+    "src/renderer/src/components/ui/dialog.tsx",
+    "src/renderer/src/components/ui/badge.tsx",
+    "src/renderer/src/components/ui/card.tsx",
+    "src/renderer/src/components/ui/button.tsx",
+    "src/renderer/src/components/ui/input.tsx",
+    "src/renderer/src/components/ui/label.tsx"
+  ],
+  "patterns": {
+    "color_constants": {
+      "description": "All dark mode colors centralized in cores.ts with consistent pattern: light + dark variants",
+      "reference": "src/renderer/src/lib/cores.ts",
+      "existing_constants": [
+        "CORES_STATUS_ESCALA — { OFICIAL, RASCUNHO, ARQUIVADA, SEM_ESCALA }",
+        "CORES_ALOCACAO — { TRABALHO, TRABALHO_DOMINGO, FOLGA, INDISPONIVEL }",
+        "CORES_VIOLACAO — { HARD: { border, bg, text, textLight }, SOFT: { border, bg, text, textLight } }",
+        "CORES_GENERO — { F, M } (already includes dark variants)",
+        "CORES_EXCECAO — { FERIAS, ATESTADO, BLOQUEIO } (already includes dark variants)"
+      ],
+      "pattern": "Each uses: 'bg-color-100 dark:bg-color-950/30 text-color-700 dark:text-color-300 border-color-200 dark:border-color-800'"
+    },
+    "component_patterns": {
+      "description": "Standard patterns for pages, components, and hooks",
+      "page_structure": "useState + useApiData for loading + PageHeader + Card-based layout + toast for feedback",
+      "useApiData": "Reusable hook: useApiData<T>(fetcher, deps) → { data, loading, error, reload }",
+      "dialog_pattern": "Dialog/AlertDialog from shadcn + useState for open/close + toast on success/error",
+      "badge_pattern": "Badges use variant='outline' with className from cores.ts constants"
+    },
+    "dark_mode_gaps": {
+      "RF1.1_PontuacaoBadge": {
+        "file": "src/renderer/src/componentes/PontuacaoBadge.tsx",
+        "lines": "5, 9, 12",
+        "issue": "3 color variants (emerald/amber/red) missing dark: variants",
+        "current": "bg-emerald-100 text-emerald-800 border-emerald-200",
+        "fix": "add dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800"
+      },
+      "RF1.2_EscalaPagina_indicators": {
+        "file": "src/renderer/src/paginas/EscalaPagina.tsx",
+        "lines": "636-677 (5 indicator cards)",
+        "issue": "5 circles use hardcoded bg-X-100, bg-red-100, bg-amber-100 without dark",
+        "icons": "text-emerald-600, text-red-600, text-amber-600 need dark: variants",
+        "example": "Line 637: 'bg-emerald-100' → 'dark:bg-emerald-950/30'",
+        "fix": "Use CORES_VIOLACAO pattern for consistency"
+      },
+      "RF1.2_EscalaPagge_header": {
+        "file": "src/renderer/src/paginas/EscalaPagina.tsx",
+        "line": "718",
+        "issue": "AlertTriangle text-amber-500 missing dark",
+        "fix": "add dark:text-amber-400"
+      },
+      "RF1.3_ColaboradorLista": {
+        "file": "src/renderer/src/paginas/ColaboradorLista.tsx",
+        "lines": "196-200 (avatar), 226-229 (preference badge)",
+        "issue": "Avatar: inline 'bg-pink-100 text-pink-700' / 'bg-sky-100 text-sky-700' missing dark",
+        "fix": "Replace with CORES_GENERO[colab.sexo] which already has dark",
+        "preference_badge": "Lines 226-229 use 'border-amber-200 bg-amber-50 text-amber-700' without dark"
+      },
+      "RF1.4_ColaboradorDetalhe": {
+        "file": "src/renderer/src/paginas/ColaboradorDetalhe.tsx",
+        "lines": "66-70",
+        "function": "ExcecaoIcon returns inline colors for FERIAS/ATESTADO/BLOQUEIO",
+        "current": "'text-emerald-600', 'text-amber-600', 'text-red-600' without dark",
+        "fix": "Use CORES_EXCECAO[tipo] which already has dark variants"
+      },
+      "RF1.5_Dashboard": {
+        "file": "src/renderer/src/paginas/Dashboard.tsx",
+        "line": "104",
+        "issue": "Badge alertas: 'border-amber-200 bg-amber-50 text-amber-700' without dark",
+        "fix": "add dark variants or use constant from cores.ts"
+      }
+    },
+    "violations_current_implementation": {
+      "file": "src/renderer/src/paginas/EscalaPagina.tsx",
+      "lines": "710-756",
+      "current_display": "Flat list of violations with technical rule names (v.regra)",
+      "structure": [
+        "Maps violacoes with v.severidade (HARD/SOFT)",
+        "Shows icon based on severity",
+        "Shows v.regra (technical string like 'MAX_DIAS_CONSECUTIVOS')",
+        "Shows v.colaborador_nome and v.mensagem"
+      ],
+      "issue": "Shows technical rule codes instead of human-friendly text. Need to:",
+      "required_changes": [
+        "Map rule names to Portuguese descriptions (10 rules total)",
+        "Group violations by COLABORADOR not by regra",
+        "Add visual cards per person with list of problems",
+        "Add action hint for HARD violations",
+        "Mark cells with ring-2 ring-destructive for HARD violations"
+      ]
+    },
+    "setor_detalle_button_duplication": {
+      "file": "src/renderer/src/paginas/SetorDetalhe.tsx",
+      "lines": "536-552",
+      "problem": "BLOCKER UX — 3 buttons lead to same destination:",
+      "buttons": [
+        "Lines 537-538: 'Abrir Escala' (when escala exists)",
+        "Lines 540-541: 'Gerar Nova' (when escala exists)",
+        "Lines 549-550: 'Gerar Escala' (when no escala)"
+      ],
+      "fix": "Replace with single conditional: if (escalaAtual) show 'Abrir Escala' else show 'Gerar Escala'"
+    },
+    "contrato_lista_current_state": {
+      "file": "src/renderer/src/paginas/ContratoLista.tsx",
+      "lines": "1-108",
+      "current": "Read-only list of templates showing name + 4 metrics in card grid",
+      "missing_features": [
+        "No Edit button",
+        "No Create button",
+        "No Delete button",
+        "Empty state says 'Rode o seed' (UX-A2 blocker)"
+      ],
+      "structure": "Cards with FileText icon, name, 4 metric badges"
+    },
+    "rule_mapping_required": {
+      "description": "10 rule names from motor must map to Portuguese text",
+      "rules": {
+        "HARD": [
+          "MAX_DIAS_CONSECUTIVOS → 'Trabalhou mais de 6 dias seguidos sem folga'",
+          "DESCANSO_ENTRE_JORNADAS → 'Intervalo entre jornadas menor que 11 horas'",
+          "RODIZIO_DOMINGO → 'Rodizio de domingo nao respeitado'",
+          "ESTAGIARIO_DOMINGO → 'Estagiario nao pode trabalhar no domingo'",
+          "CONTRATO_MAX_DIA → 'Jornada diaria excede o limite do contrato'",
+          "MAX_JORNADA_DIARIA → 'Jornada diaria excede o limite de 10 horas (CLT)'"
+        ],
+        "SOFT": [
+          "META_SEMANAL → 'Horas semanais fora da meta do contrato'",
+          "PREFERENCIA_DIA → 'Escalado no dia que pediu pra evitar'",
+          "PREFERENCIA_TURNO → 'Escalado em turno diferente do preferido'",
+          "COBERTURA → 'Faixa horaria com menos pessoas que o necessario'"
+        ]
+      }
+    },
+    "existing_services_and_hooks": {
+      "tiposContratoService": {
+        "file": "src/renderer/src/servicos/tipos-contrato.ts",
+        "methods": [
+          "listar() → TipoContrato[]",
+          "buscar(id) → TipoContrato",
+          "criar(data) → TipoContrato",
+          "atualizar(id, data) → TipoContrato",
+          "deletar(id) → void (with safety check)"
+        ],
+        "note": "All handlers already exist in IPC, no new backend work needed"
+      },
+      "useApiData": {
+        "file": "src/renderer/src/hooks/useApiData.ts",
+        "signature": "useApiData<T>(fetcher, deps) → { data, loading, error, reload }",
+        "note": "Ready to use for ContratoLista data fetching"
+      }
+    },
+    "shadcn_components_available": {
+      "dialogue": ["dialog", "alert-dialog"],
+      "form": ["input", "label", "checkbox", "select"],
+      "display": ["card", "badge", "button", "tooltip", "skeleton"],
+      "layout": ["tabs", "sidebar", "breadcrumb", "separator", "scroll-area"],
+      "missing": ["switch (NOT INSTALLED — required for RF5.2 trabalha_domingo toggle)"
+    ],
+    "type_definitions": {
+      "TipoContrato": {
+        "file": "src/shared/types.ts",
+        "fields": "id, nome, horas_semanais, dias_trabalho, trabalha_domingo, max_minutos_dia"
+      },
+      "Violacao": {
+        "file": "src/shared/types.ts",
+        "fields": "severidade (HARD|SOFT), regra (string), colaborador_id, colaborador_nome, mensagem, data (optional)"
+      }
+    }
+  },
+  "dependencies": {
+    "internal": [
+      "src/lib/cores.ts (color constants — source of truth)",
+      "src/lib/formatadores.ts (mapError, formatarData, formatarMinutos — will extend)",
+      "src/shared/types.ts (Violacao, TipoContrato interfaces)",
+      "src/shared/constants.ts (SEVERIDADES, DIAS_SEMANA, TURNOS — may extend for rule names)",
+      "src/servicos/tipos-contrato.ts (all CRUD operations pre-built)",
+      "src/hooks/useApiData.ts (data fetching pattern)"
+    ],
+    "shadcn_components": [
+      "Dialog (for ContratoLista edit/create)",
+      "AlertDialog (for ContratoLista delete confirmation)",
+      "Alert (for RFC5.3 disclaimer — needs verification if available)",
+      "Badge (already used everywhere)",
+      "Card (already used everywhere)",
+      "Button (already used everywhere)",
+      "Input (for form fields)",
+      "Label (for form labels)",
+      "Select (for dropdowns)",
+      "Switch (NOT INSTALLED — for trabalha_domingo toggle)"
+    ],
+    "external": [
+      "React Router (navigation in SetorDetalhe buttons)",
+      "sonner (toast notifications)",
+      "lucide-react (icons)",
+      "tailwindcss (dark: variants and colors)"
+    ],
+    "potential_new_installs": [
+      "switch component from shadcn/ui (for RF5.2 trabalha_domingo field in ContratoLista dialog)"
+    ]
+  },
+  "key_findings": {
+    "finding_1": "ThemeSwitcher.tsx (51 lines) is DEAD CODE — never imported. Safe to delete. Grep confirms it's only in PRD and implementation_plan.json",
+    "finding_2": "CORES_GENERO, CORES_EXCECAO, CORES_VIOLACAO already exist in cores.ts with dark variants. Many files just need to USE them instead of hardcoding colors.",
+    "finding_3": "SetorDetalhe button blocker is straightforward: replace 3 buttons (lines 536-551) with single conditional logic",
+    "finding_4": "ContratoLista is read-only placeholder. Needs full CRUD: Dialog for edit/create, AlertDialog for delete with validation",
+    "finding_5": "Rule mapping (10 strings) is missing. Must create in formatadores.ts or new constants file and reuse in mapError() and violation display",
+    "finding_6": "Violations display needs complete redesign: current is flat list of technical terms, needs grouped cards by COLABORADOR with human text, action hints, and grid highlighting",
+    "finding_7": "mapError() in formatadores.ts is 50% complete. Already handles some cases but needs 4-5 more scenarios (no colabs, no demandas, timeout, generic)",
+    "finding_8": "Alert component from shadcn may not be installed — verify before using for RF5.3 disclaimer. If not available, use Card + Info icon as fallback",
+    "finding_9": "Switch component from shadcn NOT INSTALLED — needed for RF5.2 trabalha_domingo toggle. Either install or use Checkbox as fallback",
+    "finding_10": "Dark mode gaps are NOT systemic — just scattered hardcoded colors in 5 files. Pattern already established, just need copy-paste application"
+  },
+  "risks": {
+    "risk_1_switch_component": {
+      "severity": "LOW",
+      "description": "Switch component not installed for trabalha_domingo toggle in ContratoLista dialog",
+      "mitigation": "Use Checkbox as fallback or install switch component. Check dependencies in package.json"
+    },
+    "risk_2_violations_visual": {
+      "severity": "MEDIUM",
+      "description": "Grouping violations by COLABORADOR and adding grid highlighting (ring-2 ring-destructive) requires mapping violacoes → Set<'colaboradorId-data'>. Must be correct or grid won't highlight properly.",
+      "mitigation": "Build Set structure carefully: violacoes.filter(hard).map(v => `${v.colaborador_id}-${v.data}`)"
+    },
+    "risk_3_alert_component": {
+      "severity": "LOW",
+      "description": "Alert component from shadcn may not exist. If needed for RFC5.3 disclaimer, fallback to Card + custom styling",
+      "mitigation": "Check if @/components/ui/alert exists before using. If not, use Card with border-l-4 and info icon"
+    },
+    "risk_4_contrato_lista_delete": {
+      "severity": "LOW",
+      "description": "IPC deletar handler has safety check for colabs vinculados, but error message format unknown. May need custom parsing.",
+      "mitigation": "Test delete flow manually. If error message format unclear, add try/catch with generic fallback in mapError()"
+    },
+    "risk_5_rule_mapping_maintenance": {
+      "severity": "LOW",
+      "description": "10 rule names hardcoded in mapping. If motor adds new rules (orchestrate 007+), must update frontend mapping.",
+      "mitigation": "Document rule mapping as constant, add comment linking to motor constraints in backend"
+    },
+    "risk_6_dark_mode_varredura": {
+      "severity": "LOW",
+      "description": "May miss hardcoded colors. Grep for 'bg-', 'text-' without 'dark:' may reveal more gaps.",
+      "mitigation": "Final step: Run grep to find any remaining colors missing dark variants in renderer/src/"
+    }
+  },
+  "implementation_order": {
+    "phase_1_text_infrastructure": [
+      "1.1: Create rule → text mapping (10 entries) in formatadores.ts or new constants file",
+      "1.2: Expand mapError() with 4-5 missing scenarios",
+      "1.3: Export rule mapping as constant for reuse in violations display"
+    ],
+    "phase_2_dark_mode": [
+      "2.1: PontuacaoBadge.tsx — add dark: variants to 3 colors",
+      "2.2: EscalaPagina.tsx — indicator cards dark (5 cards), icon dark (1 icon)",
+      "2.3: ColaboradorLista.tsx — replace inline avatar colors with CORES_GENERO, badge dark",
+      "2.4: ColaboradorDetalhe.tsx — replace ExcecaoIcon inline colors with CORES_EXCECAO",
+      "2.5: Dashboard.tsx — badge dark",
+      "2.6: Delete ThemeSwitcher.tsx and verify grep returns 0"
+    ],
+    "phase_3_blockers_ux": [
+      "3.1: SetorDetalhe.tsx — unify 3 buttons to 1 conditional",
+      "3.2: EscalaPagina.tsx — violacoes display: group by colaborador, add human text, add hints, add grid highlighting",
+      "3.3: ContratoLista.tsx — CRUD: Dialog edit/create with 5 fields, AlertDialog delete, disclaimer Alert, empty state"
+    ],
+    "phase_4_verification": [
+      "4.1: TypeCheck: npx tsc --noEmit",
+      "4.2: Build: npm run build",
+      "4.3: Dark mode varredura: grep for colors without dark:"
+    ]
+  },
+  "notes": {
+    "critical": "Users are Marco's parents (non-technical). If they see 'MAX_DIAS_CONSECUTIVOS' or 'Rode o seed', they'll call Marco. ZERO technical terms must surface.",
+    "pattern_reference": "StatusBadge.tsx is perfect example of correct pattern: uses constant from cores.ts, applies className directly",
+    "theme_switching": "Dark mode already works (next-themes installed and configured). Just need to add 'dark:' variants to unsafe colors.",
+    "ipc_note": "All backend IPC handlers for tiposContrato already exist — NO backend changes needed for RF5 ContratoLista",
+    "empty_state": "Current ContratoLista empty state says 'Rode o seed' (UX-A2). New state: 'Nenhum tipo de contrato cadastrado. Crie um template para comecar.'"
+  },
+  "summary": "Frontend blockers are mostly cosmetic (dark mode) and UX (text/grouping). No complex logic. Main work: (1) Add rule→text mapping, (2) Apply dark variants to 8 color instances, (3) Unify 3 buttons to 1, (4) Rewrite violations display to group by person + human text, (5) Build ContratoLista CRUD. Risk is low-medium (violations grouping needs careful Set logic, switch component verification). Budget: medium (10 files, straightforward pattern application, but ContratoLista dialog needs care)."
+}

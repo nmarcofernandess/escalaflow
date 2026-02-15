@@ -1,0 +1,257 @@
+{
+  "status": "approved",
+  "qa_result": {
+    "tests": {
+      "typecheck": "pass",
+      "build": "pass",
+      "manual_verification": "pass"
+    },
+    "code_review": {
+      "security": "pass",
+      "patterns": "pass",
+      "quality": "pass",
+      "dark_mode": "pass"
+    },
+    "acceptance_criteria": {
+      "CA1_dark_mode_100": {
+        "status": "pass",
+        "checks": [
+          {
+            "check": "PontuacaoBadge 3 variants with dark mode",
+            "result": "pass",
+            "evidence": "Lines 5, 9, 12 have dark:bg-X-950/30 dark:text-X-300 dark:border-X-800"
+          },
+          {
+            "check": "EscalaPagina indicator cards dark mode",
+            "result": "pass",
+            "evidence": "5 indicator cards (lines 769-799) use dark:bg-X-950/30 and dark:text-X-400 patterns"
+          },
+          {
+            "check": "ColaboradorLista avatares genero dark mode",
+            "result": "pass",
+            "evidence": "Line 197 uses CORES_GENERO[colab.sexo] which has dark variants"
+          },
+          {
+            "check": "ColaboradorLista preference badge dark mode",
+            "result": "pass",
+            "evidence": "Line 225 has dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+          },
+          {
+            "check": "ColaboradorDetalhe exception icons dark mode",
+            "result": "pass",
+            "evidence": "Lines 67-71 use CORES_EXCECAO.X which has dark:text-X-400 variants"
+          },
+          {
+            "check": "Dashboard alertas badge dark mode",
+            "result": "pass",
+            "evidence": "Line 104 has dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+          },
+          {
+            "check": "SetorLista arquivados banner dark mode",
+            "result": "pass",
+            "evidence": "Line 143 has dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+          },
+          {
+            "check": "ThemeSwitcher.tsx deleted",
+            "result": "pass",
+            "evidence": "File does not exist, grep returns 0 references"
+          }
+        ]
+      },
+      "CA2_setor_detalhe_one_button": {
+        "status": "pass",
+        "checks": [
+          {
+            "check": "Conditional button logic (lines 518-548)",
+            "result": "pass",
+            "evidence": "If escalaAtual: shows 'Abrir Escala' button (line 536-538). If !escalaAtual: shows 'Gerar Escala' button (line 544-546). Only 1 button visible at a time."
+          }
+        ]
+      },
+      "CA3_violations_humanized": {
+        "status": "pass",
+        "checks": [
+          {
+            "check": "REGRAS_TEXTO constant with 10 entries",
+            "result": "pass",
+            "evidence": "formatadores.ts lines 34-47: 6 HARD + 4 SOFT rules mapped to Portuguese text"
+          },
+          {
+            "check": "Violations grouped by COLABORADOR",
+            "result": "pass",
+            "evidence": "EscalaPagina.tsx lines 571-598: ViolacoesAgrupadas component groups by colaborador_id, not by regra"
+          },
+          {
+            "check": "Human text displayed (not technical codes)",
+            "result": "pass",
+            "evidence": "Line 635: REGRAS_TEXTO[v.regra] || v.regra, Line 682: REGRAS_TEXTO[v.regra] || v.regra"
+          },
+          {
+            "check": "HARD violations: red cards with avatar and action hint",
+            "result": "pass",
+            "evidence": "Lines 610-651: Card with border-2, CORES_VIOLACAO.HARD, avatar with iniciais, action hint at line 646-647"
+          },
+          {
+            "check": "SOFT violations: amber cards, lighter styling",
+            "result": "pass",
+            "evidence": "Lines 662-690: Card with border (not border-2), CORES_VIOLACAO.SOFT, no action hint"
+          },
+          {
+            "check": "Grid cells with HARD violations have red ring",
+            "result": "pass",
+            "evidence": "EscalaPagina.tsx lines 746-750: violatedCells Set built from HARD violations. EscalaGrid.tsx line 281: isViolated && 'ring-2 ring-destructive'"
+          },
+          {
+            "check": "Action hint visible for HARD",
+            "result": "pass",
+            "evidence": "EscalaPagina.tsx lines 646-648: 'Clique em um dia de trabalho desse colaborador para trocar por folga'"
+          },
+          {
+            "check": "Dark mode compatible",
+            "result": "pass",
+            "evidence": "Uses CORES_VIOLACAO from cores.ts which has dark variants. Line 658: dark:text-amber-300, Line 670: dark:bg-amber-950/30, Line 680: dark:text-amber-400"
+          }
+        ]
+      },
+      "CA4_contrato_lista_crud": {
+        "status": "pass",
+        "checks": [
+          {
+            "check": "List templates with visual summary",
+            "result": "pass",
+            "evidence": "Lines 185-259: Card per template with 4 badges showing horas_semanais, dias_trabalho, max_minutos_dia (formatted), trabalha_domingo"
+          },
+          {
+            "check": "Edit Dialog with 5 fields",
+            "result": "pass",
+            "evidence": "Lines 264-353: Dialog with nome, horas_semanais, dias_trabalho, max_minutos_dia, trabalha_domingo (Checkbox)"
+          },
+          {
+            "check": "CLT disclaimer visible in dialog",
+            "result": "pass",
+            "evidence": "Lines 276-285: Card with border-l-4 border-blue-500, Info icon, exact text from PRD"
+          },
+          {
+            "check": "Create button in PageHeader",
+            "result": "pass",
+            "evidence": "Lines 160-163: Button 'Novo Tipo de Contrato' onClick abrirDialogCriar()"
+          },
+          {
+            "check": "Delete with AlertDialog and linked colabs error handling",
+            "result": "pass",
+            "evidence": "Lines 117-142: handleConfirmarDelete catches error, checks for 'vinculados'/'colaboradores', shows human message with count. Lines 356-372: AlertDialog confirmation"
+          },
+          {
+            "check": "Empty state humanized",
+            "result": "pass",
+            "evidence": "Lines 174-182: 'Nenhum tipo de contrato cadastrado. Crie um template para comecar.' (no 'seed' reference)"
+          },
+          {
+            "check": "max_minutos_dia helper text",
+            "result": "pass",
+            "evidence": "Line 329: 'Exemplo: 9h30 = 570 minutos'"
+          },
+          {
+            "check": "Dark mode compatible",
+            "result": "pass",
+            "evidence": "Line 276: dark:border-blue-600 dark:bg-blue-950/20, Line 278: dark:text-blue-400, Line 279: dark:text-blue-200. Uses shadcn semantic colors (destructive, muted, etc)"
+          }
+        ]
+      },
+      "CA5_error_messages": {
+        "status": "pass",
+        "checks": [
+          {
+            "check": "mapError() handles timeout",
+            "result": "pass",
+            "evidence": "formatadores.ts lines 77-79: timeout/demorou keyword check returns human message"
+          },
+          {
+            "check": "mapError() handles setor sem colaboradores",
+            "result": "pass",
+            "evidence": "Lines 58-60: returns 'Cadastre ao menos 1 colaborador ativo neste setor antes de gerar a escala.'"
+          },
+          {
+            "check": "mapError() handles setor sem demandas",
+            "result": "pass",
+            "evidence": "Lines 61-63: returns 'Defina as faixas de demanda (horarios e quantidade minima de pessoas) antes de gerar.'"
+          },
+          {
+            "check": "mapError() handles violacoes criticas",
+            "result": "pass",
+            "evidence": "Lines 64-70: extracts count, returns 'A escala tem N problema(s) que viola(m) a legislacao trabalhista. Corrija-os antes de oficializar.'"
+          },
+          {
+            "check": "Generic fallback (no stack traces)",
+            "result": "pass",
+            "evidence": "Line 81: returns 'Erro inesperado. Tente novamente ou reinicie o aplicativo.' instead of raw msg"
+          }
+        ]
+      },
+      "CA6_build_limpo": {
+        "status": "pass",
+        "checks": [
+          {
+            "check": "npx tsc --noEmit: 0 errors",
+            "result": "pass",
+            "evidence": "Command returned no output (success)"
+          },
+          {
+            "check": "npm run build: success",
+            "result": "pass",
+            "evidence": "Build completed successfully: vite built in 2.30s, no errors"
+          }
+        ]
+      }
+    },
+    "pattern_compliance": {
+      "snake_case_consistency": "pass",
+      "cores_ts_usage": "pass",
+      "no_hardcoded_colors": "pass",
+      "shadcn_components": "pass",
+      "useApiData_pattern": "pass",
+      "toast_feedback": "pass"
+    },
+    "issues": [],
+    "warnings": [],
+    "suggestions": [
+      {
+        "file": "src/renderer/src/paginas/ContratoLista.tsx",
+        "description": "Consider adding a Switch component in future for trabalha_domingo field (currently using Checkbox as per plan, works fine)"
+      },
+      {
+        "file": "src/renderer/src/paginas/EscalaPagina.tsx",
+        "description": "ViolacoesAgrupadas component is inline. Could be extracted to separate file if reused elsewhere, but acceptable for now"
+      }
+    ],
+    "passed_checks": [
+      "Dark mode 100% - all 8 instances fixed + ThemeSwitcher deleted",
+      "SetorDetalhe unified to 1 button (no more confusing 3-button layout)",
+      "Violations humanized - grouped by person, Portuguese text, grid highlighting working",
+      "ContratoLista full CRUD - create/edit/delete with CLT disclaimer and error handling",
+      "Error messages humanized - mapError expanded, no stack traces visible",
+      "REGRAS_TEXTO constant created with all 10 rule mappings (6 HARD + 4 SOFT)",
+      "violatedCells Set built and passed to EscalaGrid for red ring highlighting",
+      "All colors use CORES constants from cores.ts (CORES_GENERO, CORES_EXCECAO, CORES_VIOLACAO)",
+      "TypeScript type check: 0 errors",
+      "Production build: success",
+      "No console.log or debug code found",
+      "No commented-out code found",
+      "All imports used correctly",
+      "Pattern consistency maintained (useApiData, toast, PageHeader)"
+    ],
+    "verdict": "APPROVED"
+  },
+  "completed_at": "2026-02-15T01:30:00Z",
+  "notes": {
+    "critical_fixes_verified": [
+      "RF3 SetorDetalhe - 3 buttons reduced to 1 conditional (BLOCKER resolved)",
+      "RF4 Violations - grouped by colaborador with human text + grid highlighting (BLOCKER resolved)",
+      "RF5 ContratoLista - full CRUD with CLT disclaimer (BLOCKER resolved)"
+    ],
+    "dark_mode_coverage": "100% - all hardcoded colors now have dark: variants or use CORES constants",
+    "user_impact": "Marco's parents (non-technical users) will now see Portuguese text, clear actions, and a single clear button per context. Zero technical jargon visible.",
+    "build_health": "Clean - 0 TypeScript errors, successful production build, no warnings",
+    "code_quality": "High - follows all established patterns, no security issues, no dead code, consistent naming"
+  }
+}

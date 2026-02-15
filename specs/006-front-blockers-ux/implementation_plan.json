@@ -1,0 +1,367 @@
+{
+  "feature": "Front Blockers UX (Dark Mode, Violations, ContratoLista CRUD, Error Messages)",
+  "workflow_type": "standard",
+  "phases": [
+    {
+      "id": "phase-1-text-infrastructure",
+      "name": "Phase 1: Text Infrastructure (Rule Mapping & Error Messages)",
+      "description": "Create human-readable mappings for technical rule names and expand error messages. This is foundational for Phase 3 violations display.",
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Create REGRAS_TEXTO constant with 10 rule → Portuguese mappings in formatadores.ts. Export as constant object mapping rule names (HARD: MAX_DIAS_CONSECUTIVOS, DESCANSO_ENTRE_JORNADAS, RODIZIO_DOMINGO, ESTAGIARIO_DOMINGO, CONTRATO_MAX_DIA, MAX_JORNADA_DIARIA | SOFT: META_SEMANAL, PREFERENCIA_DIA, PREFERENCIA_TURNO, COBERTURA) to human-friendly strings.",
+          "files_to_modify": [
+            "src/renderer/src/lib/formatadores.ts"
+          ],
+          "files_to_read": [
+            "specs/006-front-blockers-ux/PRD.md (lines 69-82 — exact rule text)"
+          ],
+          "acceptance_criteria": [
+            "REGRAS_TEXTO constant exported with 10 entries",
+            "Each entry maps a technical rule name (string) to Portuguese text",
+            "HARD rules: 6 entries (MAX_DIAS_CONSECUTIVOS → 'Trabalhou mais de 6 dias seguidos sem folga', etc)",
+            "SOFT rules: 4 entries (META_SEMANAL → 'Horas semanais fora da meta do contrato', etc)",
+            "Constant is exported and reusable"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -n 'export const REGRAS_TEXTO' src/renderer/src/lib/formatadores.ts"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-1-2",
+          "description": "Expand mapError() function in formatadores.ts with 5 missing scenarios: (1) timeout, (2) generic fallback, (3) refine existing 'violacoes criticas' message, (4) verify setor sem colaboradores, (5) verify setor sem demandas. Keep existing structure (if/else checks on msg.toLowerCase()).",
+          "files_to_modify": [
+            "src/renderer/src/lib/formatadores.ts"
+          ],
+          "files_to_read": [
+            "specs/006-front-blockers-ux/PRD.md (lines 136-143 — error text)",
+            "src/renderer/src/lib/formatadores.ts (lines 33-58 — current mapError)"
+          ],
+          "acceptance_criteria": [
+            "Timeout case: if msg includes 'timeout' or 'demorou' → 'A geracao demorou mais que o esperado. Tente novamente com menos colaboradores ou um periodo menor.'",
+            "Generic fallback: last else returns 'Erro inesperado. Tente novamente ou reinicie o aplicativo.' (instead of raw msg)",
+            "Existing cases still work: colaboradores ativos, faixas demanda, violacoes criticas, rascunho, network",
+            "mapError() continues to be exported function"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -n 'timeout\\|demorou' src/renderer/src/lib/formatadores.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-dark-mode",
+      "name": "Phase 2: Dark Mode (Apply dark: Variants to Hardcoded Colors)",
+      "description": "Fix 8 instances of colors missing dark: variants across 5 files. Pattern already exists in cores.ts — just copy-paste application.",
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "PontuacaoBadge.tsx: Add dark: variants to 3 color schemes (emerald/amber/red). Lines 5, 9, 12. Pattern: bg-X-100 → add dark:bg-X-950/30, text-X-800 → add dark:text-X-300, border-X-200 → add dark:border-X-800. Follow exact pattern from CORES_STATUS_ESCALA in cores.ts.",
+          "files_to_modify": [
+            "src/renderer/src/componentes/PontuacaoBadge.tsx"
+          ],
+          "files_to_read": [
+            "src/renderer/src/lib/cores.ts (lines 1-8 — CORES_STATUS_ESCALA pattern)",
+            "specs/006-front-blockers-ux/PRD.md (lines 32-34)"
+          ],
+          "acceptance_criteria": [
+            "Line 5: emerald variant has dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800",
+            "Line 9: amber variant has dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800",
+            "Line 12: red variant has dark:bg-red-950/30 dark:text-red-300 dark:border-red-800",
+            "No other changes to component logic"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -n 'dark:bg-emerald-950' src/renderer/src/componentes/PontuacaoBadge.tsx"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-2-2",
+          "description": "EscalaPagina.tsx: (A) Indicator cards (lines 636-677) — 5 cards need dark variants for circles (bg-emerald-100 → dark:bg-emerald-950/30, bg-red-100 → dark:bg-red-950/30, bg-amber-100 → dark:bg-amber-950/30) and icons (text-emerald-600 → dark:text-emerald-400, text-red-600 → dark:text-red-400, text-amber-600 → dark:text-amber-400). (B) Header icon (line 718): text-amber-500 → add dark:text-amber-400.",
+          "files_to_modify": [
+            "src/renderer/src/paginas/EscalaPagina.tsx"
+          ],
+          "files_to_read": [
+            "src/renderer/src/lib/cores.ts (CORES_VIOLACAO pattern)",
+            "specs/006-front-blockers-ux/PRD.md (lines 36-40)"
+          ],
+          "acceptance_criteria": [
+            "5 indicator cards (lines 636-677): all circle backgrounds have dark:bg-X-950/30",
+            "All card icons (CheckCircle2, XCircle, Clock, AlertTriangle, Users) have dark:text-X-400 variants",
+            "Line 718 AlertTriangle has dark:text-amber-400",
+            "Lines 739, 741 already have dark variants — verify they're consistent"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -n 'dark:bg-.*-950/30' src/renderer/src/paginas/EscalaPagina.tsx | head -5"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-2-3",
+          "description": "ColaboradorLista.tsx: (A) Lines 196-200 — Replace inline avatar colors (bg-pink-100 text-pink-700 / bg-sky-100 text-sky-700) with CORES_GENERO[colab.sexo] which already has dark variants. (B) Lines 226-229 — Add dark variants to preference badge (border-amber-200 bg-amber-50 text-amber-700 → add dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300).",
+          "files_to_modify": [
+            "src/renderer/src/paginas/ColaboradorLista.tsx"
+          ],
+          "files_to_read": [
+            "src/renderer/src/lib/cores.ts (lines 42-46 — CORES_GENERO)",
+            "specs/006-front-blockers-ux/PRD.md (lines 42-44)"
+          ],
+          "acceptance_criteria": [
+            "Avatar section (lines 196-200): uses className={CORES_GENERO[colab.sexo]} instead of inline ternary",
+            "Import CORES_GENERO from '@/lib/cores' at top of file",
+            "Preference badge (lines 226-229): has dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300",
+            "No breaking changes to component logic or conditional rendering"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -n 'CORES_GENERO' src/renderer/src/paginas/ColaboradorLista.tsx"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-2-4",
+          "description": "ColaboradorDetalhe.tsx: Replace ExcecaoIcon inline colors (lines 66-70) with CORES_EXCECAO[tipo]. Current: returns 'text-emerald-600' / 'text-amber-600' / 'text-red-600'. Replace with CORES_EXCECAO.FERIAS / CORES_EXCECAO.ATESTADO / CORES_EXCECAO.BLOQUEIO which already have dark variants.",
+          "files_to_modify": [
+            "src/renderer/src/paginas/ColaboradorDetalhe.tsx"
+          ],
+          "files_to_read": [
+            "src/renderer/src/lib/cores.ts (lines 21-25 — CORES_EXCECAO)",
+            "specs/006-front-blockers-ux/PRD.md (lines 46-48)"
+          ],
+          "acceptance_criteria": [
+            "ExcecaoIcon function (lines 66-70): switch statement returns CORES_EXCECAO[tipo]",
+            "Import CORES_EXCECAO from '@/lib/cores' at top",
+            "FERIAS case returns CORES_EXCECAO.FERIAS",
+            "ATESTADO case returns CORES_EXCECAO.ATESTADO",
+            "BLOQUEIO case returns CORES_EXCECAO.BLOQUEIO",
+            "Icon components now get dark-aware colors"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -n 'CORES_EXCECAO' src/renderer/src/paginas/ColaboradorDetalhe.tsx"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-2-5",
+          "description": "Dashboard.tsx: Line 104 — Add dark variants to alertas badge (border-amber-200 bg-amber-50 text-amber-700 → add dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300). Use same pattern as CORES_STATUS_ESCALA.RASCUNHO.",
+          "files_to_modify": [
+            "src/renderer/src/paginas/Dashboard.tsx"
+          ],
+          "files_to_read": [
+            "src/renderer/src/lib/cores.ts (CORES_STATUS_ESCALA.RASCUNHO pattern)",
+            "specs/006-front-blockers-ux/PRD.md (lines 49-50)"
+          ],
+          "acceptance_criteria": [
+            "Line 104 badge className includes dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300",
+            "No other changes to Dashboard layout or logic"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -n 'dark:bg-amber-950' src/renderer/src/paginas/Dashboard.tsx"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-2-6",
+          "description": "Delete ThemeSwitcher.tsx (dead code) and verify zero references. File is src/renderer/src/componentes/ThemeSwitcher.tsx (51 lines, never imported). Run grep to confirm no imports remain.",
+          "files_to_modify": [],
+          "files_to_read": [
+            "specs/006-front-blockers-ux/PRD.md (lines 52-54)"
+          ],
+          "acceptance_criteria": [
+            "src/renderer/src/componentes/ThemeSwitcher.tsx deleted",
+            "Grep for 'ThemeSwitcher' in src/renderer returns 0 imports (only PRD mentions allowed)",
+            "App builds without errors after deletion"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -r 'ThemeSwitcher' src/renderer/src/ --exclude-dir=node_modules"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-blockers-ux",
+      "name": "Phase 3: UX Blockers (SetorDetalhe Buttons, Violations Display, ContratoLista CRUD)",
+      "description": "Fix 3 critical UX blockers that prevent delivery to Marco's parents. Most complex phase — violations grouping requires careful implementation.",
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "SetorDetalhe.tsx: Unify 3 buttons (lines 536-551) into 1 conditional button. If escalaAtual exists (RASCUNHO or OFICIAL) → show 'Abrir Escala' (variant='default'). If no escala → show 'Gerar Escala' (variant='default'). NEVER 2+ buttons. Keep button position in 'Escala Atual' card.",
+          "files_to_modify": [
+            "src/renderer/src/paginas/SetorDetalhe.tsx"
+          ],
+          "files_to_read": [
+            "specs/006-front-blockers-ux/PRD.md (lines 58-63)",
+            "specs/006-front-blockers-ux/discovery.json (lines 111-121)"
+          ],
+          "acceptance_criteria": [
+            "Lines 536-551: replaced with single conditional logic",
+            "If escalaAtual: show Button 'Abrir Escala' onClick navigate to /setores/{id}/escala",
+            "If !escalaAtual: show Button 'Gerar Escala' onClick navigate to /setores/{id}/gerar",
+            "Only 1 button visible at a time",
+            "Button stays in existing position within card",
+            "No duplicate navigation paths"
+          ],
+          "verification": {
+            "type": "manual",
+            "command": "Navigate to SetorDetalhe in app, verify only 1 button shows (either 'Abrir' or 'Gerar')"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "EscalaPagina.tsx: Replace flat violations list (lines 710-756) with grouped cards by COLABORADOR. (A) Map REGRAS_TEXTO from formatadores for human text. (B) Group violacoes by colaborador_id. (C) Render card per person with avatar (iniciais), name, and list of problems grouped by day. (D) Separate HARD/SOFT cards (HARD uses CORES_VIOLACAO.HARD, SOFT uses CORES_VIOLACAO.SOFT). (E) Add action hint for HARD: 'Clique em um dia de trabalho desse colaborador para trocar por folga'. (F) Build Set<'colaboradorId-data'> from HARD violations to highlight grid cells. (G) Add ring-2 ring-destructive to cells matching Set.",
+          "files_to_modify": [
+            "src/renderer/src/paginas/EscalaPagina.tsx"
+          ],
+          "files_to_read": [
+            "src/renderer/src/lib/formatadores.ts (REGRAS_TEXTO constant from subtask 1-1)",
+            "src/renderer/src/lib/cores.ts (CORES_VIOLACAO)",
+            "specs/006-front-blockers-ux/PRD.md (lines 67-100)",
+            "specs/006-front-blockers-ux/discovery.json (lines 92-109)"
+          ],
+          "acceptance_criteria": [
+            "Import REGRAS_TEXTO from '@/lib/formatadores' and CORES_VIOLACAO from '@/lib/cores'",
+            "Violations grouped by colaborador_id, not by regra",
+            "HARD violations: Card with red border (CORES_VIOLACAO.HARD.border), avatar with iniciais, name, list of problems per day",
+            "SOFT violations: Separate card with amber styling (CORES_VIOLACAO.SOFT), lighter visual treatment",
+            "Each violation shows REGRAS_TEXTO[v.regra] instead of v.regra",
+            "HARD card includes action hint text below violations list",
+            "Build violatedCells = new Set(violacoes.filter(v => v.severidade === 'HARD' && v.data).map(v => `${v.colaborador_id}-${v.data}`))",
+            "Grid cells: add conditional className: if violatedCells.has(`${alocacao.colaborador_id}-${alocacao.data}`) then add 'ring-2 ring-destructive'",
+            "Dark mode compatible (uses CORES_VIOLACAO which has dark variants)"
+          ],
+          "verification": {
+            "type": "manual",
+            "command": "Generate escala with HARD violation (pin 7 TRABALHO consecutive), verify: (1) violations grouped by person, (2) human text shown, (3) grid cell has red ring, (4) action hint visible"
+          },
+          "status": "completed"
+        },
+        {
+          "id": "subtask-3-3",
+          "description": "ContratoLista.tsx: Implement full CRUD. (A) Card layout: keep existing 2-column grid, add Edit/Delete buttons per card. (B) Edit Dialog: 5 fields (nome, horas_semanais, dias_trabalho, max_minutos_dia, trabalha_domingo). Use Input for text/number, Checkbox for boolean (switch not available). (C) CLT disclaimer: Add Card with border-l-4 border-blue-500 and Info icon above form fields with text from PRD. (D) Create button in PageHeader → opens same dialog with empty fields. (E) Delete with AlertDialog confirmation. If error contains 'colaboradores vinculados' → show human message. (F) Empty state: 'Nenhum tipo de contrato cadastrado. Crie um template para comecar.' (G) Use existing tiposContratoService (listar, criar, atualizar, deletar). (H) Dark mode compatible.",
+          "files_to_modify": [
+            "src/renderer/src/paginas/ContratoLista.tsx"
+          ],
+          "files_to_read": [
+            "src/renderer/src/servicos/tipos-contrato.ts (existing service)",
+            "src/renderer/src/hooks/useApiData.ts (data fetching pattern)",
+            "src/renderer/src/components/ui/dialog.tsx",
+            "src/renderer/src/components/ui/alert-dialog.tsx",
+            "src/renderer/src/components/ui/input.tsx",
+            "src/renderer/src/components/ui/label.tsx",
+            "src/renderer/src/components/ui/checkbox.tsx",
+            "src/renderer/src/components/ui/card.tsx",
+            "specs/006-front-blockers-ux/PRD.md (lines 102-134)"
+          ],
+          "acceptance_criteria": [
+            "Each card shows: nome, 4 badges (horas_semanais '44h/sem', dias_trabalho '6 dias', max_minutos_dia formatted '9h30/dia', trabalha_domingo 'Sim'/'Nao'), Edit button, Delete button",
+            "Edit Dialog: Opens on card Edit click, pre-fills 5 fields, validates (required, min/max), saves via tiposContratoService.atualizar, shows toast on success/error, reloads list",
+            "Create button in PageHeader: Opens same dialog with empty fields, saves via tiposContratoService.criar",
+            "CLT disclaimer: Card component with border-l-4 border-blue-500, Info icon (lucide-react), text: 'Regras como max 6 dias consecutivos e 11h de descanso entre jornadas sao leis trabalhistas (CLT) e nao podem ser alteradas. Os campos abaixo configuram limites do CONTRATO, que podem ser mais restritivos que a lei.'",
+            "Delete: AlertDialog asks 'Tem certeza?', on confirm calls tiposContratoService.deletar, if error with 'vinculados' shows 'Este tipo de contrato tem N colaboradores vinculados. Remova os vinculos antes de excluir.', else generic error via mapError",
+            "Empty state: if data.length === 0 show Card with text 'Nenhum tipo de contrato cadastrado. Crie um template para comecar.' and icon",
+            "max_minutos_dia field: helper text '9h30 = 570 minutos'",
+            "All colors use dark: variants or shadcn semantic colors (destructive, muted, etc)",
+            "Uses useApiData hook for fetching, toast for feedback"
+          ],
+          "verification": {
+            "type": "manual",
+            "command": "Test: (1) Edit CLT 44h, change horas_semanais, save, verify list updates. (2) Create 'PJ 30h', verify appears. (3) Delete template without colabs, verify disappears. (4) Try delete template WITH colabs, verify human error. (5) Check empty state by deleting all. (6) Verify disclaimer visible in all dialogs."
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-4-verification",
+      "name": "Phase 4: Build & Verification",
+      "description": "Run type checks, build, and final dark mode sweep to ensure zero regressions.",
+      "subtasks": [
+        {
+          "id": "subtask-4-1",
+          "description": "TypeScript type check: Run 'npx tsc --noEmit' and verify 0 errors. If errors exist, fix before proceeding.",
+          "files_to_modify": [],
+          "files_to_read": [],
+          "acceptance_criteria": [
+            "Command 'npx tsc --noEmit' returns exit code 0",
+            "No type errors in any modified files"
+          ],
+          "verification": {
+            "type": "typecheck"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-4-2",
+          "description": "Production build: Run 'npm run build' and verify successful compilation with 0 errors.",
+          "files_to_modify": [],
+          "files_to_read": [],
+          "acceptance_criteria": [
+            "Command 'npm run build' completes without errors",
+            "Electron app builds successfully",
+            "No console errors on app startup"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "npm run build"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-4-3",
+          "description": "Dark mode sweep: Grep for any remaining hardcoded colors without dark: variants in renderer/src/. Pattern: search for 'bg-' or 'text-' in className strings, verify all have dark: counterparts or use semantic tokens (muted, destructive, etc). Fix any gaps found.",
+          "files_to_modify": [],
+          "files_to_read": [
+            "src/renderer/src/paginas/",
+            "src/renderer/src/componentes/"
+          ],
+          "acceptance_criteria": [
+            "Grep for 'className.*bg-(emerald|amber|red|pink|sky)-[0-9]' in src/renderer finds only lines that also have 'dark:bg-' or use CORES constants",
+            "Manual navigation through all 9 pages in dark mode shows zero invisible/illegible elements",
+            "PontuacaoBadge, indicator cards, avatars, badges all legible in dark mode"
+          ],
+          "verification": {
+            "type": "grep",
+            "command": "grep -rn 'className.*bg-(emerald|amber|red|pink|sky)-[0-9]' src/renderer/src/paginas src/renderer/src/componentes | grep -v 'dark:'"
+          },
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_phases": 4,
+    "total_subtasks": 13,
+    "estimated_complexity": "medium",
+    "critical_path": [
+      "subtask-1-1 (rule mapping)",
+      "subtask-3-2 (violations display — most complex)",
+      "subtask-3-3 (ContratoLista CRUD — most code)"
+    ],
+    "dependencies": {
+      "subtask-3-2": "depends on subtask-1-1 (REGRAS_TEXTO constant)",
+      "phase-4": "depends on phase-1, phase-2, phase-3 completion"
+    },
+    "risk_areas": [
+      "subtask-3-2: Violations grouping + grid highlighting logic must be correct or UX breaks",
+      "subtask-3-3: ContratoLista needs Switch component (not installed) — fallback to Checkbox",
+      "subtask-3-3: Delete error handling depends on IPC error message format (may need mapError() adjustment)"
+    ]
+  },
+  "notes": {
+    "user_context": "Users are Marco's parents (non-technical). Zero technical terms must surface. If they see 'MAX_DIAS_CONSECUTIVOS' or can't edit contract templates, they'll call Marco.",
+    "pattern_reuse": "All dark mode fixes copy patterns from cores.ts. All CRUD follows existing Dialog/AlertDialog patterns. No new component installations except possibly Switch (fallback: Checkbox).",
+    "no_backend_changes": "All IPC handlers for tiposContrato already exist. Zero backend work needed.",
+    "verification_priority": "Phase 4 subtask-4-3 (dark mode sweep) is critical — may reveal gaps missed in manual mapping."
+  }
+}

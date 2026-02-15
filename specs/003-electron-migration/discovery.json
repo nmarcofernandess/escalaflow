@@ -1,0 +1,665 @@
+{
+  "status": "complete",
+  "monorepo_structure": {
+    "apps/api": {
+      "files": [
+        "apps/api/src/index.ts",
+        "apps/api/src/db/connection.ts",
+        "apps/api/src/db/schema.ts",
+        "apps/api/src/db/seed.ts",
+        "apps/api/src/motor/gerador.ts",
+        "apps/api/src/motor/validador.ts",
+        "apps/api/src/routes/empresa.ts",
+        "apps/api/src/routes/tipos-contrato.ts",
+        "apps/api/src/routes/setores.ts",
+        "apps/api/src/routes/colaboradores.ts",
+        "apps/api/src/routes/excecoes.ts",
+        "apps/api/src/routes/escalas.ts",
+        "apps/api/src/routes/dashboard.ts",
+        "apps/api/package.json",
+        "apps/api/tsconfig.json"
+      ],
+      "dependencies": {
+        "runtime": {
+          "@hono/node-server": "^1.13.0",
+          "hono": "^4.7.0",
+          "better-sqlite3": "^11.7.0",
+          "zod": "^3.24.0",
+          "@escalaflow/shared": "*"
+        },
+        "dev": {
+          "@types/better-sqlite3": "^7.6.0",
+          "tsx": "^4.19.0",
+          "typescript": "^5.7.0"
+        }
+      },
+      "line_counts": {
+        "index.ts": 39,
+        "connection.ts": 25,
+        "schema.ts": 91,
+        "seed.ts": 153,
+        "gerador.ts": 777,
+        "validador.ts": 393,
+        "routes/empresa.ts": 31,
+        "routes/tipos-contrato.ts": 63,
+        "routes/setores.ts": 163,
+        "routes/colaboradores.ts": 118,
+        "routes/excecoes.ts": 46,
+        "routes/escalas.ts": 210,
+        "routes/dashboard.ts": 76
+      }
+    },
+    "apps/web": {
+      "files": [
+        "apps/web/index.html",
+        "apps/web/vite.config.ts",
+        "apps/web/tailwind.config.js",
+        "apps/web/postcss.config.js",
+        "apps/web/components.json",
+        "apps/web/tsconfig.json",
+        "apps/web/package.json",
+        "apps/web/src/main.tsx",
+        "apps/web/src/App.tsx",
+        "apps/web/src/index.css",
+        "apps/web/src/estado/store.ts",
+        "apps/web/src/hooks/useApiData.ts",
+        "apps/web/src/hooks/use-mobile.tsx",
+        "apps/web/src/lib/utils.ts",
+        "apps/web/src/lib/cores.ts",
+        "apps/web/src/lib/formatadores.ts",
+        "apps/web/src/servicos/api.ts",
+        "apps/web/src/servicos/setores.ts",
+        "apps/web/src/servicos/colaboradores.ts",
+        "apps/web/src/servicos/escalas.ts",
+        "apps/web/src/servicos/excecoes.ts",
+        "apps/web/src/servicos/tipos-contrato.ts",
+        "apps/web/src/servicos/empresa.ts",
+        "apps/web/src/servicos/dashboard.ts",
+        "apps/web/src/componentes/AppSidebar.tsx",
+        "apps/web/src/componentes/ErrorBoundary.tsx",
+        "apps/web/src/componentes/PageHeader.tsx",
+        "apps/web/src/componentes/StatusBadge.tsx",
+        "apps/web/src/componentes/PontuacaoBadge.tsx",
+        "apps/web/src/componentes/EscalaGrid.tsx",
+        "apps/web/src/componentes/ExportarEscala.tsx",
+        "apps/web/src/paginas/Dashboard.tsx",
+        "apps/web/src/paginas/SetorLista.tsx",
+        "apps/web/src/paginas/SetorDetalhe.tsx",
+        "apps/web/src/paginas/ColaboradorLista.tsx",
+        "apps/web/src/paginas/ColaboradorDetalhe.tsx",
+        "apps/web/src/paginas/EscalaPagina.tsx",
+        "apps/web/src/paginas/ContratoLista.tsx",
+        "apps/web/src/paginas/EmpresaConfig.tsx",
+        "apps/web/src/paginas/NaoEncontrado.tsx",
+        "apps/web/src/components/ui/button.tsx",
+        "apps/web/src/components/ui/card.tsx",
+        "apps/web/src/components/ui/badge.tsx",
+        "apps/web/src/components/ui/input.tsx",
+        "apps/web/src/components/ui/label.tsx",
+        "apps/web/src/components/ui/select.tsx",
+        "apps/web/src/components/ui/dialog.tsx",
+        "apps/web/src/components/ui/tabs.tsx",
+        "apps/web/src/components/ui/tooltip.tsx",
+        "apps/web/src/components/ui/table.tsx",
+        "apps/web/src/components/ui/breadcrumb.tsx",
+        "apps/web/src/components/ui/separator.tsx",
+        "apps/web/src/components/ui/collapsible.tsx",
+        "apps/web/src/components/ui/scroll-area.tsx",
+        "apps/web/src/components/ui/sheet.tsx",
+        "apps/web/src/components/ui/skeleton.tsx",
+        "apps/web/src/components/ui/alert-dialog.tsx",
+        "apps/web/src/components/ui/sidebar.tsx",
+        "apps/web/src/components/ui/sonner.tsx"
+      ],
+      "dependencies": {
+        "runtime": {
+          "react": "^19.0.0",
+          "react-dom": "^19.0.0",
+          "react-router-dom": "^7.1.0",
+          "zustand": "^5.0.0",
+          "@dnd-kit/core": "^6.3.1",
+          "@dnd-kit/sortable": "^10.0.0",
+          "@dnd-kit/utilities": "^3.2.2",
+          "lucide-react": "^0.564.0",
+          "sonner": "^2.0.7",
+          "class-variance-authority": "^0.7.1",
+          "clsx": "^2.1.1",
+          "tailwind-merge": "^3.4.0",
+          "tailwindcss-animate": "^1.0.7",
+          "next-themes": "^0.4.6",
+          "@radix-ui/react-alert-dialog": "^1.1.15",
+          "@radix-ui/react-collapsible": "^1.1.12",
+          "@radix-ui/react-dialog": "^1.1.15",
+          "@radix-ui/react-label": "^2.1.8",
+          "@radix-ui/react-scroll-area": "^1.2.10",
+          "@radix-ui/react-select": "^2.2.6",
+          "@radix-ui/react-separator": "^1.1.8",
+          "@radix-ui/react-slot": "^1.2.4",
+          "@radix-ui/react-tabs": "^1.1.13",
+          "@radix-ui/react-tooltip": "^1.2.8",
+          "@escalaflow/shared": "*"
+        },
+        "dev": {
+          "@types/react": "^19.0.0",
+          "@types/react-dom": "^19.0.0",
+          "@vitejs/plugin-react": "^4.3.0",
+          "autoprefixer": "^10.4.0",
+          "postcss": "^8.4.0",
+          "tailwindcss": "^3.4.0",
+          "typescript": "^5.7.0",
+          "vite": "^6.0.0"
+        }
+      }
+    },
+    "packages/shared": {
+      "files": [
+        "packages/shared/src/index.ts",
+        "packages/shared/src/types.ts",
+        "packages/shared/src/constants.ts",
+        "packages/shared/package.json",
+        "packages/shared/tsconfig.json"
+      ],
+      "dependencies": {
+        "dev": {
+          "typescript": "^5.7.0"
+        }
+      },
+      "exports": {
+        "types": [
+          "Empresa", "TipoContrato", "Setor", "Demanda", "Colaborador",
+          "Excecao", "Escala", "Alocacao", "Violacao", "Indicadores",
+          "EscalaCompleta", "DashboardResumo", "SetorResumo", "AlertaDashboard",
+          "GerarEscalaRequest", "CriarColaboradorRequest", "ReordenarRankRequest",
+          "AjustarAlocacaoRequest"
+        ],
+        "constants": [
+          "CLT", "DIAS_SEMANA", "TURNOS", "STATUS_ESCALA",
+          "TIPOS_EXCECAO", "STATUS_ALOCACAO", "SEVERIDADES"
+        ],
+        "type_aliases": [
+          "DiaSemana", "Turno", "StatusEscala", "TipoExcecao",
+          "StatusAlocacao", "Severidade"
+        ]
+      }
+    },
+    "root": {
+      "files": [
+        "package.json",
+        ".gitignore",
+        "CLAUDE.md"
+      ],
+      "workspace_config": {
+        "workspaces": ["apps/api", "apps/web", "packages/shared"],
+        "scripts": {
+          "dev": "npm run dev:api & npm run dev:web",
+          "dev:api": "npm run dev -w apps/api",
+          "dev:web": "npm run dev -w apps/web",
+          "db:seed": "npm run seed -w apps/api",
+          "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web"
+        }
+      }
+    }
+  },
+  "file_migration_map": {
+    "move": {
+      "description": "Files that move as-is with only import path updates (~85%)",
+      "files": [
+        { "from": "apps/web/src/paginas/Dashboard.tsx", "to": "src/renderer/src/paginas/Dashboard.tsx" },
+        { "from": "apps/web/src/paginas/SetorLista.tsx", "to": "src/renderer/src/paginas/SetorLista.tsx" },
+        { "from": "apps/web/src/paginas/SetorDetalhe.tsx", "to": "src/renderer/src/paginas/SetorDetalhe.tsx" },
+        { "from": "apps/web/src/paginas/ColaboradorLista.tsx", "to": "src/renderer/src/paginas/ColaboradorLista.tsx" },
+        { "from": "apps/web/src/paginas/ColaboradorDetalhe.tsx", "to": "src/renderer/src/paginas/ColaboradorDetalhe.tsx" },
+        { "from": "apps/web/src/paginas/EscalaPagina.tsx", "to": "src/renderer/src/paginas/EscalaPagina.tsx" },
+        { "from": "apps/web/src/paginas/ContratoLista.tsx", "to": "src/renderer/src/paginas/ContratoLista.tsx" },
+        { "from": "apps/web/src/paginas/EmpresaConfig.tsx", "to": "src/renderer/src/paginas/EmpresaConfig.tsx" },
+        { "from": "apps/web/src/paginas/NaoEncontrado.tsx", "to": "src/renderer/src/paginas/NaoEncontrado.tsx" },
+        { "from": "apps/web/src/componentes/AppSidebar.tsx", "to": "src/renderer/src/componentes/AppSidebar.tsx" },
+        { "from": "apps/web/src/componentes/ErrorBoundary.tsx", "to": "src/renderer/src/componentes/ErrorBoundary.tsx" },
+        { "from": "apps/web/src/componentes/PageHeader.tsx", "to": "src/renderer/src/componentes/PageHeader.tsx" },
+        { "from": "apps/web/src/componentes/StatusBadge.tsx", "to": "src/renderer/src/componentes/StatusBadge.tsx" },
+        { "from": "apps/web/src/componentes/PontuacaoBadge.tsx", "to": "src/renderer/src/componentes/PontuacaoBadge.tsx" },
+        { "from": "apps/web/src/componentes/EscalaGrid.tsx", "to": "src/renderer/src/componentes/EscalaGrid.tsx" },
+        { "from": "apps/web/src/componentes/ExportarEscala.tsx", "to": "src/renderer/src/componentes/ExportarEscala.tsx" },
+        { "from": "apps/web/src/components/ui/*", "to": "src/renderer/src/components/ui/*", "count": 17 },
+        { "from": "apps/web/src/estado/store.ts", "to": "src/renderer/src/estado/store.ts" },
+        { "from": "apps/web/src/hooks/useApiData.ts", "to": "src/renderer/src/hooks/useApiData.ts" },
+        { "from": "apps/web/src/hooks/use-mobile.tsx", "to": "src/renderer/src/hooks/use-mobile.tsx" },
+        { "from": "apps/web/src/lib/utils.ts", "to": "src/renderer/src/lib/utils.ts" },
+        { "from": "apps/web/src/lib/cores.ts", "to": "src/renderer/src/lib/cores.ts" },
+        { "from": "apps/web/src/lib/formatadores.ts", "to": "src/renderer/src/lib/formatadores.ts" },
+        { "from": "apps/web/src/App.tsx", "to": "src/renderer/src/App.tsx" },
+        { "from": "apps/web/src/main.tsx", "to": "src/renderer/src/main.tsx", "note": "BrowserRouter stays (works with Electron file protocol)" },
+        { "from": "apps/web/src/index.css", "to": "src/renderer/src/index.css" },
+        { "from": "apps/web/index.html", "to": "src/renderer/index.html" },
+        { "from": "apps/api/src/db/schema.ts", "to": "src/main/db/schema.ts", "note": "Update import from ./connection to ./database" },
+        { "from": "apps/api/src/db/seed.ts", "to": "src/main/db/seed.ts", "note": "Update import from ./connection to ./database" },
+        { "from": "apps/api/src/motor/gerador.ts", "to": "src/main/motor/gerador.ts", "note": "Update @escalaflow/shared import to ../../shared/" },
+        { "from": "apps/api/src/motor/validador.ts", "to": "src/main/motor/validador.ts", "note": "Update @escalaflow/shared import to ../../shared/" },
+        { "from": "packages/shared/src/types.ts", "to": "src/shared/types.ts" },
+        { "from": "packages/shared/src/constants.ts", "to": "src/shared/constants.ts" },
+        { "from": "packages/shared/src/index.ts", "to": "src/shared/index.ts" }
+      ]
+    },
+    "rewrite": {
+      "description": "Files that need significant logic changes (~10%)",
+      "files": [
+        {
+          "from": "apps/api/src/db/connection.ts",
+          "to": "src/main/db/database.ts",
+          "changes": [
+            "Replace path.resolve(__dirname, ...) with app.getPath('userData') + '/escalaflow.db'",
+            "Add pragmas: cache_size = -64000, synchronous = NORMAL",
+            "Add app.on('before-quit') close handler",
+            "Keep singleton pattern (getDb/closeDb)"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/api.ts",
+          "to": "src/renderer/src/servicos/client.ts",
+          "changes": [
+            "Replace fetch-based api client with tipc client",
+            "Import tipc createClient + router type from main process",
+            "All methods become window.electron.invoke() or tipc client calls"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/setores.ts",
+          "to": "src/renderer/src/servicos/setores.ts",
+          "changes": [
+            "Replace api.get/post/put/del with tipc client invoke calls",
+            "10 methods to convert: listar, buscar, criar, atualizar, deletar, listarDemandas, criarDemanda, atualizarDemanda, deletarDemanda, reordenarRank"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/colaboradores.ts",
+          "to": "src/renderer/src/servicos/colaboradores.ts",
+          "changes": [
+            "Replace api.get/post/put/del with tipc client invoke calls",
+            "5 methods: listar, buscar, criar, atualizar, deletar"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/escalas.ts",
+          "to": "src/renderer/src/servicos/escalas.ts",
+          "changes": [
+            "Replace api.get/post/put/del with tipc client invoke calls",
+            "6 methods: gerar, buscar, listarPorSetor, oficializar, ajustar, deletar"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/excecoes.ts",
+          "to": "src/renderer/src/servicos/excecoes.ts",
+          "changes": [
+            "Replace api.get/post/put/del with tipc client invoke calls",
+            "4 methods: listar, criar, atualizar, deletar"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/tipos-contrato.ts",
+          "to": "src/renderer/src/servicos/tipos-contrato.ts",
+          "changes": [
+            "Replace api.get/post/put/del with tipc client invoke calls",
+            "5 methods: listar, buscar, criar, atualizar, deletar"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/empresa.ts",
+          "to": "src/renderer/src/servicos/empresa.ts",
+          "changes": [
+            "Replace api.get/put with tipc client invoke calls",
+            "2 methods: buscar, atualizar"
+          ]
+        },
+        {
+          "from": "apps/web/src/servicos/dashboard.ts",
+          "to": "src/renderer/src/servicos/dashboard.ts",
+          "changes": [
+            "Replace api.get with tipc client invoke call",
+            "1 method: resumo"
+          ]
+        }
+      ]
+    },
+    "create": {
+      "description": "New files that don't exist yet (~5%)",
+      "files": [
+        {
+          "path": "src/main/index.ts",
+          "purpose": "Electron lifecycle: BrowserWindow, ready, activate, window-all-closed, before-quit (close DB)",
+          "estimated_lines": 80
+        },
+        {
+          "path": "src/main/tipc.ts",
+          "purpose": "IPC router with all handlers — converts 7 Hono route files (34 endpoints) into tipc procedures",
+          "estimated_lines": 400,
+          "note": "This is the BIGGEST new file. All SQL logic from routes/ moves here."
+        },
+        {
+          "path": "src/main/motor/worker.ts",
+          "purpose": "Worker thread wrapper for gerador.ts — opens own DB connection, posts progress, returns MotorResultado",
+          "estimated_lines": 50
+        },
+        {
+          "path": "src/preload/index.ts",
+          "purpose": "contextBridge exposing whitelisted ipcRenderer.invoke and ipcRenderer.on",
+          "estimated_lines": 25
+        },
+        {
+          "path": "electron.vite.config.ts",
+          "purpose": "Unified build config for main/preload/renderer with externalizeDepsPlugin for better-sqlite3",
+          "estimated_lines": 30
+        },
+        {
+          "path": "electron-builder.yml",
+          "purpose": "Packaging config: mac (dmg), win (nsis), linux (AppImage). asarUnpack for native modules.",
+          "estimated_lines": 30
+        },
+        {
+          "path": "src/renderer/src/env.d.ts",
+          "purpose": "Type augmentation for window.electron (IPC bridge types)",
+          "estimated_lines": 15
+        }
+      ]
+    },
+    "delete": {
+      "description": "Files/dirs removed after migration",
+      "files": [
+        { "path": "apps/api/", "reason": "Entire Hono server — replaced by main process IPC" },
+        { "path": "apps/web/", "reason": "Moved to src/renderer/" },
+        { "path": "packages/shared/", "reason": "Moved to src/shared/" },
+        { "path": "apps/web/vite.config.ts", "reason": "Replaced by electron.vite.config.ts" }
+      ]
+    }
+  },
+  "dependencies_analysis": {
+    "to_keep": {
+      "description": "Dependencies that carry over to unified package.json",
+      "main_process": [
+        "better-sqlite3 (^11.7.0) — native module, critical",
+        "zod (^3.24.0) — request validation (optional, currently unused in routes)"
+      ],
+      "renderer": [
+        "react (^19.0.0)",
+        "react-dom (^19.0.0)",
+        "react-router-dom (^7.1.0)",
+        "zustand (^5.0.0)",
+        "@dnd-kit/core (^6.3.1)",
+        "@dnd-kit/sortable (^10.0.0)",
+        "@dnd-kit/utilities (^3.2.2)",
+        "lucide-react (^0.564.0)",
+        "sonner (^2.0.7)",
+        "class-variance-authority (^0.7.1)",
+        "clsx (^2.1.1)",
+        "tailwind-merge (^3.4.0)",
+        "tailwindcss-animate (^1.0.7)",
+        "next-themes (^0.4.6)",
+        "@radix-ui/* (all 9 packages)"
+      ],
+      "dev": [
+        "@types/better-sqlite3 (^7.6.0)",
+        "@types/react (^19.0.0)",
+        "@types/react-dom (^19.0.0)",
+        "@vitejs/plugin-react (^4.3.0)",
+        "autoprefixer (^10.4.0)",
+        "postcss (^8.4.0)",
+        "tailwindcss (^3.4.0)",
+        "typescript (^5.7.0)"
+      ]
+    },
+    "to_add": {
+      "description": "New dependencies for Electron",
+      "runtime": [
+        "electron (^34.x)",
+        "@egoist/tipc (latest)"
+      ],
+      "dev": [
+        "electron-vite (^3.x)",
+        "electron-builder (^25.x)",
+        "@electron-toolkit/tsconfig (latest)",
+        "@electron-toolkit/preload (latest)"
+      ]
+    },
+    "to_remove": {
+      "description": "Dependencies no longer needed",
+      "packages": [
+        "hono — HTTP framework (replaced by IPC)",
+        "@hono/node-server — Hono node adapter",
+        "tsx — dev runner (electron-vite handles dev)",
+        "vite — standalone (electron-vite wraps it)"
+      ]
+    },
+    "internal_imports": {
+      "@escalaflow/shared": {
+        "imported_by": [
+          "apps/api/src/motor/gerador.ts (CLT, DIAS_SEMANA, DiaSemana, Setor, Demanda, Excecao, Alocacao, Violacao)",
+          "apps/api/src/motor/validador.ts (CLT, DiaSemana, Alocacao, Violacao, Indicadores)",
+          "apps/api/src/routes/escalas.ts (EscalaCompleta)",
+          "apps/api/src/routes/dashboard.ts (DashboardResumo, SetorResumo, AlertaDashboard)",
+          "apps/web/src/servicos/setores.ts (Setor, Demanda, ReordenarRankRequest)",
+          "apps/web/src/servicos/colaboradores.ts (Colaborador, CriarColaboradorRequest)",
+          "apps/web/src/servicos/escalas.ts (Escala, EscalaCompleta, GerarEscalaRequest, AjustarAlocacaoRequest, StatusEscala)",
+          "apps/web/src/servicos/excecoes.ts (Excecao, TipoExcecao)",
+          "apps/web/src/servicos/tipos-contrato.ts (TipoContrato)",
+          "apps/web/src/servicos/empresa.ts (Empresa)",
+          "apps/web/src/servicos/dashboard.ts (DashboardResumo)",
+          "apps/web/src/paginas/* (various types)",
+          "apps/web/src/componentes/EscalaGrid.tsx (Alocacao, Colaborador, Demanda, TipoContrato)",
+          "apps/web/src/componentes/ExportarEscala.tsx (Escala, Alocacao, Colaborador, Setor)"
+        ],
+        "migration_impact": "All imports change from '@escalaflow/shared' to relative path '../../shared/' (main) or resolved via tsconfig paths (renderer)"
+      },
+      "@/ alias": {
+        "description": "Path alias '@/' resolves to apps/web/src/ via vite.config.ts and tsconfig.json",
+        "used_by": "ALL page components, ALL custom components, ALL hooks",
+        "migration_impact": "electron-vite supports same alias — reconfigure in electron.vite.config.ts renderer section"
+      }
+    }
+  },
+  "ipc_handler_inventory": {
+    "description": "Complete mapping of Hono HTTP routes to tipc IPC procedures",
+    "total_endpoints": 34,
+    "by_domain": {
+      "empresa": {
+        "count": 2,
+        "handlers": [
+          { "http": "GET /api/empresa", "ipc": "empresa.buscar", "returns": "Empresa" },
+          { "http": "PUT /api/empresa", "ipc": "empresa.atualizar", "returns": "Empresa" }
+        ]
+      },
+      "tipos_contrato": {
+        "count": 5,
+        "handlers": [
+          { "http": "GET /api/tipos-contrato", "ipc": "tiposContrato.listar", "returns": "TipoContrato[]" },
+          { "http": "GET /api/tipos-contrato/:id", "ipc": "tiposContrato.buscar", "returns": "TipoContrato" },
+          { "http": "POST /api/tipos-contrato", "ipc": "tiposContrato.criar", "returns": "TipoContrato" },
+          { "http": "PUT /api/tipos-contrato/:id", "ipc": "tiposContrato.atualizar", "returns": "TipoContrato" },
+          { "http": "DELETE /api/tipos-contrato/:id", "ipc": "tiposContrato.deletar", "returns": "void" }
+        ]
+      },
+      "setores": {
+        "count": 9,
+        "handlers": [
+          { "http": "GET /api/setores", "ipc": "setores.listar", "returns": "Setor[]" },
+          { "http": "GET /api/setores/:id", "ipc": "setores.buscar", "returns": "Setor" },
+          { "http": "POST /api/setores", "ipc": "setores.criar", "returns": "Setor" },
+          { "http": "PUT /api/setores/:id", "ipc": "setores.atualizar", "returns": "Setor" },
+          { "http": "DELETE /api/setores/:id", "ipc": "setores.deletar", "returns": "void" },
+          { "http": "GET /api/setores/:id/demandas", "ipc": "setores.listarDemandas", "returns": "Demanda[]" },
+          { "http": "POST /api/setores/:id/demandas", "ipc": "setores.criarDemanda", "returns": "Demanda" },
+          { "http": "PUT /api/demandas/:id", "ipc": "setores.atualizarDemanda", "returns": "Demanda" },
+          { "http": "DELETE /api/demandas/:id", "ipc": "setores.deletarDemanda", "returns": "void" }
+        ]
+      },
+      "colaboradores": {
+        "count": 5,
+        "handlers": [
+          { "http": "GET /api/colaboradores", "ipc": "colaboradores.listar", "returns": "Colaborador[]" },
+          { "http": "GET /api/colaboradores/:id", "ipc": "colaboradores.buscar", "returns": "Colaborador" },
+          { "http": "POST /api/colaboradores", "ipc": "colaboradores.criar", "returns": "Colaborador" },
+          { "http": "PUT /api/colaboradores/:id", "ipc": "colaboradores.atualizar", "returns": "Colaborador" },
+          { "http": "DELETE /api/colaboradores/:id", "ipc": "colaboradores.deletar", "returns": "void" }
+        ]
+      },
+      "excecoes": {
+        "count": 4,
+        "handlers": [
+          { "http": "GET /api/colaboradores/:id/excecoes", "ipc": "excecoes.listar", "returns": "Excecao[]" },
+          { "http": "POST /api/colaboradores/:id/excecoes", "ipc": "excecoes.criar", "returns": "Excecao" },
+          { "http": "PUT /api/excecoes/:id", "ipc": "excecoes.atualizar", "returns": "Excecao" },
+          { "http": "DELETE /api/excecoes/:id", "ipc": "excecoes.deletar", "returns": "void" }
+        ]
+      },
+      "escalas": {
+        "count": 6,
+        "handlers": [
+          { "http": "POST /api/setores/:id/gerar-escala", "ipc": "escalas.gerar", "returns": "EscalaCompleta", "note": "CPU-heavy, runs in worker thread" },
+          { "http": "GET /api/escalas/:id", "ipc": "escalas.buscar", "returns": "EscalaCompleta" },
+          { "http": "GET /api/setores/:id/escalas", "ipc": "escalas.listarPorSetor", "returns": "Escala[]" },
+          { "http": "PUT /api/escalas/:id/oficializar", "ipc": "escalas.oficializar", "returns": "Escala" },
+          { "http": "POST /api/escalas/:id/ajustar", "ipc": "escalas.ajustar", "returns": "EscalaCompleta" },
+          { "http": "DELETE /api/escalas/:id", "ipc": "escalas.deletar", "returns": "void" }
+        ]
+      },
+      "rank": {
+        "count": 1,
+        "handlers": [
+          { "http": "PUT /api/setores/:id/rank", "ipc": "setores.reordenarRank", "returns": "void" }
+        ]
+      },
+      "dashboard": {
+        "count": 1,
+        "handlers": [
+          { "http": "GET /api/dashboard", "ipc": "dashboard.resumo", "returns": "DashboardResumo" }
+        ]
+      },
+      "health": {
+        "count": 1,
+        "handlers": [
+          { "http": "GET /api/health", "ipc": "N/A", "note": "Drop — no need for health check in desktop app" }
+        ]
+      }
+    }
+  },
+  "patterns": [
+    "Pattern: snake_case ponta a ponta — DB columns = JSON keys = TypeScript interfaces. NEVER camelCase conversion.",
+    "Pattern: Singleton DB connection via getDb() lazy init with WAL + foreign_keys pragmas.",
+    "Pattern: Hono routes are thin controllers — all SQL logic inline, no separate repository/service layer.",
+    "Pattern: API services in frontend use centralized api.ts client (fetch wrapper) — all services import {api}.",
+    "Pattern: useApiData custom hook for data fetching (loading/error/reload state machine).",
+    "Pattern: Zustand store is minimal — only setorAtivoId. Most state is local to page components.",
+    "Pattern: shadcn/ui components at @/components/ui/ with @/ alias resolving to src/.",
+    "Pattern: Custom components at @/componentes/ (PT-BR naming), pages at @/paginas/.",
+    "Pattern: Motor receives db instance as parameter (dependency injection) — makes worker adaptation straightforward.",
+    "Pattern: Motor exports gerarProposta() and validador exports validarEscala() — pure functions with DB param.",
+    "Pattern: Seed file uses createTables() + idempotent INSERT IF NOT EXISTS pattern.",
+    "Pattern: BrowserRouter used for routing — will work with Electron file:// protocol via HashRouter or base config.",
+    "Pattern: main.tsx wraps App in StrictMode + BrowserRouter + TooltipProvider + Toaster.",
+    "Pattern: components.json configures shadcn with new-york style, @/ aliases.",
+    "Pattern: vite.config.ts has proxy '/api' -> 'http://localhost:3333' — to be eliminated."
+  ],
+  "risks": [
+    {
+      "id": "RISK-01",
+      "severity": "HIGH",
+      "title": "better-sqlite3 native module compilation in Electron",
+      "description": "better-sqlite3 is a native Node.js addon. Electron bundles its own Node.js version, so the native module must be rebuilt against Electron's headers. electron-rebuild or electron-vite's externalizeDepsPlugin handles this, but it can fail silently.",
+      "mitigation": "Use externalizeDepsPlugin in electron.vite.config.ts, configure asarUnpack for .node files in electron-builder.yml, test with npm run pack before dist."
+    },
+    {
+      "id": "RISK-02",
+      "severity": "HIGH",
+      "title": "Worker thread loading native module in packaged app",
+      "description": "Worker threads in Electron packaged apps have trouble resolving native modules because the ASAR archive filesystem doesn't support them. The worker must find the unpacked better-sqlite3 binary.",
+      "mitigation": "Worker opens its OWN DB connection (never shares with main). Use ?modulePath query from electron-vite for worker resolution. Test in both dev and pack modes."
+    },
+    {
+      "id": "RISK-03",
+      "severity": "MEDIUM",
+      "title": "BrowserRouter vs file:// protocol",
+      "description": "BrowserRouter uses HTML5 history API which requires a web server. Electron loads from file:// in production which doesn't support pushState. Routes will 404 on refresh.",
+      "mitigation": "Switch from BrowserRouter to HashRouter in main.tsx. HashRouter uses URL hash (#/) which works with file:// protocol. Minimal change: one import swap."
+    },
+    {
+      "id": "RISK-04",
+      "severity": "MEDIUM",
+      "title": "Import path breakage during migration",
+      "description": "~45 files import from '@escalaflow/shared' (workspace package). After migration this becomes a relative path or tsconfig alias. Any missed import = compile error.",
+      "mitigation": "Run find-and-replace for '@escalaflow/shared' in all moved files. Configure tsconfig paths in electron-vite for both main and renderer. Run npx tsc --noEmit after each phase."
+    },
+    {
+      "id": "RISK-05",
+      "severity": "MEDIUM",
+      "title": "shadcn/ui components.json path resolution",
+      "description": "components.json uses '@/' aliases for components, utils, hooks. If electron-vite doesn't resolve these identically, shadcn CLI (npx shadcn add) will break for future component additions.",
+      "mitigation": "Move components.json to project root (or src/renderer/), update aliases to match electron.vite.config.ts renderer resolve config."
+    },
+    {
+      "id": "RISK-06",
+      "severity": "LOW",
+      "title": "Tailwind content paths change",
+      "description": "tailwind.config.js content points to './index.html' and './src/**/*.{ts,tsx}'. After move to src/renderer/, paths need updating.",
+      "mitigation": "Update content paths in tailwind.config.js (or ts) to match new renderer structure. electron-vite provides tailwind integration docs."
+    },
+    {
+      "id": "RISK-07",
+      "severity": "LOW",
+      "title": "DB path in dev vs production",
+      "description": "Current DB path uses __dirname relative resolution. Electron needs app.getPath('userData') which only works after app.whenReady(). In dev mode, may want DB in project root.",
+      "mitigation": "Use conditional path: if (app.isPackaged) use userData, else use project root data/ folder. Initialize DB after app.whenReady()."
+    },
+    {
+      "id": "RISK-08",
+      "severity": "LOW",
+      "title": "Electron bundle size (~150MB+)",
+      "description": "Electron apps include Chromium + Node.js, resulting in large bundles. This is cosmetic for a desktop app but may surprise the operator.",
+      "mitigation": "Acceptable for desktop use case. Can optimize later with asar compression, tree-shaking unused Chromium features."
+    }
+  ],
+  "findings": {
+    "relevant_files": [
+      "apps/api/src/db/connection.ts",
+      "apps/api/src/db/schema.ts",
+      "apps/api/src/db/seed.ts",
+      "apps/api/src/motor/gerador.ts",
+      "apps/api/src/motor/validador.ts",
+      "apps/api/src/routes/setores.ts",
+      "apps/api/src/routes/escalas.ts",
+      "apps/api/src/routes/colaboradores.ts",
+      "apps/api/src/routes/excecoes.ts",
+      "apps/api/src/routes/tipos-contrato.ts",
+      "apps/api/src/routes/empresa.ts",
+      "apps/api/src/routes/dashboard.ts",
+      "apps/api/src/index.ts",
+      "apps/web/src/servicos/api.ts",
+      "apps/web/src/servicos/setores.ts",
+      "apps/web/src/servicos/colaboradores.ts",
+      "apps/web/src/servicos/escalas.ts",
+      "apps/web/src/servicos/excecoes.ts",
+      "apps/web/src/servicos/tipos-contrato.ts",
+      "apps/web/src/servicos/empresa.ts",
+      "apps/web/src/servicos/dashboard.ts",
+      "apps/web/src/main.tsx",
+      "apps/web/src/App.tsx",
+      "apps/web/vite.config.ts",
+      "apps/web/tailwind.config.js",
+      "apps/web/components.json",
+      "packages/shared/src/types.ts",
+      "packages/shared/src/constants.ts",
+      "packages/shared/src/index.ts",
+      "package.json"
+    ],
+    "approach": "9-phase migration: (1) Scaffold electron-vite project with unified package.json, (2) Move DB + schema + seed to main process with app.getPath adaptation, (3) Convert 34 Hono HTTP endpoints to tipc IPC handlers in single tipc.ts router, (4) Wrap gerador.ts in worker thread with own DB connection, (5) Create preload with contextBridge, (6) Move React app to renderer + rewrite 8 service files from fetch to tipc invoke, (7) Integration test all 8 pages, (8) Configure electron-builder for packaging, (9) Clean up old monorepo structure. Motor logic and UI are untouched throughout.",
+    "dependencies": [
+      "electron ^34.x (runtime)",
+      "electron-vite ^3.x (build tool, replaces standalone vite)",
+      "@egoist/tipc (IPC type safety, replaces Hono HTTP)",
+      "electron-builder ^25.x (packaging)",
+      "@electron-toolkit/tsconfig (TypeScript presets)",
+      "@electron-toolkit/preload (preload utilities)",
+      "better-sqlite3 ^11.7.0 (KEEP — native module, critical)",
+      "All existing React/UI deps (KEEP unchanged)"
+    ]
+  },
+  "summary": "EscalaFlow is a clean 3-workspace monorepo (13 API files, 46 web files, 3 shared files) ready for Electron migration. The API layer is thin (34 HTTP endpoints, all SQL inline in route handlers) — conversion to IPC is mechanical. The motor (gerador.ts 777 lines + validador.ts 393 lines) takes a db parameter via DI, making worker thread adaptation clean. The React frontend is 100% complete with 8 pages, 7 custom components, 17 shadcn/ui components, and 8 service files that wrap a single fetch client. The migration is fundamentally a plumbing job: swap HTTP for IPC, move files to Electron directory structure, handle native module compilation. Business logic and UI remain untouched. Critical risks are native module builds (RISK-01/02) and BrowserRouter incompatibility with file:// protocol (RISK-03). Total estimated file operations: 35 moves, 9 rewrites, 7 creates, 3 directory deletes.",
+  "completed_at": "2026-02-14T22:30:00Z"
+}

@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "escalaflow",
+			"path": "."
+		},
+		{
+			"name": "horario",
+			"path": "../horario"
+		}
+	],
+	"settings": {}
+}

@@ -1,0 +1,181 @@
+{
+  "status": "complete",
+  "findings": {
+    "relevant_files": [
+      "src/main/motor/gerador.ts",
+      "src/main/motor/validador.ts",
+      "src/main/motor/validacao-compartilhada.ts",
+      "src/main/motor/worker.ts",
+      "src/main/tipc.ts",
+      "src/main/index.ts",
+      "src/main/db/schema.ts",
+      "src/main/db/seed.ts",
+      "src/main/db/database.ts",
+      "src/shared/types.ts",
+      "src/shared/constants.ts",
+      "src/shared/index.ts",
+      "src/preload/index.ts",
+      "src/renderer/src/App.tsx",
+      "src/renderer/src/main.tsx",
+      "src/renderer/src/paginas/EscalaPagina.tsx",
+      "src/renderer/src/componentes/EscalaGrid.tsx",
+      "src/renderer/src/componentes/AppSidebar.tsx",
+      "src/renderer/src/componentes/ExportarEscala.tsx",
+      "src/renderer/src/componentes/ErrorBoundary.tsx",
+      "src/renderer/src/servicos/client.ts",
+      "src/renderer/src/servicos/escalas.ts",
+      "src/renderer/src/hooks/useApiData.ts",
+      "src/renderer/src/estado/store.ts",
+      "src/renderer/src/lib/cores.ts",
+      "src/renderer/src/lib/formatadores.ts",
+      "src/renderer/src/index.css"
+    ],
+    "patterns": [
+      "Pattern: Electron Desktop App (electron-vite + tipc IPC) — NOT a web monorepo. Main process in src/main/, renderer in src/renderer/, shared types in src/shared/",
+      "Pattern: IPC via @egoist/tipc — Router exported from src/main/tipc.ts with typed procedures. Client created in src/renderer/src/servicos/client.ts via createClient<Router>",
+      "Pattern: Service layer wraps IPC — Each domain has a service file (escalasService, setoresService) that wraps tipc client calls with type assertions",
+      "Pattern: useApiData hook — Custom hook for data fetching with loading/error/reload states. Used by all pages for initial data load",
+      "Pattern: Zustand store is minimal — Only useAppStore with setorAtivoId. Most state is local useState in page components",
+      "Pattern: shadcn/ui components in src/renderer/src/components/ui/ — 19 components installed. DropdownMenu NOT yet installed (needed for sidebar avatar)",
+      "Pattern: Custom components in src/renderer/src/componentes/ — Portuguese naming (componentes, not components). Files: AppSidebar, EscalaGrid, ExportarEscala, ErrorBoundary, PageHeader, PontuacaoBadge, StatusBadge",
+      "Pattern: snake_case end-to-end — DB columns = JSON keys = TS interface fields. No camelCase conversion anywhere",
+      "Pattern: Motor runs in Worker Thread — src/main/motor/worker.ts opens its own DB connection, runs gerarProposta, posts result back. Spawned from escalasGerar handler in tipc.ts",
+      "Pattern: Motor validation is shared — validacao-compartilhada.ts contains validarRegras() and calcularIndicadores() used by both gerador.ts and validador.ts",
+      "Pattern: CSS variables for theming — index.css has both :root (light) and .dark class (dark) CSS variables defined. next-themes is in package.json but NOT imported/used anywhere yet",
+      "Pattern: HashRouter for Electron — Uses react-router-dom HashRouter (not BrowserRouter) since it's a desktop app loading from file://",
+      "Pattern: Escalas lifecycle in 3 tabs — EscalaPagina.tsx has Simulacao (generate + adjust), Oficial (view), Historico (archived) tabs",
+      "Pattern: EscalaGrid already has onCelulaClick prop — Accepts callback (colaboradorId, data, statusAtual) but EscalaPagina.tsx NEVER passes it. Grid is read-only in practice even in Simulacao tab"
+    ],
+    "approach": "This task has 4 parallel workstreams: (1) Motor Quality — validate gerador.ts with realistic seed data, fix bugs in folga distribution, domingo rotation, and coverage; (2) Smart Recalc — enhance escalas.ajustar IPC handler to regenerate surrounding allocations (not just upsert+revalidate), preserving manual pins; (3) Interactive Grid — wire EscalaGrid.onCelulaClick in EscalaPagina to toggle TRABALHO/FOLGA and call escalas.ajustar, showing loading state per cell; (4) UX Polish — add Avatar+Dropdown to AppSidebar footer, implement ThemeSwitcher using next-themes (already installed), add OnboardingTour component, improve loading/error states. Recommend implementing in order: UX polish first (low risk, high visibility), then Grid interactivity (medium complexity), then Motor quality (requires testing), then Smart Recalc (highest complexity, depends on motor understanding).",
+    "risks": [
+      "RISK-HIGH: Smart Recalc is architecturally complex. Current escalas.ajustar just upserts + revalidates (line 470-516 of tipc.ts). Making it 'regenerate around pinned cells' requires either: (a) modifying gerarProposta to accept pinned cells as constraints, or (b) creating a new partial-regeneration function. Option (a) changes the motor's core API; option (b) duplicates logic",
+      "RISK-HIGH: Motor quality is untested with realistic data. Seed has 16 collaborators across 4 sectors, which is good for basic testing. However, edge cases (all colabs on vacation, 1 colab per sector, week boundary lookback) are not covered and could expose bugs in Fase 3/4/4.5",
+      "RISK-MEDIUM: EscalaGrid toggle (TRABALHO -> FOLGA) removes hora_inicio/hora_fim. When toggling back (FOLGA -> TRABALHO), the system needs to assign new hours. Current ajustar handler doesn't auto-assign hours — it just saves what's sent. The toggle-back case needs either: (a) frontend sends hours (but how does it know?), or (b) backend regenerates hours for that cell",
+      "RISK-MEDIUM: next-themes is installed but never integrated. Need to wrap App in ThemeProvider and ensure all shadcn/ui components + custom Tailwind classes work in dark mode. The .dark CSS vars exist in index.css, but hardcoded colors (e.g., in CORES_ALOCACAO, CORES_VIOLACAO) may not adapt properly",
+      "RISK-LOW: DropdownMenu component is not installed in shadcn/ui yet. Need to add @radix-ui/react-dropdown-menu and create the component file before building the sidebar avatar dropdown",
+      "RISK-LOW: OnboardingTour needs a tour library or custom implementation. No tour dependency exists in package.json. Could use a lightweight approach (modal with steps) or add a library like react-joyride",
+      "RISK-LOW: Escala table schema has pontuacao/cobertura_percent/violacoes_hard/violacoes_soft/equilibrio columns that are updated on ajustar — these are denormalized indicators. Any recalc must keep them in sync"
+    ],
+    "dependencies": [
+      "next-themes (v0.4.6) — Already in package.json, NOT used yet. Needed for ThemeSwitcher (RF10)",
+      "@radix-ui/react-dropdown-menu — NOT installed. Needed for Avatar+Dropdown in sidebar (RF9)",
+      "@egoist/tipc (v0.3.2) — IPC framework. All backend communication goes through this",
+      "better-sqlite3 (v11.7.0) — Database driver. Worker thread opens its own connection",
+      "electron-vite (v3.0.0) — Build tool. Config in electron.vite.config.ts with path aliases @/ and @shared",
+      "sonner (v2.0.7) — Toast notifications. Used for all user feedback",
+      "zustand (v5.0.0) — State management. Currently minimal (only setorAtivoId). May need expansion for theme/onboarding state",
+      "react-router-dom (v7.1.0) — HashRouter. 9 routes defined in App.tsx",
+      "No tour library installed — OnboardingTour (RF13) will need either a new dependency or custom implementation"
+    ],
+    "codebase_state": {
+      "motor": {
+        "gerador_lines": 549,
+        "validador_lines": 84,
+        "validacao_compartilhada_lines": 324,
+        "worker_lines": 36,
+        "total_motor_lines": 993,
+        "phases_implemented": [
+          "Phase 1: Preparacao + Lookback (lines 72-143)",
+          "Phase 2: Mapa de Disponibilidade (lines 148-165)",
+          "Phase 3: Distribuicao de Folgas SEG-SAB (lines 168-283)",
+          "Phase 4: Rodizio de Domingo com lookback (lines 286-349)",
+          "Phase 4.5: Repair >6 dias consecutivos (lines 352-374)",
+          "Phase 5: Alocacao de Horarios cobertura-first (lines 377-508)",
+          "Phase 6+7: Validacao R1-R8 + Scoring (lines 511-547)"
+        ],
+        "validation_rules": [
+          "R1: MAX_DIAS_CONSECUTIVOS (6) — HARD",
+          "R2: MIN_DESCANSO_ENTRE_JORNADAS (660min/11h) — HARD",
+          "R3: RODIZIO_DOMINGO (M:2, F:1 consecutivos) — HARD",
+          "R4: MAX_JORNADA_DIARIA (600min/10h) — HARD",
+          "R5: META_SEMANAL (tolerancia-based) — SOFT",
+          "R6: PREFERENCIA_DIA (evitar_dia_semana) — SOFT",
+          "R7: PREFERENCIA_TURNO (MANHA/TARDE) — SOFT",
+          "R8: COBERTURA por faixa de demanda — SOFT"
+        ],
+        "scoring_formula": "pontuacao = cobertura*0.4 + (hard==0?100:0)*0.3 + equilibrio*0.2 + max(0,100-soft*10)*0.1"
+      },
+      "ipc": {
+        "total_handlers": 27,
+        "domains": {
+          "empresa": 2,
+          "tiposContrato": 5,
+          "setores": 5,
+          "demandas": 4,
+          "rank": 1,
+          "colaboradores": 5,
+          "excecoes": 4,
+          "escalas": 6,
+          "dashboard": 1
+        },
+        "escalas_handlers": [
+          "escalas.buscar — Returns EscalaCompleta (escala + alocacoes + indicators)",
+          "escalas.listarPorSetor — Filter by setor_id + optional status",
+          "escalas.oficializar — Validates 0 HARD violations, archives previous OFICIAL",
+          "escalas.ajustar — CURRENT: upserts alocacoes + revalidates (NO regeneration). THIS IS THE KEY GAP",
+          "escalas.deletar — Deletes escala (cascades to alocacoes)",
+          "escalas.gerar — Spawns worker thread, persists result as RASCUNHO"
+        ]
+      },
+      "frontend": {
+        "pages": 9,
+        "custom_components": 6,
+        "shadcn_components": 19,
+        "missing_shadcn": ["dropdown-menu", "avatar"],
+        "service_files": 7,
+        "routes": [
+          "/ → Dashboard",
+          "/setores → SetorLista",
+          "/setores/:id → SetorDetalhe",
+          "/setores/:id/escala → EscalaPagina",
+          "/colaboradores → ColaboradorLista",
+          "/colaboradores/:id → ColaboradorDetalhe",
+          "/tipos-contrato → ContratoLista",
+          "/empresa → EmpresaConfig",
+          "* → NaoEncontrado"
+        ]
+      },
+      "seed_data": {
+        "empresa": "Supermercado Fernandes (corte SEG_DOM, tolerancia 30min)",
+        "tipos_contrato": 4,
+        "setores": "4 (Caixa 08-22, Acougue 08-20, Padaria 06-21, Hortifruti 07-20)",
+        "demandas": "10 faixas across 4 setores",
+        "colaboradores": "16 total (Caixa:8, Acougue:3, Padaria:3, Hortifruti:2)",
+        "excecoes": "3 (ferias + atestado)"
+      }
+    },
+    "gaps_vs_prd": {
+      "RF1_motor_validation": "GAP — Motor exists but has never been tested with real data. Need to run generation and audit output",
+      "RF2_bug_fixes": "GAP — Cannot identify bugs until RF1 runs. Conditional on validation results",
+      "RF3_folga_distribution": "PARTIAL — Phase 3 has stagger logic + evitar_dia_semana + CLT consecutive check. Quality unknown",
+      "RF4_domingo_rotation": "PARTIAL — Phase 4 has lookback + gender limits + sort by total worked. Quality unknown",
+      "RF5_horario_coverage": "PARTIAL — Phase 5 has coverage-first scoring with multiple candidate start times. Quality unknown",
+      "RF6_smart_recalc": "GAP — escalas.ajustar is upsert+revalidate only. No regeneration around pinned cells",
+      "RF7_realtime_feedback": "PARTIAL — ajustar returns updated indicators. But frontend doesn't call it (grid is non-interactive)",
+      "RF8_preserve_manual": "GAP — No concept of 'pinned' cells. Need new mechanism to mark manual adjustments",
+      "RF9_sidebar_avatar": "GAP — AppSidebar has no avatar, no dropdown. Footer just shows 'Empresa' text",
+      "RF10_theme_switcher": "GAP — next-themes installed but not used. .dark CSS vars exist in index.css. No ThemeSwitcher component",
+      "RF11_loading_states": "PARTIAL — gerando state shows 'Gerando...' on button. No spinner overlay, no descriptive message",
+      "RF12_human_errors": "PARTIAL — ErrorBoundary exists. toast.error shows err.message. Backend errors are somewhat technical",
+      "RF13_onboarding_tour": "GAP — No tour component, no tour library, nothing implemented",
+      "RF14_grid_interactive": "GAP — EscalaGrid has onCelulaClick prop defined but EscalaPagina NEVER passes it. Grid is effectively read-only",
+      "RF15_auto_fill_period": "DONE — EscalaPagina auto-fills dataInicio/dataFim with next month",
+      "RF16_test_cases": "GAP — No test files, no test cases documented",
+      "RF17_zero_hard": "UNKNOWN — Need RF1 to verify",
+      "RF18_score_above_80": "UNKNOWN — Need RF1 to verify",
+      "RF19_coverage_above_90": "UNKNOWN — Need RF1 to verify"
+    },
+    "architecture_notes": {
+      "ipc_flow": "Renderer → client.ts (tipc) → preload (contextBridge) → main process (tipc handlers) → DB/Motor",
+      "worker_flow": "escalasGerar handler → spawns Worker(worker.ts) → worker opens own DB → runs gerarProposta → posts result → main thread persists",
+      "theme_integration_path": "1. Wrap App in ThemeProvider (next-themes) in main.tsx. 2. Create ThemeSwitcher component. 3. Add to AppSidebar dropdown. 4. next-themes toggles .dark class on html element. 5. CSS vars in index.css already handle both themes",
+      "grid_interaction_path": "1. EscalaPagina passes onCelulaClick to EscalaGrid. 2. Click toggles TRABALHO↔FOLGA. 3. Call escalasService.ajustar with updated cell. 4. Backend revalidates (or regenerates in RF6). 5. Update escalaCompleta state with response. 6. Grid re-renders with new data",
+      "smart_recalc_options": [
+        "Option A: Modify gerarProposta to accept pinnedCells Map<colabId-date, status>. Motor skips pinned cells during phases 3-5. Most correct but invasive change to motor API",
+        "Option B: New function regenerarAoRedor() that takes current alocacoes + pinned set, and only redistributes non-pinned cells. Duplicates some motor logic but isolated",
+        "Option C: Keep current upsert+revalidate but add auto-hour-assignment for FOLGA→TRABALHO toggles. Simplest, doesn't truly 'regenerate', but may satisfy UX requirements"
+      ]
+    }
+  },
+  "completed_at": "2026-02-15T01:30:00Z"
+}

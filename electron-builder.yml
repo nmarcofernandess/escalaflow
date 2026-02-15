@@ -1,0 +1,28 @@
+appId: com.escalaflow.desktop
+productName: EscalaFlow
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - 'out/**/*'
+asarUnpack:
+  - '**/*.node'
+  - '**/better-sqlite3/**'
+mac:
+  category: public.app-category.business
+  target:
+    - dmg
+    - zip
+  artifactName: '${productName}-${version}-${arch}.${ext}'
+win:
+  target:
+    - nsis
+  artifactName: '${productName}-Setup-${version}.${ext}'
+linux:
+  target:
+    - AppImage
+  category: Office
+  artifactName: '${productName}-${version}.${ext}'
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

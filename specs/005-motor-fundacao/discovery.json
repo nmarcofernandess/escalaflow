@@ -1,0 +1,183 @@
+{
+  "status": "complete",
+  "findings": {
+    "relevant_files": [
+      "src/main/motor/gerador.ts",
+      "src/main/motor/validador.ts",
+      "src/main/motor/validacao-compartilhada.ts",
+      "src/main/motor/worker.ts",
+      "src/main/motor/test-motor.ts",
+      "src/main/tipc.ts",
+      "src/main/index.ts",
+      "src/main/db/database.ts",
+      "src/main/db/schema.ts",
+      "src/main/db/seed.ts",
+      "src/shared/types.ts",
+      "src/shared/constants.ts"
+    ],
+    "patterns": [
+      "Motor is a single synchronous function `gerarProposta()` (~620 lines) with 7 sequential phases: FASE 1 (prep+lookback), FASE 2 (availability map), FASE 3 (leave distribution Mon-Sat), FASE 4 (Sunday rotation), FASE 4.5 (repair >6 consecutive), FASE 5 (time allocation), FASE 6+7 (validation+scoring via shared module)",
+      "Validation uses `validacao-compartilhada.ts` which exports `validarRegras()` (R1-R8) and `calcularIndicadores()` -- shared between gerador.ts (FASE 6+7) and validador.ts",
+      "Worker thread pattern: tipc.ts spawns Worker from `motor/worker.js`, worker opens own DB connection, calls `gerarProposta()`, posts result via parentPort.postMessage. NO timeout mechanism exists",
+      "PinnedCells pattern: Map<string, PinnedCell> keyed as `{colabId}-{date}`. Serialized as [string, PinnedCell][] for worker thread transfer. `isPinned()` and `getPinned()` closures defined at top of gerarProposta",
+      "ColabValidacao interface in validacao-compartilhada.ts has ONLY: id, nome, sexo, horas_semanais, prefere_turno, evitar_dia_semana. MISSING: dias_trabalho, trabalha_domingo, max_minutos_dia (needed for B1.2, B2.2)",
+      "ColabComContrato interface in gerador.ts is a SUPERSET of ColabValidacao, including all fields from JOIN with tipos_contrato table",
+      "snake_case ponta-a-ponta: DB columns = JSON keys = TS fields. No adapters. No camelCase mixing",
+      "Test scaffold exists (test-motor.ts, 97 lines) with basic 4-setor test + 1 pinned cell test, runs via `npm run test:motor` (build + electron . --test-motor). Returns exit code 0/1",
+      "Lookback pattern: gerador loads last 7 days of OFICIAL escala from DB to compute diasConsec and domConsec per collaborator. Validador has lookback ZERADO (line 73-77 of validador.ts)",
+      "getWeeks() splits dates by SEG (Monday) hardcoded -- no corte_semanal parameter. Called by gerador FASE 3 and by validarRegras R5",
+      "Schema has CHECK constraint for corte_semanal: SEG_DOM, TER_SEG, QUA_TER, QUI_QUA, SEX_QUI, SAB_SEX, DOM_SAB. Seed uses SEG_DOM",
+      "IPC handlers escalas.gerar (line 567) has input validation for colabs>0 and demandas>0. escalas.ajustar (line 470) does NOT validate inputs before spawning worker",
+      "Empresa table is singleton, queried via SELECT...LIMIT 1. corte_semanal field exists but is NEVER read by motor or validador"
+    ],
+    "bugs_confirmed": [
+      {
+        "id": "B1.1",
+        "severity": "HIGH",
+        "description": "corte_semanal ignored: getWeeks() in validacao-compartilhada.ts:62-74 splits weeks on SEG (Monday) hardcoded. Motor FASE 3 calls getWeeks(dias) at line 190 without corte_semanal. Validador R5 calls getWeeks(dias) at line 169 without corte_semanal. Empresa.corte_semanal is never read by motor or validador.",
+        "location": "validacao-compartilhada.ts:62-74, gerador.ts:190, validacao-compartilhada.ts:169",
+        "fix": "Add corte_semanal param to getWeeks(), motor passes empresa.corte_semanal, validador loads empresa.corte_semanal"
+      },
+      {
+        "id": "B1.2",
+        "severity": "HIGH",
+        "description": "max_minutos_dia not validated: R4 in validacao-compartilhada.ts:153-163 only checks CLT.MAX_JORNADA_DIARIA_MIN (600min global). No per-contract max check. ColabValidacao interface lacks max_minutos_dia field. Estagiario with max_minutos_dia=240 could have 5h shift and pass validation.",
+        "location": "validacao-compartilhada.ts:6-13 (interface), validacao-compartilhada.ts:153-163 (R4)",
+        "fix": "Expand ColabValidacao with max_minutos_dia and dias_trabalho and trabalha_domingo. Add R_CONTRATO_MAX_DIA after R4. Validador already JOINs tipos_contrato (validador.ts:31) so data is available."
+      },
+      {
+        "id": "B1.3",
+        "severity": "HIGH",
+        "description": "Repair (FASE 4.5) can overwrite pinned cells: gerador.ts:396-429 checks isPinned(c.id, d) at line 405 before forcing FOLGA on the CURRENT day, BUT the streakDays scoring at lines 406-416 does NOT filter out pinned cells. The bestDay chosen at line 416 could be a pinned TRABALHO cell from earlier in the streak.",
+        "location": "gerador.ts:396-429",
+        "fix": "Filter pinned cells from streakDays candidates (scored array). If all candidates are pinned, skip repair (validation will flag the streak later)."
+      },
+      {
+        "id": "B1.4",
+        "severity": "MEDIUM",
+        "description": "Threshold off-by-one in FASE 3 violation redistribution: gerador.ts:270 uses `tempConsec >= CLT.MAX_DIAS_CONSECUTIVOS` (>= 6) which triggers redistribution on the 6th consecutive day. CLT allows 6 consecutive. Should be `> CLT.MAX_DIAS_CONSECUTIVOS` (> 6).",
+        "location": "gerador.ts:270",
+        "fix": "Change >= to >. Note: FASE 4.5 repair at line 405 already correctly uses > (line: consec > CLT.MAX_DIAS_CONSECUTIVOS). Only the FASE 3 fallback redistribution has this bug."
+      },
+      {
+        "id": "B2.1",
+        "severity": "HIGH",
+        "description": "Validador has lookback ZERADO: validador.ts:73-77 creates empty lookback (diasConsec:0, domConsec:0) for all collaborators. No attempt to load previous OFICIAL escala. Comment at line 73 explicitly acknowledges this gap. R1 (consecutive) and R3 (sunday rotation) cannot detect cross-escala violations.",
+        "location": "validador.ts:73-77",
+        "fix": "Copy the lookback loading logic from gerador.ts:106-150 into validador.ts. Load previous OFICIAL escala, compute diasConsec and domConsec from last 7 days."
+      },
+      {
+        "id": "B2.2",
+        "severity": "MEDIUM",
+        "description": "Estagiario on Sunday not flagged by validador: gerador.ts:193-198 prevents estagiarios (trabalha_domingo=false) from working Sundays. BUT validador has NO such rule. ColabValidacao lacks trabalha_domingo field. Manual adjustment pinning estagiario to Sunday TRABALHO would pass validation.",
+        "location": "validacao-compartilhada.ts:6-13, validacao-compartilhada.ts:78-258 (no R_ESTAGIARIO_DOMINGO rule)",
+        "fix": "Expand ColabValidacao with trabalha_domingo. Add R_ESTAGIARIO_DOMINGO HARD violation after R3 in validarRegras()."
+      },
+      {
+        "id": "B2.3",
+        "severity": "HIGH",
+        "description": "Worker has NO timeout: tipc.ts:495-515 (escalas.ajustar) and tipc.ts:592-617 (escalas.gerar) spawn worker threads without timeout. If motor loops or hangs, UI freezes indefinitely.",
+        "location": "tipc.ts:495-515, tipc.ts:592-617",
+        "fix": "Wrap worker Promise with Promise.race against a 30s setTimeout. On timeout, call worker.terminate() and reject with humanized error."
+      },
+      {
+        "id": "B2.4",
+        "severity": "MEDIUM",
+        "description": "Motor has no input validation: gerarProposta() does not validate inputs. If setor does not exist or colabs is empty, it crashes with cryptic errors. escalas.gerar IPC handler at line 574-581 validates colabs>0 and demandas>0, but escalas.ajustar at line 470 does NOT validate before spawning worker.",
+        "location": "gerador.ts:65-72 (no validation), tipc.ts:470-515 (ajustar lacks validation)",
+        "fix": "Add early validation in gerarProposta (setor exists, colabs>0, valid dates). Also add validation in escalas.ajustar handler."
+      },
+      {
+        "id": "B2.5",
+        "severity": "LOW",
+        "description": "metaDiariaMin formula inconsistency: gerador.ts:467 uses (horas_semanais*60)/dias_trabalho (per contract). validacao-compartilhada.ts:167 uses (horas_semanais*60)/7 (always divides by 7 days). The gerador formula gives the actual daily target per the contract (e.g., 44h/6d=440min). The validador formula gives a lower daily meta (e.g., 44h/7d=377min). This affects FASE 5 time allocation vs R5 weekly meta calculations.",
+        "location": "gerador.ts:467, validacao-compartilhada.ts:167",
+        "fix": "Extract metaDiariaMin to validacao-compartilhada.ts as shared function. Decision: use dias_trabalho or 7? The gerador formula (dias_trabalho) is correct for FASE 5 time allocation. The validador formula (7) is used for R5 weekly tolerance. These serve DIFFERENT purposes. Need to align on approach -- likely keep both but make the distinction explicit, OR add dias_trabalho to ColabValidacao."
+      },
+      {
+        "id": "B3.1",
+        "severity": "HIGH",
+        "description": "pinnedCells handling is PARTIALLY implemented across phases. FASE 2 (lines 160-177): pinned cells ARE handled -- they override status correctly. FASE 3 (lines 186-303): pinned cells are PARTIALLY handled -- isPinned filters from weekDays pool (line 204-205). BUT: if a pinned cell has status FOLGA, it is counted in restJaGarantido (line 208-211) only if status is already FOLGA, which it IS because FASE 2 set it. Pinned TRABALHO cells that are NOT filtered from folga pool could cause issues. Also, pinned FOLGA cells for non-domingo are counted via status check. FASE 4 (lines 306-387): pinned cells handled -- isPinned check at line 324, 336, 369. Pinned cells counted for domConsecState/domTotalState at lines 371-374. FASE 4.5 (lines 396-429): BUG -- pinned cells only filtered at the trigger (line 405), NOT in the candidate selection (lines 406-416). FASE 5 (lines 438-580): pinned TRABALHO with hours skipped (line 453-464). Pinned TRABALHO without hours falls through to normal allocation (correct). Overall: mostly implemented but FASE 4.5 has the bug and FASE 3 counting needs verification.",
+        "location": "gerador.ts phases 2-5",
+        "fix": "FASE 4.5: filter pinned from scored candidates. FASE 3: verify pinned FOLGA counting is correct. All other phases seem OK."
+      },
+      {
+        "id": "B3.2",
+        "severity": "LOW",
+        "description": "Worker pinnedCells deserialization is ALREADY IMPLEMENTED correctly. worker.ts:5-20 defines WorkerInput with pinnedCellsArr, toPinnedMap function converts [string,PinnedCell][] to Map. tipc.ts:483-488 serializes as [key, value] pairs. This gap appears to be already resolved.",
+        "location": "worker.ts:5-20, tipc.ts:483-488",
+        "fix": "Already implemented. Verify TypeScript compiles. May need minor type adjustments if ColabValidacao changes."
+      }
+    ],
+    "dependencies_between_corrections": [
+      "B4.1-scaffold FIRST: Need test infrastructure to validate all subsequent changes",
+      "B1.4 (threshold) before B4.1-expanded: Simple fix, immediately testable",
+      "B1.1 (corte_semanal) requires: Expand getWeeks() signature, propagate corte_semanal from empresa table through gerador and validador. Affects FASE 3 + R5 validation",
+      "B1.2 (max_minutos_dia) requires: Expand ColabValidacao interface first. Both gerador (already has data) and validador (already JOINs) have the data. Just need to pass it to validarRegras",
+      "B2.2 (estagiario domingo) requires: Same ColabValidacao expansion as B1.2 (needs trabalha_domingo field)",
+      "B1.2 + B2.2 share dependency on ColabValidacao expansion -- do together",
+      "B1.3 (repair pins) requires: Understanding of FASE 4.5 streak scoring. Independent of other fixes",
+      "B2.5 (metaDiariaMin) requires: ColabValidacao expanded with dias_trabalho. Can be done alongside B1.2",
+      "B2.1 (validador lookback) requires: Copy lookback loading logic from gerador. Independent but must come before B4.1-expanded tests",
+      "B2.3 (timeout) is independent of motor logic -- pure IPC change",
+      "B2.4 (input validation) is independent -- defensive programming in gerador + tipc",
+      "B3.1 (pinnedCells all phases) depends on B1.3 fix. Mostly verification + FASE 4.5 fix",
+      "B3.2 (worker deserialization) is ALREADY DONE. Verify after ColabValidacao changes",
+      "B4.1-expanded LAST: Tests exercise all fixes above"
+    ],
+    "approach": "Execute corrections in the order specified by PRD (13 steps). Start with test scaffold (B4.1), then simple threshold fix (B1.4), then corte_semanal refactor (B1.1) which touches getWeeks, then expand ColabValidacao interface for max_minutos_dia + trabalha_domingo + dias_trabalho (B1.2 + B2.2 + B2.5 together), fix FASE 4.5 repair for pinned cells (B1.3 + B3.1), add validador lookback (B2.1), add worker timeout (B2.3), add input validation (B2.4), verify pinnedCells in all phases (B3.1 verification pass), verify worker deserialization (B3.2), expand tests (B4.1 final). Each correction should be immediately testable via test-motor.ts. The ColabValidacao expansion is the biggest cross-cutting change affecting validacao-compartilhada.ts, gerador.ts, and validador.ts.",
+    "risks": [
+      "HIGH: Changing getWeeks() signature affects FASE 3 folga distribution AND R5 meta semanal. Must test before/after to ensure no regression in scoring",
+      "HIGH: Expanding ColabValidacao interface is a cross-cutting change. gerador.ts passes ColabComContrato (superset) to validarRegras -- TypeScript will require the new fields. validador.ts manually types the SQL result -- must add new fields there too",
+      "HIGH: pinnedCells in FASE 4.5 repair -- filtering pinned from scored candidates could leave NO valid candidates if all streak days are pinned. Must handle this edge case (skip repair, let validation flag it)",
+      "MEDIUM: Worker timeout of 30s could kill legitimate generation for large setores. Seed data has max 8 colabs (Caixa) -- should be fast. But production could have more. Consider making timeout configurable",
+      "MEDIUM: metaDiariaMin unification is conceptually tricky -- gerador uses dias_trabalho (actual daily target for time allocation), validador uses 7 (for weekly tolerance). These serve different purposes. Must decide which formula to use where without breaking the scoring",
+      "LOW: test-motor.ts runs via Electron context (npm run test:motor = build + electron . --test-motor). PRD says 'npx tsx' but current implementation requires Electron for better-sqlite3 + app paths. Either keep Electron path or restructure test to avoid Electron dependency",
+      "LOW: B3.2 (worker deserialization) appears ALREADY IMPLEMENTED. May need zero work beyond verification. PRD lists it as a gap but code shows it done"
+    ],
+    "key_observations": [
+      "test-motor.ts ALREADY EXISTS with basic scaffold (97 lines, 4 setores + 1 pinned test). PRD says 'CRIAR' but it was created in task 004. Needs EXPANSION not creation",
+      "B3.2 (worker pinnedCells deserialization) is ALREADY IMPLEMENTED in worker.ts:5-20. Just needs verification",
+      "ColabValidacao expansion is the critical bottleneck -- 3 corrections (B1.2, B2.2, B2.5) depend on it",
+      "Validador already JOINs tipos_contrato and has dias_trabalho/trabalha_domingo/max_minutos_dia in the SQL result (validador.ts:31-46). It just does not include them in the typed result or pass them to validarRegras",
+      "Gerador already has ColabComContrato with all fields but casts to ColabValidacao when calling validarRegras (gerador.ts:588). The superset IS compatible IF ColabValidacao is expanded",
+      "The FASE 3 threshold bug (B1.4) at line 270 is in the FALLBACK redistribution path (only when initial scoring violated). The FASE 4.5 repair correctly uses > at line 405. So the bug only fires in specific redistribution scenarios",
+      "corte_semanal values in DB schema: SEG_DOM, TER_SEG, QUA_TER, QUI_QUA, SEX_QUI, SAB_SEX, DOM_SAB. Pattern is 'START_END'. Need to parse first 3 chars to get start day of week",
+      "Motor has NO empresa query -- it never reads empresa table. corte_semanal must be passed as parameter or motor must query empresa",
+      "Validador also has NO empresa query. Must add empresa.corte_semanal loading"
+    ],
+    "file_change_map": {
+      "src/main/motor/validacao-compartilhada.ts": [
+        "Expand ColabValidacao interface: add max_minutos_dia, dias_trabalho, trabalha_domingo",
+        "Refactor getWeeks() to accept corte_semanal parameter (default SEG for backward compat)",
+        "Add R_CONTRATO_MAX_DIA rule after R4 in validarRegras()",
+        "Add R_ESTAGIARIO_DOMINGO rule after R3 in validarRegras()",
+        "Extract shared metaDiariaMin function"
+      ],
+      "src/main/motor/gerador.ts": [
+        "B1.1: Load empresa.corte_semanal in FASE 1, pass to getWeeks() in FASE 3",
+        "B1.4: Line 270 change >= to > in FASE 3 fallback redistribution",
+        "B1.3/B3.1: Filter pinned cells from FASE 4.5 repair candidate scoring",
+        "B2.4: Add input validation at top of gerarProposta()",
+        "Pass corte_semanal to validarRegras in FASE 6+7"
+      ],
+      "src/main/motor/validador.ts": [
+        "B2.1: Add lookback loading from previous OFICIAL escala (copy pattern from gerador.ts:106-150)",
+        "B1.1: Load empresa.corte_semanal from DB, pass to getWeeks()",
+        "Expand typed SQL result to include new ColabValidacao fields"
+      ],
+      "src/main/tipc.ts": [
+        "B2.3: Add 30s timeout via Promise.race to escalas.gerar worker (lines 592-617)",
+        "B2.3: Add 30s timeout via Promise.race to escalas.ajustar worker (lines 495-515)",
+        "B2.4: Add input validation to escalas.ajustar handler (setor exists, escala is RASCUNHO already checked)"
+      ],
+      "src/main/motor/worker.ts": [
+        "B3.2: Verify TypeScript compiles after ColabValidacao changes (likely no code changes needed)"
+      ],
+      "src/main/motor/test-motor.ts": [
+        "B4.1: Expand with 8+ test scenarios (lookback, estagiario, R2, pinned, pinned conflict, impossible coverage, corte_semanal, basic 4-setor)"
+      ]
+    }
+  },
+  "completed_at": "2026-02-14T23:30:00Z"
+}
