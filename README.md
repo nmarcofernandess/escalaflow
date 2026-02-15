@@ -1,0 +1,241 @@
+# EscalaFlow
+
+App desktop offline para gerar escalas de trabalho em supermercados, com motor de compliance CLT e interface para gestores de RH nao tecnicos.
+
+---
+
+## 1) O que o sistema entrega hoje
+
+- Geracao automatica de escala otimizada por periodo (motor de 7 fases).
+- Validacao de 10 regras CLT nomeadas (6 HARD bloqueantes + 4 SOFT alertas).
+- Simulacao iterativa: click na grid alterna TRABALHO/FOLGA, sistema recalcula em tempo real.
+- Oficializacao com bloqueio de violacoes criticas.
+- Export HTML self-contained para impressao (A4 landscape).
+- Dark mode 100% funcional.
+- 10 paginas + Perfil, 7 formularios com validacao Zod.
+- App 100% offline — sem login, sem internet, sem servidor.
+
+---
+
+## 2) Stack
+
+| Camada | Tecnologia |
+|--------|-----------|
+| Shell | Electron 34 |
+| Build | electron-vite |
+| IPC | @egoist/tipc (type-safe) |
+| Database | SQLite via better-sqlite3 |
+| Motor | Worker thread com timeout 30s |
+| Frontend | React 19 + Vite |
+| Estilo | Tailwind CSS + shadcn/ui (22 componentes) |
+| Estado | Zustand |
+| Formularios | Zod + react-hook-form + shadcn Form |
+| Notificacoes | sonner |
+| DnD | @dnd-kit |
+| Roteamento | React Router v7 |
+
+---
+
+## 3) Setup inicial (primeira vez)
+
+```bash
+cd escalaflow
+npm install
+```
+
+Pronto. O banco SQLite e criado automaticamente no primeiro `npm run dev` com seed de 4 tipos de contrato CLT.
+
+---
+
+## 4) Executar o sistema
+
+```bash
+npm run dev
+```
+
+Um comando. Abre o app Electron com hot reload (main + renderer).
+
+---
+
+## 5) Comandos
+
+| Comando | O que faz |
+|---------|-----------|
+| `npm run dev` | Abre app Electron com hot reload |
+| `npm run build` | Build de producao (main + preload + renderer) |
+| `npm run preview` | Preview do build de producao |
+| `npm run typecheck` | TypeScript check (node + web) |
+| `npm run test:motor` | Build + roda 10 testes do motor |
+| `npm run pack` | Empacota sem gerar instalador |
+| `npm run dist:mac` | Gera .dmg (macOS) |
+| `npm run dist:win` | Gera .exe installer (Windows) |
+| `npm run dist:linux` | Gera .AppImage (Linux) |
+
+---
+
+## 6) Tutorial operacional
+
+### Passo 1 — Cadastre setores
+
+Em `Setores`, crie os departamentos do supermercado (Caixa, Acougue, Padaria).
+Defina horario de abertura e fechamento.
+
+### Passo 2 — Defina demandas
+
+Dentro de cada setor, cadastre as faixas de demanda:
+- 08:00-10:00 = 3 pessoas
+- 10:00-15:00 = 5 pessoas
+- 15:00-19:30 = 4 pessoas
+
+### Passo 3 — Cadastre colaboradores
+
+Em `Colaboradores`, adicione funcionarios com nome, sexo e tipo de contrato.
+Horas semanais sao preenchidas automaticamente pelo template do contrato.
+
+### Passo 4 — Gere a escala
+
+Em `Setores > [Setor] > Escala`, selecione o periodo e clique em "Gerar Escala".
+O motor propoe uma escala otimizada automaticamente.
+
+### Passo 5 — Ajuste se quiser
+
+Clique em qualquer celula da grid para alternar entre TRABALHO e FOLGA.
+O sistema recalcula indicadores em tempo real (Smart Recalc com pinnedCells).
+
+### Passo 6 — Oficialize
+
+Quando estiver satisfeito (0 violacoes HARD), clique em "Oficializar".
+A escala e travada e pode ser exportada/impressa.
+
+---
+
+## 7) Regras de compliance (motor)
+
+### HARD (bloqueiam oficializacao)
+
+| Regra | Descricao |
+|-------|-----------|
+| `MAX_DIAS_CONSECUTIVOS` | Max 6 dias consecutivos de trabalho |
+| `DESCANSO_ENTRE_JORNADAS` | Min 11h (660min) entre jornadas |
+| `MAX_JORNADA_DIARIA` | Max 10h (600min) por dia (CLT absoluto) |
+| `CONTRATO_MAX_DIA` | Max minutos/dia do contrato (ex: estagiario 4h) |
+| `RODIZIO_DOMINGO` | Mulher: max 1 DOM seguido. Homem: max 2 |
+| `ESTAGIARIO_DOMINGO` | Estagiario nunca trabalha domingo |
+
+### SOFT (alertas, nao bloqueiam)
+
+| Regra | Descricao |
+|-------|-----------|
+| `META_SEMANAL` | Desvio da meta semanal de horas (com tolerancia) |
+| `PREFERENCIA_DIA` | Colaborador pediu folga em dia especifico |
+| `PREFERENCIA_TURNO` | Colaborador prefere manha/tarde |
+| `COBERTURA` | Faixa de demanda nao atingiu minimo de pessoas |
+
+---
+
+## 8) Paginas da UI
+
+| Rota | Pagina | Descricao |
+|------|--------|-----------|
+| `/` | Dashboard | Visao geral dos setores, alertas, acoes rapidas |
+| `/setores` | SetorLista | Cards de setores com criacao inline |
+| `/setores/:id` | SetorDetalhe | Info + demandas + colaboradores (DnD rank) + escala |
+| `/setores/:id/escala` | EscalaPagina | **CORE** — Simulacao / Oficial / Historico |
+| `/colaboradores` | ColaboradorLista | Lista com filtro por setor |
+| `/colaboradores/:id` | ColaboradorDetalhe | Perfil + contrato + preferencias + excecoes |
+| `/tipos-contrato` | ContratoLista | Templates de contrato CLT (CRUD completo) |
+| `/empresa` | EmpresaConfig | Nome, corte semanal, tolerancia |
+| `/perfil` | Perfil | Avatar + nome do usuario (localStorage) |
+
+---
+
+## 9) Estrutura do projeto
+
+```
+escalaflow/
+├── src/
+│   ├── main/                          # Electron Main Process
+│   │   ├── index.ts                   # App lifecycle, window
+│   │   ├── tipc.ts                    # 27 IPC handlers
+│   │   ├── db/
+│   │   │   ├── database.ts            # better-sqlite3 connection
+│   │   │   ├── schema.ts             # DDL (CREATE TABLE)
+│   │   │   └── seed.ts               # Seed 4 contratos CLT
+│   │   └── motor/
+│   │       ├── gerador.ts             # Motor 7 fases (~780 linhas)
+│   │       ├── validador.ts           # PolicyEngine (10 regras)
+│   │       ├── validacao-compartilhada.ts
+│   │       ├── worker.ts             # Worker thread entry
+│   │       └── test-motor.ts          # 10 testes
+│   │
+│   ├── renderer/src/                  # React Frontend
+│   │   ├── paginas/                   # 10 paginas
+│   │   ├── componentes/               # 11 componentes custom
+│   │   ├── components/ui/             # 22 shadcn primitives
+│   │   ├── lib/                       # cores.ts, formatadores.ts, utils.ts
+│   │   ├── hooks/                     # useApiData.ts
+│   │   ├── estado/                    # Zustand store
+│   │   └── servicos/                  # IPC client wrappers
+│   │
+│   ├── preload/                       # contextBridge (IPC seguro)
+│   └── shared/                        # Types + constants compartilhados
+│
+├── specs/                             # Specs de cada orchestrate
+│   ├── 003-electron-migration/
+│   ├── 004-finalize-v2/
+│   │   └── ITERACAO.md                # FONTE DE VERDADE (roadmap)
+│   ├── 005-motor-fundacao/
+│   ├── 006-front-blockers-ux/
+│   └── 007-polish-qualidade/
+│
+├── docs/
+│   └── BUILD_V2_ESCALAFLOW.md         # Arquitetura completa
+│
+├── resources/                         # Icone do app
+├── electron.vite.config.ts
+├── electron-builder.yml
+├── tailwind.config.js
+├── tsconfig.json / tsconfig.node.json / tsconfig.web.json
+└── package.json
+```
+
+---
+
+## 10) Modelo de dados
+
+8 entidades, todas em portugues, snake_case ponta a ponta:
+
+| Entidade | Tabela | Descricao |
+|----------|--------|-----------|
+| Empresa | `empresa` | Config global (singleton) |
+| TipoContrato | `tipos_contrato` | Templates: CLT 44h, 36h, 30h, Estagiario 20h |
+| Setor | `setores` | Departamentos do supermercado |
+| Demanda | `demandas` | Faixas horarias com minimo de pessoas |
+| Colaborador | `colaboradores` | Funcionarios vinculados a setor + contrato |
+| Excecao | `excecoes` | Ferias, atestado, bloqueio |
+| Escala | `escalas` | Escala gerada (RASCUNHO → OFICIAL → ARQUIVADA) |
+| Alocacao | `alocacoes` | Um dia de uma pessoa numa escala |
+
+---
+
+## 11) Troubleshooting
+
+- **App nao abre:** `npm run build` primeiro, depois `npm run dev`.
+- **Banco corrompido:** Delete `data/escalaflow.db` e reinicie. Seed roda automaticamente.
+- **Typecheck falha:** `npm run typecheck` mostra erros separados por node e web.
+- **Motor trava:** Timeout de 30s protege. Se persistir, verifique dados do setor (demandas, colabs).
+- **Teste do motor falha:** `npm run test:motor` roda build + 10 testes. Saida mostra qual falhou.
+- **Dark mode quebrado:** Todas as cores usam tokens semanticos de `cores.ts`. Se adicionou cor nova, inclua `dark:` variant.
+
+---
+
+## 12) Documentacao
+
+| Arquivo | Conteudo |
+|---------|----------|
+| `specs/004-finalize-v2/ITERACAO.md` | Roadmap iterativo — FONTE DE VERDADE |
+| `docs/BUILD_V2_ESCALAFLOW.md` | Arquitetura completa (modelo, motor, frontend) |
+| `specs/005-motor-fundacao/` | Motor: 10 regras, pinnedCells, testes |
+| `specs/006-front-blockers-ux/` | Dark mode, violacoes humanizadas, ContratoLista CRUD |
+| `specs/007-polish-qualidade/` | EmptyState, Zod forms, Perfil, QA final |
+| `CLAUDE.md` | Instrucoes para Claude Code |
