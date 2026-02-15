@@ -4,6 +4,8 @@ const DDL = `
 CREATE TABLE IF NOT EXISTS empresa (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
+    cnpj TEXT NOT NULL DEFAULT '',
+    telefone TEXT NOT NULL DEFAULT '',
     corte_semanal TEXT NOT NULL DEFAULT 'SEG_DOM' CHECK (corte_semanal IN ('SEG_DOM', 'TER_SEG', 'QUA_TER', 'QUI_QUA', 'SEX_QUI', 'SAB_SEX', 'DOM_SAB')),
     tolerancia_semanal_min INTEGER NOT NULL DEFAULT 30
 );
@@ -20,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tipos_contrato (
 CREATE TABLE IF NOT EXISTS setores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
+    icone TEXT,
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
     ativo INTEGER NOT NULL DEFAULT 1
@@ -83,8 +86,46 @@ CREATE TABLE IF NOT EXISTS alocacoes (
 );
 `
 
+function migrateSchema(): void {
+  const db = getDb()
+
+  // v2.1: Add cnpj + telefone to empresa
+  const cols = db.prepare("PRAGMA table_info('empresa')").all() as { name: string }[]
+  const colNames = new Set(cols.map((c) => c.name))
+  if (!colNames.has('cnpj')) {
+    db.exec("ALTER TABLE empresa ADD COLUMN cnpj TEXT NOT NULL DEFAULT ''")
+  }
+  if (!colNames.has('telefone')) {
+    db.exec("ALTER TABLE empresa ADD COLUMN telefone TEXT NOT NULL DEFAULT ''")
+  }
+
+  // v2.2: Add icone to setores
+  const setorCols = db.prepare("PRAGMA table_info('setores')").all() as { name: string }[]
+  const setorColNames = new Set(setorCols.map((c) => c.name))
+  if (!setorColNames.has('icone')) {
+    db.exec('ALTER TABLE setores ADD COLUMN icone TEXT')
+  }
+
+  // v2.3: Add indicadores columns to escalas
+  const escalaCols = db.prepare("PRAGMA table_info('escalas')").all() as { name: string }[]
+  const escalaColNames = new Set(escalaCols.map((c) => c.name))
+  if (!escalaColNames.has('cobertura_percent')) {
+    db.exec('ALTER TABLE escalas ADD COLUMN cobertura_percent REAL DEFAULT 0')
+  }
+  if (!escalaColNames.has('violacoes_hard')) {
+    db.exec('ALTER TABLE escalas ADD COLUMN violacoes_hard INTEGER DEFAULT 0')
+  }
+  if (!escalaColNames.has('violacoes_soft')) {
+    db.exec('ALTER TABLE escalas ADD COLUMN violacoes_soft INTEGER DEFAULT 0')
+  }
+  if (!escalaColNames.has('equilibrio')) {
+    db.exec('ALTER TABLE escalas ADD COLUMN equilibrio REAL DEFAULT 0')
+  }
+}
+
 export function createTables(): void {
   const db = getDb()
   db.exec(DDL)
+  migrateSchema()
   console.log('[DB] Tabelas criadas com sucesso')
 }

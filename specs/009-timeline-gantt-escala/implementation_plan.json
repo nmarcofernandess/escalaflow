@@ -1,0 +1,166 @@
+{
+  "status": "complete",
+  "plan": {
+    "feature": "Timeline/Gantt Visualization for Escalas",
+    "workflow_type": "feature",
+    "phases": [
+      {
+        "id": "phase-1-utilities",
+        "name": "Utility Functions & Color Constants",
+        "description": "Add shared utility functions (toMinutes) and color constants (CORES_CONTRATO) that TimelineGrid will depend on. These are small additions to existing files.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "subtask-1-1",
+            "description": "Add toMinutes() utility function to formatadores.ts. This function converts a time string 'HH:MM' to total minutes (e.g., '08:00' -> 480, '14:30' -> 870). Add it AFTER the existing iniciais() function. Signature: export function toMinutes(time: string): number. Implementation: split by ':', parseInt hours * 60 + parseInt minutes. Handle null/empty by returning 0.",
+            "files_to_modify": [
+              "src/renderer/src/lib/formatadores.ts"
+            ],
+            "files_to_create": [],
+            "patterns_from": [
+              "src/renderer/src/lib/formatadores.ts"
+            ],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "pending"
+          },
+          {
+            "id": "subtask-1-2",
+            "description": "Add CORES_CONTRATO constant to cores.ts. This maps tipo_contrato names to Tailwind color classes for timeline bars. Add it AFTER the existing CORES_GENERO export. Structure: export const CORES_CONTRATO: Record<string, { bar: string; text: string; border: string }> with these entries: 'CLT 44h' -> emerald (bar: 'bg-emerald-500/80 dark:bg-emerald-600/70', text: 'text-white dark:text-emerald-100', border: 'border-emerald-600 dark:border-emerald-500'), 'CLT 36h' -> blue (bar: 'bg-blue-500/80 dark:bg-blue-600/70', text: 'text-white dark:text-blue-100', border: 'border-blue-600 dark:border-blue-500'), 'Estagiario 20h' -> purple (bar: 'bg-purple-500/80 dark:bg-purple-600/70', text: 'text-white dark:text-purple-100', border: 'border-purple-600 dark:border-purple-500'). Also add a DEFAULT key with slate colors for unknown contract types: bar: 'bg-slate-500/80 dark:bg-slate-600/70', text: 'text-white dark:text-slate-100', border: 'border-slate-600 dark:border-slate-500'. Each entry MUST have dark: variants for dark mode.",
+            "files_to_modify": [
+              "src/renderer/src/lib/cores.ts"
+            ],
+            "files_to_create": [],
+            "patterns_from": [
+              "src/renderer/src/lib/cores.ts"
+            ],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-2-viewtoggle",
+        "name": "EscalaViewToggle Component",
+        "description": "Create a dedicated EscalaViewToggle component for switching between 'grid' and 'timeline' views, with localStorage persistence. The existing ViewToggle.tsx uses 'card' | 'table' modes for list pages -- we need a new one for the escala page with different icons and labels.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "subtask-2-1",
+            "description": "Create EscalaViewToggle.tsx in src/renderer/src/componentes/. This is a NEW file. It should export: (1) type EscalaViewMode = 'grid' | 'timeline', (2) EscalaViewToggle component, (3) useEscalaViewMode hook. Pattern: COPY the exact structure from ViewToggle.tsx (same file) but change: ViewMode -> EscalaViewMode, 'card'|'table' -> 'grid'|'timeline'. Icons: use Table2 (from lucide-react) for 'grid' mode and GanttChart (from lucide-react) for 'timeline' mode. Tooltip labels: 'Grade' for grid, 'Timeline' for timeline. The useEscalaViewMode hook should use localStorage key 'ef-view-escala' and default to 'grid'. The hook must validate stored value is 'grid' or 'timeline' before using it (same pattern as useViewMode). Keep the same Button variant='secondary'|'ghost' toggle pattern. Same size-8 buttons, same rounded corners, same border container div.",
+            "files_to_modify": [],
+            "files_to_create": [
+              "src/renderer/src/componentes/EscalaViewToggle.tsx"
+            ],
+            "patterns_from": [
+              "src/renderer/src/componentes/ViewToggle.tsx"
+            ],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-3-timeline-component",
+        "name": "TimelineGrid Component",
+        "description": "Create the main TimelineGrid component -- the core of this feature. A CSS Grid based horizontal timeline showing employee shift bars positioned by time along the X axis.",
+        "depends_on": [
+          "phase-1-utilities"
+        ],
+        "subtasks": [
+          {
+            "id": "subtask-3-1",
+            "description": "Create TimelineGrid.tsx in src/renderer/src/componentes/. This is a NEW file and the largest subtask.\n\nPROPS INTERFACE (TimelineGridProps):\n- colaboradores: Colaborador[]\n- alocacoes: Alocacao[]\n- setor: Setor (for hora_abertura/hora_fechamento)\n- dataSelecionada: string (YYYY-MM-DD format, the day to display)\n- dataInicio: string (period start, for day navigation bounds)\n- dataFim: string (period end, for day navigation bounds)\n- demandas?: Demanda[]\n- tiposContrato?: TipoContrato[]\n- readOnly?: boolean (default false)\n- onCelulaClick?: (colaboradorId: number, data: string, statusAtual: string) => void\n- loadingCell?: { colaboradorId: number; data: string } | null\n- changedCells?: Set<string> (default new Set())\n- violatedCells?: Set<string> (default new Set())\n\nIMPORTS:\n- { useState, useMemo } from 'react'\n- { ChevronLeft, ChevronRight } from 'lucide-react'\n- { Button } from '@/components/ui/button'\n- { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'\n- { Badge } from '@/components/ui/badge'\n- { cn } from '@/lib/utils'\n- { CORES_CONTRATO } from '@/lib/cores'\n- { toMinutes, formatarMinutos, iniciais, formatarData } from '@/lib/formatadores'\n- Types from '@shared/index': Alocacao, Colaborador, Setor, Demanda, TipoContrato\n\nCORE LOGIC:\n\n1. TIME SLOTS CALCULATION:\n   - Calculate totalMinutes = toMinutes(setor.hora_fechamento) - toMinutes(setor.hora_abertura)\n   - SLOT_SIZE = 30 (minutes per slot)\n   - totalSlots = totalMinutes / SLOT_SIZE\n   - Generate timeLabels array: for each hour from hora_abertura to hora_fechamento, push the hour string (e.g., '06:00', '07:00', ..., '22:00'). Only full hours, not every 30min slot.\n\n2. DATA MAPS (useMemo):\n   - alocacaoMap: Map<string, Alocacao[]> keyed by colaborador_id, filtered to dataSelecionada only. Group multiple alocacoes per colaborador on same day (for split shifts with interval). Key: string(colaborador_id). Value: Alocacao[] sorted by hora_inicio.\n   - contratoMap: Map<number, TipoContrato> keyed by tipo_contrato_id (from tiposContrato prop)\n\n3. COLABORADORES SORTED: useMemo to sort colaboradores by rank ascending.\n\n4. DAY NAVIGATION:\n   - State: dataSelecionada is a PROP but the parent controls it. However, we need internal navigation. Add onDateChange?: (date: string) => void to props. Or better: manage dataSelecionada internally with useState initialized from prop. Use buttons ChevronLeft/ChevronRight to go prev/next day. Clamp to dataInicio..dataFim range. Show formatted date and day-of-week name (e.g., 'Ter 01/03').\n   - Actually, SIMPLIFY: use useState<string> for currentDate initialized from dataSelecionada prop. Navigation buttons adjust +/- 1 day. Show day name + date.\n\n5. BAR POSITION CALCULATION:\n   Helper function calcBarPosition(horaInicio: string, horaFim: string): { start: number; end: number }\n   - startOffset = toMinutes(horaInicio) - toMinutes(setor.hora_abertura)\n   - endOffset = toMinutes(horaFim) - toMinutes(setor.hora_abertura)\n   - gridStart = Math.floor(startOffset / SLOT_SIZE) + 2  (col 1 is the sidebar)\n   - gridEnd = Math.ceil(endOffset / SLOT_SIZE) + 2\n   - return { start: gridStart, end: gridEnd }\n\n6. COLOR LOOKUP:\n   Helper function getBarColor(tipoContratoId: number): { bar: string; text: string; border: string }\n   - Look up contratoMap.get(tipoContratoId)?.nome\n   - Return CORES_CONTRATO[nome] || CORES_CONTRATO['DEFAULT']\n\nRENDER STRUCTURE:\n\nThe component renders a scrollable container with CSS Grid:\n\n```\n<div className=\"space-y-3\">\n  {/* Day Navigation */}\n  <div className=\"flex items-center justify-between\">\n    <div className=\"flex items-center gap-2\">\n      <Button variant=\"outline\" size=\"icon\" className=\"size-8\" onClick={prevDay} disabled={atStart}>\n        <ChevronLeft className=\"size-4\" />\n      </Button>\n      <span className=\"text-sm font-medium min-w-[140px] text-center\">\n        {dayName} {formatarData(currentDate)}\n      </span>\n      <Button variant=\"outline\" size=\"icon\" className=\"size-8\" onClick={nextDay} disabled={atEnd}>\n        <ChevronRight className=\"size-4\" />\n      </Button>\n    </div>\n  </div>\n\n  {/* Timeline Grid */}\n  <div className=\"overflow-x-auto rounded-lg border\">\n    <div\n      className=\"relative min-w-[800px]\"\n      style={{\n        display: 'grid',\n        gridTemplateColumns: `180px repeat(${totalSlots}, 1fr)`,\n        gridTemplateRows: `auto repeat(${sortedColaboradores.length}, 48px) auto`,\n      }}\n    >\n      {/* HEADER ROW */}\n      {/* Sticky corner cell (row 1, col 1) */}\n      <div className=\"sticky left-0 z-20 bg-muted/40 border-b border-r px-3 py-2 flex items-end\">\n        <span className=\"text-xs font-semibold text-foreground\">Colaborador</span>\n      </div>\n      {/* Time labels - render one label per HOUR spanning 2 columns (2 x 30min slots) */}\n      {timeLabels.map((label, i) => (\n        <div\n          key={label}\n          className=\"border-b bg-muted/40 px-1 py-2 text-center text-[10px] font-medium text-muted-foreground\"\n          style={{ gridColumn: `${i * 2 + 2} / ${i * 2 + 4}` }}\n        >\n          {label}\n        </div>\n      ))}\n\n      {/* COLLABORATOR ROWS */}\n      {sortedColaboradores.map((colab, rowIndex) => {\n        const allocsToday = alocacaoMap.get(String(colab.id)) || []\n        const contrato = contratoMap.get(colab.tipo_contrato_id)\n        const colors = getBarColor(colab.tipo_contrato_id)\n        const isViolatedRow = violatedCells.has(`${colab.id}-${currentDate}`)\n        const hasWork = allocsToday.some(a => a.status === 'TRABALHO')\n        const isFolga = !hasWork && allocsToday.some(a => a.status === 'FOLGA')\n        const isIndisponivel = allocsToday.some(a => a.status === 'INDISPONIVEL')\n        const gridRow = rowIndex + 2  // row 1 is header\n\n        return (\n          <React.Fragment key={colab.id}>\n            {/* Sidebar cell - sticky left */}\n            <div\n              className={cn(\n                'sticky left-0 z-10 bg-background border-b border-r px-3 flex items-center gap-2',\n                isViolatedRow && 'bg-destructive/5'\n              )}\n              style={{ gridRow, gridColumn: 1 }}\n            >\n              <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold', colab.sexo === 'F' ? 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300' : 'bg-sky-100 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300')}>\n                {iniciais(colab.nome)}\n              </div>\n              <div className=\"min-w-0\">\n                <div className=\"text-xs font-medium leading-tight text-foreground truncate\">\n                  {colab.nome.split(' ').slice(0, 2).join(' ')}\n                </div>\n                <div className=\"text-[10px] text-muted-foreground truncate\">\n                  {contrato?.nome ?? 'Contrato'}\n                </div>\n              </div>\n            </div>\n\n            {/* Background for the entire row (grid lines) */}\n            <div\n              className={cn('border-b col-span-full', isViolatedRow && 'bg-destructive/5')}\n              style={{ gridRow, gridColumn: `2 / ${totalSlots + 2}` }}\n            />\n\n            {/* Shift bars OR status badges */}\n            {hasWork && allocsToday.filter(a => a.status === 'TRABALHO' && a.hora_inicio && a.hora_fim).map((alloc, i) => {\n              const pos = calcBarPosition(alloc.hora_inicio!, alloc.hora_fim!)\n              return (\n                <Tooltip key={i}>\n                  <TooltipTrigger asChild>\n                    <div\n                      className={cn(\n                        'flex items-center justify-center rounded-md mx-0.5 my-1 text-[10px] font-medium cursor-default',\n                        colors.bar, colors.text, colors.border, 'border',\n                        !readOnly && alloc.status !== 'INDISPONIVEL' && 'cursor-pointer hover:opacity-90',\n                        changedCells.has(`${colab.id}-${currentDate}`) && 'ring-2 ring-primary ring-offset-1',\n                        isViolatedRow && 'ring-2 ring-destructive',\n                      )}\n                      style={{ gridRow, gridColumn: `${pos.start} / ${pos.end}` }}\n                      onClick={() => {\n                        if (!readOnly && onCelulaClick) {\n                          onCelulaClick(colab.id, currentDate, alloc.status)\n                        }\n                      }}\n                    >\n                      {alloc.hora_inicio} - {alloc.hora_fim}\n                    </div>\n                  </TooltipTrigger>\n                  <TooltipContent side=\"top\" className=\"text-xs space-y-1\">\n                    <p className=\"font-semibold\">{colab.nome}</p>\n                    <p>{contrato?.nome ?? 'Contrato'}</p>\n                    <p>{alloc.hora_inicio} -> {alloc.hora_fim}</p>\n                    {alloc.minutos && <p>Total: {formatarMinutos(alloc.minutos)}</p>}\n                  </TooltipContent>\n                </Tooltip>\n              )\n            })}\n\n            {/* Intervals between work blocks: if 2+ work allocs, render translucent bars in the gaps */}\n            {hasWork && (() => {\n              const workAllocs = allocsToday.filter(a => a.status === 'TRABALHO' && a.hora_inicio && a.hora_fim).sort((a, b) => toMinutes(a.hora_inicio!) - toMinutes(b.hora_inicio!))\n              const intervals = []\n              for (let i = 0; i < workAllocs.length - 1; i++) {\n                const gapStart = workAllocs[i].hora_fim!\n                const gapEnd = workAllocs[i + 1].hora_inicio!\n                if (toMinutes(gapEnd) > toMinutes(gapStart)) {\n                  intervals.push({ start: gapStart, end: gapEnd })\n                }\n              }\n              return intervals.map((gap, i) => {\n                const pos = calcBarPosition(gap.start, gap.end)\n                return (\n                  <div\n                    key={`gap-${i}`}\n                    className=\"flex items-center justify-center rounded mx-0.5 my-1.5 text-[9px] text-muted-foreground bg-muted/40 dark:bg-muted/30 border border-dashed border-muted-foreground/20\"\n                    style={{ gridRow, gridColumn: `${pos.start} / ${pos.end}` }}\n                  >\n                    Intervalo\n                  </div>\n                )\n              })\n            })()}\n\n            {/* FOLGA badge - centered in row */}\n            {isFolga && !hasWork && (\n              <div\n                className=\"flex items-center justify-center my-1\"\n                style={{ gridRow, gridColumn: `2 / ${totalSlots + 2}` }}\n              >\n                <Badge variant=\"outline\" className=\"text-[10px] text-muted-foreground\">\n                  FOLGA\n                </Badge>\n              </div>\n            )}\n\n            {/* INDISPONIVEL badge - centered with diagonal stripes background */}\n            {isIndisponivel && (\n              <div\n                className=\"flex items-center justify-center my-1 rounded bg-amber-50/50 dark:bg-amber-950/20\"\n                style={{\n                  gridRow,\n                  gridColumn: `2 / ${totalSlots + 2}`,\n                  backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(251,191,36,0.1) 4px, rgba(251,191,36,0.1) 8px)',\n                }}\n              >\n                <Badge variant=\"outline\" className=\"text-[10px] text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700\">\n                  AUS.\n                </Badge>\n              </div>\n            )}\n          </React.Fragment>\n        )\n      })}\n\n      {/* COVERAGE ROW (if demandas exist) */}\n      {demandas && demandas.length > 0 && (() => {\n        // Calculate coverage per 30min slot\n        const coverageRow = gridRow after last collaborator\n        // For each slot, count how many colaboradores have TRABALHO status\n        // where their hora_inicio <= slotStart AND hora_fim > slotStart\n        // Compare with max(demanda.min_pessoas) for matching time range\n        // Render colored cells: green if coverage >= needed, amber/red if not\n        // ... (see detailed description below)\n      })()}\n    </div>\n  </div>\n\n  {/* Legend */}\n  <div className=\"flex flex-wrap items-center gap-4 text-[10px] text-muted-foreground\">\n    {/* Render a swatch for each CORES_CONTRATO entry + FOLGA + INDISPONIVEL */}\n  </div>\n</div>\n```\n\nCOVERAGE ROW DETAIL:\n- Grid row index = sortedColaboradores.length + 2\n- Sidebar cell: 'COBERTURA' label, sticky left, bg-muted/30\n- For each 30min slot (index 0 to totalSlots-1):\n  - slotStartMin = toMinutes(setor.hora_abertura) + slotIndex * 30\n  - Count colaboradores where any TRABALHO alocacao has toMinutes(hora_inicio) <= slotStartMin AND toMinutes(hora_fim) > slotStartMin\n  - Find max min_pessoas from demandas where the slot falls within demanda.hora_inicio..hora_fim range AND dia_semana matches or is null\n  - Render cell at gridColumn: slotIndex + 2 / slotIndex + 3\n  - Color: emerald if count >= needed, amber if count < needed\n  - Show count as text\n\nLEGEND:\n- One swatch per contract type color (from CORES_CONTRATO) with contract name\n- Interval swatch (dashed border muted)\n- FOLGA swatch\n- INDISPONIVEL swatch\n\nDARK MODE:\n- All colors MUST use dark: variants\n- Background: bg-background for sidebar, bg-muted/40 for header\n- Grid lines: border-b with default border color\n- Bars: CORES_CONTRATO already has dark: variants",
+            "files_to_modify": [],
+            "files_to_create": [
+              "src/renderer/src/componentes/TimelineGrid.tsx"
+            ],
+            "patterns_from": [
+              "src/renderer/src/componentes/EscalaGrid.tsx",
+              "src/renderer/src/lib/cores.ts",
+              "src/renderer/src/lib/formatadores.ts"
+            ],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-4-integration",
+        "name": "Integration into EscalaPagina",
+        "description": "Wire TimelineGrid and EscalaViewToggle into EscalaPagina.tsx so the user can toggle between grid and timeline views. The toggle must work in all 3 tabs (Simulacao, Oficial, Historico).",
+        "depends_on": [
+          "phase-2-viewtoggle",
+          "phase-3-timeline-component"
+        ],
+        "subtasks": [
+          {
+            "id": "subtask-4-1",
+            "description": "Integrate EscalaViewToggle and TimelineGrid into EscalaPagina.tsx. This modifies the EXISTING file.\n\nSTEPS:\n\n1. ADD IMPORTS at the top:\n   - import { EscalaViewToggle, useEscalaViewMode } from '@/componentes/EscalaViewToggle'\n   - import { TimelineGrid } from '@/componentes/TimelineGrid'\n\n2. ADD STATE in EscalaPagina function body (after existing state declarations):\n   - const [escalaViewMode, setEscalaViewMode] = useEscalaViewMode()\n\n3. MODIFY SimulacaoResult: Add escalaViewMode and setEscalaViewMode as props. Then in the SimulacaoResultProps interface add:\n   - escalaViewMode: 'grid' | 'timeline'\n   - setEscalaViewMode: (mode: 'grid' | 'timeline') => void\n   - setor: Setor (add this if not already passed -- needed for TimelineGrid)\n   Pass setor={setor} from parent.\n\n4. IN SimulacaoResult component, MODIFY the Grid Card section (currently around line 810-838):\n   - In the CardHeader (line 811), ADD the EscalaViewToggle AFTER the PontuacaoBadge:\n     <div className=\"flex items-center gap-2\">\n       <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />\n       <PontuacaoBadge pontuacao={indicators.pontuacao} />\n     </div>\n   - In the CardContent, REPLACE the direct <EscalaGrid .../> with a conditional:\n     {escalaViewMode === 'grid' ? (\n       <EscalaGrid ... (existing props) />\n     ) : (\n       <TimelineGrid\n         colaboradores={colaboradores}\n         alocacoes={escalaCompleta.alocacoes}\n         setor={setor}\n         dataSelecionada={escalaCompleta.escala.data_inicio}\n         dataInicio={escalaCompleta.escala.data_inicio}\n         dataFim={escalaCompleta.escala.data_fim}\n         demandas={demandas}\n         tiposContrato={tiposContrato}\n         readOnly={false}\n         onCelulaClick={onCelulaClick}\n         loadingCell={ajustando ?? undefined}\n         changedCells={changedCells}\n         violatedCells={violatedCells}\n       />\n     )}\n\n5. OFICIAL TAB (around line 469): Add the same toggle pattern:\n   - Add EscalaViewToggle in the CardHeader\n   - Conditional render: EscalaGrid vs TimelineGrid\n   - TimelineGrid gets readOnly={true}\n   - For TimelineGrid props: setor={setor}, dataSelecionada={oficialEscala.escala.data_inicio}, etc.\n\n6. HISTORICO TAB (around line 556): Same pattern:\n   - Add EscalaViewToggle in the expanded detail section\n   - Conditional: EscalaGrid vs TimelineGrid (readOnly={true})\n   - TimelineGrid: setor={setor}, dataSelecionada={historicoDetail.escala.data_inicio}, etc.\n\nIMPORTANT: The viewMode is shared across ALL tabs (one useState, not per-tab). This means if user switches to timeline in Simulacao, it stays timeline when they go to Oficial. This is intentional per CA6.\n\nIMPORTANT: Pass setor prop to SimulacaoResult. Currently setor is available in the parent EscalaPagina function but not passed to SimulacaoResult. Add 'setor: Setor' to SimulacaoResultProps and pass setor={setor} in the call.",
+            "files_to_modify": [
+              "src/renderer/src/paginas/EscalaPagina.tsx"
+            ],
+            "files_to_create": [],
+            "patterns_from": [
+              "src/renderer/src/componentes/EscalaGrid.tsx",
+              "src/renderer/src/componentes/ViewToggle.tsx"
+            ],
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "phase-5-polish",
+        "name": "Polish & Build Verification",
+        "description": "Verify the full build works, dark mode is consistent, and add any missing details.",
+        "depends_on": [
+          "phase-4-integration"
+        ],
+        "subtasks": [
+          {
+            "id": "subtask-5-1",
+            "description": "Run full build verification. Execute: (1) npx tsc --noEmit to verify zero TypeScript errors across the entire project. (2) npm run build to verify Electron build completes without errors. Fix any issues found. Common issues to check: (a) Missing imports in TimelineGrid.tsx (React must be imported if using React.Fragment). In modern React 19 with JSX transform, React import is automatic but React.Fragment usage may need explicit import -- use <></> (fragment shorthand) instead to avoid this. (b) CORES_CONTRATO key lookup -- make sure the Record<string, ...> type matches usage. (c) Verify all Tailwind dark: classes are correct syntax. (d) Check that import paths use '@/' alias correctly (e.g., '@/componentes/TimelineGrid', '@/componentes/EscalaViewToggle'). If build fails, read error output and fix the specific issues in the affected files.",
+            "files_to_modify": [
+              "src/renderer/src/componentes/TimelineGrid.tsx",
+              "src/renderer/src/paginas/EscalaPagina.tsx"
+            ],
+            "files_to_create": [],
+            "patterns_from": [],
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit && npm run build",
+              "expected": "Both commands complete with exit code 0, no errors"
+            },
+            "status": "pending"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "total_phases": 5,
+      "total_subtasks": 6,
+      "estimated_complexity": "medium"
+    }
+  },
+  "completed_at": "2026-02-15T19:45:00Z"
+}

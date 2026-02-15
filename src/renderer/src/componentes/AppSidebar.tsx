@@ -16,7 +16,6 @@ import {
   HelpCircle,
   Info,
   Palette,
-  User,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -46,6 +45,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { empresaService } from '@/servicos/empresa'
+import { TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
+import { useTour } from './Tour'
 
 const mainNav = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard },
@@ -55,7 +56,6 @@ const mainNav = [
 
 const configNav = [
   { label: 'Tipos de Contrato', to: '/tipos-contrato', icon: FileText },
-  { label: 'Empresa', to: '/empresa', icon: Settings },
 ]
 
 const temaOpcoes = [
@@ -77,6 +77,7 @@ export function AppSidebar() {
   const { pathname } = useLocation()
   const { isMobile } = useSidebar()
   const { theme, setTheme } = useTheme()
+  const { startTour } = useTour()
   const [empresaNome, setEmpresaNome] = useState('Empresa')
 
   useEffect(() => {
@@ -91,10 +92,10 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4">
+      <SidebarHeader id={TOUR_STEP_IDS.SIDEBAR_HEADER} className="p-4 group-data-[collapsible=icon]:p-2">
         <Link to="/" className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <CalendarDays className="size-4" />
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <CalendarDays className="size-4 shrink-0" />
           </div>
           <div className="flex flex-col group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
@@ -110,12 +111,19 @@ export function AppSidebar() {
       <SidebarSeparator />
 
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup id={TOUR_STEP_IDS.NAV_PRINCIPAL}>
           <SidebarGroupLabel>Principal</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNav.map((item) => (
-                <SidebarMenuItem key={item.label}>
+              {mainNav.map((item) => {
+                const tourId =
+                  item.to === '/setores'
+                    ? TOUR_STEP_IDS.NAV_SETORES
+                    : item.to === '/colaboradores'
+                      ? TOUR_STEP_IDS.NAV_COLABORADORES
+                      : undefined
+                return (
+                <SidebarMenuItem key={item.label} id={tourId}>
                   <SidebarMenuButton
                     asChild
                     isActive={
@@ -131,7 +139,8 @@ export function AppSidebar() {
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -141,7 +150,7 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {configNav.map((item) => (
-                <SidebarMenuItem key={item.label}>
+                <SidebarMenuItem key={item.label} id={item.to === '/tipos-contrato' ? TOUR_STEP_IDS.NAV_CONTRATOS : undefined}>
                   <SidebarMenuButton
                     asChild
                     isActive={pathname.startsWith(item.to)}
@@ -159,7 +168,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter id={TOUR_STEP_IDS.FOOTER_MENU}>
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
@@ -233,15 +242,15 @@ export function AppSidebar() {
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuItem asChild>
-                  <Link to="/perfil">
-                    <User className="size-4" />
-                    <span>Meu Perfil</span>
+                  <Link to="/empresa">
+                    <Settings className="size-4" />
+                    <span>Configuracoes</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
-                    localStorage.removeItem('escalaflow-onboarding-v1')
-                    window.dispatchEvent(new CustomEvent('escalaflow:open-onboarding'))
+                    localStorage.removeItem(TOUR_STORAGE_KEY)
+                    startTour()
                   }}
                 >
                   <HelpCircle className="size-4" />

@@ -32,6 +32,14 @@ import {
   Archive,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -73,6 +81,7 @@ import {
 import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
 import { StatusBadge } from '@/componentes/StatusBadge'
+import { IconPicker } from '@/componentes/IconPicker'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
@@ -82,7 +91,7 @@ import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
 import type { Setor, Demanda, Colaborador, Escala, TipoContrato, DiaSemana } from '@shared/index'
 
-function SortableColabItem({
+function SortableColabRow({
   colab,
   index,
   contratoNome,
@@ -107,43 +116,35 @@ function SortableColabItem({
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-3 rounded-lg border bg-background p-3 transition-colors hover:bg-muted/50"
-    >
-      <GripVertical
-        className="size-4 cursor-grab text-muted-foreground/50"
-        {...attributes}
-        {...listeners}
-      />
-      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
-        {index + 1}
-      </span>
-      <div className="flex-1">
-        <span className="text-sm font-medium text-foreground">
-          {colab.nome}
-        </span>
-        <div className="mt-0.5 flex items-center gap-2">
-          <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-            {contratoNome}
-          </Badge>
-          <span className="text-[10px] text-muted-foreground">
-            {colab.sexo === 'M' ? 'Masculino' : 'Feminino'}
-          </span>
-          {colab.prefere_turno && (
-            <span className="text-[10px] text-muted-foreground">
-              Prefere {colab.prefere_turno === 'MANHA' ? 'Manha' : 'Tarde'}
-            </span>
-          )}
-        </div>
-      </div>
-      <Button variant="ghost" size="sm" asChild>
-        <Link to={`/colaboradores/${colab.id}`}>
-          Ver perfil <ArrowRight className="ml-1 size-3" />
-        </Link>
-      </Button>
-    </div>
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell className="w-[40px] pl-4">
+        <GripVertical
+          className="size-4 cursor-grab text-muted-foreground/50"
+          {...attributes}
+          {...listeners}
+        />
+      </TableCell>
+      <TableCell className="w-[40px] text-center text-muted-foreground">{index + 1}</TableCell>
+      <TableCell className="font-medium">{colab.nome}</TableCell>
+      <TableCell>
+        <Badge variant="outline" className="text-[10px]">{contratoNome}</Badge>
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {colab.sexo === 'M' ? 'Masc' : 'Fem'}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {colab.prefere_turno
+          ? colab.prefere_turno === 'MANHA' ? 'Manha' : 'Tarde'
+          : '—'}
+      </TableCell>
+      <TableCell className="text-right pr-4">
+        <Button variant="ghost" size="sm" asChild>
+          <Link to={`/colaboradores/${colab.id}`}>
+            <ArrowRight className="size-4" />
+          </Link>
+        </Button>
+      </TableCell>
+    </TableRow>
   )
 }
 
@@ -159,6 +160,7 @@ const DIAS_SEMANA_OPTIONS = [
 
 const setorSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
+  icone: z.string().nullable(),
   hora_abertura: z.string().min(1, 'Hora de abertura e obrigatoria'),
   hora_fechamento: z.string().min(1, 'Hora de fechamento e obrigatoria'),
 })
@@ -174,7 +176,7 @@ export function SetorDetalhe() {
   const [salvando, setSalvando] = useState(false)
   const setorForm = useForm<SetorFormData>({
     resolver: zodResolver(setorSchema),
-    defaultValues: { nome: '', hora_abertura: '', hora_fechamento: '' },
+    defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '' },
   })
 
   // Dialog state
@@ -262,6 +264,7 @@ export function SetorDetalhe() {
     if (setor) {
       setorForm.reset({
         nome: setor.nome,
+        icone: setor.icone,
         hora_abertura: setor.hora_abertura,
         hora_fechamento: setor.hora_fechamento,
       })
@@ -273,6 +276,7 @@ export function SetorDetalhe() {
     try {
       await setoresService.atualizar(setorId, {
         nome: data.nome.trim(),
+        icone: data.icone ?? null,
         hora_abertura: data.hora_abertura,
         hora_fechamento: data.hora_fechamento,
       })
@@ -330,7 +334,7 @@ export function SetorDetalhe() {
   if (loadingSetor) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Setores', href: '/setores' }, { label: '...' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Setores', href: '/setores' }, { label: '...' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
@@ -341,7 +345,7 @@ export function SetorDetalhe() {
   if (!setor) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Setores', href: '/setores' }, { label: 'Nao encontrado' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Setores', href: '/setores' }, { label: 'Nao encontrado' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Setor nao encontrado</p>
         </div>
@@ -353,6 +357,7 @@ export function SetorDetalhe() {
     <div className="flex flex-1 flex-col">
       <PageHeader
         breadcrumbs={[
+          { label: 'Dashboard', href: '/' },
           { label: 'Setores', href: '/setores' },
           { label: setor.nome },
         ]}
@@ -403,9 +408,15 @@ export function SetorDetalhe() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Nome</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
+                    <div className="flex gap-2">
+                      <IconPicker
+                        value={setorForm.watch('icone') ?? null}
+                        onChange={(v) => setorForm.setValue('icone', v)}
+                      />
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -465,54 +476,56 @@ export function SetorDetalhe() {
                 }
               />
             ) : (
-              <div className="space-y-2">
-                {(demandas ?? []).map((dem) => (
-                  <div
-                    key={dem.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Clock className="size-4 text-muted-foreground" />
-                      <div>
-                        <span className="text-sm font-medium text-foreground">
-                          {dem.hora_inicio} - {dem.hora_fim}
-                        </span>
-                        {dem.dia_semana && (
-                          <Badge variant="outline" className="ml-2 text-xs">
-                            {dem.dia_semana}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Badge className="bg-primary/10 text-primary hover:bg-primary/15">
-                        {dem.min_pessoas} pessoas
-                      </Badge>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Remover faixa de demanda?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              A faixa {dem.hora_inicio} - {dem.hora_fim} sera removida permanentemente.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDeletarDemanda(dem.id)}>
-                              Remover
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4">Horario</TableHead>
+                    <TableHead>Dia</TableHead>
+                    <TableHead>Min. pessoas</TableHead>
+                    <TableHead className="w-[60px] text-right pr-4" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(demandas ?? []).map((dem) => (
+                    <TableRow key={dem.id}>
+                      <TableCell className="pl-4 font-medium">
+                        {dem.hora_inicio} — {dem.hora_fim}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {dem.dia_semana ?? 'Todos'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className="bg-primary/10 text-primary hover:bg-primary/15">
+                          {dem.min_pessoas}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right pr-4">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="size-7 text-destructive">
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Remover faixa de demanda?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                A faixa {dem.hora_inicio} - {dem.hora_fim} sera removida permanentemente.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDeletarDemanda(dem.id)}>
+                                Remover
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -556,16 +569,29 @@ export function SetorDetalhe() {
                   items={orderedColabs.map((c) => c.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="space-y-1">
-                    {orderedColabs.map((colab, i) => (
-                      <SortableColabItem
-                        key={colab.id}
-                        colab={colab}
-                        index={i}
-                        contratoNome={contratoMap.get(colab.tipo_contrato_id) ?? 'Contrato'}
-                      />
-                    ))}
-                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[40px] pl-4" />
+                        <TableHead className="w-[40px] text-center">#</TableHead>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Contrato</TableHead>
+                        <TableHead>Sexo</TableHead>
+                        <TableHead>Preferencia</TableHead>
+                        <TableHead className="w-[60px] text-right pr-4" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orderedColabs.map((colab, i) => (
+                        <SortableColabRow
+                          key={colab.id}
+                          colab={colab}
+                          index={i}
+                          contratoNome={contratoMap.get(colab.tipo_contrato_id) ?? 'Contrato'}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
                 </SortableContext>
               </DndContext>
             )}

@@ -12,11 +12,20 @@ import {
   ArrowRight,
   RotateCcw,
   Users,
+  Trash2,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +34,16 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Form,
   FormField,
@@ -35,14 +54,19 @@ import {
 } from '@/components/ui/form'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
+import { ViewToggle, useViewMode } from '@/componentes/ViewToggle'
+import { IconPicker, SetorIcon } from '@/componentes/IconPicker'
+import { Calendar, CalendarOff } from 'lucide-react'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
+import { escalasService } from '@/servicos/escalas'
 import { useApiData } from '@/hooks/useApiData'
 import { toast } from 'sonner'
 import type { Setor, Colaborador } from '@shared/index'
 
 const novoSetorSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
+  icone: z.string().nullable(),
   hora_abertura: z.string().min(1, 'Hora de abertura e obrigatoria'),
   hora_fechamento: z.string().min(1, 'Hora de fechamento e obrigatoria'),
 })
@@ -54,10 +78,13 @@ export function SetorLista() {
   const [showArchived, setShowArchived] = useState(false)
   const [showNewDialog, setShowNewDialog] = useState(false)
   const [criando, setCriando] = useState(false)
+  const [archivingId, setArchivingId] = useState<number | null>(null)
+  const [arquivando, setArquivando] = useState(false)
+  const [viewMode, setViewMode] = useViewMode('setores', 'card')
 
   const novoSetorForm = useForm<NovoSetorData>({
     resolver: zodResolver(novoSetorSchema),
-    defaultValues: { nome: '', hora_abertura: '08:00', hora_fechamento: '22:00' },
+    defaultValues: { nome: '', icone: null, hora_abertura: '08:00', hora_fechamento: '22:00' },
   })
 
   const { data: todosSetores, loading: loadingSetores, reload: reloadSetores } = useApiData<Setor[]>(
@@ -70,8 +97,14 @@ export function SetorLista() {
     [],
   )
 
+  const { data: escalasResumo } = useApiData<{ setor_id: number; data_inicio: string; data_fim: string; status: string }[]>(
+    () => escalasService.resumoPorSetor(),
+    [],
+  )
+
   const setores = todosSetores ?? []
   const colabs = colaboradores ?? []
+  const escalaMap = new Map((escalasResumo ?? []).map((e) => [e.setor_id, e]))
 
   const ativos = setores.filter((s) => s.ativo)
   const arquivados = setores.filter((s) => !s.ativo)
@@ -83,11 +116,17 @@ export function SetorLista() {
   const getColabCount = (setorId: number) =>
     colabs.filter((c) => c.setor_id === setorId).length
 
+  const formatDate = (d: string) => {
+    const [y, m, day] = d.split('-')
+    return `${day}/${m}`
+  }
+
   const handleCriar = async (data: NovoSetorData) => {
     setCriando(true)
     try {
       await setoresService.criar({
         nome: data.nome.trim(),
+        icone: data.icone ?? null,
         hora_abertura: data.hora_abertura,
         hora_fechamento: data.hora_fechamento,
       })
@@ -99,6 +138,21 @@ export function SetorLista() {
       toast.error(err instanceof Error ? err.message : 'Erro ao criar setor')
     } finally {
       setCriando(false)
+    }
+  }
+
+  const handleArquivar = async () => {
+    if (!archivingId) return
+    setArquivando(true)
+    try {
+      await setoresService.atualizar(archivingId, { ativo: false })
+      toast.success('Setor arquivado')
+      reloadSetores()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao arquivar setor')
+    } finally {
+      setArquivando(false)
+      setArchivingId(null)
     }
   }
 
@@ -115,7 +169,7 @@ export function SetorLista() {
   if (loadingSetores) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Setores' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Setores' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
@@ -126,7 +180,7 @@ export function SetorLista() {
   return (
     <div className="flex flex-1 flex-col">
       <PageHeader
-        breadcrumbs={[{ label: 'Setores' }]}
+        breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Setores' }]}
         actions={
           <Button size="sm" onClick={() => setShowNewDialog(true)}>
             <Plus className="mr-1 size-3.5" />
@@ -155,6 +209,7 @@ export function SetorLista() {
             <Archive className="mr-1 size-3.5" />
             Arquivados ({arquivados.length})
           </Button>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
         </div>
 
         {showArchived && (
@@ -165,63 +220,7 @@ export function SetorLista() {
           </div>
         )}
 
-        {/* Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((setor) => (
-            <Card
-              key={setor.id}
-              className={`transition-shadow hover:shadow-md ${!setor.ativo ? 'opacity-70' : ''}`}
-            >
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-                      <Building2 className="size-5 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-foreground">{setor.nome}</h3>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="size-3" />
-                        {setor.hora_abertura} - {setor.hora_fechamento}
-                      </div>
-                    </div>
-                  </div>
-                  {!setor.ativo && (
-                    <Badge variant="outline" className="text-muted-foreground">
-                      Arquivado
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-                  <Users className="size-3" />
-                  {getColabCount(setor.id)} colaboradores
-                </div>
-
-                <div className="mt-4 flex items-center gap-2">
-                  {setor.ativo ? (
-                    <Button variant="outline" size="sm" className="flex-1" asChild>
-                      <Link to={`/setores/${setor.id}`}>
-                        Abrir <ArrowRight className="ml-1 size-3" />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => handleRestaurar(setor.id)}
-                    >
-                      <RotateCcw className="mr-1 size-3" /> Restaurar
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {filtered.length === 0 && (
+        {filtered.length === 0 ? (
           <EmptyState
             icon={Building2}
             title={showArchived ? 'Nenhum setor arquivado' : 'Nenhum setor encontrado'}
@@ -235,6 +234,147 @@ export function SetorLista() {
               ) : undefined
             }
           />
+        ) : viewMode === 'card' ? (
+          /* CARD VIEW */
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {filtered.map((setor) => {
+              const colabCount = getColabCount(setor.id)
+              const escala = escalaMap.get(setor.id)
+              return (
+                <Card
+                  key={setor.id}
+                  className={`transition-shadow hover:shadow-md ${!setor.ativo ? 'opacity-60' : ''}`}
+                >
+                  <CardContent className="p-4 space-y-3">
+                    {/* Header: Icon + Nome */}
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                        <SetorIcon name={setor.icone} className="size-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="truncate text-sm font-semibold text-foreground">{setor.nome}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          <Clock className="mr-1 inline size-3 align-[-2px]" />
+                          {setor.hora_abertura} - {setor.hora_fechamento}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Meta: Colaboradores + Escala */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Badge variant="outline" className="text-[10px]">
+                        <Users className="mr-1 size-3" />
+                        {colabCount} colaborador{colabCount !== 1 ? 'es' : ''}
+                      </Badge>
+                      {escala ? (
+                        <Badge variant="outline" className="text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400">
+                          <Calendar className="mr-1 size-3" />
+                          {formatDate(escala.data_inicio)} - {formatDate(escala.data_fim)}
+                          {escala.status === 'RASCUNHO' && ' (rascunho)'}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                          <CalendarOff className="mr-1 size-3" />
+                          Sem escala
+                        </Badge>
+                      )}
+                    </div>
+                    {/* Footer: Acao */}
+                    <div className="flex items-center gap-1.5 border-t pt-3">
+                      {setor.ativo ? (
+                        <>
+                          <Button variant="outline" size="sm" className="flex-1" asChild>
+                            <Link to={`/setores/${setor.id}`}>
+                              Abrir <ArrowRight className="ml-1 size-3" />
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 text-destructive hover:bg-destructive/10"
+                            onClick={() => setArchivingId(setor.id)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button variant="outline" size="sm" className="flex-1" onClick={() => handleRestaurar(setor.id)}>
+                          <RotateCcw className="mr-1 size-3" /> Restaurar
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        ) : (
+          /* TABLE VIEW */
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">Nome</TableHead>
+                  <TableHead>Horario</TableHead>
+                  <TableHead>Colaboradores</TableHead>
+                  <TableHead>Escala</TableHead>
+                  <TableHead className="w-[100px] text-right pr-4" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((setor) => {
+                  const escala = escalaMap.get(setor.id)
+                  return (
+                  <TableRow key={setor.id} className={!setor.ativo ? 'opacity-60' : ''}>
+                    <TableCell className="pl-4 font-medium">
+                      <span className="flex items-center gap-1.5">
+                        <SetorIcon name={setor.icone} className="size-4 text-muted-foreground" />
+                        {setor.nome}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {setor.hora_abertura} - {setor.hora_fechamento}
+                    </TableCell>
+                    <TableCell>
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <Users className="size-3" />
+                        {getColabCount(setor.id)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {escala ? (
+                        <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 text-[10px]">
+                          <Calendar className="mr-1 size-3" />
+                          {formatDate(escala.data_inicio)} - {formatDate(escala.data_fim)}
+                          {escala.status === 'RASCUNHO' && ' (rascunho)'}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Sem escala</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right pr-4">
+                      {setor.ativo ? (
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link to={`/setores/${setor.id}`}>
+                            <ArrowRight className="size-4" />
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button variant="ghost" size="sm" onClick={() => handleRestaurar(setor.id)}>
+                          <RotateCcw className="mr-1 size-3" /> Restaurar
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+            <CardContent className="border-t py-2">
+              <p className="text-xs text-muted-foreground">
+                {filtered.length} setor{filtered.length !== 1 ? 'es' : ''}
+              </p>
+            </CardContent>
+          </Card>
         )}
       </div>
 
@@ -256,9 +396,15 @@ export function SetorLista() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Nome</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ex: Frios, Limpeza..." {...field} />
-                    </FormControl>
+                    <div className="flex gap-2">
+                      <IconPicker
+                        value={novoSetorForm.watch('icone') ?? null}
+                        onChange={(v) => novoSetorForm.setValue('icone', v)}
+                      />
+                      <FormControl>
+                        <Input placeholder="Ex: Frios, Limpeza..." {...field} />
+                      </FormControl>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -303,6 +449,24 @@ export function SetorLista() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Archive Confirmation */}
+      <AlertDialog open={!!archivingId} onOpenChange={() => setArchivingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Arquivar setor?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O setor sera movido para a lista de arquivados. Voce pode restaura-lo depois.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={arquivando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleArquivar} disabled={arquivando}>
+              {arquivando ? 'Arquivando...' : 'Arquivar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

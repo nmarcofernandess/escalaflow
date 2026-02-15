@@ -92,3 +92,16 @@ export function iniciais(nome: string): string {
   }
   return nome.slice(0, 2).toUpperCase()
 }
+
+/**
+ * Converte string de tempo 'HH:MM' para minutos totais
+ * Ex: "08:00" -> 480, "14:30" -> 870, "22:00" -> 1320
+ * Retorna 0 se time for null, undefined ou vazio
+ */
+export function toMinutes(time: string | null): number {
+  if (!time || time === '') {
+    return 0
+  }
+  const [horas, minutos] = time.split(':')
+  return parseInt(horas, 10) * 60 + parseInt(minutos, 10)
+}

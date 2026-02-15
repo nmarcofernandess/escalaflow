@@ -22,7 +22,7 @@ function createWindow(): void {
       contextIsolation: true,
       sandbox: false, // required for better-sqlite3 native module in preload
       nodeIntegration: false,
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.mjs'),
     },
   })
 

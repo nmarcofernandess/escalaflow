@@ -44,3 +44,27 @@ export const CORES_GENERO = {
   F: 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300',
   M: 'bg-sky-100 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300',
 } as const
+
+/** Contract type colors for timeline bars */
+export const CORES_CONTRATO: Record<string, { bar: string; text: string; border: string }> = {
+  'CLT 44h': {
+    bar: 'bg-emerald-500/80 dark:bg-emerald-600/70',
+    text: 'text-white dark:text-emerald-100',
+    border: 'border-emerald-600 dark:border-emerald-500',
+  },
+  'CLT 36h': {
+    bar: 'bg-blue-500/80 dark:bg-blue-600/70',
+    text: 'text-white dark:text-blue-100',
+    border: 'border-blue-600 dark:border-blue-500',
+  },
+  'Estagiario 20h': {
+    bar: 'bg-purple-500/80 dark:bg-purple-600/70',
+    text: 'text-white dark:text-purple-100',
+    border: 'border-purple-600 dark:border-purple-500',
+  },
+  DEFAULT: {
+    bar: 'bg-slate-500/80 dark:bg-slate-600/70',
+    text: 'text-white dark:text-slate-100',
+    border: 'border-slate-600 dark:border-slate-500',
+  },
+}

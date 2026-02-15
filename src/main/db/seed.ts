@@ -7,9 +7,9 @@ export function seedData(): void {
   const empresaExiste = db.prepare('SELECT COUNT(*) as count FROM empresa').get() as { count: number }
   if (empresaExiste.count === 0) {
     db.prepare(`
-      INSERT INTO empresa (nome, corte_semanal, tolerancia_semanal_min)
-      VALUES (?, ?, ?)
-    `).run('Supermercado Fernandes', 'SEG_DOM', 30)
+      INSERT INTO empresa (nome, cnpj, telefone, corte_semanal, tolerancia_semanal_min)
+      VALUES (?, ?, ?, ?, ?)
+    `).run('Supermercado Fernandes', '', '', 'SEG_DOM', 30)
     console.log('[SEED] Empresa criada')
   }
 
@@ -38,15 +38,15 @@ export function seedData(): void {
   const setoresExistem = db.prepare('SELECT COUNT(*) as count FROM setores').get() as { count: number }
   if (setoresExistem.count === 0) {
     const insertSetor = db.prepare(`
-      INSERT INTO setores (nome, hora_abertura, hora_fechamento, ativo)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, ativo)
+      VALUES (?, ?, ?, ?, ?)
     `)
 
     const setores = [
-      ['Caixa',      '08:00', '22:00', 1],
-      ['Acougue',    '08:00', '20:00', 1],
-      ['Padaria',    '06:00', '21:00', 1],
-      ['Hortifruti', '07:00', '20:00', 1],
+      ['Caixa',      'banknote',          '08:00', '22:00', 1],
+      ['Acougue',    'beef',              '08:00', '20:00', 1],
+      ['Padaria',    'croissant',         '06:00', '21:00', 1],
+      ['Hortifruti', 'leaf',              '07:00', '20:00', 1],
     ] as const
 
     db.transaction(() => {

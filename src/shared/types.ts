@@ -5,6 +5,8 @@ import type { DiaSemana, Turno, StatusEscala, TipoExcecao, StatusAlocacao, Sever
 export interface Empresa {
   id: number
   nome: string
+  cnpj: string
+  telefone: string
   corte_semanal: string
   tolerancia_semanal_min: number
 }
@@ -21,6 +23,7 @@ export interface TipoContrato {
 export interface Setor {
   id: number
   nome: string
+  icone: string | null
   hora_abertura: string
   hora_fechamento: string
   ativo: boolean

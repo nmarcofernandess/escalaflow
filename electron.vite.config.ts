@@ -8,6 +8,13 @@ export default defineConfig({
     build: {
       rollupOptions: {
         external: ['better-sqlite3'],
+        input: {
+          index: resolve('src/main/index.ts'),
+          'motor/worker': resolve('src/main/motor/worker.ts'),
+        },
+        output: {
+          entryFileNames: '[name].js',
+        },
       },
     },
   },

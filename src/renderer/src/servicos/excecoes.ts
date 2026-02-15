@@ -12,6 +12,9 @@ export const excecoesService = {
   listar: (colaboradorId: number) =>
     client['excecoes.listar']({ colaborador_id: colaboradorId }) as Promise<Excecao[]>,
 
+  listarAtivas: () =>
+    client['excecoes.listarAtivas']({}) as Promise<Excecao[]>,
+
   criar: (colaboradorId: number, data: CriarExcecaoData) =>
     client['excecoes.criar']({ colaborador_id: colaboradorId, ...data }) as Promise<Excecao>,
 

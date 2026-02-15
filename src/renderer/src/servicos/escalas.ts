@@ -13,6 +13,9 @@ export const escalasService = {
   buscar: (id: number) =>
     client['escalas.buscar']({ id }) as Promise<EscalaCompleta>,
 
+  resumoPorSetor: () =>
+    client['escalas.resumoPorSetor']({}) as Promise<{ setor_id: number; data_inicio: string; data_fim: string; status: string }[]>,
+
   listarPorSetor: (setorId: number, params?: { status?: StatusEscala }) =>
     client['escalas.listarPorSetor']({ setor_id: setorId, status: params?.status }) as Promise<Escala[]>,
 

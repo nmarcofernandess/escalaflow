@@ -38,6 +38,8 @@ import { PageHeader } from '@/componentes/PageHeader'
 import { PontuacaoBadge } from '@/componentes/PontuacaoBadge'
 import { IndicatorCard } from '@/componentes/IndicatorCard'
 import { EscalaGrid } from '@/componentes/EscalaGrid'
+import { EscalaViewToggle, useEscalaViewMode } from '@/componentes/EscalaViewToggle'
+import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { cn } from '@/lib/utils'
 import { CORES_VIOLACAO } from '@/lib/cores'
@@ -53,6 +55,7 @@ import type {
   Alocacao,
   Violacao,
   Colaborador,
+  Setor,
 } from '@shared/index'
 
 export function EscalaPagina() {
@@ -92,6 +95,7 @@ export function EscalaPagina() {
   const [expandViolacoes, setExpandViolacoes] = useState(false)
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
+  const [escalaViewMode, setEscalaViewMode] = useEscalaViewMode()
 
   // Oficial tab state
   const [oficialEscala, setOficialEscala] = useState<EscalaCompleta | null>(null)
@@ -313,7 +317,7 @@ export function EscalaPagina() {
   if (!setor || !colaboradores) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Escala' }, { label: 'Carregando...' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Escala' }, { label: 'Carregando...' }]} />
         <div className="flex items-center justify-center p-16">
           <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
@@ -325,6 +329,7 @@ export function EscalaPagina() {
     <div className="flex flex-1 flex-col">
       <PageHeader
         breadcrumbs={[
+          { label: 'Dashboard', href: '/' },
           { label: 'Setores', href: '/setores' },
           { label: setor.nome, href: `/setores/${setorId}` },
           { label: 'Escala' },
@@ -423,6 +428,9 @@ export function EscalaPagina() {
                 onCelulaClick={handleCelulaClick}
                 ajustando={ajustando}
                 changedCells={changedCells}
+                escalaViewMode={escalaViewMode}
+                setEscalaViewMode={setEscalaViewMode}
+                setor={setor}
               />
             ) : (
               <Card>
@@ -450,30 +458,49 @@ export function EscalaPagina() {
               <>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                      Escala Oficial: {setor.nome} - {formatarMes(oficialEscala.escala.data_inicio)}
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
-                      >
-                        <CheckCircle2 className="mr-1 size-3" /> Oficial
-                      </Badge>
-                    </CardTitle>
-                    <p className="text-xs text-muted-foreground">
-                      Oficializada em {formatarData(oficialEscala.escala.criada_em.split('T')[0])} |
-                      Pontuacao: {oficialEscala.escala.pontuacao ?? '-'}
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                          Escala Oficial: {setor.nome} - {formatarMes(oficialEscala.escala.data_inicio)}
+                          <Badge
+                            variant="outline"
+                            className="border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
+                          >
+                            <CheckCircle2 className="mr-1 size-3" /> Oficial
+                          </Badge>
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Oficializada em {formatarData(oficialEscala.escala.criada_em.split('T')[0])} |
+                          Pontuacao: {oficialEscala.escala.pontuacao ?? '-'}
+                        </p>
+                      </div>
+                      <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />
+                    </div>
                   </CardHeader>
                   <CardContent>
-                    <EscalaGrid
-                      colaboradores={colaboradores}
-                      alocacoes={oficialEscala.alocacoes}
-                      dataInicio={oficialEscala.escala.data_inicio}
-                      dataFim={oficialEscala.escala.data_fim}
-                      demandas={demandas ?? undefined}
-                      tiposContrato={tiposContrato ?? undefined}
-                      readOnly
-                    />
+                    {escalaViewMode === 'grid' ? (
+                      <EscalaGrid
+                        colaboradores={colaboradores}
+                        alocacoes={oficialEscala.alocacoes}
+                        dataInicio={oficialEscala.escala.data_inicio}
+                        dataFim={oficialEscala.escala.data_fim}
+                        demandas={demandas ?? undefined}
+                        tiposContrato={tiposContrato ?? undefined}
+                        readOnly
+                      />
+                    ) : (
+                      <TimelineGrid
+                        colaboradores={colaboradores}
+                        alocacoes={oficialEscala.alocacoes}
+                        setor={setor}
+                        dataSelecionada={oficialEscala.escala.data_inicio}
+                        dataInicio={oficialEscala.escala.data_inicio}
+                        dataFim={oficialEscala.escala.data_fim}
+                        demandas={demandas ?? undefined}
+                        tiposContrato={tiposContrato ?? undefined}
+                        readOnly
+                      />
+                    )}
                   </CardContent>
                 </Card>
                 <div className="flex items-center gap-3">
@@ -552,15 +579,34 @@ export function EscalaPagina() {
                               </p>
                             </div>
                           ) : historicoDetail ? (
-                            <EscalaGrid
-                              colaboradores={colaboradores}
-                              alocacoes={historicoDetail.alocacoes}
-                              dataInicio={historicoDetail.escala.data_inicio}
-                              dataFim={historicoDetail.escala.data_fim}
-                              demandas={demandas ?? undefined}
-                              tiposContrato={tiposContrato ?? undefined}
-                              readOnly
-                            />
+                            <>
+                              <div className="flex justify-end mb-3">
+                                <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />
+                              </div>
+                              {escalaViewMode === 'grid' ? (
+                                <EscalaGrid
+                                  colaboradores={colaboradores}
+                                  alocacoes={historicoDetail.alocacoes}
+                                  dataInicio={historicoDetail.escala.data_inicio}
+                                  dataFim={historicoDetail.escala.data_fim}
+                                  demandas={demandas ?? undefined}
+                                  tiposContrato={tiposContrato ?? undefined}
+                                  readOnly
+                                />
+                              ) : (
+                                <TimelineGrid
+                                  colaboradores={colaboradores}
+                                  alocacoes={historicoDetail.alocacoes}
+                                  setor={setor}
+                                  dataSelecionada={historicoDetail.escala.data_inicio}
+                                  dataInicio={historicoDetail.escala.data_inicio}
+                                  dataFim={historicoDetail.escala.data_fim}
+                                  demandas={demandas ?? undefined}
+                                  tiposContrato={tiposContrato ?? undefined}
+                                  readOnly
+                                />
+                              )}
+                            </>
                           ) : null}
                         </div>
                       )}
@@ -740,6 +786,9 @@ interface SimulacaoResultProps {
   onCelulaClick?: (colaboradorId: number, data: string, statusAtual: string) => void
   ajustando?: { colaboradorId: number; data: string } | null
   changedCells?: Set<string>
+  escalaViewMode: 'grid' | 'timeline'
+  setEscalaViewMode: (mode: 'grid' | 'timeline') => void
+  setor: Setor
 }
 
 function SimulacaoResult({
@@ -759,6 +808,9 @@ function SimulacaoResult({
   onCelulaClick,
   ajustando,
   changedCells = new Set(),
+  escalaViewMode,
+  setEscalaViewMode,
+  setor,
 }: SimulacaoResultProps) {
   const indicators = getIndicators(escalaCompleta)
   const violacoes = escalaCompleta.violacoes
@@ -817,22 +869,43 @@ function SimulacaoResult({
               <Clock className="mr-1 size-3" /> Rascunho
             </Badge>
           </CardTitle>
-          <PontuacaoBadge pontuacao={indicators.pontuacao} />
+          <div className="flex items-center gap-2">
+            <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />
+            <PontuacaoBadge pontuacao={indicators.pontuacao} />
+          </div>
         </CardHeader>
         <CardContent>
-          <EscalaGrid
-            colaboradores={colaboradores}
-            alocacoes={escalaCompleta.alocacoes}
-            dataInicio={escalaCompleta.escala.data_inicio}
-            dataFim={escalaCompleta.escala.data_fim}
-            demandas={demandas}
-            tiposContrato={tiposContrato}
-            readOnly={false}
-            onCelulaClick={onCelulaClick}
-            loadingCell={ajustando ?? undefined}
-            changedCells={changedCells}
-            violatedCells={violatedCells}
-          />
+          {escalaViewMode === 'grid' ? (
+            <EscalaGrid
+              colaboradores={colaboradores}
+              alocacoes={escalaCompleta.alocacoes}
+              dataInicio={escalaCompleta.escala.data_inicio}
+              dataFim={escalaCompleta.escala.data_fim}
+              demandas={demandas}
+              tiposContrato={tiposContrato}
+              readOnly={false}
+              onCelulaClick={onCelulaClick}
+              loadingCell={ajustando ?? undefined}
+              changedCells={changedCells}
+              violatedCells={violatedCells}
+            />
+          ) : (
+            <TimelineGrid
+              colaboradores={colaboradores}
+              alocacoes={escalaCompleta.alocacoes}
+              setor={setor}
+              dataSelecionada={escalaCompleta.escala.data_inicio}
+              dataInicio={escalaCompleta.escala.data_inicio}
+              dataFim={escalaCompleta.escala.data_fim}
+              demandas={demandas}
+              tiposContrato={tiposContrato}
+              readOnly={false}
+              onCelulaClick={onCelulaClick}
+              loadingCell={ajustando ?? undefined}
+              changedCells={changedCells}
+              violatedCells={violatedCells}
+            />
+          )}
         </CardContent>
       </Card>
 

@@ -2,11 +2,21 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FileText, Clock, CalendarDays, Sun, Plus, Edit, Trash2, Info } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FileText, Plus, Edit, Trash2, Info, Search, Clock, Calendar, Timer } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -25,20 +35,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Form,
   FormField,
   FormItem,
   FormLabel,
   FormControl,
-  FormDescription,
   FormMessage,
 } from '@/components/ui/form'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
-import { MetricItem } from '@/componentes/MetricItem'
+import { ViewToggle, useViewMode } from '@/componentes/ViewToggle'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarMinutos, mapError } from '@/lib/formatadores'
@@ -69,11 +76,13 @@ export function ContratoLista() {
     [],
   )
 
+  const [search, setSearch] = useState('')
   const [showDialog, setShowDialog] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [deletando, setDeletando] = useState(false)
+  const [viewMode, setViewMode] = useViewMode('contratos', 'table')
 
   const form = useForm<ContratoFormData>({
     resolver: zodResolver(contratoSchema),
@@ -144,10 +153,15 @@ export function ContratoLista() {
     }
   }
 
+  const allTipos = tipos ?? []
+  const filtered = allTipos.filter((tc) =>
+    tc.nome.toLowerCase().includes(search.toLowerCase()),
+  )
+
   if (loading || !tipos) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Tipos de Contrato' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tipos de Contrato' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
@@ -158,85 +172,159 @@ export function ContratoLista() {
   return (
     <div className="flex flex-1 flex-col">
       <PageHeader
-        breadcrumbs={[{ label: 'Tipos de Contrato' }]}
+        breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tipos de Contrato' }]}
         actions={
           <Button size="sm" onClick={abrirDialogCriar}>
             <Plus className="mr-1 size-3.5" />
-            Novo Tipo de Contrato
+            Novo Tipo
           </Button>
         }
       />
 
-      <div className="flex-1 space-y-4 p-6">
-        <p className="text-sm text-muted-foreground">
-          Templates de contrato de trabalho. Cada colaborador e vinculado a um tipo, que define
-          horas semanais, dias de trabalho e regras.
-        </p>
+      <div className="flex flex-1 flex-col gap-4 p-6">
+        {/* Toolbar */}
+        <div className="flex items-center gap-3">
+          <div className="relative max-w-sm flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+        </div>
 
-        {tipos.length === 0 ? (
+        {filtered.length === 0 ? (
           <EmptyState
             icon={FileText}
-            title="Nenhum tipo de contrato cadastrado"
-            description="Crie um template de contrato para vincular aos colaboradores"
+            title={search ? 'Nenhum tipo encontrado' : 'Nenhum tipo de contrato cadastrado'}
+            description={search ? '' : 'Crie um template de contrato para vincular aos colaboradores'}
             action={
-              <Button size="sm" onClick={abrirDialogCriar}>
-                <Plus className="mr-1 size-3.5" />
-                Criar Template
-              </Button>
+              !search ? (
+                <Button size="sm" onClick={abrirDialogCriar}>
+                  <Plus className="mr-1 size-3.5" />
+                  Criar Template
+                </Button>
+              ) : undefined
             }
           />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {tipos.map((tc) => (
-              <Card key={tc.id} className="transition-shadow hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-                      <FileText className="size-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-sm">{tc.nome}</CardTitle>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => abrirDialogEditar(tc)}
-                    >
-                      <Edit className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-destructive hover:bg-destructive/5"
-                      onClick={() => setDeletingId(tc.id)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-3">
-                    <MetricItem icon={Clock} value={`${tc.horas_semanais}h/sem`} label="Horas semanais" />
-                    <MetricItem icon={CalendarDays} value={`${tc.dias_trabalho} dias`} label="Dias de trabalho" />
-                    <MetricItem icon={Clock} value={`${formatarMinutos(tc.max_minutos_dia)}/dia`} label="Max por dia" />
-                    <MetricItem
-                      icon={Sun}
-                      value={
-                        <Badge
-                          variant={tc.trabalha_domingo ? 'default' : 'secondary'}
-                          className="h-5 px-1.5 text-[10px]"
+        ) : viewMode === 'table' ? (
+          /* TABLE VIEW */
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">Nome</TableHead>
+                  <TableHead>Horas/semana</TableHead>
+                  <TableHead>Dias</TableHead>
+                  <TableHead>Max/dia</TableHead>
+                  <TableHead>Domingo</TableHead>
+                  <TableHead className="w-[100px] text-right pr-4" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((tc) => (
+                  <TableRow key={tc.id}>
+                    <TableCell className="pl-4 font-medium">{tc.nome}</TableCell>
+                    <TableCell>{tc.horas_semanais}h</TableCell>
+                    <TableCell>{tc.dias_trabalho} dias</TableCell>
+                    <TableCell>{formatarMinutos(tc.max_minutos_dia)}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={tc.trabalha_domingo ? 'default' : 'secondary'}
+                        className="text-[10px]"
+                      >
+                        {tc.trabalha_domingo ? 'Sim' : 'Nao'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right pr-4">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => abrirDialogEditar(tc)}
                         >
-                          {tc.trabalha_domingo ? 'Sim' : 'Nao'}
-                        </Badge>
-                      }
-                      label="Domingo"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                          <Edit className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-destructive hover:bg-destructive/5"
+                          onClick={() => setDeletingId(tc.id)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <CardContent className="border-t py-2">
+              <p className="text-xs text-muted-foreground">
+                {filtered.length} tipo{filtered.length !== 1 ? 's' : ''} de contrato
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          /* CARD VIEW */
+          <>
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((tc) => (
+                <Card key={tc.id} className="transition-shadow hover:shadow-md">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
+                          <FileText className="size-5 text-primary" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-foreground">{tc.nome}</h3>
+                      </div>
+                      <Badge
+                        variant={tc.trabalha_domingo ? 'default' : 'secondary'}
+                        className="shrink-0 text-[10px]"
+                      >
+                        Dom: {tc.trabalha_domingo ? 'Sim' : 'Nao'}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="size-3" />
+                        {tc.horas_semanais}h/semana
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="size-3" />
+                        {tc.dias_trabalho} dias
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Timer className="size-3" />
+                        {formatarMinutos(tc.max_minutos_dia)}/dia
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="flex-1" onClick={() => abrirDialogEditar(tc)}>
+                        <Edit className="mr-1 size-3" /> Editar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:bg-destructive/5"
+                        onClick={() => setDeletingId(tc.id)}
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {filtered.length} tipo{filtered.length !== 1 ? 's' : ''} de contrato
+            </p>
+          </>
         )}
       </div>
 
@@ -252,7 +340,6 @@ export function ContratoLista() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* CLT Disclaimer */}
           <Alert className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 [&>svg]:text-blue-600 dark:[&>svg]:text-blue-400">
             <Info className="size-4" />
             <AlertDescription className="text-xs text-blue-900 dark:text-blue-200">
@@ -316,7 +403,6 @@ export function ContratoLista() {
                     <FormControl>
                       <Input type="number" min="60" max="600" {...field} />
                     </FormControl>
-                    <FormDescription>Exemplo: 9h30 = 570 minutos</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

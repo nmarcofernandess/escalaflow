@@ -23,7 +23,6 @@ import {
   FormItem,
   FormLabel,
   FormControl,
-  FormDescription,
   FormMessage,
 } from '@/components/ui/form'
 import {
@@ -232,7 +231,7 @@ export function ColaboradorDetalhe() {
   if (loadingColab) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Colaboradores', href: '/colaboradores' }, { label: '...' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Colaboradores', href: '/colaboradores' }, { label: '...' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
@@ -243,7 +242,7 @@ export function ColaboradorDetalhe() {
   if (!colab) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Colaboradores', href: '/colaboradores' }, { label: 'Nao encontrado' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Colaboradores', href: '/colaboradores' }, { label: 'Nao encontrado' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Colaborador nao encontrado</p>
         </div>
@@ -255,6 +254,7 @@ export function ColaboradorDetalhe() {
     <div className="flex flex-1 flex-col">
       <PageHeader
         breadcrumbs={[
+          { label: 'Dashboard', href: '/' },
           { label: 'Colaboradores', href: '/colaboradores' },
           { label: colab.nome },
         ]}
@@ -480,10 +480,10 @@ export function ColaboradorDetalhe() {
                   )}
                 />
               </div>
-              <FormDescription>
+              <p className="text-[0.8rem] text-muted-foreground">
                 O motor de escala tenta respeitar essas preferencias, mas nao
                 garante. Se nao conseguir, aparece como alerta amarelo na escala.
-              </FormDescription>
+              </p>
             </CardContent>
           </Card>
         </Form>

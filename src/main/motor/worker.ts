@@ -41,5 +41,6 @@ try {
 
   parentPort?.postMessage({ type: 'result', data: resultado })
 } catch (err: any) {
+  console.error('[WORKER] Error:', err.message || String(err), err.stack)
   parentPort?.postMessage({ type: 'error', error: err.message || String(err) })
 }

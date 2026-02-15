@@ -11,11 +11,27 @@ import {
   ArrowRight,
   RotateCcw,
   Filter,
+  Palmtree,
+  Stethoscope,
+  Ban,
+  Clock,
+  X,
+  Edit,
+  Trash2,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Select,
   SelectContent,
@@ -39,16 +55,27 @@ import {
   FormControl,
   FormMessage,
 } from '@/components/ui/form'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
+import { ViewToggle, useViewMode } from '@/componentes/ViewToggle'
+import { SetorIcon } from '@/componentes/IconPicker'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { setoresService } from '@/servicos/setores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
+import { excecoesService } from '@/servicos/excecoes'
 import { useApiData } from '@/hooks/useApiData'
-import { iniciais } from '@/lib/formatadores'
-import { CORES_GENERO, CORES_VIOLACAO } from '@/lib/cores'
 import { toast } from 'sonner'
-import type { Colaborador, Setor, TipoContrato } from '@shared/index'
+import type { Colaborador, Setor, TipoContrato, Excecao } from '@shared/index'
 
 const novoColabSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
@@ -59,12 +86,45 @@ const novoColabSchema = z.object({
 
 type NovoColabData = z.infer<typeof novoColabSchema>
 
+type SituacaoFilter = 'todos' | 'disponivel' | 'ferias' | 'atestado' | 'bloqueio'
+
+function SituacaoBadge({ tipo }: { tipo: string }) {
+  switch (tipo) {
+    case 'FERIAS':
+      return (
+        <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400">
+          <Palmtree className="size-3" /> Ferias
+        </Badge>
+      )
+    case 'ATESTADO':
+      return (
+        <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+          <Stethoscope className="size-3" /> Atestado
+        </Badge>
+      )
+    case 'BLOQUEIO':
+      return (
+        <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+          <Ban className="size-3" /> Bloqueado
+        </Badge>
+      )
+    default:
+      return null
+  }
+}
+
 export function ColaboradorLista() {
   const [search, setSearch] = useState('')
   const [setorFilter, setSetorFilter] = useState<string>('all')
+  const [contratoFilter, setContratoFilter] = useState<string>('all')
+  const [situacaoFilter, setSituacaoFilter] = useState<SituacaoFilter>('todos')
+  const [sexoFilter, setSexoFilter] = useState<string>('all')
   const [showArchived, setShowArchived] = useState(false)
   const [showNewDialog, setShowNewDialog] = useState(false)
   const [criando, setCriando] = useState(false)
+  const [viewMode, setViewMode] = useViewMode('colaboradores', 'table')
+  const [archivingId, setArchivingId] = useState<number | null>(null)
+  const [arquivando, setArquivando] = useState(false)
 
   const novoColabForm = useForm<NovoColabData>({
     resolver: zodResolver(novoColabSchema),
@@ -86,13 +146,38 @@ export function ColaboradorLista() {
     [],
   )
 
+  const { data: excecoesAtivas } = useApiData<Excecao[]>(
+    () => excecoesService.listarAtivas(),
+    [],
+  )
+
   const colaboradores = todosColabs ?? []
   const setoresList = setores ?? []
   const contratosList = tiposContrato ?? []
+  const excecoesList = excecoesAtivas ?? []
 
-  // Lookup maps
-  const setorMap = new Map(setoresList.map((s) => [s.id, s.nome]))
+  const setorMap = new Map(setoresList.map((s) => [s.id, { nome: s.nome, icone: s.icone }]))
   const contratoMap = new Map(contratosList.map((tc) => [tc.id, tc.nome]))
+
+  // Map colaborador_id -> excecao tipo (ativa hoje)
+  const excecaoMap = new Map<number, string>()
+  for (const exc of excecoesList) {
+    excecaoMap.set(exc.colaborador_id, exc.tipo)
+  }
+
+  const activeFilterCount = [
+    setorFilter !== 'all',
+    contratoFilter !== 'all',
+    situacaoFilter !== 'todos',
+    sexoFilter !== 'all',
+  ].filter(Boolean).length
+
+  const clearFilters = () => {
+    setSetorFilter('all')
+    setContratoFilter('all')
+    setSituacaoFilter('todos')
+    setSexoFilter('all')
+  }
 
   const ativos = colaboradores.filter((c) => c.ativo)
   const arquivados = colaboradores.filter((c) => !c.ativo)
@@ -100,7 +185,18 @@ export function ColaboradorLista() {
   const filtered = (showArchived ? arquivados : ativos).filter((c) => {
     const matchesSearch = c.nome.toLowerCase().includes(search.toLowerCase())
     const matchesSetor = setorFilter === 'all' || c.setor_id === parseInt(setorFilter)
-    return matchesSearch && matchesSetor
+    const matchesContrato = contratoFilter === 'all' || c.tipo_contrato_id === parseInt(contratoFilter)
+    const matchesSexo = sexoFilter === 'all' || c.sexo === sexoFilter
+
+    // Situacao filter
+    const excTipo = excecaoMap.get(c.id)
+    let matchesSituacao = true
+    if (situacaoFilter === 'disponivel') matchesSituacao = !excTipo
+    else if (situacaoFilter === 'ferias') matchesSituacao = excTipo === 'FERIAS'
+    else if (situacaoFilter === 'atestado') matchesSituacao = excTipo === 'ATESTADO'
+    else if (situacaoFilter === 'bloqueio') matchesSituacao = excTipo === 'BLOQUEIO'
+
+    return matchesSearch && matchesSetor && matchesContrato && matchesSexo && matchesSituacao
   })
 
   const handleCriar = async (data: NovoColabData) => {
@@ -123,6 +219,22 @@ export function ColaboradorLista() {
     }
   }
 
+  const handleArquivar = async () => {
+    if (!archivingId) return
+    setArquivando(true)
+    try {
+      await colaboradoresService.atualizar(archivingId, { ativo: false })
+      toast.success('Colaborador arquivado')
+      setArchivingId(null)
+      reloadColabs()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao arquivar')
+      setArchivingId(null)
+    } finally {
+      setArquivando(false)
+    }
+  }
+
   const handleRestaurar = async (id: number) => {
     try {
       await colaboradoresService.atualizar(id, { ativo: true })
@@ -136,7 +248,7 @@ export function ColaboradorLista() {
   if (loadingColabs) {
     return (
       <div className="flex flex-1 flex-col">
-        <PageHeader breadcrumbs={[{ label: 'Colaboradores' }]} />
+        <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Colaboradores' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
@@ -147,7 +259,7 @@ export function ColaboradorLista() {
   return (
     <div className="flex flex-1 flex-col">
       <PageHeader
-        breadcrumbs={[{ label: 'Colaboradores' }]}
+        breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Colaboradores' }]}
         actions={
           <Button size="sm" onClick={() => setShowNewDialog(true)}>
             <Plus className="mr-1 size-3.5" />
@@ -156,32 +268,107 @@ export function ColaboradorLista() {
         }
       />
 
-      <div className="flex-1 space-y-4 p-6">
-        {/* Toolbar */}
+      <div className="flex flex-1 flex-col gap-4 p-6">
+        {/* Toolbar: Search + Filter Popover + Archived + View Toggle */}
         <div className="flex items-center gap-3">
           <div className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Pesquisar colaboradores..."
+              placeholder="Buscar por nome..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
             />
           </div>
-          <Select value={setorFilter} onValueChange={setSetorFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="mr-1 size-3.5" />
-              <SelectValue placeholder="Filtrar por setor" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os setores</SelectItem>
-              {setoresList.map((s) => (
-                <SelectItem key={s.id} value={String(s.id)}>
-                  {s.nome}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant={activeFilterCount > 0 ? 'secondary' : 'outline'} size="sm">
+                <Filter className="mr-1.5 size-3.5" />
+                Filtros
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5 text-[10px] font-semibold">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72" align="start">
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-muted-foreground">Filtrar por</p>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Setor</label>
+                  <Select value={setorFilter} onValueChange={setSetorFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos os setores" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os setores</SelectItem>
+                      {setoresList.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          {s.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Contrato</label>
+                  <Select value={contratoFilter} onValueChange={setContratoFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos contratos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos contratos</SelectItem>
+                      {contratosList.map((tc) => (
+                        <SelectItem key={tc.id} value={String(tc.id)}>
+                          {tc.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Situacao</label>
+                  <Select value={situacaoFilter} onValueChange={(v) => setSituacaoFilter(v as SituacaoFilter)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todas situacoes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todas situacoes</SelectItem>
+                      <SelectItem value="disponivel">Disponivel</SelectItem>
+                      <SelectItem value="ferias">Em ferias</SelectItem>
+                      <SelectItem value="atestado">Em atestado</SelectItem>
+                      <SelectItem value="bloqueio">Bloqueado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Sexo</label>
+                  <Select value={sexoFilter} onValueChange={setSexoFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="F">Feminino</SelectItem>
+                      <SelectItem value="M">Masculino</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {activeFilterCount > 0 && (
+                  <>
+                    <div className="border-t" />
+                    <Button variant="ghost" size="sm" className="w-full" onClick={clearFilters}>
+                      <X className="mr-1.5 size-3.5" />
+                      Limpar filtros
+                    </Button>
+                  </>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <Button
             variant={showArchived ? 'secondary' : 'outline'}
             size="sm"
@@ -190,6 +377,7 @@ export function ColaboradorLista() {
             <Archive className="mr-1 size-3.5" />
             Arquivados ({arquivados.length})
           </Button>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
         </div>
 
         {showArchived && (
@@ -200,81 +388,7 @@ export function ColaboradorLista() {
           </div>
         )}
 
-        {/* Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((colab) => (
-            <Card
-              key={colab.id}
-              className={`transition-shadow hover:shadow-md ${!colab.ativo ? 'opacity-70' : ''}`}
-            >
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`flex size-10 items-center justify-center rounded-full text-sm font-semibold ${CORES_GENERO[colab.sexo]}`}
-                    >
-                      {iniciais(colab.nome)}
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-foreground">
-                        {colab.nome}
-                      </h3>
-                      <p className="text-xs text-muted-foreground">
-                        {setorMap.get(colab.setor_id) ?? 'Setor desconhecido'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <Badge variant="outline" className="text-[10px]">
-                    {contratoMap.get(colab.tipo_contrato_id) ?? 'Contrato'}
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px]">
-                    {colab.horas_semanais}h/sem
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px]">
-                    {colab.sexo === 'M' ? 'Masc' : 'Fem'}
-                  </Badge>
-                  {colab.prefere_turno && (
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] ${CORES_VIOLACAO.SOFT.border} ${CORES_VIOLACAO.SOFT.bg} ${CORES_VIOLACAO.SOFT.text}`}
-                    >
-                      {colab.prefere_turno === 'MANHA' ? 'Manha' : 'Tarde'}
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="mt-4">
-                  {colab.ativo ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      asChild
-                    >
-                      <Link to={`/colaboradores/${colab.id}`}>
-                        Ver Perfil <ArrowRight className="ml-1 size-3" />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => handleRestaurar(colab.id)}
-                    >
-                      <RotateCcw className="mr-1 size-3" /> Restaurar
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {filtered.length === 0 && (
+        {filtered.length === 0 ? (
           <EmptyState
             icon={Users}
             title={showArchived ? 'Nenhum colaborador arquivado' : 'Nenhum colaborador encontrado'}
@@ -288,8 +402,165 @@ export function ColaboradorLista() {
               ) : undefined
             }
           />
+        ) : viewMode === 'table' ? (
+          /* TABLE VIEW */
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">Nome</TableHead>
+                  <TableHead>Setor</TableHead>
+                  <TableHead>Contrato</TableHead>
+                  <TableHead>Sexo</TableHead>
+                  <TableHead>Preferencia</TableHead>
+                  <TableHead>Situacao</TableHead>
+                  <TableHead className="w-[100px] text-right pr-4" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((colab) => {
+                  const excTipo = excecaoMap.get(colab.id)
+                  return (
+                    <TableRow key={colab.id} className={!colab.ativo ? 'opacity-60' : ''}>
+                      <TableCell className="pl-4 font-medium">{colab.nome}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <span className="flex items-center gap-1.5">
+                          <SetorIcon name={setorMap.get(colab.setor_id)?.icone ?? null} className="size-3.5" />
+                          {setorMap.get(colab.setor_id)?.nome ?? '—'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="whitespace-nowrap text-[10px]">
+                          {contratoMap.get(colab.tipo_contrato_id) ?? '—'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {colab.sexo === 'M' ? 'Masc' : 'Fem'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {colab.prefere_turno
+                          ? colab.prefere_turno === 'MANHA' ? 'Manha' : 'Tarde'
+                          : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {excTipo ? <SituacaoBadge tipo={excTipo} /> : (
+                          <span className="text-xs text-muted-foreground">Disponivel</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right pr-4">
+                        {colab.ativo ? (
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link to={`/colaboradores/${colab.id}`}>
+                              <ArrowRight className="size-4" />
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" onClick={() => handleRestaurar(colab.id)}>
+                            <RotateCcw className="mr-1 size-3" /> Restaurar
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+            <CardContent className="border-t py-2">
+              <p className="text-xs text-muted-foreground">
+                {filtered.length} colaborador{filtered.length !== 1 ? 'es' : ''}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          /* CARD VIEW */
+          <>
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((colab) => {
+                const excTipo = excecaoMap.get(colab.id)
+                const setor = setorMap.get(colab.setor_id)
+                return (
+                  <Card
+                    key={colab.id}
+                    className={`transition-shadow hover:shadow-md ${!colab.ativo ? 'opacity-60' : ''}`}
+                  >
+                    <CardContent className="p-4 space-y-3">
+                      {/* Header: Icon + Nome + Setor badge */}
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                          <SetorIcon name={setor?.icone ?? null} className="size-4 text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate text-sm font-semibold text-foreground">{colab.nome}</h3>
+                          <p className="text-xs text-muted-foreground">{colab.sexo === 'M' ? 'Masculino' : 'Feminino'} · {colab.prefere_turno ? (colab.prefere_turno === 'MANHA' ? 'Manha' : 'Tarde') : 'Sem pref.'}</p>
+                        </div>
+                        <Badge className="shrink-0 whitespace-nowrap text-[10px]">
+                          {setor?.nome ?? '—'}
+                        </Badge>
+                      </div>
+                      {/* Meta: Contrato + Situacao */}
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="whitespace-nowrap text-[10px]">
+                          {contratoMap.get(colab.tipo_contrato_id) ?? '—'}
+                        </Badge>
+                        {excTipo ? (
+                          <SituacaoBadge tipo={excTipo} />
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground">Disponivel</Badge>
+                        )}
+                      </div>
+                      {/* Footer: Acao */}
+                      <div className="flex items-center gap-1.5 border-t pt-3">
+                        {colab.ativo ? (
+                          <>
+                            <Button variant="outline" size="sm" className="flex-1" asChild>
+                              <Link to={`/colaboradores/${colab.id}`}>
+                                Ver detalhes <ArrowRight className="ml-1 size-3" />
+                              </Link>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 shrink-0 text-destructive hover:bg-destructive/10"
+                              onClick={() => setArchivingId(colab.id)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button variant="outline" size="sm" className="flex-1" onClick={() => handleRestaurar(colab.id)}>
+                            <RotateCcw className="mr-1 size-3" /> Restaurar
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {filtered.length} colaborador{filtered.length !== 1 ? 'es' : ''}
+            </p>
+          </>
         )}
       </div>
+
+      {/* Archive Confirmation */}
+      <AlertDialog open={!!archivingId} onOpenChange={() => setArchivingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Arquivar colaborador?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O colaborador sera movido para a lista de arquivados. Voce pode restaura-lo depois.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={arquivando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleArquivar} disabled={arquivando}>
+              {arquivando ? 'Arquivando...' : 'Arquivar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* New Colaborador Dialog */}
       <Dialog open={showNewDialog} onOpenChange={(open) => {

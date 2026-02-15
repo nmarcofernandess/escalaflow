@@ -39,17 +39,17 @@ const empresaBuscar = t.procedure
   })
 
 const empresaAtualizar = t.procedure
-  .input<{ nome: string; corte_semanal: string; tolerancia_semanal_min: number }>()
+  .input<{ nome: string; cnpj: string; telefone: string; corte_semanal: string; tolerancia_semanal_min: number }>()
   .action(async ({ input }) => {
     const db = getDb()
     const empresa = db.prepare('SELECT id FROM empresa LIMIT 1').get() as { id: number } | undefined
 
     if (empresa) {
-      db.prepare('UPDATE empresa SET nome = ?, corte_semanal = ?, tolerancia_semanal_min = ? WHERE id = ?')
-        .run(input.nome, input.corte_semanal, input.tolerancia_semanal_min, empresa.id)
+      db.prepare('UPDATE empresa SET nome = ?, cnpj = ?, telefone = ?, corte_semanal = ?, tolerancia_semanal_min = ? WHERE id = ?')
+        .run(input.nome, input.cnpj, input.telefone, input.corte_semanal, input.tolerancia_semanal_min, empresa.id)
     } else {
-      db.prepare('INSERT INTO empresa (nome, corte_semanal, tolerancia_semanal_min) VALUES (?, ?, ?)')
-        .run(input.nome, input.corte_semanal, input.tolerancia_semanal_min)
+      db.prepare('INSERT INTO empresa (nome, cnpj, telefone, corte_semanal, tolerancia_semanal_min) VALUES (?, ?, ?, ?, ?)')
+        .run(input.nome, input.cnpj, input.telefone, input.corte_semanal, input.tolerancia_semanal_min)
     }
 
     return db.prepare('SELECT * FROM empresa LIMIT 1').get()
@@ -140,25 +140,26 @@ const setoresBuscar = t.procedure
   })
 
 const setoresCriar = t.procedure
-  .input<{ nome: string; hora_abertura: string; hora_fechamento: string }>()
+  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null }>()
   .action(async ({ input }) => {
     const db = getDb()
     const result = db.prepare(`
-      INSERT INTO setores (nome, hora_abertura, hora_fechamento)
-      VALUES (?, ?, ?)
-    `).run(input.nome, input.hora_abertura, input.hora_fechamento)
+      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento)
+      VALUES (?, ?, ?, ?)
+    `).run(input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento)
 
     return db.prepare('SELECT * FROM setores WHERE id = ?').get(result.lastInsertRowid)
   })
 
 const setoresAtualizar = t.procedure
-  .input<{ id: number; nome?: string; hora_abertura?: string; hora_fechamento?: string; ativo?: boolean }>()
+  .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; ativo?: boolean }>()
   .action(async ({ input }) => {
     const db = getDb()
     const fields: string[] = []
     const values: unknown[] = []
 
     if (input.nome !== undefined) { fields.push('nome = ?'); values.push(input.nome) }
+    if (input.icone !== undefined) { fields.push('icone = ?'); values.push(input.icone) }
     if (input.hora_abertura !== undefined) { fields.push('hora_abertura = ?'); values.push(input.hora_abertura) }
     if (input.hora_fechamento !== undefined) { fields.push('hora_fechamento = ?'); values.push(input.hora_fechamento) }
     if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo ? 1 : 0) }
@@ -371,7 +372,7 @@ const colaboradoresDeletar = t.procedure
   })
 
 // =============================================================================
-// EXCECOES (4 handlers)
+// EXCECOES (5 handlers)
 // =============================================================================
 
 const excecoesListar = t.procedure
@@ -379,6 +380,14 @@ const excecoesListar = t.procedure
   .action(async ({ input }) => {
     const db = getDb()
     return db.prepare('SELECT * FROM excecoes WHERE colaborador_id = ? ORDER BY data_inicio').all(input.colaborador_id)
+  })
+
+const excecoesListarAtivas = t.procedure
+  .input<Record<string, never>>()
+  .action(async () => {
+    const db = getDb()
+    const hoje = new Date().toISOString().split('T')[0]
+    return db.prepare('SELECT * FROM excecoes WHERE data_inicio <= ? AND data_fim >= ? ORDER BY tipo, data_inicio').all(hoje, hoje)
   })
 
 const excecoesCriar = t.procedure
@@ -437,6 +446,24 @@ const escalasBuscar = t.procedure
         pontuacao: escala.pontuacao ?? 0,
       },
     }
+  })
+
+const escalasResumoPorSetor = t.procedure
+  .action(async () => {
+    const db = getDb()
+    return db.prepare(`
+      SELECT e.setor_id, e.data_inicio, e.data_fim, e.status
+      FROM escalas e
+      INNER JOIN (
+        SELECT setor_id, MAX(
+          CASE status WHEN 'OFICIAL' THEN 2 WHEN 'RASCUNHO' THEN 1 ELSE 0 END * 1000000 + id
+        ) as prio
+        FROM escalas
+        WHERE status IN ('RASCUNHO', 'OFICIAL')
+        GROUP BY setor_id
+      ) latest ON e.setor_id = latest.setor_id
+        AND (CASE e.status WHEN 'OFICIAL' THEN 2 WHEN 'RASCUNHO' THEN 1 ELSE 0 END * 1000000 + e.id) = latest.prio
+    `).all() as { setor_id: number; data_inicio: string; data_fim: string; status: string }[]
   })
 
 const escalasListarPorSetor = t.procedure
@@ -627,9 +654,13 @@ const escalasGerar = t.procedure
         }
       })
 
-      gerarWorker.on('error', reject)
+      gerarWorker.on('error', (err) => {
+        console.error('[MOTOR] Worker error:', err)
+        reject(err)
+      })
       gerarWorker.on('exit', (code) => {
         if (code !== 0) {
+          console.error('[MOTOR] Worker exited with code:', code)
           reject(new Error(`Worker stopped with exit code ${code}`))
         }
       })
@@ -785,11 +816,13 @@ export const router = {
   'colaboradores.deletar': colaboradoresDeletar,
   // Excecoes
   'excecoes.listar': excecoesListar,
+  'excecoes.listarAtivas': excecoesListarAtivas,
   'excecoes.criar': excecoesCriar,
   'excecoes.atualizar': excecoesAtualizar,
   'excecoes.deletar': excecoesDeletar,
   // Escalas
   'escalas.buscar': escalasBuscar,
+  'escalas.resumoPorSetor': escalasResumoPorSetor,
   'escalas.listarPorSetor': escalasListarPorSetor,
   'escalas.oficializar': escalasOficializar,
   'escalas.ajustar': escalasAjustar,

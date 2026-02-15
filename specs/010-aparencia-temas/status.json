@@ -1,0 +1,23 @@
+{
+  "task_id": "010-aparencia-temas",
+  "current_phase": "complete",
+  "phases": {
+    "gathering": "complete",
+    "discovery": "complete",
+    "plan": "complete",
+    "code": "complete",
+    "build": "complete",
+    "qa": "approved"
+  },
+  "code_progress": {
+    "total_subtasks": 3,
+    "completed": 3,
+    "current_subtask": null,
+    "phase": "phase-3-ui"
+  },
+  "qa_verdict": "approved",
+  "qa_iteration": 1,
+  "mode": "standard",
+  "created_at": "2026-02-15T12:00:00Z",
+  "updated_at": "2026-02-15T19:00:00Z"
+}
