@@ -23,8 +23,14 @@ export const setoresService = {
   criarDemanda: (setorId: number, data: Omit<Demanda, 'id' | 'setor_id'>) =>
     client['setores.criarDemanda']({ setor_id: setorId, ...data }) as Promise<Demanda>,
 
-  atualizarDemanda: (id: number, data: Partial<Omit<Demanda, 'id' | 'setor_id'>>) =>
-    client['setores.atualizarDemanda']({ id, ...data } as any) as Promise<Demanda>,
+  atualizarDemanda: (id: number, data: Partial<Omit<Demanda, 'id' | 'setor_id'>>) => {
+    // Strip undefined values to prevent null serialization over IPC
+    const clean: Record<string, unknown> = { id }
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== undefined) clean[k] = v
+    }
+    return client['setores.atualizarDemanda'](clean as any) as Promise<Demanda>
+  },
 
   deletarDemanda: (id: number) =>
     client['setores.deletarDemanda']({ id }) as Promise<void>,

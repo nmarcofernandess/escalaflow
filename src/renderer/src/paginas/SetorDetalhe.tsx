@@ -23,9 +23,6 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   Save,
   GripVertical,
-  Plus,
-  Trash2,
-  Clock,
   CalendarDays,
   Users,
   ArrowRight,
@@ -42,7 +39,6 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
   Form,
@@ -52,21 +48,6 @@ import {
   FormControl,
   FormMessage,
 } from '@/components/ui/form'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -82,6 +63,7 @@ import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { IconPicker } from '@/componentes/IconPicker'
+import { DemandaEditor } from '@/componentes/DemandaEditor'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
@@ -89,7 +71,7 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
-import type { Setor, Demanda, Colaborador, Escala, TipoContrato, DiaSemana } from '@shared/index'
+import type { Setor, Demanda, Colaborador, Escala, TipoContrato } from '@shared/index'
 
 function SortableColabRow({
   colab,
@@ -148,16 +130,6 @@ function SortableColabRow({
   )
 }
 
-const DIAS_SEMANA_OPTIONS = [
-  { value: 'SEG', label: 'Segunda' },
-  { value: 'TER', label: 'Terca' },
-  { value: 'QUA', label: 'Quarta' },
-  { value: 'QUI', label: 'Quinta' },
-  { value: 'SEX', label: 'Sexta' },
-  { value: 'SAB', label: 'Sabado' },
-  { value: 'DOM', label: 'Domingo' },
-]
-
 const setorSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
   icone: z.string().nullable(),
@@ -178,14 +150,6 @@ export function SetorDetalhe() {
     resolver: zodResolver(setorSchema),
     defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '' },
   })
-
-  // Dialog state
-  const [showDemandaDialog, setShowDemandaDialog] = useState(false)
-  const [novaDemandaDia, setNovaDemandaDia] = useState<string>('todos')
-  const [novaDemandaInicio, setNovaDemandaInicio] = useState('08:00')
-  const [novaDemandaFim, setNovaDemandaFim] = useState('16:00')
-  const [novaDemandaPessoas, setNovaDemandaPessoas] = useState('2')
-  const [criandoDemanda, setCriandoDemanda] = useState(false)
 
   // Data loading
   const { data: setor, loading: loadingSetor } = useApiData<Setor>(
@@ -288,26 +252,14 @@ export function SetorDetalhe() {
     }
   }
 
-  const handleCriarDemanda = async () => {
-    setCriandoDemanda(true)
+  const handleCriarDemandaInline = async (data: Omit<Demanda, 'id' | 'setor_id'>) => {
     try {
-      await setoresService.criarDemanda(setorId, {
-        dia_semana: novaDemandaDia === 'todos' ? null : novaDemandaDia as DiaSemana,
-        hora_inicio: novaDemandaInicio,
-        hora_fim: novaDemandaFim,
-        min_pessoas: parseInt(novaDemandaPessoas),
-      })
+      await setoresService.criarDemanda(setorId, data)
       toast.success('Demanda criada')
-      setShowDemandaDialog(false)
-      setNovaDemandaDia('todos')
-      setNovaDemandaInicio('08:00')
-      setNovaDemandaFim('16:00')
-      setNovaDemandaPessoas('2')
       reloadDemandas()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao criar demanda')
-    } finally {
-      setCriandoDemanda(false)
+      throw err
     }
   }
 
@@ -318,6 +270,16 @@ export function SetorDetalhe() {
       reloadDemandas()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao remover demanda')
+      throw err
+    }
+  }
+
+  const handleAtualizarDemanda = async (id: number, data: Partial<Omit<Demanda, 'id' | 'setor_id'>>) => {
+    try {
+      await setoresService.atualizarDemanda(id, data)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar demanda')
+      throw err
     }
   }
 
@@ -453,80 +415,23 @@ export function SetorDetalhe() {
           </Card>
         </Form>
 
-        {/* Demandas */}
+        {/* Demandas — Editor Visual */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">
               Demanda por Faixa Horaria
             </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => setShowDemandaDialog(true)}>
-              <Plus className="mr-1 size-3.5" /> Nova Faixa
-            </Button>
           </CardHeader>
           <CardContent>
-            {(demandas ?? []).length === 0 ? (
-              <EmptyState
-                icon={Clock}
-                title="Nenhuma faixa de demanda definida"
-                description="Defina ao menos uma faixa para gerar escalas"
-                action={
-                  <Button variant="outline" size="sm" onClick={() => setShowDemandaDialog(true)}>
-                    <Plus className="mr-1 size-3.5" /> Nova Faixa
-                  </Button>
-                }
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="pl-4">Horario</TableHead>
-                    <TableHead>Dia</TableHead>
-                    <TableHead>Min. pessoas</TableHead>
-                    <TableHead className="w-[60px] text-right pr-4" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(demandas ?? []).map((dem) => (
-                    <TableRow key={dem.id}>
-                      <TableCell className="pl-4 font-medium">
-                        {dem.hora_inicio} — {dem.hora_fim}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {dem.dia_semana ?? 'Todos'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className="bg-primary/10 text-primary hover:bg-primary/15">
-                          {dem.min_pessoas}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right pr-4">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-7 text-destructive">
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Remover faixa de demanda?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                A faixa {dem.hora_inicio} - {dem.hora_fim} sera removida permanentemente.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeletarDemanda(dem.id)}>
-                                Remover
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            <DemandaEditor
+              setor={setor}
+              demandas={demandas ?? []}
+              onCriar={async (data) => {
+                await handleCriarDemandaInline(data)
+              }}
+              onAtualizar={handleAtualizarDemanda}
+              onDeletar={handleDeletarDemanda}
+            />
           </CardContent>
         </Card>
 
@@ -646,70 +551,6 @@ export function SetorDetalhe() {
         </Card>
       </div>
 
-      {/* Nova Demanda Dialog */}
-      <Dialog open={showDemandaDialog} onOpenChange={setShowDemandaDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Nova Faixa de Demanda</DialogTitle>
-            <DialogDescription>
-              Defina uma faixa horaria e a quantidade minima de pessoas.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Dia da semana (opcional)</Label>
-              <Select value={novaDemandaDia} onValueChange={setNovaDemandaDia}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos os dias</SelectItem>
-                  {DIAS_SEMANA_OPTIONS.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
-                      {d.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Hora inicio</Label>
-                <Input
-                  type="time"
-                  value={novaDemandaInicio}
-                  onChange={(e) => setNovaDemandaInicio(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Hora fim</Label>
-                <Input
-                  type="time"
-                  value={novaDemandaFim}
-                  onChange={(e) => setNovaDemandaFim(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Minimo de pessoas</Label>
-              <Input
-                type="number"
-                min="1"
-                value={novaDemandaPessoas}
-                onChange={(e) => setNovaDemandaPessoas(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDemandaDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleCriarDemanda} disabled={criandoDemanda}>
-              {criandoDemanda ? 'Criando...' : 'Criar Faixa'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

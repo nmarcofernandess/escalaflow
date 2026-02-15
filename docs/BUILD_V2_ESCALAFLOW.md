@@ -7,6 +7,12 @@
 
 > **Atualização:** 2026-02-15 — Arquitetura migrada para Electron desktop. Seções 3.3, 5, 8, 9, 10 atualizadas.
 > Motor 100% (10 regras, 10 testes PASS). Frontend polished (10 páginas + Perfil). QG1+QG2+QG3 PASSAM.
+>
+> **2026-02-15 (v2):** BUILD alinhado ao motor real (gerador.ts, validador.ts, validacao-compartilhada.ts).
+> DDL, tipos, FASE 4.5, numeração R1-R8+R3b, Ajustar (alocacoes/pinnedCells), schema empresa/setor/escala.
+>
+> **2026-02-15 (v3):** DemandaEditor reescrito — Tabs por dia (Padrao + Seg-Dom), ghost bars, dual view
+> (Timeline barras + Tabela rows), DemandaBar com DnD + resize + popover, debounced auto-save.
 
 ---
 
@@ -320,7 +326,9 @@ Col ||--o{ Aloc : escalado em
 |-------|------|---------|-----------|
 | `id` | Integer PK | auto | — |
 | `nome` | String | "" | Nome da empresa (exibicao) |
-| `corte_semanal` | String | "SEG_DOM" | Como contar "a semana" para horas |
+| `cnpj` | String | "" | CNPJ (opcional) |
+| `telefone` | String | "" | Telefone (opcional) |
+| `corte_semanal` | String | "SEG_DOM" | Dia de inicio da semana. Valores: SEG_DOM, TER_SEG, QUA_TER, QUI_QUA, SEX_QUI, SAB_SEX, DOM_SAB |
 | `tolerancia_semanal_min` | Integer | 30 | Tolerancia em minutos na meta semanal |
 
 **TipoContrato** (templates de contrato):
@@ -338,8 +346,9 @@ Col ||--o{ Aloc : escalado em
 |-------|------|---------|-----------|
 | `id` | Integer PK | auto | — |
 | `nome` | String | — | "Caixa", "Acougue", "Padaria" |
-| `hora_abertura` | String | — | "08:00" |
-| `hora_fechamento` | String | — | "19:30" |
+| `icone` | String nullable | null | Icone do setor (opcional) |
+| `hora_abertura` | String | "08:00" | — |
+| `hora_fechamento` | String | "22:00" | — |
 | `ativo` | Boolean | true | Soft delete (ver secao 8.5 Arquivamento) |
 
 **Demanda** (faixas horarias por setor):
@@ -373,8 +382,8 @@ Col ||--o{ Aloc : escalado em
 | `colaborador_id` | Integer FK | Colaborador |
 | `data_inicio` | Date | Inicio do periodo |
 | `data_fim` | Date | Fim do periodo (inclusive) |
-| `tipo` | String | "FERIAS", "ATESTADO", "TROCA", "BLOQUEIO" |
-| `nota` | String nullable | Observacao livre |
+| `tipo` | String | "FERIAS", "ATESTADO", "BLOQUEIO" |
+| `observacao` | String nullable | Observacao livre |
 
 **Escala** (escala gerada):
 | Campo | Tipo | Default | Descricao |
@@ -385,8 +394,11 @@ Col ||--o{ Aloc : escalado em
 | `data_fim` | Date | — | Fim do periodo |
 | `status` | String | "RASCUNHO" | "RASCUNHO", "OFICIAL", "ARQUIVADA" |
 | `pontuacao` | Integer nullable | — | 0-100 (qualidade da escala) |
+| `cobertura_percent` | Real | 0 | % de faixas de demanda atendidas |
+| `violacoes_hard` | Integer | 0 | Contagem de violacoes HARD |
+| `violacoes_soft` | Integer | 0 | Contagem de violacoes SOFT |
+| `equilibrio` | Real | 0 | 0-100 (distribuicao justa entre colaboradores) |
 | `criada_em` | DateTime | now() | Quando foi gerada |
-| `oficializada_em` | DateTime nullable | — | Quando virou oficial |
 
 **Alocacao** (cada dia de cada pessoa numa escala):
 | Campo | Tipo | Descricao |
@@ -395,10 +407,11 @@ Col ||--o{ Aloc : escalado em
 | `escala_id` | Integer FK | Escala pai |
 | `colaborador_id` | Integer FK | Colaborador |
 | `data` | Date | Dia |
-| `status` | String | "TRABALHO", "FOLGA", "AUSENCIA" |
-| `hora_inicio` | String nullable | "08:00" (null se FOLGA/AUSENCIA) |
-| `hora_fim` | String nullable | "17:30" (null se FOLGA/AUSENCIA) |
-| `minutos` | Integer nullable | 570 (null se FOLGA/AUSENCIA) |
+| `status` | String | "TRABALHO", "FOLGA", "INDISPONIVEL" |
+| `hora_inicio` | String nullable | "08:00" (null se FOLGA/INDISPONIVEL) |
+| `hora_fim` | String nullable | "17:30" (null se FOLGA/INDISPONIVEL) |
+| `minutos` | Integer nullable | 570 (null se FOLGA/INDISPONIVEL) |
+| UNIQUE(escala_id, colaborador_id, data) | — | Uma alocacao por pessoa por dia |
 
 ### 4.3 Ciclo de vida da Escala
 
@@ -569,6 +582,8 @@ GET    /api/dashboard/resumo                 → DashboardResumo
 interface Empresa {
   id: number
   nome: string
+  cnpj: string
+  telefone: string
   corte_semanal: string
   tolerancia_semanal_min: number
 }
@@ -585,6 +600,7 @@ interface TipoContrato {
 interface Setor {
   id: number
   nome: string
+  icone: string | null
   hora_abertura: string
   hora_fechamento: string
   ativo: boolean
@@ -617,8 +633,8 @@ interface Excecao {
   colaborador_id: number
   data_inicio: string   // "2026-03-01"
   data_fim: string      // "2026-03-15"
-  tipo: 'FERIAS' | 'ATESTADO' | 'TROCA' | 'BLOQUEIO'
-  nota: string | null
+  tipo: 'FERIAS' | 'ATESTADO' | 'BLOQUEIO'
+  observacao: string | null
 }
 
 interface Escala {
@@ -628,8 +644,11 @@ interface Escala {
   data_fim: string
   status: 'RASCUNHO' | 'OFICIAL' | 'ARQUIVADA'
   pontuacao: number | null
+  cobertura_percent: number
+  violacoes_hard: number
+  violacoes_soft: number
+  equilibrio: number
   criada_em: string
-  oficializada_em: string | null
 }
 
 interface Alocacao {
@@ -637,7 +656,7 @@ interface Alocacao {
   escala_id: number
   colaborador_id: number
   data: string
-  status: 'TRABALHO' | 'FOLGA' | 'AUSENCIA'
+  status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
   hora_inicio: string | null
   hora_fim: string | null
   minutos: number | null
@@ -661,11 +680,11 @@ interface Indicadores {
 }
 
 interface Violacao {
-  tipo: 'HARD' | 'SOFT'
-  regra: string                  // "MAX_DIAS_CONSECUTIVOS"
-  colaborador_id: number
+  severidade: 'HARD' | 'SOFT'
+  regra: string                  // "MAX_DIAS_CONSECUTIVOS", "RODIZIO_DOMINGO", "ESTAGIARIO_DOMINGO", etc.
+  colaborador_id: number | null   // null para R8 COBERTURA
   colaborador_nome: string
-  mensagem: string               // "Ana trabalhou 7 dias seguidos (max 6)"
+  mensagem: string
   data: string | null
 }
 
@@ -704,17 +723,18 @@ interface GerarEscalaRequest {
   data_fim: string      // "2026-03-31"
 }
 
-// POST /api/escalas/:id/ajustar
+// POST /api/escalas/:id/ajustar (IPC: escalas.ajustar)
+// Smart Recalc: envia alocacoes alteradas como pinned cells; motor regenera o resto
 interface AjustarEscalaRequest {
-  alteracoes: AlteracaoEscala[]
+  alocacoes: AlocacaoAjuste[]
 }
 
-interface AlteracaoEscala {
+interface AlocacaoAjuste {
   colaborador_id: number
   data: string
-  novo_status: 'TRABALHO' | 'FOLGA'
-  nova_hora_inicio?: string
-  nova_hora_fim?: string
+  status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
+  hora_inicio?: string | null
+  hora_fim?: string | null
 }
 
 // POST /api/colaboradores
@@ -792,6 +812,12 @@ partition "GERACAO" {
     Round-robin entre disponiveis
   end note
 
+  :Repair: corrigir >6 dias consecutivos;
+  note right
+    Pos-domingo pode gerar streak
+    Forcar FOLGA em dia preferido
+  end note
+
   :Alocar horarios por faixa de demanda;
   note right
     Para cada dia de TRABALHO:
@@ -829,6 +855,7 @@ Carregar:
                   JOIN tipos_contrato ON tipo_contrato_id
                   ORDER BY rank DESC
   demandas = SELECT * FROM demandas WHERE setor_id = setor_id
+  empresa = SELECT corte_semanal FROM empresa LIMIT 1  // para getWeeks (agrupamento semanal)
   excecoes = SELECT * FROM excecoes
              WHERE colaborador_id IN (colaboradores.ids)
              AND data_inicio <= data_fim
@@ -922,45 +949,38 @@ Para cada domingo D em domingos:
   Para os NAO escalados: contador_consecutivos = 0, marcar FOLGA
 ```
 
-**FASE 5 — ALOCACAO DE HORARIOS (com preferencia e rank)**
+**FASE 4.5 — REPAIR (corrigir >6 dias consecutivos pos-domingo)**
 
 ```
+Apos FASE 3 (folgas) + FASE 4 (domingos), a combinacao pode gerar streaks >6.
+Para cada colaborador C:
+  Se streak de TRABALHO > 6 e celula NAO e pinned:
+    Escolher dia para forcar FOLGA (preferir evitar_dia_semana ou menor demanda)
+    Marcar FOLGA nesse dia
+```
+
+**FASE 5 — ALOCACAO DE HORARIOS (cobertura-first + preferencia + rank)**
+
+```
+Estrategia: testa multiplos horarios de inicio (inicio/fim de cada faixa + turno noturno)
+e escolhe o que mais preenche deficit de cobertura. Cobertura = OVERLAP real (alocacao intersecta faixa).
+
 Para cada dia D no periodo:
   colaboradores_dia = [C for C in colaboradores where resultado[C][D] = TRABALHO]
-  Ordenar colaboradores_dia por rank DESC (maior rank escolhe horario primeiro)
+  Ordenar colaboradores_dia por rank DESC
 
   Para cada colaborador C em colaboradores_dia:
     meta_diaria_min = C.horas_semanais * 60 / C.tipo_contrato.dias_trabalho
-    max_dia = C.tipo_contrato.max_minutos_dia
-    minutos = min(meta_diaria_min, max_dia)
+    duracao = min(meta_diaria_min, C.max_minutos_dia)
 
-    faixas_ordenadas = demandas do setor para dia_semana(D)
-                       ordenadas por (min_pessoas - ja_alocados) DESC
-
-    Se C.prefere_turno = "MANHA":
-      Reordenar faixas: mover faixas de manha (hora_inicio < 12:00)
-      pra cima, mantendo prioridade de necessidade como segundo criterio
-
-    Se C.prefere_turno = "TARDE":
-      Reordenar faixas: mover faixas de tarde (hora_inicio >= 12:00)
-      pra cima, mantendo prioridade de necessidade como segundo criterio
-
-    hora_inicio = faixa_escolhida.hora_inicio
-    hora_fim = hora_inicio + minutos
-
-    Se hora_fim > setor.hora_fechamento:
-      hora_inicio = setor.hora_fechamento - minutos
-      hora_fim = setor.hora_fechamento
-
-    resultado[C][D] = {
-      status: "TRABALHO",
-      hora_inicio: hora_inicio,
-      hora_fim: hora_fim,
-      minutos: minutos
-    }
+    Candidatos: inicio e fim de cada faixa + (setor_fechamento - duracao)
+    Para cada candidato: pontuar por max deficit proporcional (overlap real)
+    Bonus: preferencia MANHA (ini < 12:00) ou TARDE (ini >= 12:00)
+    Escolher melhor score; aplicar R2 (min 11h descanso vs dia anterior)
+    Atualizar bandaCount para TODAS as faixas que o shift cobre
 ```
 
-**FASE 6 — VALIDACAO**
+**FASE 6 — VALIDACAO (R1-R8 + R3b)**
 
 ```
 violacoes = []
@@ -983,42 +1003,35 @@ Para cada colaborador C:
     violacoes.add(HARD, "RODIZIO_DOMINGO",
       "{C.nome}: {N} domingos seguidos (max {max})")
 
-  # R4: Meta semanal de horas
-  Para cada semana W:
-    total_min = soma de minutos em W
-    meta = C.horas_semanais * 60
-    desvio = abs(total_min - meta)
-    Se desvio > empresa.tolerancia_semanal_min:
-      violacoes.add(SOFT, "META_SEMANAL",
-        "{C.nome}: {total_min}min na semana (meta {meta}min)")
+  # R3b: Estagiario no domingo (contrato proibe trabalho dominical)
+  Se !C.trabalha_domingo E C escalado em domingo:
+    violacoes.add(HARD, "ESTAGIARIO_DOMINGO", ...)
 
-  # R6: Max minutos diarios
+  # R4: Max jornada diaria (usa o limite mais restritivo entre CLT e contrato)
   Para cada dia D com TRABALHO:
-    Se D.minutos > CLT_MAX_JORNADA_DIARIA_MIN:
-      violacoes.add(HARD, "MAX_JORNADA_DIARIA",
-        "{C.nome}: {D.minutos}min em {D.data} (max {CLT_MAX_JORNADA_DIARIA_MIN}min)")
+    Se D.minutos > limiteMaxDia:
+      violacoes.add(HARD, "MAX_JORNADA_DIARIA" ou "CONTRATO_MAX_DIA", ...)
 
-  # R7: Preferencia de dia nao atendida (soft)
+  # R5: Meta semanal de horas (SOFT)
+  Para cada semana W (agrupada por corte_semanal):
+    total_min = soma de minutos em W
+    meta_scaled = horas_semanais * 60 * (week.length/7)
+    Se abs(total_min - meta_scaled) > tolerancia_scaled:
+      violacoes.add(SOFT, "META_SEMANAL", ...)
+
+  # R6: Preferencia de dia nao atendida (soft)
   Se C.evitar_dia_semana != null:
-    dias_trabalhados_no_dia = count de TRABALHO em dias que correspondem a evitar_dia_semana
-    Se dias_trabalhados_no_dia > 0:
-      violacoes.add(SOFT, "PREFERENCIA_DIA",
-        "{C.nome}: trabalhou {dias_trabalhados_no_dia}x em {C.evitar_dia_semana} (prefere folga)")
+    Se count TRABALHO em dias que correspondem a evitar_dia_semana > 0:
+      violacoes.add(SOFT, "PREFERENCIA_DIA", ...)
 
-  # R8: Preferencia de turno nao atendida (soft)
+  # R7: Preferencia de turno nao atendida (soft)
   Se C.prefere_turno != null:
-    Para cada dia D com TRABALHO:
-      Se C.prefere_turno = "MANHA" AND D.hora_inicio >= "12:00":
-        violacoes.add(SOFT, "PREFERENCIA_TURNO",
-          "{C.nome}: alocado a tarde em {D.data} (prefere manha)")
-      Se C.prefere_turno = "TARDE" AND D.hora_inicio < "12:00":
-        violacoes.add(SOFT, "PREFERENCIA_TURNO",
-          "{C.nome}: alocado de manha em {D.data} (prefere tarde)")
+    Para cada dia D com TRABALHO: verificar MANHA (hi < 720) ou TARDE (hi >= 720)
 
-# R5: Cobertura por faixa
+# R8: Cobertura por faixa (SOFT) — overlap real entre alocacao e faixa
 Para cada dia D no periodo:
-  Para cada faixa de demanda F:
-    alocados = count de colaboradores trabalhando na faixa F no dia D
+  Para cada faixa de demanda F (dia_semana = dia_semana(D) ou null):
+    alocados = count de colaboradores cujo turno OVERLAP com faixa (pIni < fFim E pFim > fIni)
     Se alocados < F.min_pessoas:
       violacoes.add(SOFT, "COBERTURA",
         "{D.data} {F.hora_inicio}-{F.hora_fim}: {alocados}/{F.min_pessoas} pessoas")
@@ -1256,6 +1269,8 @@ src/
 │       │
 │       ├── componentes/               # Componentes custom reutilizáveis
 │       │   ├── AppSidebar.tsx         # Avatar + Dropdown + Theme + Tour (261 linhas)
+│       │   ├── DemandaBar.tsx         # Barra de demanda c/ DnD, resize, popover, tooltip
+│       │   ├── DemandaEditor.tsx      # Editor de demandas: Tabs dia, ghost bars, dual view
 │       │   ├── EmptyState.tsx         # Empty state padronizado (icon, title, desc, action)
 │       │   ├── EscalaGrid.tsx         # Grid interativa pessoa x dia
 │       │   ├── ExportarEscala.tsx     # Export HTML self-contained (258 linhas)
@@ -1293,12 +1308,13 @@ src/
 │       │
 │       ├── lib/
 │       │   ├── constantes.ts          # CLT constants + tipos
-│       │   ├── formatadores.ts        # formatDate, mapError, REGRAS_TEXTO
+│       │   ├── formatadores.ts        # formatDate, mapError, REGRAS_TEXTO, minutesToTime
 │       │   ├── cores.ts              # Tokens semânticos (CORES_STATUS, CORES_VIOLACAO, etc.)
 │       │   └── utils.ts              # cn() helper
 │       │
 │       ├── hooks/
-│       │   └── useApiData.ts          # Hook genérico fetch + loading + error
+│       │   ├── useApiData.ts          # Hook genérico fetch + loading + error
+│       │   └── useDemandaResize.ts    # Hook de resize drag nas barras de demanda
 │       │
 │       ├── App.tsx                    # Router + ErrorBoundary + OnboardingTour
 │       ├── index.css                  # Tailwind + shadcn theme
@@ -1413,11 +1429,18 @@ ARQUIVADOS: Abre lista de itens inativos com botao [Restaurar]
 │  │ Abertura: [08:00]  Fechamento: [19:30]            │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                           │
-│  Secao 2: Demanda por faixa                [+ Faixa]    │
+│  Secao 2: Demanda (DemandaEditor)                        │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │ 08:00-10:00  3 pessoas               [Ed.][Rem.] │   │
-│  │ 10:00-15:00  5 pessoas               [Ed.][Rem.] │   │
-│  │ 15:00-19:30  4 pessoas               [Ed.][Rem.] │   │
+│  │ [Padrao|Seg|Ter|Qua|Qui|Sex|Sab|Dom] [📊][📋][+]│   │
+│  │                                                   │   │
+│  │ Timeline: barras draggable + resize handles       │   │
+│  │ ░░[==08:00-10:00 3p==]░░░░░░░░░░░░░░░░░░░░░░░   │   │
+│  │ ░░░░░░░░░[==10:00-15:00 5p==]░░░░░░░░░░░░░░░░   │   │
+│  │ ░░░░░░░░░░░░░░░░░░░[==15:00-19:30 4p==]░░░░░░   │   │
+│  │ Aba dia: ghost bars (herdados) + bars editaveis   │   │
+│  │                                                   │   │
+│  │ Tabela: rows com inputs inline + stepper pessoas  │   │
+│  │ Coverage histogram por hora abaixo das barras     │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                           │
 │  Secao 3: Colaboradores                    [+ Vincular] │
@@ -1632,8 +1655,10 @@ src/main/
 CREATE TABLE IF NOT EXISTS empresa (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
-    cidade TEXT NOT NULL,
-    estado TEXT NOT NULL
+    cnpj TEXT NOT NULL DEFAULT '',
+    telefone TEXT NOT NULL DEFAULT '',
+    corte_semanal TEXT NOT NULL DEFAULT 'SEG_DOM' CHECK (corte_semanal IN ('SEG_DOM', 'TER_SEG', 'QUA_TER', 'QUI_QUA', 'SEX_QUI', 'SAB_SEX', 'DOM_SAB')),
+    tolerancia_semanal_min INTEGER NOT NULL DEFAULT 30
 );
 
 CREATE TABLE IF NOT EXISTS tipos_contrato (
@@ -1648,6 +1673,7 @@ CREATE TABLE IF NOT EXISTS tipos_contrato (
 CREATE TABLE IF NOT EXISTS setores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
+    icone TEXT,
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
     ativo INTEGER NOT NULL DEFAULT 1
@@ -1691,6 +1717,10 @@ CREATE TABLE IF NOT EXISTS escalas (
     data_fim TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'RASCUNHO' CHECK (status IN ('RASCUNHO', 'OFICIAL', 'ARQUIVADA')),
     pontuacao INTEGER,
+    cobertura_percent REAL DEFAULT 0,
+    violacoes_hard INTEGER DEFAULT 0,
+    violacoes_soft INTEGER DEFAULT 0,
+    equilibrio REAL DEFAULT 0,
     criada_em TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -1702,7 +1732,8 @@ CREATE TABLE IF NOT EXISTS alocacoes (
     status TEXT NOT NULL CHECK (status IN ('TRABALHO', 'FOLGA', 'INDISPONIVEL')),
     hora_inicio TEXT,
     hora_fim TEXT,
-    minutos INTEGER
+    minutos INTEGER,
+    UNIQUE(escala_id, colaborador_id, data)
 );
 
 -- Indices para performance
@@ -1719,6 +1750,10 @@ CREATE INDEX IF NOT EXISTS idx_alocacoes_colaborador ON alocacoes(colaborador_id
 ## 10. CONSOLIDACAO
 
 ### 10.1 TL;DR
+
+**Demanda vs Escala (para refinamento de UI):**
+- **Demanda** = faixas horárias (hora_inicio, hora_fim, min_pessoas) — INPUT do motor. Configurada em **SetorDetalhe**.
+- **Escala** = alocações geradas — OUTPUT do motor. Visualizada em **EscalaPagina**. O spec 009 (timeline/Gantt) refere-se à *visualização* da escala, não à configuração de demanda.
 
 - 8 entidades no banco, todas em português
 - Motor de Proposta gera escala automática em 7 fases + lookback + pinnedCells (10 regras nomeadas, 10 testes)
@@ -1768,7 +1803,11 @@ IMPORTANTE (melhora experiência):
 ├── Formulários Zod ................... ✅ FEITO (7 forms)
 ├── EmptyState padronizado ............ ✅ FEITO (8 locais)
 ├── Onboarding Tour ................... ✅ FEITO (4 passos)
-└── Página Perfil ..................... ✅ FEITO
+├── Página Perfil ..................... ✅ FEITO
+├── DemandaEditor Tabs + Ghost Bars .. ✅ FEITO (Padrao + por dia)
+├── DemandaEditor dual view .......... ✅ FEITO (Timeline barras + Tabela rows)
+├── DemandaBar DnD + resize .......... ✅ FEITO (drag, resize handles, popover)
+└── Demandas UPDATE inline ........... ✅ FEITO (debounced auto-save)
 
 NICE TO HAVE (backlog):
 ├── SetorDetalhe com tabs ............. PROPOSTA
@@ -1776,7 +1815,6 @@ NICE TO HAVE (backlog):
 ├── Sidebar link "Escalas" ............ PROPOSTA
 ├── Skeleton loading states ........... BACKLOG
 ├── Tour com links clicáveis .......... BACKLOG
-├── Demandas/Exceções UPDATE .......... BACKLOG
 └── Duplicar escala pra simulação ..... v2.1
 ```
 
@@ -1788,7 +1826,7 @@ NICE TO HAVE (backlog):
 | Fronteira de periodo gera violacao (sem lookback) | Alto | Motor carrega ultima escala OFICIAL e inicializa contadores (ver Fase 1) |
 | Performance do SQLite com muitas alocacoes | Baixo | ~30 pessoas x 30 dias = 900 registros. SQLite aguenta milhoes |
 | Gestora nao entende a grid | Alto | Cores claras, legenda visivel, tooltips. Testar com a mae |
-| Demanda por faixa e complexa demais pro usuario | Medio | Comecar com padrao unico (mesmo pra todos os dias). Variacao por dia = fase 2 |
+| Demanda por faixa e complexa demais pro usuario | Medio | Padrao (dia_semana=null) serve todos os dias. Override por dia via Tabs. Ghost bars mostram heranca visual |
 | Ajuste na grid e lento (round-trip API) | Medio | Otimistic update no frontend. Debounce de 300ms |
 | Arquivar setor/colaborador com cascata | Baixo | Modais de confirmacao claros + nao deletar dados, so desativar |
 

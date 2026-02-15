@@ -434,14 +434,55 @@ export function EscalaPagina() {
               />
             ) : (
               <Card>
-                <CardContent className="flex flex-col items-center justify-center py-16">
-                  <CalendarDays className="mb-4 size-12 text-muted-foreground/30" />
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Nenhuma escala gerada para {setor.nome}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground/70">
-                    Selecione o periodo acima e clique em &quot;Gerar Escala&quot;
-                  </p>
+                <CardContent className="py-8">
+                  <div className="flex flex-col items-center justify-center mb-6">
+                    <CalendarDays className="mb-3 size-10 text-muted-foreground/30" />
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Nenhuma escala gerada para {setor.nome}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground/70">
+                      Selecione o periodo acima e clique em &quot;Gerar Escala&quot;
+                    </p>
+                  </div>
+
+                  {/* Equipe do setor */}
+                  {colaboradores.length > 0 && (
+                    <div className="border-t pt-5">
+                      <p className="text-xs font-semibold text-foreground mb-3">
+                        Equipe do setor ({colaboradores.length} colaborador{colaboradores.length > 1 ? 'es' : ''})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {colaboradores.map((colab) => {
+                          const contratoNome = tiposContrato?.find(tc => tc.id === colab.tipo_contrato_id)?.nome
+                          return (
+                            <div
+                              key={colab.id}
+                              className="flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2"
+                            >
+                              <div
+                                className={cn(
+                                  'flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
+                                  colab.sexo === 'F'
+                                    ? 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300'
+                                    : 'bg-sky-100 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300',
+                                )}
+                              >
+                                {iniciais(colab.nome)}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-foreground leading-tight truncate">
+                                  {colab.nome.split(' ').slice(0, 2).join(' ')}
+                                </p>
+                                {contratoNome && (
+                                  <p className="text-[10px] text-muted-foreground truncate">{contratoNome}</p>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

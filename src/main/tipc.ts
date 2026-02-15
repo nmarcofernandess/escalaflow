@@ -212,7 +212,7 @@ const setoresCriarDemanda = t.procedure
   })
 
 const setoresAtualizarDemanda = t.procedure
-  .input<{ id: number; dia_semana?: string | null; hora_inicio: string; hora_fim: string; min_pessoas: number }>()
+  .input<{ id: number; dia_semana?: string | null; hora_inicio?: string; hora_fim?: string; min_pessoas?: number }>()
   .action(async ({ input }) => {
     const db = getDb()
     const demanda = db.prepare('SELECT * FROM demandas WHERE id = ?').get(input.id) as { setor_id: number } | undefined
@@ -227,9 +227,17 @@ const setoresAtualizarDemanda = t.procedure
       throw new Error(`Faixa termina depois do fechamento do setor (${setor.hora_fechamento})`)
     }
 
-    db.prepare(`
-      UPDATE demandas SET dia_semana = ?, hora_inicio = ?, hora_fim = ?, min_pessoas = ? WHERE id = ?
-    `).run(input.dia_semana ?? null, input.hora_inicio, input.hora_fim, input.min_pessoas, input.id)
+    const fields: string[] = []
+    const values: unknown[] = []
+    if (input.dia_semana !== undefined) { fields.push('dia_semana = ?'); values.push(input.dia_semana) }
+    if (input.hora_inicio != null) { fields.push('hora_inicio = ?'); values.push(input.hora_inicio) }
+    if (input.hora_fim != null) { fields.push('hora_fim = ?'); values.push(input.hora_fim) }
+    if (input.min_pessoas != null) { fields.push('min_pessoas = ?'); values.push(input.min_pessoas) }
+
+    if (fields.length > 0) {
+      values.push(input.id)
+      db.prepare(`UPDATE demandas SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+    }
 
     return db.prepare('SELECT * FROM demandas WHERE id = ?').get(input.id)
   })
