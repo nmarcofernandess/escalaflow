@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ChevronDown,
@@ -7,6 +7,8 @@ import {
   Loader2,
   ExternalLink,
   AlertTriangle,
+  Search,
+  Download,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -51,11 +53,14 @@ interface SetorEscalaSectionProps {
   setor: Setor
   escalaResumo: EscalaResumo | null
   viewMode: 'grid' | 'timeline'
+  searchHighlight?: string
+  matchedColabs?: { id: number; nome: string }[]
+  onExportFunc?: (colabId: number, setorId: number) => void
 }
 
 const TOLERANCIA_DEFAULT = 30
 
-export function SetorEscalaSection({ setor, escalaResumo, viewMode }: SetorEscalaSectionProps) {
+export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighlight, matchedColabs, onExportFunc }: SetorEscalaSectionProps) {
   const [expanded, setExpanded] = useState(true)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -95,6 +100,14 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode }: SetorEscal
       loadDetail()
     }
   }
+
+  // Auto-expand quando busca encontra algo neste setor
+  useEffect(() => {
+    if (searchHighlight && matchedColabs && matchedColabs.length > 0 && escalaResumo) {
+      if (!expanded) setExpanded(true)
+      if (!loaded) loadDetail()
+    }
+  }, [searchHighlight, matchedColabs])
 
   // No escala for this setor
   if (!escalaResumo) {
@@ -161,6 +174,27 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode }: SetorEscal
           </Button>
         </div>
       </CardHeader>
+
+      {/* Search match banner */}
+      {searchHighlight && matchedColabs && matchedColabs.length > 0 && (
+        <div className="mx-4 mb-2 flex items-center gap-2 rounded-md border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30 px-3 py-2">
+          <Search className="size-3.5 shrink-0 text-yellow-600 dark:text-yellow-400" />
+          <span className="flex-1 text-xs text-yellow-800 dark:text-yellow-200">
+            Encontrado: {matchedColabs.map((c) => c.nome).join(', ')}
+          </span>
+          {matchedColabs.length === 1 && onExportFunc && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 text-xs text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
+              onClick={() => onExportFunc(matchedColabs[0].id, setor.id)}
+            >
+              <Download className="size-3" />
+              Exportar escala de {matchedColabs[0].nome}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Collapse content */}
       {expanded && (

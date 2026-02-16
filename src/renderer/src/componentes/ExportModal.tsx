@@ -19,12 +19,21 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ExportPreview } from '@/componentes/ExportPreview'
 import { Download, Printer, Loader2, FileSpreadsheet } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export interface ExportOpcoes {
   avisos: boolean
   horas: boolean
+}
+
+export interface SetorExportItem {
+  id: number
+  nome: string
+  checked: boolean
+  temEscala: boolean
 }
 
 export interface ExportModalProps {
@@ -40,6 +49,8 @@ export interface ExportModalProps {
   colaboradores?: { id: number; nome: string }[]
   funcionarioId?: number | null
   onFuncionarioChange?: (id: number) => void
+  setoresExport?: SetorExportItem[]
+  onSetoresExportChange?: (setores: SetorExportItem[]) => void
   onExportHTML: () => void
   onPrint: () => void
   onCSV?: () => void
@@ -60,13 +71,15 @@ export function ExportModal({
   colaboradores,
   funcionarioId,
   onFuncionarioChange,
+  setoresExport,
+  onSetoresExportChange,
   onExportHTML,
   onPrint,
   onCSV,
   loading = false,
   progress = 0,
 }: ExportModalProps) {
-  const isBatch = formato === 'batch'
+  const isBatch = formato === 'batch' || formato === 'batch-geral'
   const isCSV = formato === 'csv'
 
   return (
@@ -98,6 +111,11 @@ export function ExportModal({
               <HubOptions
                 formato={formato}
                 onFormatoChange={onFormatoChange}
+                setoresExport={setoresExport}
+                onSetoresExportChange={onSetoresExportChange}
+                colaboradores={colaboradores}
+                funcionarioId={funcionarioId}
+                onFuncionarioChange={onFuncionarioChange}
               />
             )}
 
@@ -247,27 +265,168 @@ function EscalaOptions({
 function HubOptions({
   formato,
   onFormatoChange,
+  setoresExport,
+  onSetoresExportChange,
+  colaboradores,
+  funcionarioId,
+  onFuncionarioChange,
 }: {
   formato: string
   onFormatoChange: (f: string) => void
+  setoresExport?: SetorExportItem[]
+  onSetoresExportChange?: (setores: SetorExportItem[]) => void
+  colaboradores?: { id: number; nome: string }[]
+  funcionarioId?: number | null
+  onFuncionarioChange?: (id: number) => void
 }) {
+  const isSingleSetor =
+    setoresExport != null &&
+    setoresExport.filter((s) => s.temEscala).length === 1
+
+  if (isSingleSetor) {
+    return (
+      <div className="space-y-4">
+        <Label className="text-sm font-medium">Pra quem?</Label>
+        <RadioGroup value={formato} onValueChange={onFormatoChange}>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="completa" id="hub-fmt-completa" />
+            <Label htmlFor="hub-fmt-completa" className="text-sm font-normal">
+              RH (escala completa)
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="funcionario" id="hub-fmt-funcionario" />
+            <Label htmlFor="hub-fmt-funcionario" className="text-sm font-normal">
+              Funcionario (individual)
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="batch" id="hub-fmt-batch" />
+            <Label htmlFor="hub-fmt-batch" className="text-sm font-normal">
+              Todos funcionarios (batch)
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="csv" id="hub-fmt-csv" />
+            <Label htmlFor="hub-fmt-csv" className="text-sm font-normal">
+              CSV (dados brutos)
+            </Label>
+          </div>
+        </RadioGroup>
+
+        {formato === 'funcionario' && colaboradores && onFuncionarioChange && (
+          <div className="space-y-2">
+            <Label className="text-sm">Funcionario</Label>
+            <Select
+              value={funcionarioId?.toString() ?? ''}
+              onValueChange={(v) => onFuncionarioChange(parseInt(v, 10))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione..." />
+              </SelectTrigger>
+              <SelectContent>
+                {colaboradores.map((c) => (
+                  <SelectItem key={c.id} value={c.id.toString()}>
+                    {c.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Multi-setor mode
   return (
     <div className="space-y-4">
-      <Label className="text-sm font-medium">Formato</Label>
+      <Label className="text-sm font-medium">Pra quem?</Label>
       <RadioGroup value={formato} onValueChange={onFormatoChange}>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="html" id="fmt-html" />
-          <Label htmlFor="fmt-html" className="text-sm font-normal">
-            Imprimir (HTML)
+          <RadioGroupItem value="completa" id="hub-fmt-multi-completa" />
+          <Label htmlFor="hub-fmt-multi-completa" className="text-sm font-normal">
+            RH (todos os setores)
           </Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="csv" id="fmt-csv" />
-          <Label htmlFor="fmt-csv" className="text-sm font-normal">
-            CSV
+          <RadioGroupItem value="batch-geral" id="hub-fmt-batch-geral" />
+          <Label htmlFor="hub-fmt-batch-geral" className="text-sm font-normal">
+            Funcionarios (batch geral)
+          </Label>
+        </div>
+        <div className="flex items-center space-x-2">
+          <RadioGroupItem value="csv" id="hub-fmt-multi-csv" />
+          <Label htmlFor="hub-fmt-multi-csv" className="text-sm font-normal">
+            CSV (dados brutos)
           </Label>
         </div>
       </RadioGroup>
+
+      {setoresExport && onSetoresExportChange && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Setores</Label>
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() =>
+                  onSetoresExportChange(
+                    setoresExport.map((s) => ({
+                      ...s,
+                      checked: s.temEscala ? true : s.checked,
+                    }))
+                  )
+                }
+              >
+                Todos
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() =>
+                  onSetoresExportChange(
+                    setoresExport.map((s) => ({ ...s, checked: false }))
+                  )
+                }
+              >
+                Nenhum
+              </Button>
+            </div>
+          </div>
+          {setoresExport.map((s) => (
+            <div key={s.id} className="flex items-center space-x-2">
+              <Checkbox
+                id={`setor-export-${s.id}`}
+                checked={s.checked}
+                disabled={!s.temEscala}
+                onCheckedChange={(checked) =>
+                  onSetoresExportChange(
+                    setoresExport.map((item) =>
+                      item.id === s.id
+                        ? { ...item, checked: checked === true }
+                        : item
+                    )
+                  )
+                }
+              />
+              <Label
+                htmlFor={`setor-export-${s.id}`}
+                className={cn(
+                  'text-sm',
+                  !s.temEscala && 'text-muted-foreground'
+                )}
+              >
+                {s.nome}
+                {!s.temEscala && ' (sem escala)'}
+              </Label>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
