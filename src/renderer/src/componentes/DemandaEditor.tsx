@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, type MouseEvent } from 'react'
 import { Plus, Clock, Minus, Trash2, Users, BarChart3, Table2 } from 'lucide-react'
 import {
   DndContext,
@@ -88,10 +88,15 @@ export function DemandaEditor({
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
   const [localDemandas, setLocalDemandas] = useState<Demanda[]>(demandas)
   const debounceTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
+  const prevDemandasKey = useRef('')
 
-  // Sync external demandas into local state
+  // Sync external demandas into local state (only when content actually changes)
   useEffect(() => {
-    setLocalDemandas(demandas)
+    const key = JSON.stringify(demandas.map((d) => ({ id: d.id, mp: d.min_pessoas, hi: d.hora_inicio, hf: d.hora_fim, ds: d.dia_semana })))
+    if (key !== prevDemandasKey.current) {
+      prevDemandasKey.current = key
+      setLocalDemandas(demandas)
+    }
   }, [demandas])
 
   const openMin = toMinutes(setor.hora_abertura)
@@ -250,18 +255,22 @@ export function DemandaEditor({
     })
   }
 
-  // Update min_pessoas
-  const handleUpdatePessoas = (id: number, delta: number) => {
-    const dem = localDemandas.find((d) => d.id === id)
-    if (!dem) return
-    const newVal = Math.max(1, dem.min_pessoas + delta)
-    if (newVal === dem.min_pessoas) return
-
-    setLocalDemandas((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, min_pessoas: newVal } : d)),
-    )
-    debouncedUpdate(id, { min_pessoas: newVal })
-  }
+  // Update min_pessoas (functional update to avoid stale closure)
+  const handleUpdatePessoas = useCallback((id: number, delta: number) => {
+    let computedVal: number | undefined
+    setLocalDemandas((prev) => {
+      const dem = prev.find((d) => d.id === id)
+      if (!dem) return prev
+      const newVal = Math.max(1, dem.min_pessoas + delta)
+      if (newVal === dem.min_pessoas) return prev
+      computedVal = newVal
+      return prev.map((d) => (d.id === id ? { ...d, min_pessoas: newVal } : d))
+    })
+    // setState updater runs synchronously — computedVal is set by now
+    if (computedVal !== undefined) {
+      debouncedUpdate(id, { min_pessoas: computedVal })
+    }
+  }, [debouncedUpdate])
 
   // Direct time update
   const handleUpdateTimes = (id: number, hora_inicio: string, hora_fim: string) => {
@@ -393,20 +402,22 @@ export function DemandaEditor({
           ) : (
             <div className="flex items-center gap-1.5">
               <Button
+                type="button"
                 variant="outline"
                 size="icon"
                 className="size-6"
-                onClick={() => handleUpdatePessoas(dem.id, -1)}
+                onClick={(e: MouseEvent) => { e.stopPropagation(); handleUpdatePessoas(dem.id, -1) }}
                 disabled={dem.min_pessoas <= 1}
               >
                 <Minus className="size-3" />
               </Button>
-              <span className="w-6 text-center text-sm font-medium">{dem.min_pessoas}</span>
+              <span className="w-6 text-center text-sm font-medium tabular-nums">{dem.min_pessoas}</span>
               <Button
+                type="button"
                 variant="outline"
                 size="icon"
                 className="size-6"
-                onClick={() => handleUpdatePessoas(dem.id, 1)}
+                onClick={(e: MouseEvent) => { e.stopPropagation(); handleUpdatePessoas(dem.id, 1) }}
               >
                 <Plus className="size-3" />
               </Button>

@@ -288,20 +288,32 @@ export function DemandaBar({
                 <label className="text-xs font-medium text-muted-foreground">Min. pessoas</label>
                 <div className="flex items-center justify-center gap-3">
                   <Button
+                    type="button"
                     variant="outline"
                     size="icon"
                     className="size-8"
-                    onClick={() => onUpdatePessoas(demanda.id, -1)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      onUpdatePessoas(demanda.id, -1)
+                    }}
                     disabled={demanda.min_pessoas <= 1}
                   >
                     <Minus className="size-3.5" />
                   </Button>
-                  <span className="w-8 text-center text-base font-bold">{demanda.min_pessoas}</span>
+                  <span className="w-8 text-center text-base font-bold tabular-nums">{demanda.min_pessoas}</span>
                   <Button
+                    type="button"
                     variant="outline"
                     size="icon"
                     className="size-8"
-                    onClick={() => onUpdatePessoas(demanda.id, 1)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      onUpdatePessoas(demanda.id, 1)
+                    }}
                   >
                     <Plus className="size-3.5" />
                   </Button>

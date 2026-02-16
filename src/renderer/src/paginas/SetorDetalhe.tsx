@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -252,7 +252,7 @@ export function SetorDetalhe() {
     }
   }
 
-  const handleCriarDemandaInline = async (data: Omit<Demanda, 'id' | 'setor_id'>) => {
+  const handleCriarDemandaInline = useCallback(async (data: Omit<Demanda, 'id' | 'setor_id'>) => {
     try {
       await setoresService.criarDemanda(setorId, data)
       toast.success('Demanda criada')
@@ -261,9 +261,9 @@ export function SetorDetalhe() {
       toast.error(err instanceof Error ? err.message : 'Erro ao criar demanda')
       throw err
     }
-  }
+  }, [setorId, reloadDemandas])
 
-  const handleDeletarDemanda = async (demandaId: number) => {
+  const handleDeletarDemanda = useCallback(async (demandaId: number) => {
     try {
       await setoresService.deletarDemanda(demandaId)
       toast.success('Demanda removida')
@@ -272,16 +272,16 @@ export function SetorDetalhe() {
       toast.error(err instanceof Error ? err.message : 'Erro ao remover demanda')
       throw err
     }
-  }
+  }, [reloadDemandas])
 
-  const handleAtualizarDemanda = async (id: number, data: Partial<Omit<Demanda, 'id' | 'setor_id'>>) => {
+  const handleAtualizarDemanda = useCallback(async (id: number, data: Partial<Omit<Demanda, 'id' | 'setor_id'>>) => {
     try {
       await setoresService.atualizarDemanda(id, data)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao atualizar demanda')
       throw err
     }
-  }
+  }, [])
 
   const handleArquivar = async () => {
     try {
@@ -426,9 +426,7 @@ export function SetorDetalhe() {
             <DemandaEditor
               setor={setor}
               demandas={demandas ?? []}
-              onCriar={async (data) => {
-                await handleCriarDemandaInline(data)
-              }}
+              onCriar={handleCriarDemandaInline}
               onAtualizar={handleAtualizarDemanda}
               onDeletar={handleDeletarDemanda}
             />
