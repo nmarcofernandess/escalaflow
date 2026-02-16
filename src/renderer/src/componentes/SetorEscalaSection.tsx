@@ -105,6 +105,13 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
     }
   }
 
+  // Load data on mount when starting expanded
+  useEffect(() => {
+    if (expanded && !loaded && escalaResumo) {
+      loadDetail()
+    }
+  }, [])
+
   // Auto-expand quando busca encontra algo neste setor
   useEffect(() => {
     if (searchHighlight && matchedColabs && matchedColabs.length > 0 && escalaResumo) {

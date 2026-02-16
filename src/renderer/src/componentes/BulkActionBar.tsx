@@ -25,8 +25,6 @@ export function BulkActionBar({
   onExportCSV,
   onClose,
 }: BulkActionBarProps) {
-  if (selectedCount === 0) return null
-
   return (
     <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 animate-in slide-in-from-bottom-4 fade-in duration-200">
       <Card className="flex items-center gap-3 px-4 py-2.5 shadow-lg border-border/80 bg-background/95 backdrop-blur-sm">
@@ -48,11 +46,11 @@ export function BulkActionBar({
         <Separator orientation="vertical" className="!h-5" />
 
         {/* Actions */}
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={onExportHTML}>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={onExportHTML} disabled={selectedCount === 0}>
           <FileText className="size-3.5" />
           Exportar HTML
         </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={onExportCSV}>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={onExportCSV} disabled={selectedCount === 0}>
           <FileSpreadsheet className="size-3.5" />
           Exportar CSV
         </Button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, Download, Search, Filter, X, CheckSquare, FileText, FileSpreadsheet } from 'lucide-react'
+import { Loader2, Download, Search, Filter, X, FileText, FileSpreadsheet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
@@ -474,7 +474,7 @@ export function EscalasHub() {
             {/* View mode toggle */}
             <EscalaViewToggle mode={viewMode} onChange={setViewMode} />
 
-            {/* Selection mode toggle */}
+            {/* Export / selection mode toggle */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -489,12 +489,12 @@ export function EscalasHub() {
                     }
                   }}
                 >
-                  <CheckSquare className="size-4" />
-                  {selectionMode ? 'Selecionando' : 'Selecionar'}
+                  <Download className="size-4" />
+                  Exportar
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                {selectionMode ? 'Sair do modo selecao' : 'Selecionar setores para exportar'}
+                {selectionMode ? 'Sair do modo exportacao' : 'Selecionar setores para exportar'}
               </TooltipContent>
             </Tooltip>
           </div>
