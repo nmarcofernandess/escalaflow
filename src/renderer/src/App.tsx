@@ -13,6 +13,7 @@ import { EscalaPagina } from './paginas/EscalaPagina'
 import { ColaboradorLista } from './paginas/ColaboradorLista'
 import { ColaboradorDetalhe } from './paginas/ColaboradorDetalhe'
 import { ContratoLista } from './paginas/ContratoLista'
+import { EscalasHub } from './paginas/EscalasHub'
 import { EmpresaConfig } from './paginas/EmpresaConfig'
 import { NaoEncontrado } from './paginas/NaoEncontrado'
 
@@ -51,6 +52,7 @@ export function App() {
                 <Route path="/setores" element={<SetorLista />} />
                 <Route path="/setores/:id" element={<SetorDetalhe />} />
                 <Route path="/setores/:id/escala" element={<EscalaPagina />} />
+                <Route path="/escalas" element={<EscalasHub />} />
                 <Route path="/colaboradores" element={<ColaboradorLista />} />
                 <Route path="/colaboradores/:id" element={<ColaboradorDetalhe />} />
                 <Route path="/tipos-contrato" element={<ContratoLista />} />

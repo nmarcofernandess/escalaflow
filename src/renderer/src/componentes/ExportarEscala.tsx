@@ -1,11 +1,14 @@
-import type { Escala, Alocacao, Colaborador, Setor } from '@shared/index'
-import { formatarData } from '@/lib/formatadores'
+import type { Escala, Alocacao, Colaborador, Setor, Violacao, TipoContrato } from '@shared/index'
+import { formatarData, formatarMinutos, REGRAS_TEXTO } from '@/lib/formatadores'
 
 interface ExportarEscalaProps {
   escala: Escala
   alocacoes: Alocacao[]
   colaboradores: Colaborador[]
   setor: Setor
+  violacoes?: Violacao[]
+  tiposContrato?: TipoContrato[]
+  opcoes?: { avisos?: boolean; horas?: boolean }
 }
 
 /**
@@ -17,6 +20,9 @@ export function ExportarEscala({
   alocacoes,
   colaboradores,
   setor,
+  violacoes = [],
+  tiposContrato = [],
+  opcoes = {},
 }: ExportarEscalaProps) {
   // Generate all dates in range
   const allDates: Date[] = []
@@ -218,6 +224,122 @@ export function ExportarEscala({
           </table>
         </div>
       ))}
+
+      {/* Horas por Colaborador */}
+      {opcoes.horas && colaboradores.length > 0 && (
+        <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
+            Horas por Colaborador
+          </h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #d1d5db' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f9fafb' }}>
+                {['Colaborador', 'Contrato', 'Real', 'Meta', 'Δ', 'Status'].map((h) => (
+                  <th key={h} style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: h === 'Colaborador' || h === 'Contrato' ? 'left' : 'center', fontSize: '10px', fontWeight: '600', color: '#111827' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+                const semanas = Math.max(1, totalDays / 7)
+                const minutosReais = new Map<number, number>()
+                for (const a of alocacoes) {
+                  if (a.status === 'TRABALHO' && a.minutos != null) {
+                    minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + a.minutos)
+                  }
+                }
+                return colaboradores.map((colab) => {
+                  const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
+                  const real = minutosReais.get(colab.id) ?? 0
+                  const meta = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
+                  const delta = real - meta
+                  const ok = delta >= -30
+                  return (
+                    <tr key={colab.id}>
+                      <td style={{ border: '1px solid #d1d5db', padding: '5px 8px', fontSize: '10px', color: '#111827' }}>{colab.nome}</td>
+                      <td style={{ border: '1px solid #d1d5db', padding: '5px 8px', fontSize: '10px', color: '#6b7280' }}>{tc?.nome ?? '-'}</td>
+                      <td style={{ border: '1px solid #d1d5db', padding: '5px 8px', fontSize: '10px', textAlign: 'center', color: '#111827' }}>{formatarMinutos(real)}</td>
+                      <td style={{ border: '1px solid #d1d5db', padding: '5px 8px', fontSize: '10px', textAlign: 'center', color: '#6b7280' }}>{formatarMinutos(meta)}</td>
+                      <td style={{ border: '1px solid #d1d5db', padding: '5px 8px', fontSize: '10px', textAlign: 'center', fontWeight: '600', color: delta >= 0 ? '#065f46' : delta >= -30 ? '#92400e' : '#dc2626' }}>
+                        {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}{delta < 0 ? ' ↓' : ''}
+                      </td>
+                      <td style={{ border: '1px solid #d1d5db', padding: '5px 8px', fontSize: '10px', textAlign: 'center', fontWeight: '600', color: ok ? '#065f46' : '#dc2626' }}>
+                        {ok ? 'OK' : 'ABAIXO'}
+                      </td>
+                    </tr>
+                  )
+                })
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Violacoes / Avisos */}
+      {opcoes.avisos && violacoes.length > 0 && (
+        <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
+            Violações ({violacoes.length})
+          </h2>
+          {/* HARD */}
+          {violacoes.filter((v) => v.severidade === 'HARD').length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '11px', fontWeight: '600', color: '#dc2626', marginBottom: '6px' }}>
+                Críticas (HARD)
+              </h3>
+              {violacoes
+                .filter((v) => v.severidade === 'HARD')
+                .map((v, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: '6px 10px',
+                      marginBottom: '4px',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      color: '#991b1b',
+                    }}
+                  >
+                    <strong>{v.colaborador_nome}</strong> — {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
+                    {v.data && <span style={{ color: '#b91c1c', marginLeft: '8px' }}>({formatarData(v.data)})</span>}
+                  </div>
+                ))}
+            </div>
+          )}
+          {/* SOFT */}
+          {violacoes.filter((v) => v.severidade === 'SOFT').length > 0 && (
+            <div>
+              <h3 style={{ fontSize: '11px', fontWeight: '600', color: '#92400e', marginBottom: '6px' }}>
+                Alertas (SOFT)
+              </h3>
+              {violacoes
+                .filter((v) => v.severidade === 'SOFT')
+                .map((v, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: '6px 10px',
+                      marginBottom: '4px',
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      color: '#78350f',
+                    }}
+                  >
+                    <strong>{v.colaborador_nome}</strong> — {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
+                    {v.data && <span style={{ color: '#92400e', marginLeft: '8px' }}>({formatarData(v.data)})</span>}
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       <div

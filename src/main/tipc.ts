@@ -1,4 +1,6 @@
 import { tipc } from '@egoist/tipc/main'
+import { dialog, BrowserWindow } from 'electron'
+import { writeFile, mkdir } from 'node:fs/promises'
 import { getDb, getDbPathForWorker } from './db/database'
 import { validarEscala } from './motor/validador'
 import { Worker } from 'node:worker_threads'
@@ -442,17 +444,14 @@ const escalasBuscar = t.procedure
 
     const alocacoes = db.prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id').all(input.id)
 
+    const empresa = db.prepare('SELECT tolerancia_semanal_min FROM empresa LIMIT 1').get() as { tolerancia_semanal_min: number } | undefined
+    const { violacoes, indicadores } = validarEscala(input.id, db, empresa?.tolerancia_semanal_min ?? 30)
+
     return {
       escala,
       alocacoes: alocacoes as EscalaCompleta['alocacoes'],
-      violacoes: [],
-      indicadores: {
-        cobertura_percent: escala.cobertura_percent ?? 0,
-        violacoes_hard: escala.violacoes_hard ?? 0,
-        violacoes_soft: escala.violacoes_soft ?? 0,
-        equilibrio: escala.equilibrio ?? 0,
-        pontuacao: escala.pontuacao ?? 0,
-      },
+      violacoes,
+      indicadores,
     }
   })
 
@@ -786,6 +785,98 @@ const dashboardResumo = t.procedure
   })
 
 // =============================================================================
+// EXPORT (4 handlers)
+// =============================================================================
+
+const exportSalvarHTML = t.procedure
+  .input<{ html: string; filename?: string }>()
+  .action(async ({ input }): Promise<{ filepath: string } | null> => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: input.filename || 'escala.html',
+      filters: [{ name: 'HTML', extensions: ['html'] }],
+    })
+
+    if (result.canceled || !result.filePath) return null
+
+    await writeFile(result.filePath, input.html, 'utf-8')
+    return { filepath: result.filePath }
+  })
+
+const exportImprimirPDF = t.procedure
+  .input<{ html: string; filename?: string }>()
+  .action(async ({ input }): Promise<{ filepath: string } | null> => {
+    const win = new BrowserWindow({
+      show: false,
+      width: 794,
+      height: 1123,
+      webPreferences: { offscreen: true },
+    })
+
+    try {
+      await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(input.html)}`)
+
+      const pdfBuffer = await win.webContents.printToPDF({
+        pageSize: 'A4',
+        printBackground: true,
+        margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
+      })
+
+      const result = await dialog.showSaveDialog({
+        defaultPath: input.filename || 'escala.pdf',
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      })
+
+      if (result.canceled || !result.filePath) return null
+
+      await writeFile(result.filePath, pdfBuffer)
+      return { filepath: result.filePath }
+    } finally {
+      win.close()
+    }
+  })
+
+const exportSalvarCSV = t.procedure
+  .input<{ csv: string; filename?: string }>()
+  .action(async ({ input }): Promise<{ filepath: string } | null> => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: input.filename || 'escala.csv',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+
+    if (result.canceled || !result.filePath) return null
+
+    // BOM prefix for UTF-8 so Excel opens with correct encoding
+    await writeFile(result.filePath, '\uFEFF' + input.csv, 'utf-8')
+    return { filepath: result.filePath }
+  })
+
+const exportBatchHTML = t.procedure
+  .input<{ arquivos: { nome: string; html: string }[] }>()
+  .action(async ({ input }): Promise<{ pasta: string; count: number } | null> => {
+    if (!input.arquivos || input.arquivos.length === 0) {
+      throw new Error('Nenhum arquivo fornecido para exportacao em lote')
+    }
+
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+    })
+
+    if (result.canceled || !result.filePaths[0]) return null
+
+    const pasta = result.filePaths[0]
+    let count = 0
+
+    for (const arq of input.arquivos) {
+      const filename = arq.nome.endsWith('.html') ? arq.nome : `${arq.nome}.html`
+      const filepath = path.join(pasta, filename)
+      await writeFile(filepath, arq.html, 'utf-8')
+      count++
+    }
+
+    return { pasta, count }
+  })
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -838,6 +929,11 @@ export const router = {
   'escalas.gerar': escalasGerar,
   // Dashboard
   'dashboard.resumo': dashboardResumo,
+  // Export
+  'export.salvarHTML': exportSalvarHTML,
+  'export.imprimirPDF': exportImprimirPDF,
+  'export.salvarCSV': exportSalvarCSV,
+  'export.batchHTML': exportBatchHTML,
 }
 
 export type Router = typeof router

@@ -52,6 +52,7 @@ const mainNav = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard },
   { label: 'Setores', to: '/setores', icon: Building2 },
   { label: 'Colaboradores', to: '/colaboradores', icon: Users },
+  { label: 'Escalas', to: '/escalas', icon: CalendarDays },
 ]
 
 const configNav = [

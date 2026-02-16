@@ -13,11 +13,11 @@ import {
   Eye,
   Loader2,
   Info,
+  Download,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,9 +41,13 @@ import { EscalaGrid } from '@/componentes/EscalaGrid'
 import { EscalaViewToggle, useEscalaViewMode } from '@/componentes/EscalaViewToggle'
 import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
+import { ViolacoesAgrupadas } from '@/componentes/ViolacoesAgrupadas'
+import { ExportModal } from '@/componentes/ExportModal'
+import { useExportController } from '@/hooks/useExportController'
+import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
+import { exportarService } from '@/servicos/exportar'
 import { cn } from '@/lib/utils'
-import { CORES_VIOLACAO } from '@/lib/cores'
-import { formatarData, formatarMes, mapError, REGRAS_TEXTO, iniciais } from '@/lib/formatadores'
+import { formatarData, formatarMes, mapError, iniciais } from '@/lib/formatadores'
 import { useApiData } from '@/hooks/useApiData'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
@@ -53,7 +57,6 @@ import type {
   EscalaCompleta,
   Escala,
   Alocacao,
-  Violacao,
   Colaborador,
   Setor,
 } from '@shared/index'
@@ -96,6 +99,9 @@ export function EscalaPagina() {
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
   const [escalaViewMode, setEscalaViewMode] = useEscalaViewMode()
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportEscala, setExportEscala] = useState<EscalaCompleta | null>(null)
+  const exportCtrl = useExportController({ context: 'escala' })
 
   // Oficial tab state
   const [oficialEscala, setOficialEscala] = useState<EscalaCompleta | null>(null)
@@ -314,6 +320,29 @@ export function EscalaPagina() {
     }
   }
 
+  // Open export modal for a given escala
+  function handleExportar(ec: EscalaCompleta) {
+    setExportEscala(ec)
+    setExportOpen(true)
+  }
+
+  // Generate per-funcionario HTML
+  function renderFuncHTML(colabId: number): string {
+    if (!exportEscala || !setor || !colaboradores || !tiposContrato) return ''
+    const colab = colaboradores.find((c) => c.id === colabId)
+    if (!colab) return ''
+    const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
+    return gerarHTMLFuncionario({
+      nome: colab.nome,
+      contrato: tc?.nome ?? '',
+      horasSemanais: tc?.horas_semanais ?? colab.horas_semanais,
+      setor: setor.nome,
+      periodo: { inicio: exportEscala.escala.data_inicio, fim: exportEscala.escala.data_fim },
+      alocacoes: exportEscala.alocacoes.filter((a) => a.colaborador_id === colabId),
+      violacoes: exportEscala.violacoes.filter((v) => v.colaborador_id === colabId),
+    })
+  }
+
   if (!setor || !colaboradores) {
     return (
       <div className="flex flex-1 flex-col">
@@ -422,6 +451,7 @@ export function EscalaPagina() {
                 onOficializar={handleOficializar}
                 onDescartar={handleDescartar}
                 onImprimir={handleImprimir}
+                onExportar={handleExportar}
                 getIndicators={getIndicators}
                 oficializando={oficializando}
                 descartando={descartando}
@@ -545,6 +575,10 @@ export function EscalaPagina() {
                   </CardContent>
                 </Card>
                 <div className="flex items-center gap-3">
+                  <Button variant="outline" onClick={() => handleExportar(oficialEscala)}>
+                    <Download className="mr-1 size-4" />
+                    Exportar
+                  </Button>
                   <Button variant="outline" onClick={() => handleImprimir(oficialEscala)}>
                     <Printer className="mr-1 size-4" />
                     Imprimir
@@ -668,135 +702,61 @@ export function EscalaPagina() {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
-  )
-}
 
-// ─── Violacoes Agrupadas Component ──────────────────────────────────────────
-
-interface ViolacoesAgrupadasProps {
-  violacoes: Violacao[]
-}
-
-function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
-  // Agrupar por colaborador
-  const porColaborador = violacoes.reduce((acc, v) => {
-    if (!acc[v.colaborador_id]) {
-      acc[v.colaborador_id] = {
-        colaborador_id: v.colaborador_id,
-        colaborador_nome: v.colaborador_nome,
-        hard: [],
-        soft: [],
-      }
-    }
-    if (v.severidade === 'HARD') {
-      acc[v.colaborador_id].hard.push(v)
-    } else {
-      acc[v.colaborador_id].soft.push(v)
-    }
-    return acc
-  }, {} as Record<number, { colaborador_id: number; colaborador_nome: string; hard: Violacao[]; soft: Violacao[] }>)
-
-  const grupos = Object.values(porColaborador)
-  const comHard = grupos.filter((g) => g.hard.length > 0)
-  const comSoft = grupos.filter((g) => g.soft.length > 0 && g.hard.length === 0)
-
-  return (
-    <div className="space-y-4">
-      {/* HARD Violations */}
-      {comHard.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-destructive flex items-center gap-2">
-            <XCircle className="size-4" />
-            Violacoes Criticas (HARD)
-          </h3>
-          {comHard.map((grupo) => (
-            <Card
-              key={grupo.colaborador_id}
-              className={cn('border-2', CORES_VIOLACAO.HARD.border, CORES_VIOLACAO.HARD.bg)}
-            >
-              <CardContent className="p-4 space-y-3">
-                {/* Avatar + Nome */}
-                <div className="flex items-center gap-3">
-                  <Avatar className="size-10">
-                    <AvatarFallback className="bg-destructive/10 text-sm font-bold text-destructive">
-                      {iniciais(grupo.colaborador_nome)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{grupo.colaborador_nome}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {grupo.hard.length} problema{grupo.hard.length > 1 ? 's' : ''} critico{grupo.hard.length > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Problemas por dia */}
-                <div className="space-y-2">
-                  {grupo.hard.map((v, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs">
-                      <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                      <div>
-                        <p className="font-medium text-destructive">
-                          {REGRAS_TEXTO[v.regra] || v.regra}
-                        </p>
-                        {v.data && (
-                          <p className="text-muted-foreground">Dia: {formatarData(v.data)}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Dica de acao */}
-                <p className="text-xs text-muted-foreground italic border-t pt-2">
-                  Clique em um dia de trabalho desse colaborador para trocar por folga
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* SOFT Violations */}
-      {comSoft.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2">
-            <AlertTriangle className="size-4" />
-            Alertas (SOFT)
-          </h3>
-          {comSoft.map((grupo) => (
-            <Card
-              key={grupo.colaborador_id}
-              className={cn('border', CORES_VIOLACAO.SOFT.border, CORES_VIOLACAO.SOFT.bg)}
-            >
-              <CardContent className="p-3 space-y-2">
-                {/* Avatar + Nome */}
-                <div className="flex items-center gap-2">
-                  <Avatar className="size-8">
-                    <AvatarFallback className="bg-amber-100 dark:bg-amber-950/30 text-xs font-bold text-amber-700 dark:text-amber-300">
-                      {iniciais(grupo.colaborador_nome)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <p className="text-sm font-medium text-foreground">{grupo.colaborador_nome}</p>
-                </div>
-
-                {/* Problemas */}
-                <div className="space-y-1">
-                  {grupo.soft.map((v, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs">
-                      <AlertTriangle className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400" />
-                      <p className="text-muted-foreground">
-                        {REGRAS_TEXTO[v.regra] || v.regra}
-                        {v.data && ` (${formatarData(v.data)})`}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+      {/* Export Modal */}
+      {setor && colaboradores && exportEscala && (
+        <ExportModal
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          context="escala"
+          titulo={`Exportar Escala — ${setor.nome}`}
+          formato={exportCtrl.formato}
+          onFormatoChange={exportCtrl.setFormato}
+          opcoes={exportCtrl.opcoes}
+          onOpcoesChange={exportCtrl.setOpcoes}
+          colaboradores={colaboradores.map((c) => ({ id: c.id, nome: c.nome }))}
+          funcionarioId={exportCtrl.funcionarioId}
+          onFuncionarioChange={exportCtrl.setFuncionarioId}
+          onExportHTML={() => {
+            const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
+            if (exportCtrl.formato === 'funcionario' && exportCtrl.funcionarioId) {
+              const html = renderFuncHTML(exportCtrl.funcionarioId)
+              const colab = colaboradores.find((c) => c.id === exportCtrl.funcionarioId)
+              const fname = colab ? colab.nome.replace(/\s+/g, '_') : 'funcionario'
+              exportarService.salvarHTML(html, `escala-${fname}.html`).then(() => toast.success('HTML salvo'))
+            } else if (exportCtrl.formato === 'batch') {
+              exportCtrl.handleBatch(
+                colaboradores.map((c) => ({ id: c.id, nome: c.nome })),
+                renderFuncHTML,
+              )
+            } else {
+              exportCtrl.handleExportHTML(`escala-${slug}.html`)
+            }
+          }}
+          onPrint={() => {
+            const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
+            if (exportCtrl.formato === 'funcionario' && exportCtrl.funcionarioId) {
+              const html = renderFuncHTML(exportCtrl.funcionarioId)
+              const colab = colaboradores.find((c) => c.id === exportCtrl.funcionarioId)
+              const fname = colab ? colab.nome.replace(/\s+/g, '_') : 'funcionario'
+              exportarService.imprimirPDF(html, `escala-${fname}.pdf`).then(() => toast.success('PDF salvo'))
+            } else {
+              exportCtrl.handlePrint(`escala-${slug}.pdf`)
+            }
+          }}
+          loading={exportCtrl.loading}
+          progress={exportCtrl.progress}
+        >
+          <ExportarEscala
+            escala={exportEscala.escala}
+            alocacoes={exportEscala.alocacoes}
+            colaboradores={colaboradores}
+            setor={setor}
+            violacoes={exportEscala.violacoes}
+            tiposContrato={tiposContrato ?? []}
+            opcoes={exportCtrl.opcoes}
+          />
+        </ExportModal>
       )}
     </div>
   )
@@ -815,6 +775,7 @@ interface SimulacaoResultProps {
   onOficializar: () => void
   onDescartar: () => void
   onImprimir: (ec: EscalaCompleta) => void
+  onExportar: (ec: EscalaCompleta) => void
   getIndicators: (ec: EscalaCompleta) => {
     pontuacao: number
     coberturaPercent: number
@@ -843,6 +804,7 @@ function SimulacaoResult({
   onOficializar,
   onDescartar,
   onImprimir,
+  onExportar,
   getIndicators,
   oficializando,
   descartando,
@@ -1000,6 +962,10 @@ function SimulacaoResult({
             Corrija {indicators.violacoesHard} violacao(oes) critica(s) antes de oficializar
           </span>
         )}
+        <Button variant="outline" onClick={() => onExportar(escalaCompleta)} disabled={!!ajustando}>
+          <Download className="mr-1 size-4" />
+          Exportar
+        </Button>
         <Button variant="outline" onClick={() => onImprimir(escalaCompleta)} disabled={!!ajustando}>
           <Printer className="mr-1 size-4" />
           Imprimir
