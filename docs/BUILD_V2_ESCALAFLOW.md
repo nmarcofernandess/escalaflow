@@ -13,6 +13,12 @@
 >
 > **2026-02-15 (v3):** DemandaEditor reescrito — Tabs por dia (Padrao + Seg-Dom), ghost bars, dual view
 > (Timeline barras + Tabela rows), DemandaBar com DnD + resize + popover, debounced auto-save.
+>
+> **2026-02-16 (v4):** Export system completo + pagina /escalas + avisos.
+> Hub /escalas (read-only, tabs Escala/Horas/Avisos por setor). Export Modal split-screen (DietFlow-inspired).
+> HTML self-contained (timeline + per-funcionario mobile-first + batch WhatsApp). PDF via Electron printToPDF.
+> CSV sistema todo (separador ;, UTF-8 BOM). 4 IPC handlers export. v.mensagem nas violacoes.
+> 31 IPC handlers, 25 shadcn components, 11 paginas.
 
 ---
 
@@ -106,10 +112,20 @@ O que sai do banco e EXATAMENTE o que chega no componente React.
 *** Valida regras CLT
 *** Calcula pontuacao
 *** Recalcula em tempo real
-** Escala
+** Escala (por setor)
 *** Simulacao iterativa (ajustar proposta)
 *** Oficializar (salvar como definitiva)
-*** Exportar (HTML para imprimir)
+*** Grid + Timeline (dual view)
+** Escalas Hub (/escalas)
+*** Visao consolidada de todos os setores
+*** Tabs por setor: Escala / Horas / Avisos
+*** Somente leitura (link pro setor pra editar)
+** Export System
+*** HTML self-contained (escala completa)
+*** HTML por funcionario (mobile-first, WhatsApp)
+*** HTML batch (todos funcionarios de uma vez)
+*** PDF via Electron printToPDF (A4)
+*** CSV sistema todo (separador ;, UTF-8 BOM)
 ** Dashboard
 *** Visao geral por setor
 *** Alertas e indicadores
@@ -511,8 +527,11 @@ CLT_MAX_DOMINGOS_CONSECUTIVOS = {
 
 > **NOTA DE MIGRAÇÃO (2026-02-15):** O sistema migrou de REST API HTTP para IPC via @egoist/tipc.
 > As rotas abaixo descrevem a INTERFACE LÓGICA — os mesmos endpoints existem como IPC handlers
-> em `src/main/tipc.ts` (27 handlers). O frontend chama via `window.api.{domain}.{action}()`.
+> em `src/main/tipc.ts` (31 handlers). O frontend chama via `window.api.{domain}.{action}()`.
 > A semântica é idêntica, apenas o transporte mudou de HTTP para IPC bridge.
+>
+> **2026-02-16:** 4 novos handlers de export adicionados (export.salvarHTML, export.imprimirPDF,
+> export.salvarCSV, export.batchHTML). Total: 31 IPC handlers.
 
 ### 5.1 Rotas
 
@@ -572,6 +591,12 @@ DELETE /api/escalas/:id                      → void
 
 # ─── DASHBOARD ────────────────────────────────────────
 GET    /api/dashboard/resumo                 → DashboardResumo
+
+# ─── EXPORT (IPC only — sem REST equivalente) ────────
+IPC    export.salvarHTML                     → dialog + writeFile
+IPC    export.imprimirPDF                    → BrowserWindow offscreen + printToPDF A4
+IPC    export.salvarCSV                      → dialog + writeFile (UTF-8 BOM)
+IPC    export.batchHTML                      → openDirectory + writeFile loop
 ```
 
 ### 5.2 Tipos de resposta
@@ -1216,7 +1241,7 @@ React 19
 Vite (via electron-vite)
 Electron 34+ (shell desktop)
 React Router v7 (navegação)
-shadcn/ui + Tailwind CSS (22 componentes)
+shadcn/ui + Tailwind CSS (25 componentes)
 Zustand (estado global)
 sonner (toasts/notificações)
 Zod + react-hook-form (validação de formulários — 7 forms)
@@ -1234,6 +1259,7 @@ Zod + react-hook-form (validação de formulários — 7 forms)
 | `/colaboradores` | ColaboradorLista | Cards de colaboradores (filtro por setor) + Arquivados |
 | `/colaboradores/:id` | ColaboradorDetalhe | Info + contrato + preferencias + excecoes + historico |
 | `/tipos-contrato` | ContratoLista | Cards de tipos de contrato |
+| `/escalas` | EscalasHub | **Hub read-only** — todos os setores, tabs Escala/Horas/Avisos |
 | `/empresa` | EmpresaConfig | Config da empresa (raro) |
 | `/perfil` | Perfil | Avatar + nome usuario (localStorage) + empresa (read-only) |
 
@@ -1243,7 +1269,7 @@ Zod + react-hook-form (validação de formulários — 7 forms)
 src/
 ├── main/                              # Electron Main Process
 │   ├── index.ts                       # Electron app entry, window creation
-│   ├── tipc.ts                        # 27 IPC handlers (@egoist/tipc)
+│   ├── tipc.ts                        # 31 IPC handlers (@egoist/tipc) — incl. 4 export
 │   ├── database.ts                    # better-sqlite3 connection + schema + seed
 │   ├── motor/
 │   │   ├── gerador.ts                 # Motor de geração (7 fases, ~780 linhas)
@@ -1255,11 +1281,12 @@ src/
 │
 ├── renderer/
 │   └── src/
-│       ├── paginas/                   # 10 páginas (1 arquivo por rota)
+│       ├── paginas/                   # 11 páginas (1 arquivo por rota)
 │       │   ├── Dashboard.tsx
 │       │   ├── SetorLista.tsx
 │       │   ├── SetorDetalhe.tsx
 │       │   ├── EscalaPagina.tsx       # ← CORE DO PRODUTO (~850 linhas)
+│       │   ├── EscalasHub.tsx         # Hub read-only todos setores (~400 linhas)
 │       │   ├── ColaboradorLista.tsx
 │       │   ├── ColaboradorDetalhe.tsx
 │       │   ├── ContratoLista.tsx
@@ -1274,15 +1301,19 @@ src/
 │       │   ├── EmptyState.tsx         # Empty state padronizado (icon, title, desc, action)
 │       │   ├── EscalaGrid.tsx         # Grid interativa pessoa x dia
 │       │   ├── ExportarEscala.tsx     # Export HTML self-contained (258 linhas)
+│       │   ├── ExportModal.tsx        # Modal split-screen: preview + options (~300 linhas)
+│       │   ├── ExportPreview.tsx      # Container de preview c/ scale transform (~80 linhas)
 │       │   ├── IndicatorCard.tsx      # Card de indicador reutilizável
 │       │   ├── MetricItem.tsx         # Item de métrica reutilizável
 │       │   ├── OnboardingTour.tsx     # Tour 4 passos (166 linhas)
 │       │   ├── PageHeader.tsx         # Breadcrumb + actions
 │       │   ├── PontuacaoBadge.tsx     # Badge de pontuação (verde/amarelo/vermelho)
+│       │   ├── SetorEscalaSection.tsx # Seção colapsável por setor c/ tabs (~350 linhas)
 │       │   ├── StatusBadge.tsx        # Badge de status (OFICIAL/RASCUNHO)
+│       │   ├── ViolacoesAgrupadas.tsx # Violações agrupadas por colaborador (extraído)
 │       │   └── ErrorBoundary.tsx      # Error boundary global
 │       │
-│       ├── components/ui/             # shadcn/ui primitives (22 componentes)
+│       ├── components/ui/             # shadcn/ui primitives (25 componentes)
 │       │   ├── alert-dialog.tsx
 │       │   ├── alert.tsx
 │       │   ├── avatar.tsx
@@ -1296,25 +1327,35 @@ src/
 │       │   ├── form.tsx
 │       │   ├── input.tsx
 │       │   ├── label.tsx
+│       │   ├── progress.tsx
+│       │   ├── radio-group.tsx
 │       │   ├── select.tsx
 │       │   ├── separator.tsx
 │       │   ├── sheet.tsx
 │       │   ├── sidebar.tsx
 │       │   ├── skeleton.tsx
 │       │   ├── sonner.tsx
+│       │   ├── switch.tsx
 │       │   ├── table.tsx
 │       │   ├── tabs.tsx
 │       │   └── tooltip.tsx
 │       │
 │       ├── lib/
+│       │   ├── captureExportHTML.ts   # Captura DOM → HTML self-contained (inline CSS)
 │       │   ├── constantes.ts          # CLT constants + tipos
-│       │   ├── formatadores.ts        # formatDate, mapError, REGRAS_TEXTO, minutesToTime
 │       │   ├── cores.ts              # Tokens semânticos (CORES_STATUS, CORES_VIOLACAO, etc.)
+│       │   ├── formatadores.ts        # formatDate, mapError, REGRAS_TEXTO, minutesToTime
+│       │   ├── gerarCSV.ts           # CSV alocações + violações (sep ;, UTF-8 BOM)
+│       │   ├── gerarHTMLFuncionario.ts # HTML mobile-first por funcionário (WhatsApp)
 │       │   └── utils.ts              # cn() helper
 │       │
 │       ├── hooks/
 │       │   ├── useApiData.ts          # Hook genérico fetch + loading + error
-│       │   └── useDemandaResize.ts    # Hook de resize drag nas barras de demanda
+│       │   ├── useDemandaResize.ts    # Hook de resize drag nas barras de demanda
+│       │   └── useExportController.ts # Orquestrador de export (state + actions + IPC)
+│       │
+│       ├── servicos/
+│       │   └── exportar.ts           # IPC client para export (4 calls)
 │       │
 │       ├── App.tsx                    # Router + ErrorBoundary + OnboardingTour
 │       ├── index.css                  # Tailwind + shadcn theme
@@ -1552,6 +1593,79 @@ ARQUIVADOS: Abre lista de itens inativos com botao [Restaurar]
 └────────────────────────────────────────────────────────────────────┘
 ```
 
+**EscalasHub** (hub read-only — visão consolidada de todos os setores):
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  Escalas                                  [Grid|Timeline] [Exportar] │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ▼ Caixa    01/03-31/03   87 🟢  ⚠2 avisos     [Editar →]        │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │ [Escala] [Horas] [Avisos (2)]                               │   │
+│  │                                                             │   │
+│  │  Tab Escala: EscalaGrid read-only (Grid ou Timeline)       │   │
+│  │  Tab Horas: Tabela Real vs Meta por colaborador            │   │
+│  │  Tab Avisos: ViolacoesAgrupadas                            │   │
+│  └────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ▶ Açougue    01/03-31/03   92 🟢  0 avisos     [Editar →]       │
+│                                                                     │
+│  ▶ Padaria    — sem escala —                     [Editar →]       │
+│                                                                     │
+└────────────────────────────────────────────────────────────────────┘
+
+NOTAS:
+  ▼ = setor expandido (colapsável)
+  ▶ = setor fechado (click para expandir)
+  [Editar →] = link para /setores/:id/escala
+  [Exportar] = abre ExportModal com context='hub'
+  Tabs lazy-load dados quando expande
+```
+
+**ExportModal** (modal split-screen — inspirado DietFlow):
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  Exportar Escala                                            [X]    │
+├──────────────────────────────────┬─────────────────────────────────┤
+│                                  │                                 │
+│  PREVIEW (~60%)                  │  OPTIONS (~40%)                 │
+│                                  │                                 │
+│  ┌────────────────────────┐     │  Formato:                      │
+│  │                        │     │  (●) Escala completa            │
+│  │  ExportarEscala        │     │  ( ) Por funcionário            │
+│  │  (escala renderizada   │     │  ( ) Todos funcionários (batch) │
+│  │   em miniatura 0.4x)   │     │                                 │
+│  │                        │     │  Incluir:                       │
+│  │                        │     │  [✓] Avisos / Violações         │
+│  │                        │     │  [✓] Horas por colaborador     │
+│  │                        │     │                                 │
+│  └────────────────────────┘     │  Se "Por funcionário":         │
+│                                  │  [Select: Ana Julia ▾]         │
+│                                  │                                 │
+├──────────────────────────────────┴─────────────────────────────────┤
+│                            [Cancelar]  [Baixar HTML]  [Imprimir]   │
+│                            (batch: Progress bar + Baixar Todos)    │
+└────────────────────────────────────────────────────────────────────┘
+
+CONTEXTOS:
+  context='escala': formatos HTML (completa, funcionario, batch)
+  context='hub': formatos HTML + CSV (sistema todo)
+
+FORMATOS POR FUNCIONARIO:
+  HTML mobile-first (max-width 480px)
+  Card por dia com barra visual de turno
+  Navegação por semana (prev/next vanilla JS)
+  Dark mode auto (prefers-color-scheme)
+  @media print: tabela compacta, sem nav
+
+CSV SISTEMA TODO:
+  7 colunas: Data, Colaborador, Setor, Status, HoraInicio, HoraFim, Minutos
+  Separador: ; (Excel BR friendly)
+  Encoding: UTF-8 com BOM (\uFEFF)
+```
+
 ### 8.5 Comportamento de Arquivamento
 
 > Regras de soft delete e cascata para todas as entidades com `ativo`.
@@ -1757,9 +1871,11 @@ CREATE INDEX IF NOT EXISTS idx_alocacoes_colaborador ON alocacoes(colaborador_id
 
 - 8 entidades no banco, todas em português
 - Motor de Proposta gera escala automática em 7 fases + lookback + pinnedCells (10 regras nomeadas, 10 testes)
-- Frontend com 10 páginas + Perfil, core = EscalaPagina com 3 tabs (Simulação/Oficial/Histórico)
-- 27 IPC handlers via @egoist/tipc, com validações de proteção
-- 22 componentes shadcn/ui + 11 componentes custom + EmptyState padronizado
+- Frontend com 11 páginas + Perfil, core = EscalaPagina com 3 tabs (Simulação/Oficial/Histórico)
+- Hub /escalas — visão consolidada read-only de todos setores (tabs Escala/Horas/Avisos)
+- 31 IPC handlers via @egoist/tipc (27 CRUD + 4 export), com validações de proteção
+- 25 componentes shadcn/ui + 16 componentes custom + EmptyState padronizado
+- Export system completo: HTML (escala, por-funcionário mobile, batch), PDF (A4), CSV (sistema todo)
 - 7 formulários com Zod + react-hook-form + shadcn Form
 - Naming congruente ponta a ponta: banco = IPC = TypeScript = UI (snake_case)
 - Seed com 4 tipos CLT (44h, 36h, 30h, estagiário 20h)
@@ -1776,12 +1892,13 @@ CREATE INDEX IF NOT EXISTS idx_alocacoes_colaborador ON alocacoes(colaborador_id
 |------|-------|--------|
 | **F1** | Setup Electron + electron-vite + tipc | ✅ FEITO |
 | **F2** | DDL do banco + seed CLT | ✅ FEITO |
-| **F3** | IPC handlers CRUD completo (27 handlers) | ✅ FEITO |
+| **F3** | IPC handlers CRUD completo (27 CRUD handlers) | ✅ FEITO |
 | **F4** | Frontend skeleton (AppSidebar, Dashboard, listas) | ✅ FEITO |
 | **F5** | Motor de Proposta (gerador + validador + worker) | ✅ FEITO |
 | **F6** | Frontend: CRUD completo (detalhe, demanda, exceções) | ✅ FEITO |
 | **F7** | Frontend: EscalaPagina + EscalaGrid + Smart Recalc | ✅ FEITO |
 | **F8** | Frontend: Dashboard + Export + Perfil + Polish | ✅ FEITO |
+| **F9** | Export system + /escalas hub + avisos (WARLOG P0-P3) | ✅ FEITO |
 
 ### 10.3 O que e critico
 
@@ -1789,7 +1906,7 @@ CREATE INDEX IF NOT EXISTS idx_alocacoes_colaborador ON alocacoes(colaborador_id
 CRITICO (sem isso não é produto):
 ├── Motor de Proposta ................. ✅ FEITO (10 regras, 10 testes)
 ├── EscalaGrid ........................ ✅ FEITO (interativa, click toggle)
-└── Exportar/Imprimir ................. ✅ FEITO (HTML self-contained)
+└── Exportar/Imprimir ................. ✅ FEITO (HTML self-contained + PDF + CSV)
 
 IMPORTANTE (melhora experiência):
 ├── Dashboard ......................... ✅ FEITO (dialogs inline, atalhos)
@@ -1807,12 +1924,20 @@ IMPORTANTE (melhora experiência):
 ├── DemandaEditor Tabs + Ghost Bars .. ✅ FEITO (Padrao + por dia)
 ├── DemandaEditor dual view .......... ✅ FEITO (Timeline barras + Tabela rows)
 ├── DemandaBar DnD + resize .......... ✅ FEITO (drag, resize handles, popover)
-└── Demandas UPDATE inline ........... ✅ FEITO (debounced auto-save)
+├── Demandas UPDATE inline ........... ✅ FEITO (debounced auto-save)
+├── Hub /escalas (todos setores) ..... ✅ FEITO (read-only, tabs Escala/Horas/Avisos)
+├── Export Modal split-screen ........ ✅ FEITO (preview + options, DietFlow-inspired)
+├── HTML por funcionário ............. ✅ FEITO (mobile-first, WhatsApp-friendly)
+├── HTML batch (todos func.) ......... ✅ FEITO (openDirectory + loop)
+├── PDF via Electron ................. ✅ FEITO (printToPDF A4)
+├── CSV sistema todo ................. ✅ FEITO (sep ;, UTF-8 BOM)
+├── ViolacoesAgrupadas extraído ...... ✅ FEITO (componente reutilizável)
+├── v.mensagem nas violações ......... ✅ FEITO (fallback chain)
+└── Sidebar link "Escalas" ........... ✅ FEITO
 
 NICE TO HAVE (backlog):
 ├── SetorDetalhe com tabs ............. PROPOSTA
 ├── Dashboard tabs por setor .......... PROPOSTA
-├── Sidebar link "Escalas" ............ PROPOSTA
 ├── Skeleton loading states ........... BACKLOG
 ├── Tour com links clicáveis .......... BACKLOG
 └── Duplicar escala pra simulação ..... v2.1
