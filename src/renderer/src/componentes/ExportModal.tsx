@@ -19,10 +19,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
-import { Checkbox } from '@/components/ui/checkbox'
 import { ExportPreview } from '@/componentes/ExportPreview'
 import { Download, Printer, Loader2, FileSpreadsheet } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 export interface ExportOpcoes {
   avisos: boolean
@@ -338,10 +336,12 @@ function HubOptions({
     )
   }
 
-  // Multi-setor mode
+  // Multi-setor mode (setores pre-selecionados via bulk selection nos cards)
+  const selectedNames = setoresExport?.filter((s) => s.checked && s.temEscala).map((s) => s.nome) ?? []
+
   return (
     <div className="space-y-4">
-      <Label className="text-sm font-medium">Pra quem?</Label>
+      <Label className="text-sm font-medium">Formato</Label>
       <RadioGroup value={formato} onValueChange={onFormatoChange}>
         <div className="flex items-center space-x-2">
           <RadioGroupItem value="completa" id="hub-fmt-multi-completa" />
@@ -363,68 +363,16 @@ function HubOptions({
         </div>
       </RadioGroup>
 
-      {setoresExport && onSetoresExportChange && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Setores</Label>
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs"
-                onClick={() =>
-                  onSetoresExportChange(
-                    setoresExport.map((s) => ({
-                      ...s,
-                      checked: s.temEscala ? true : s.checked,
-                    }))
-                  )
-                }
-              >
-                Todos
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs"
-                onClick={() =>
-                  onSetoresExportChange(
-                    setoresExport.map((s) => ({ ...s, checked: false }))
-                  )
-                }
-              >
-                Nenhum
-              </Button>
-            </div>
-          </div>
-          {setoresExport.map((s) => (
-            <div key={s.id} className="flex items-center space-x-2">
-              <Checkbox
-                id={`setor-export-${s.id}`}
-                checked={s.checked}
-                disabled={!s.temEscala}
-                onCheckedChange={(checked) =>
-                  onSetoresExportChange(
-                    setoresExport.map((item) =>
-                      item.id === s.id
-                        ? { ...item, checked: checked === true }
-                        : item
-                    )
-                  )
-                }
-              />
-              <Label
-                htmlFor={`setor-export-${s.id}`}
-                className={cn(
-                  'text-sm',
-                  !s.temEscala && 'text-muted-foreground'
-                )}
-              >
-                {s.nome}
-                {!s.temEscala && ' (sem escala)'}
-              </Label>
-            </div>
-          ))}
+      {/* Show selected setores (read-only, selected via bulk actions) */}
+      {selectedNames.length > 0 && (
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">
+            {selectedNames.length} setor{selectedNames.length > 1 ? 'es' : ''} selecionado{selectedNames.length > 1 ? 's' : ''}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {selectedNames.slice(0, 5).join(', ')}
+            {selectedNames.length > 5 && ` e mais ${selectedNames.length - 5}`}
+          </p>
         </div>
       )}
     </div>

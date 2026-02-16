@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, Download, Search, Filter, X } from 'lucide-react'
+import { Loader2, Download, Search, Filter, X, CheckSquare, FileText, FileSpreadsheet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -14,6 +15,8 @@ import { SetorEscalaSection, type EscalaResumo } from '@/componentes/SetorEscala
 import { ExportModal, type SetorExportItem } from '@/componentes/ExportModal'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { useExportController } from '@/hooks/useExportController'
+import { useSetorSelection } from '@/hooks/useSetorSelection'
+import { BulkActionBar } from '@/componentes/BulkActionBar'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { setoresService } from '@/servicos/setores'
 import { escalasService } from '@/servicos/escalas'
@@ -45,6 +48,20 @@ export function EscalasHub() {
   const [exportOpen, setExportOpen] = useState(false)
   const exportCtrl = useExportController({ context: 'hub' })
 
+  // --- Selection mode ---
+  const {
+    selectedSetores,
+    selectionMode,
+    selectedCount,
+    toggleSelection,
+    selectAll,
+    clearSelection,
+    isSelected,
+    enterSelectionMode,
+    exitSelectionMode,
+    getCheckboxState,
+  } = useSetorSelection()
+
   // --- Busca + Filtros state ---
   const [searchInput, setSearchInput] = useState('')
   const searchQuery = useDebouncedValue(searchInput, 300)
@@ -52,13 +69,13 @@ export function EscalasHub() {
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'OFICIAL' | 'RASCUNHO'>('todos')
   const [todosColabs, setTodosColabs] = useState<Colaborador[]>([])
 
-  async function handleCSVExport() {
-    // Respeitar setores selecionados no modal
-    const selectedIds = new Set(exportSetores.filter((s) => s.checked && s.temEscala).map((s) => s.id))
-    const comEscala = setoresComEscala.filter((s) => s.escalaResumo && selectedIds.has(s.setor.id))
+  async function handleCSVExport(overrideSetorIds?: Set<number>) {
+    // Use override (from bulk) or fall back to modal selection
+    const targetIds = overrideSetorIds ?? new Set(exportSetores.filter((s) => s.checked && s.temEscala).map((s) => s.id))
+    const comEscala = setoresComEscala.filter((s) => s.escalaResumo && targetIds.has(s.setor.id))
     if (comEscala.length === 0) return
 
-    // Reusar escalas já carregadas (exportEscalas), buscar só as faltantes
+    // Load escalas completas (reuse cached when available)
     const escalasCompletas: EscalaCompleta[] = []
     for (const s of comEscala) {
       const cached = exportEscalas.get(s.setor.id)
@@ -71,11 +88,9 @@ export function EscalasHub() {
 
     const setores = comEscala.map((s) => s.setor)
 
-    // Generate CSV with both sheets concatenated
     const csvAloc = gerarCSVAlocacoes(escalasCompletas, setores, todosColabs)
     const csvViol = gerarCSVViolacoes(escalasCompletas, setores)
 
-    // Combine: BOM + alocacoes, then blank line, then violacoes
     const combined = CSV_BOM + csvAloc + '\n\n' + csvViol
     await exportCtrl.handleCSV(combined, 'escalas.csv')
   }
@@ -204,8 +219,10 @@ export function EscalasHub() {
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([])
 
   // Abrir export modal com contexto inteligente
-  async function handleOpenExport() {
-    const comEscala = setoresFiltrados.filter((s) => s.escalaResumo)
+  async function handleOpenExport(overrideSetorIds?: Set<number>) {
+    // Use bulk-selected setores or all filtrados
+    const targetIds = overrideSetorIds ?? new Set(setoresFiltrados.filter((s) => s.escalaResumo).map((s) => s.setor.id))
+    const comEscala = setoresComEscala.filter((s) => s.escalaResumo && targetIds.has(s.setor.id))
     if (comEscala.length === 0) return
 
     const setoresExp = comEscala.map((s) => ({
@@ -347,20 +364,6 @@ export function EscalasHub() {
           { label: 'Dashboard', href: '/' },
           { label: 'Escalas' },
         ]}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenExport}
-              disabled={setoresFiltrados.filter((s) => s.escalaResumo).length === 0}
-            >
-              <Download className="mr-1 size-4" />
-              Exportar
-            </Button>
-            <EscalaViewToggle mode={viewMode} onChange={setViewMode} />
-          </div>
-        }
       />
 
       <div className="flex-1 space-y-4 p-6">
@@ -464,6 +467,36 @@ export function EscalasHub() {
                 {setoresFiltrados.length} de {setoresComEscala.length} setores
               </span>
             )}
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* View mode toggle */}
+            <EscalaViewToggle mode={viewMode} onChange={setViewMode} />
+
+            {/* Selection mode toggle */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={selectionMode ? 'default' : 'outline'}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    if (selectionMode) {
+                      exitSelectionMode()
+                    } else {
+                      enterSelectionMode()
+                    }
+                  }}
+                >
+                  <CheckSquare className="size-4" />
+                  {selectionMode ? 'Selecionando' : 'Selecionar'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {selectionMode ? 'Sair do modo selecao' : 'Selecionar setores para exportar'}
+              </TooltipContent>
+            </Tooltip>
           </div>
         )}
 
@@ -497,11 +530,34 @@ export function EscalasHub() {
                 searchHighlight={searchQuery || undefined}
                 matchedColabs={matchedColabsPorSetor.get(setor.id)}
                 onExportFunc={handleExportFunc}
+                selectionMode={selectionMode}
+                isSelected={isSelected(setor.id)}
+                onToggleSelection={() => toggleSelection(setor.id)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectionMode && (
+        <BulkActionBar
+          selectedCount={selectedCount}
+          totalCount={setoresFiltrados.filter((s) => s.escalaResumo).length}
+          checkboxState={getCheckboxState(setoresFiltrados.filter((s) => s.escalaResumo).length)}
+          onToggleAll={() => {
+            const eligible = setoresFiltrados.filter((s) => s.escalaResumo).map((s) => s.setor.id)
+            if (selectedCount >= eligible.length) {
+              clearSelection()
+            } else {
+              selectAll(eligible)
+            }
+          }}
+          onExportHTML={() => handleOpenExport(selectedSetores)}
+          onExportCSV={() => handleCSVExport(selectedSetores)}
+          onClose={exitSelectionMode}
+        />
+      )}
 
       {/* Export Modal */}
       <ExportModal

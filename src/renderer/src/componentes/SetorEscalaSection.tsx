@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
@@ -23,7 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { PontuacaoBadge } from '@/componentes/PontuacaoBadge'
-import { ViolacoesAgrupadas } from '@/componentes/ViolacoesAgrupadas'
+import { REGRAS_TEXTO } from '@/lib/formatadores'
 import { EscalaGrid } from '@/componentes/EscalaGrid'
 import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { cn } from '@/lib/utils'
@@ -56,11 +57,14 @@ interface SetorEscalaSectionProps {
   searchHighlight?: string
   matchedColabs?: { id: number; nome: string }[]
   onExportFunc?: (colabId: number, setorId: number) => void
+  selectionMode?: boolean
+  isSelected?: boolean
+  onToggleSelection?: () => void
 }
 
 const TOLERANCIA_DEFAULT = 30
 
-export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighlight, matchedColabs, onExportFunc }: SetorEscalaSectionProps) {
+export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighlight, matchedColabs, onExportFunc, selectionMode, isSelected, onToggleSelection }: SetorEscalaSectionProps) {
   const [expanded, setExpanded] = useState(true)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -114,6 +118,14 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
     return (
       <Card>
         <CardHeader className="flex flex-row items-center gap-3 py-3 px-4">
+          {selectionMode && (
+            <Checkbox
+              checked={false}
+              disabled
+              aria-label={`${setor.nome} (sem escala)`}
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
           <SectionIcon icone={setor.icone} />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-foreground truncate">{setor.nome}</p>
@@ -141,6 +153,14 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
         className="flex flex-row items-center gap-3 py-3 px-4 cursor-pointer select-none"
         onClick={handleToggle}
       >
+        {selectionMode && (
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelection?.()}
+            aria-label={`Selecionar ${setor.nome}`}
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
         {expanded ? (
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
         ) : (
@@ -258,16 +278,47 @@ function SectionTabs({
   viewMode,
   avisosCount,
 }: SectionTabsProps) {
+  // Count collaborators with problems (for badge)
+  const problemCount = useMemo(() => {
+    const start = new Date(escalaCompleta.escala.data_inicio + 'T00:00:00')
+    const end = new Date(escalaCompleta.escala.data_fim + 'T00:00:00')
+    const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    const semanas = Math.max(1, totalDays / 7)
+
+    const minutosReais = new Map<number, number>()
+    for (const a of escalaCompleta.alocacoes) {
+      if (a.status === 'TRABALHO' && a.minutos != null) {
+        minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + a.minutos)
+      }
+    }
+
+    const colabsComViolacao = new Set(
+      escalaCompleta.violacoes
+        .filter((v) => v.colaborador_id != null)
+        .map((v) => v.colaborador_id!),
+    )
+
+    let count = 0
+    for (const colab of colaboradores) {
+      const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
+      const real = minutosReais.get(colab.id) ?? 0
+      const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
+      const delta = real - metaTotal
+      const belowTolerance = delta < -TOLERANCIA_DEFAULT
+      if (belowTolerance || colabsComViolacao.has(colab.id)) count++
+    }
+    return count
+  }, [escalaCompleta, colaboradores, tiposContrato])
+
   return (
     <Tabs defaultValue="escala" className="space-y-3">
       <TabsList className="h-8">
         <TabsTrigger value="escala" className="text-xs">Escala</TabsTrigger>
-        <TabsTrigger value="horas" className="text-xs">Horas</TabsTrigger>
-        <TabsTrigger value="avisos" className="text-xs gap-1">
-          Avisos
-          {avisosCount > 0 && (
+        <TabsTrigger value="resumo" className="text-xs gap-1">
+          Resumo
+          {problemCount > 0 && (
             <Badge variant="secondary" className="ml-1 size-4 p-0 text-[9px] justify-center">
-              {avisosCount}
+              {problemCount}
             </Badge>
           )}
         </TabsTrigger>
@@ -300,44 +351,34 @@ function SectionTabs({
         )}
       </TabsContent>
 
-      {/* Tab Horas */}
-      <TabsContent value="horas">
-        <HorasTable
+      {/* Tab Resumo (merge Horas + Avisos) */}
+      <TabsContent value="resumo">
+        <ResumoTable
           colaboradores={colaboradores}
           alocacoes={escalaCompleta.alocacoes}
+          violacoes={escalaCompleta.violacoes}
           tiposContrato={tiposContrato}
           dataInicio={escalaCompleta.escala.data_inicio}
           dataFim={escalaCompleta.escala.data_fim}
         />
       </TabsContent>
-
-      {/* Tab Avisos */}
-      <TabsContent value="avisos">
-        {avisosCount > 0 ? (
-          <ViolacoesAgrupadas violacoes={escalaCompleta.violacoes} />
-        ) : (
-          <div className="flex items-center justify-center py-8">
-            <p className="text-xs text-muted-foreground">Nenhuma violacao encontrada.</p>
-          </div>
-        )}
-      </TabsContent>
     </Tabs>
   )
 }
 
-// ─── Horas Table (E3) ───────────────────────────────────────────────────────
+// ─── Resumo Table (merged Horas + Avisos) ──────────────────────────────────
 
-interface HorasTableProps {
+interface ResumoTableProps {
   colaboradores: Colaborador[]
   alocacoes: EscalaCompleta['alocacoes']
+  violacoes: EscalaCompleta['violacoes']
   tiposContrato: TipoContrato[]
   dataInicio: string
   dataFim: string
 }
 
-function HorasTable({ colaboradores, alocacoes, tiposContrato, dataInicio, dataFim }: HorasTableProps) {
+function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataInicio, dataFim }: ResumoTableProps) {
   const rows = useMemo(() => {
-    // Count weeks in the period for meta calculation
     const start = new Date(dataInicio + 'T00:00:00')
     const end = new Date(dataFim + 'T00:00:00')
     const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
@@ -351,15 +392,26 @@ function HorasTable({ colaboradores, alocacoes, tiposContrato, dataInicio, dataF
       }
     }
 
+    // Group violations per collaborator
+    const violacoesPorColab = new Map<number, typeof violacoes>()
+    for (const v of violacoes) {
+      if (v.colaborador_id != null) {
+        const arr = violacoesPorColab.get(v.colaborador_id) ?? []
+        arr.push(v)
+        violacoesPorColab.set(v.colaborador_id, arr)
+      }
+    }
+
     return colaboradores.map((colab) => {
       const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
       const real = minutosReais.get(colab.id) ?? 0
       const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
       const delta = real - metaTotal
       const ok = delta >= -TOLERANCIA_DEFAULT
-      return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-' }
+      const colabViolacoes = violacoesPorColab.get(colab.id) ?? []
+      return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-', violacoes: colabViolacoes }
     })
-  }, [colaboradores, alocacoes, tiposContrato, dataInicio, dataFim])
+  }, [colaboradores, alocacoes, violacoes, tiposContrato, dataInicio, dataFim])
 
   return (
     <div className="rounded-md border">
@@ -370,11 +422,11 @@ function HorasTable({ colaboradores, alocacoes, tiposContrato, dataInicio, dataF
             <TableHead className="text-xs text-right">Real</TableHead>
             <TableHead className="text-xs text-right">Meta</TableHead>
             <TableHead className="text-xs text-right">Delta</TableHead>
-            <TableHead className="text-xs text-center">Status</TableHead>
+            <TableHead className="text-xs">Avisos</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ colab, real, meta, delta, ok, contratoNome }) => (
+          {rows.map(({ colab, real, meta, delta, ok, contratoNome, violacoes: colabV }) => (
             <TableRow key={colab.id}>
               <TableCell className="py-2">
                 <div>
@@ -391,14 +443,27 @@ function HorasTable({ colaboradores, alocacoes, tiposContrato, dataInicio, dataF
                 {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}
                 {delta < 0 && ' ↓'}
               </TableCell>
-              <TableCell className="text-center py-2">
-                {ok ? (
-                  <span className="text-emerald-600 dark:text-emerald-400 text-xs">OK</span>
+              <TableCell className="py-2">
+                {colabV.length > 0 ? (
+                  <div className="space-y-0.5">
+                    {colabV.map((v, i) => (
+                      <p key={i} className={cn(
+                        'text-[11px] leading-tight',
+                        v.severidade === 'HARD' ? 'text-destructive font-medium' : 'text-amber-600 dark:text-amber-400',
+                      )}>
+                        {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
+                      </p>
+                    ))}
+                    {!ok && (
+                      <p className="text-[11px] leading-tight text-amber-600 dark:text-amber-400">
+                        Abaixo da meta
+                      </p>
+                    )}
+                  </div>
+                ) : !ok ? (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">Abaixo da meta</p>
                 ) : (
-                  <Badge variant="outline" className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 text-[10px]">
-                    <AlertTriangle className="mr-0.5 size-3" />
-                    Abaixo
-                  </Badge>
+                  <span className="text-[11px] text-muted-foreground">—</span>
                 )}
               </TableCell>
             </TableRow>
