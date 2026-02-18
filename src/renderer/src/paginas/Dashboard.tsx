@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   Building2,
   Users,
@@ -14,21 +13,6 @@ import { CORES_VIOLACAO } from '@/lib/cores'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { PageHeader } from '@/componentes/PageHeader'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EmptyState } from '@/componentes/EmptyState'
@@ -44,10 +28,6 @@ const statConfig = [
 ]
 
 export function Dashboard() {
-  const navigate = useNavigate()
-  const [showGerarDialog, setShowGerarDialog] = useState(false)
-  const [selectedSetorId, setSelectedSetorId] = useState('')
-
   const { data: dados, loading } = useApiData<DashboardResumo>(
     () => dashboardService.resumo(),
     [],
@@ -154,7 +134,7 @@ export function Dashboard() {
             </Card>
           </div>
 
-          {/* Alertas + Acoes Rapidas */}
+          {/* Alertas */}
           <div>
             <Card>
               <CardHeader className="pb-3">
@@ -185,78 +165,9 @@ export function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* Quick actions */}
-            <Card className="mt-4">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold">Acoes Rapidas</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 pb-4">
-                <Button
-                  className="w-full justify-start"
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedSetorId('')
-                    setShowGerarDialog(true)
-                  }}
-                >
-                  <CalendarDays className="mr-2 size-4" />
-                  Gerar Nova Escala
-                </Button>
-                <Button className="w-full justify-start" variant="outline" asChild>
-                  <Link to="/colaboradores">
-                    <Users className="mr-2 size-4" />
-                    Novo Colaborador
-                  </Link>
-                </Button>
-                <Button className="w-full justify-start" variant="outline" asChild>
-                  <Link to="/setores">
-                    <Building2 className="mr-2 size-4" />
-                    Novo Setor
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </div>
-
-      {/* Dialog: Gerar Nova Escala */}
-      <Dialog open={showGerarDialog} onOpenChange={setShowGerarDialog}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Gerar Nova Escala</DialogTitle>
-            <DialogDescription>Selecione o setor para gerar a escala.</DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Select value={selectedSetorId} onValueChange={setSelectedSetorId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione um setor" />
-              </SelectTrigger>
-              <SelectContent>
-                {dados.setores.map((setor) => (
-                  <SelectItem key={setor.id} value={String(setor.id)}>
-                    {setor.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowGerarDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              disabled={!selectedSetorId}
-              onClick={() => {
-                setShowGerarDialog(false)
-                navigate(`/setores/${selectedSetorId}/escala`)
-              }}
-            >
-              Ir para Escala
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

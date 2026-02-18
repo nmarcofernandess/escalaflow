@@ -34,7 +34,8 @@ const tourSteps: TourStep[] = [
         <ol className="text-sm text-muted-foreground mt-1 list-decimal pl-4 space-y-0.5">
           <li>Cadastre os <strong>Setores</strong> (departamentos)</li>
           <li>Cadastre os <strong>Colaboradores</strong></li>
-          <li>Gere a <strong>Escala</strong> automaticamente</li>
+          <li>Gere a <strong>Escala</strong> dentro de cada setor</li>
+          <li>Acompanhe tudo no <strong>Hub de Escalas</strong></li>
         </ol>
       </>
     ),
@@ -87,23 +88,38 @@ const tourSteps: TourStep[] = [
         <h3 className="font-semibold">Contratos e Excecoes</h3>
         <p className="text-sm text-muted-foreground mt-1">
           O tipo de contrato define as regras da CLT (horas semanais,
-          folgas obrigatorias). Voce tambem pode registrar ferias e
-          atestados como excecoes.
+          folgas obrigatorias). Voce pode configurar os tipos em{' '}
+          <strong>Tipos de Contrato</strong> no menu de Configuracao, e
+          registrar ferias e atestados como excecoes.
         </p>
       </>
     ),
   },
   {
-    targetId: TOUR_STEP_IDS.NAV_SETORES,
+    targetId: TOUR_STEP_IDS.NAV_ESCALAS,
     position: 'right',
-    onEnter: () => navigateTo('/'),
+    onEnter: () => navigateTo('/escalas'),
     content: (
       <>
-        <h3 className="font-semibold">Gerar Escala</h3>
+        <h3 className="font-semibold">Hub de Escalas</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Volte ao Dashboard e clique em &quot;Gerar Nova Escala&quot; para
-          o sistema criar a escala automaticamente, respeitando todas as
-          regras da CLT.
+          Visao geral de todas as escalas geradas. Aqui voce acompanha
+          todos os setores de uma vez — sem precisar entrar em cada um.
+        </p>
+      </>
+    ),
+  },
+  {
+    targetId: TOUR_STEP_IDS.CONTENT_AREA,
+    position: 'bottom',
+    content: (
+      <>
+        <h3 className="font-semibold">Escalas, Export e Avisos</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Cada escala tem abas de <strong>Horas</strong> e{' '}
+          <strong>Avisos</strong>. Voce pode exportar em PDF, HTML ou CSV,
+          alternar entre visualizacao em grade e linha do tempo, e
+          selecionar varios setores para exportar de uma vez.
         </p>
       </>
     ),

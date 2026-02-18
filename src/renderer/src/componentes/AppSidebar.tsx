@@ -122,7 +122,9 @@ export function AppSidebar() {
                     ? TOUR_STEP_IDS.NAV_SETORES
                     : item.to === '/colaboradores'
                       ? TOUR_STEP_IDS.NAV_COLABORADORES
-                      : undefined
+                      : item.to === '/escalas'
+                        ? TOUR_STEP_IDS.NAV_ESCALAS
+                        : undefined
                 return (
                 <SidebarMenuItem key={item.label} id={tourId}>
                   <SidebarMenuButton

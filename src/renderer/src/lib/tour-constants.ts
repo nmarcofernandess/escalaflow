@@ -4,6 +4,7 @@ export const TOUR_STEP_IDS = {
   NAV_SETORES: 'tour-nav-setores',
   NAV_COLABORADORES: 'tour-nav-colaboradores',
   NAV_CONTRATOS: 'tour-nav-contratos',
+  NAV_ESCALAS: 'tour-nav-escalas',
   CONTENT_AREA: 'tour-content-area',
   FOOTER_MENU: 'tour-footer-menu',
 } as const
