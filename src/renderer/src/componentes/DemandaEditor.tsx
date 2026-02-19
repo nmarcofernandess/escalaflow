@@ -252,6 +252,7 @@ export function DemandaEditor({
       hora_inicio: minutesToTime(midPoint),
       hora_fim: minutesToTime(endPoint),
       min_pessoas: 2,
+      override: false,
     })
   }
 

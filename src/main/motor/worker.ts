@@ -1,46 +1,30 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import Database from 'better-sqlite3'
-import { gerarProposta, type PinnedCell } from './gerador'
+import { gerarEscalaV3 } from './gerador'
+import type { GerarEscalaInput, GerarEscalaOutput } from '../../shared'
 
 interface WorkerInput {
-  setorId: number
-  dataInicio: string
-  dataFim: string
-  tolerancia: number
+  input: GerarEscalaInput   // setor_id, data_inicio, data_fim, pinned_cells?
   dbPath: string
-  /** Serializado como [key, value][] para workerData (Map nao e serializavel) */
-  pinnedCellsArr?: [string, PinnedCell][]
 }
 
-const input = workerData as WorkerInput
+const data = workerData as WorkerInput
 
-function toPinnedMap(arr?: [string, PinnedCell][]): Map<string, PinnedCell> | undefined {
-  if (!arr || arr.length === 0) return undefined
-  return new Map(arr)
-}
+let db: InstanceType<typeof Database> | null = null
 
 try {
-  // Worker opens its OWN DB connection (never share between threads)
-  const db = new Database(input.dbPath)
+  db = new Database(data.dbPath, { readonly: false })
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
 
-  const pinnedCells = toPinnedMap(input.pinnedCellsArr)
-
-  const resultado = gerarProposta(
-    input.setorId,
-    input.dataInicio,
-    input.dataFim,
-    db,
-    input.tolerancia,
-    pinnedCells
-  )
-
-  // Close own connection
-  db.close()
+  const resultado: GerarEscalaOutput = gerarEscalaV3(db, data.input)
 
   parentPort?.postMessage({ type: 'result', data: resultado })
-} catch (err: any) {
-  console.error('[WORKER] Error:', err.message || String(err), err.stack)
-  parentPort?.postMessage({ type: 'error', error: err.message || String(err) })
+} catch (err) {
+  parentPort?.postMessage({
+    type: 'error',
+    error: err instanceof Error ? err.message : String(err)
+  })
+} finally {
+  db?.close()
 }

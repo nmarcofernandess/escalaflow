@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -55,6 +56,7 @@ import { escalasService } from '@/servicos/escalas'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import type {
   EscalaCompleta,
+  EscalaCompletaV3,
   Escala,
   Alocacao,
   Colaborador,
@@ -92,7 +94,8 @@ export function EscalaPagina() {
     return ultimoDia.toISOString().split('T')[0]
   })
   const [gerando, setGerando] = useState(false)
-  const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompleta | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
+  const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [ajustando, setAjustando] = useState<{ colaboradorId: number; data: string } | null>(null)
   const [changedCells, setChangedCells] = useState<Set<string>>(new Set())
   const [expandViolacoes, setExpandViolacoes] = useState(false)
@@ -100,11 +103,11 @@ export function EscalaPagina() {
   const [descartando, setDescartando] = useState(false)
   const [escalaViewMode, setEscalaViewMode] = useEscalaViewMode()
   const [exportOpen, setExportOpen] = useState(false)
-  const [exportEscala, setExportEscala] = useState<EscalaCompleta | null>(null)
+  const [exportEscala, setExportEscala] = useState<EscalaCompletaV3 | null>(null)
   const exportCtrl = useExportController({ context: 'escala' })
 
   // Oficial tab state
-  const [oficialEscala, setOficialEscala] = useState<EscalaCompleta | null>(null)
+  const [oficialEscala, setOficialEscala] = useState<EscalaCompletaV3 | null>(null)
   const [loadingOficial, setLoadingOficial] = useState(false)
   const [oficialLoaded, setOficialLoaded] = useState(false)
 
@@ -115,11 +118,39 @@ export function EscalaPagina() {
   const [loadingHistorico, setLoadingHistorico] = useState(false)
   const [historicoLoaded, setHistoricoLoaded] = useState(false)
   const [expandedHistorico, setExpandedHistorico] = useState<number | null>(null)
-  const [historicoDetail, setHistoricoDetail] = useState<EscalaCompleta | null>(null)
+  const [historicoDetail, setHistoricoDetail] = useState<EscalaCompletaV3 | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
   // Generate escala
   async function handleGerar() {
+    setPreflightLoading(true)
+    try {
+      const preflight = await escalasService.preflight(setorId, {
+        data_inicio: dataInicio,
+        data_fim: dataFim,
+      })
+
+      if (!preflight.ok) {
+        toast.error(preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao')
+        return
+      }
+
+      if (preflight.warnings.length > 0) {
+        const warnings = preflight.warnings
+          .map((w) => `- ${w.mensagem}${w.detalhe ? ` (${w.detalhe})` : ''}`)
+          .join('\n')
+        const confirmed = window.confirm(
+          `Preflight com avisos:\n${warnings}\n\nDeseja continuar com a geracao?`,
+        )
+        if (!confirmed) return
+      }
+    } catch (err) {
+      toast.error(mapError(err) || 'Falha no preflight da escala')
+      return
+    } finally {
+      setPreflightLoading(false)
+    }
+
     setGerando(true)
     try {
       const result = await escalasService.gerar(setorId, {
@@ -132,7 +163,7 @@ export function EscalaPagina() {
       setOficialLoaded(false)
       setHistoricoLoaded(false)
     } catch (err) {
-      const friendly = mapError(err) || 'Nao foi possivel gerar a escala. Verifique se o setor tem colaboradores e faixas de demanda cadastradas.'
+      const friendly = mapError(err) || 'Nao foi possivel gerar a escala.'
       toast.error(friendly)
     } finally {
       setGerando(false)
@@ -267,7 +298,7 @@ export function EscalaPagina() {
   }
 
   // Print handler
-  function handleImprimir(ec: EscalaCompleta) {
+  function handleImprimir(ec: EscalaCompletaV3) {
     if (!setor || !colaboradores) return
     const printWindow = window.open('', '_blank')
     if (!printWindow) {
@@ -310,7 +341,7 @@ export function EscalaPagina() {
   }
 
   // Extract indicators from backend response
-  function getIndicators(ec: EscalaCompleta) {
+  function getIndicators(ec: EscalaCompletaV3) {
     return {
       pontuacao: ec.indicadores.pontuacao,
       coberturaPercent: ec.indicadores.cobertura_percent,
@@ -321,7 +352,7 @@ export function EscalaPagina() {
   }
 
   // Open export modal for a given escala
-  function handleExportar(ec: EscalaCompleta) {
+  function handleExportar(ec: EscalaCompletaV3) {
     setExportEscala(ec)
     setExportOpen(true)
   }
@@ -376,37 +407,26 @@ export function EscalaPagina() {
           {/* TAB: Simulacao */}
           <TabsContent value="simulacao" className="relative space-y-4">
             {/* Loading overlay durante geracao */}
-            {gerando && (
+            {(gerando || preflightLoading) && (
               <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm animate-in fade-in-0 duration-200">
                 <Card className="w-full max-w-md border-2 shadow-lg">
                   <CardContent className="flex flex-col items-center justify-center gap-4 py-12">
                     <Loader2 className="size-12 animate-spin text-primary" />
                     <p className="text-center text-sm font-medium text-foreground">
-                      Gerando escala para {setor.nome}...
+                      {preflightLoading ? 'Validando preflight...' : `Gerando escala para ${setor.nome}...`}
                     </p>
                     <p className="text-center text-xs text-muted-foreground">
-                      O motor esta calculando horarios e distribuicoes. Aguarde.
+                      {preflightLoading
+                        ? 'Checando bloqueios e avisos antes da geracao.'
+                        : 'O motor esta calculando horarios e distribuicoes. Aguarde.'}
                     </p>
                   </CardContent>
                 </Card>
               </div>
             )}
 
-            {/* Alerta pre-geracao: sem demandas */}
-            {demandas && demandas.length === 0 && (
-              <Alert className="border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
-                <Info className="size-4" />
-                <AlertDescription className="text-xs text-amber-900 dark:text-amber-200">
-                  Defina ao menos uma faixa de demanda antes de gerar a escala.{' '}
-                  <Link to={`/setores/${setorId}`} className="font-medium underline underline-offset-2">
-                    Configurar demandas
-                  </Link>
-                </AlertDescription>
-              </Alert>
-            )}
-
             {/* Generate controls */}
-            <Card className={gerando ? 'pointer-events-none opacity-60' : ''}>
+            <Card className={gerando || preflightLoading ? 'pointer-events-none opacity-60' : ''}>
               <CardContent className="flex flex-wrap items-end gap-4 p-4">
                 <div className="space-y-1">
                   <Label className="text-xs">Data Inicio</Label>
@@ -415,7 +435,7 @@ export function EscalaPagina() {
                     value={dataInicio}
                     onChange={(e) => setDataInicio(e.target.value)}
                     className="w-[160px]"
-                    disabled={gerando}
+                    disabled={gerando || preflightLoading}
                   />
                 </div>
                 <div className="space-y-1">
@@ -425,16 +445,16 @@ export function EscalaPagina() {
                     value={dataFim}
                     onChange={(e) => setDataFim(e.target.value)}
                     className="w-[160px]"
-                    disabled={gerando}
+                    disabled={gerando || preflightLoading}
                   />
                 </div>
-                <Button onClick={handleGerar} disabled={gerando || (demandas !== null && demandas.length === 0)}>
+                <Button onClick={handleGerar} disabled={gerando || preflightLoading}>
                   {gerando ? (
                     <Loader2 className="mr-1 size-4 animate-spin" />
                   ) : (
                     <CalendarDays className="mr-1 size-4" />
                   )}
-                  {gerando ? 'Gerando...' : 'Gerar Escala'}
+                  {preflightLoading ? 'Validando...' : gerando ? 'Gerando...' : 'Gerar Escala'}
                 </Button>
               </CardContent>
             </Card>
@@ -765,7 +785,7 @@ export function EscalaPagina() {
 // ─── Simulacao Result Sub-component ──────────────────────────────────────────
 
 interface SimulacaoResultProps {
-  escalaCompleta: EscalaCompleta
+  escalaCompleta: EscalaCompletaV3
   colaboradores: Colaborador[]
   demandas: import('@shared/index').Demanda[]
   tiposContrato: import('@shared/index').TipoContrato[]
@@ -774,9 +794,9 @@ interface SimulacaoResultProps {
   setExpandViolacoes: (v: boolean) => void
   onOficializar: () => void
   onDescartar: () => void
-  onImprimir: (ec: EscalaCompleta) => void
-  onExportar: (ec: EscalaCompleta) => void
-  getIndicators: (ec: EscalaCompleta) => {
+  onImprimir: (ec: EscalaCompletaV3) => void
+  onExportar: (ec: EscalaCompletaV3) => void
+  getIndicators: (ec: EscalaCompletaV3) => {
     pontuacao: number
     coberturaPercent: number
     violacoesHard: number
@@ -817,6 +837,9 @@ function SimulacaoResult({
 }: SimulacaoResultProps) {
   const indicators = getIndicators(escalaCompleta)
   const violacoes = escalaCompleta.violacoes
+  const decisoes = escalaCompleta.decisoes ?? []
+  const comparacao = escalaCompleta.comparacao_demanda ?? []
+  const antipatterns = escalaCompleta.antipatterns ?? []
 
   // Build Set of violated cells (HARD only) for grid highlighting
   const violatedCells = new Set(
@@ -932,6 +955,147 @@ function SimulacaoResult({
               <ViolacoesAgrupadas violacoes={violacoes} />
             </CardContent>
           )}
+        </Card>
+      )}
+
+      {/* Delta de Cobertura (v3) */}
+      {comparacao.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <TrendingUp className="size-4 text-primary" />
+              Planejado x Executado
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {(() => {
+                // Group by data, show summary per day
+                const porDia = new Map<string, { planejado: number; executado: number; delta: number }>()
+                for (const slot of comparacao) {
+                  const prev = porDia.get(slot.data) ?? { planejado: 0, executado: 0, delta: 0 }
+                  porDia.set(slot.data, {
+                    planejado: prev.planejado + slot.planejado,
+                    executado: prev.executado + slot.executado,
+                    delta: prev.delta + slot.delta,
+                  })
+                }
+                const dias = Array.from(porDia.entries()).slice(0, 7)
+                return dias.map(([data, vals]) => {
+                  const pct = vals.planejado > 0 ? Math.round((vals.executado / vals.planejado) * 100) : 100
+                  const isNegative = vals.delta < 0
+                  const isPositive = vals.delta > 0
+                  return (
+                    <div key={data} className="flex items-center gap-3 text-xs">
+                      <span className="w-20 text-muted-foreground shrink-0">
+                        {new Date(data + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                      </span>
+                      <Progress
+                        value={Math.min(100, pct)}
+                        className={cn(
+                          'flex-1 h-3',
+                          isNegative
+                            ? '[&>div]:bg-destructive/50'
+                            : isPositive
+                            ? '[&>div]:bg-amber-400/70'
+                            : '[&>div]:bg-emerald-500/60',
+                        )}
+                      />
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'shrink-0 text-[10px] font-semibold tabular-nums',
+                          isNegative
+                            ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                            : isPositive
+                            ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300'
+                            : 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300',
+                        )}
+                      >
+                        {isPositive ? '+' : ''}{vals.delta}
+                      </Badge>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+            {comparacao.length > 7 && (
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                Mostrando primeiros 7 dias. Total: {comparacao.length} slots.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Por que? — Decisoes do Motor (v3) */}
+      {(decisoes.length > 0 || antipatterns.length > 0) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <Info className="size-4 text-muted-foreground" />
+              Por que?
+              <span className="text-xs font-normal text-muted-foreground">
+                {decisoes.length > 0 ? `${decisoes.length} decisoes do motor` : ''}
+                {antipatterns.length > 0 ? `${decisoes.length > 0 ? ' · ' : ''}${antipatterns.length} antipatterns` : ''}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {antipatterns.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Antipatterns detectados
+                </p>
+                {antipatterns.map((ap, i) => {
+                  const isGrave = ap.tier === 1
+                  return (
+                    <Alert
+                      key={i}
+                      variant={isGrave ? 'destructive' : 'default'}
+                      className={cn('py-2.5 text-xs', !isGrave && 'border-amber-400/50 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-950/20')}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="shrink-0 text-[9px] h-4">
+                          {ap.tier}
+                        </Badge>
+                        <span className="font-medium">{ap.mensagem_rh}</span>
+                      </div>
+                      {ap.sugestao && (
+                        <AlertDescription className="mt-1 ml-0">{ap.sugestao}</AlertDescription>
+                      )}
+                    </Alert>
+                  )
+                })}
+              </div>
+            )}
+            {decisoes.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Decisoes do motor
+                </p>
+                <div className="max-h-64 overflow-y-auto space-y-1">
+                  {decisoes.slice(0, 50).map((d, i) => (
+                    <div key={i} className="flex items-start gap-2 rounded border bg-muted/20 px-2.5 py-2 text-xs">
+                      <span className="shrink-0 font-medium text-foreground">
+                        {d.colaborador_nome.split(' ')[0]}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {new Date(d.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      </span>
+                      <Badge variant="outline" className="shrink-0 text-[9px] h-4">{d.acao}</Badge>
+                      <span className="text-muted-foreground flex-1">{d.razao}</span>
+                    </div>
+                  ))}
+                  {decisoes.length > 50 && (
+                    <p className="text-[10px] text-muted-foreground text-center py-1">
+                      +{decisoes.length - 50} decisoes nao exibidas
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
         </Card>
       )}
 

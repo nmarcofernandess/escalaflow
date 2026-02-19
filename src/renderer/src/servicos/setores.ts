@@ -1,5 +1,5 @@
 import { client } from './client'
-import type { Setor, Demanda } from '@shared/index'
+import type { Setor, Demanda, SetorHorarioSemana, SalvarTimelineDiaInput } from '@shared/index'
 
 export const setoresService = {
   listar: (ativo?: boolean) =>
@@ -37,4 +37,13 @@ export const setoresService = {
 
   reordenarRank: (setorId: number, colaborador_ids: number[]) =>
     client['setores.reordenarRank']({ setor_id: setorId, colaborador_ids }) as Promise<void>,
+
+  listarHorarioSemana: (setorId: number) =>
+    client['setores.listarHorarioSemana']({ setor_id: setorId }) as Promise<SetorHorarioSemana[]>,
+
+  upsertHorarioSemana: (data: Omit<SetorHorarioSemana, 'id'>) =>
+    client['setores.upsertHorarioSemana'](data as any) as Promise<SetorHorarioSemana>,
+
+  salvarTimelineDia: (data: SalvarTimelineDiaInput) =>
+    client['setores.salvarTimelineDia'](data as any) as Promise<{ horario: SetorHorarioSemana; demandas: Demanda[] }>,
 }

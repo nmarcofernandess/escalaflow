@@ -23,8 +23,8 @@ import { escalasService } from '@/servicos/escalas'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { exportarService } from '@/servicos/exportar'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
-import { gerarCSVAlocacoes, gerarCSVViolacoes, CSV_BOM } from '@/lib/gerarCSV'
-import type { Setor, Colaborador, EscalaCompleta, TipoContrato } from '@shared/index'
+import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda, CSV_BOM } from '@/lib/gerarCSV'
+import type { Setor, Colaborador, EscalaCompletaV3, TipoContrato } from '@shared/index'
 
 interface SetorComEscala {
   setor: Setor
@@ -76,7 +76,7 @@ export function EscalasHub() {
     if (comEscala.length === 0) return
 
     // Load escalas completas (reuse cached when available)
-    const escalasCompletas: EscalaCompleta[] = []
+    const escalasCompletas: EscalaCompletaV3[] = []
     for (const s of comEscala) {
       const cached = exportEscalas.get(s.setor.id)
       if (cached) {
@@ -90,8 +90,9 @@ export function EscalasHub() {
 
     const csvAloc = gerarCSVAlocacoes(escalasCompletas, setores, todosColabs)
     const csvViol = gerarCSVViolacoes(escalasCompletas, setores)
+    const csvDelta = gerarCSVComparacaoDemanda(escalasCompletas, setores)
 
-    const combined = CSV_BOM + csvAloc + '\n\n' + csvViol
+    const combined = CSV_BOM + csvAloc + '\n\n' + csvViol + '\n\n' + csvDelta
     await exportCtrl.handleCSV(combined, 'escalas.csv')
   }
 
@@ -215,7 +216,7 @@ export function EscalasHub() {
   // --- Export state ---
   const [exportSetores, setExportSetores] = useState<SetorExportItem[]>([])
   const [exportColabs, setExportColabs] = useState<{ id: number; nome: string }[]>([])
-  const [exportEscalas, setExportEscalas] = useState<Map<number, EscalaCompleta>>(new Map())
+  const [exportEscalas, setExportEscalas] = useState<Map<number, EscalaCompletaV3>>(new Map())
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([])
 
   // Abrir export modal com contexto inteligente
@@ -238,7 +239,7 @@ export function EscalasHub() {
       Promise.all(comEscala.map((s) => escalasService.buscar(s.escalaResumo!.id))),
       tiposContratoService.listar(),
     ])
-    const escMap = new Map<number, EscalaCompleta>()
+    const escMap = new Map<number, EscalaCompletaV3>()
     for (let i = 0; i < comEscala.length; i++) {
       escMap.set(comEscala[i].setor.id, escalas[i])
     }
@@ -351,7 +352,7 @@ export function EscalasHub() {
       escalasService.buscar(s.escalaResumo.id),
       tiposContratoService.listar(),
     ]).then(([ec, tcs]) => {
-      setExportEscalas(new Map([[setorId, ec]]))
+      setExportEscalas(new Map([[setorId, ec as EscalaCompletaV3]]))
       setTiposContrato(tcs)
       setExportOpen(true)
     })

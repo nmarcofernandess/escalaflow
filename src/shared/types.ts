@@ -1,6 +1,19 @@
-import type { DiaSemana, Turno, StatusEscala, TipoExcecao, StatusAlocacao, Severidade } from './constants'
+import type {
+  DiaSemana,
+  Turno,
+  StatusEscala,
+  TipoExcecao,
+  StatusAlocacao,
+  Severidade,
+  TipoTrabalhador,
+  TipoFeriado,
+  AcaoMotor,
+  AntipatternTier,
+} from './constants'
 
-// --- Entidades ---
+// ============================================================================
+// ENTIDADES — v2 base + campos v3.1
+// ============================================================================
 
 export interface Empresa {
   id: number
@@ -9,6 +22,10 @@ export interface Empresa {
   telefone: string
   corte_semanal: string
   tolerancia_semanal_min: number
+  // v3.1
+  min_intervalo_almoco_min: number        // default 60
+  usa_cct_intervalo_reduzido: boolean     // default true
+  grid_minutos: number                    // default 30, fixo
 }
 
 export interface TipoContrato {
@@ -27,6 +44,8 @@ export interface Setor {
   hora_abertura: string
   hora_fechamento: string
   ativo: boolean
+  // v3.1
+  piso_operacional: number                // default 1
 }
 
 export interface Demanda {
@@ -35,7 +54,9 @@ export interface Demanda {
   dia_semana: DiaSemana | null
   hora_inicio: string
   hora_fim: string
-  min_pessoas: number
+  min_pessoas: number                     // v3.1: semantica = target planejado
+  // v3.1
+  override: boolean                       // default false
 }
 
 export interface Colaborador {
@@ -49,13 +70,16 @@ export interface Colaborador {
   prefere_turno: Turno | null
   evitar_dia_semana: DiaSemana | null
   ativo: boolean
+  // v3.1
+  tipo_trabalhador: TipoTrabalhador       // default 'CLT'
+  funcao_id: number | null                // FK funcoes
 }
 
 export interface Excecao {
   id: number
   colaborador_id: number
-  data_inicio: string   // "2026-03-01"
-  data_fim: string      // "2026-03-15"
+  data_inicio: string
+  data_fim: string
   tipo: TipoExcecao
   observacao: string | null
 }
@@ -70,18 +94,206 @@ export interface Escala {
   criada_em: string
 }
 
+/** Alocacao v2 — mantida pra compat do frontend ate S4 */
 export interface Alocacao {
   id: number
   escala_id: number
   colaborador_id: number
-  data: string            // "2026-03-01"
+  data: string
   status: StatusAlocacao
   hora_inicio: string | null
   hora_fim: string | null
   minutos: number | null
+  // v3.1 campos opcionais (presentes se gerado pelo motor v3)
+  minutos_trabalho?: number | null
+  hora_almoco_inicio?: string | null
+  hora_almoco_fim?: string | null
+  minutos_almoco?: number | null
+  intervalo_15min?: boolean
+  funcao_id?: number | null
 }
 
-// --- Compostos (respostas da API) ---
+// ============================================================================
+// ENTIDADES NOVAS v3.1
+// ============================================================================
+
+export interface Funcao {
+  id: number
+  setor_id: number
+  apelido: string
+  tipo_contrato_id: number
+  ativo: boolean
+  ordem: number
+}
+
+export interface Feriado {
+  id: number
+  data: string                            // "2026-12-25"
+  nome: string
+  tipo: TipoFeriado
+  proibido_trabalhar: boolean
+  cct_autoriza: boolean
+}
+
+export interface SetorHorarioSemana {
+  id: number
+  setor_id: number
+  dia_semana: DiaSemana
+  ativo: boolean
+  usa_padrao: boolean
+  hora_abertura: string
+  hora_fechamento: string
+}
+
+export interface EscalaDecisao {
+  id: number
+  escala_id: number
+  colaborador_id: number | null
+  data: string
+  acao: AcaoMotor
+  razao: string
+  alternativas_tentadas: number
+}
+
+export interface EscalaComparacaoDemanda {
+  id: number
+  escala_id: number
+  data: string
+  hora_inicio: string
+  hora_fim: string
+  planejado: number
+  executado: number
+  delta: number
+  override: boolean
+  justificativa: string | null
+}
+
+// ============================================================================
+// COMPOSTOS — Motor v3
+// ============================================================================
+
+export interface PinnedCell {
+  colaborador_id: number
+  data: string
+  status?: StatusAlocacao
+  hora_inicio?: string | null
+  hora_fim?: string | null
+}
+
+export interface DecisaoMotor {
+  colaborador_id: number
+  colaborador_nome: string
+  data: string
+  acao: AcaoMotor
+  razao: string
+  alternativas_tentadas: number
+}
+
+export interface SlotComparacao {
+  data: string
+  hora_inicio: string
+  hora_fim: string
+  planejado: number
+  executado: number
+  delta: number
+  override: boolean
+  justificativa?: string
+}
+
+export interface AntipatternViolacao {
+  tier: AntipatternTier
+  antipattern: string
+  nome_industria: string
+  peso: number
+  colaborador_id: number
+  data?: string
+  semana?: number
+  mensagem_rh: string
+  sugestao?: string
+}
+
+export interface GerarEscalaInput {
+  setor_id: number
+  data_inicio: string
+  data_fim: string
+  pinned_cells?: PinnedCell[]
+}
+
+export interface GerarEscalaOutput {
+  sucesso: boolean
+  escala?: EscalaCompletaV3
+  erro?: {
+    tipo: 'PREFLIGHT' | 'CONSTRAINT'
+    regra: string
+    mensagem: string
+    sugestoes: string[]
+    colaborador_id?: number
+    data?: string
+  }
+}
+
+export interface EscalaPreflightIssue {
+  codigo: string
+  severidade: 'BLOCKER' | 'WARNING'
+  mensagem: string
+  detalhe?: string
+}
+
+export interface EscalaPreflightResult {
+  ok: boolean
+  blockers: EscalaPreflightIssue[]
+  warnings: EscalaPreflightIssue[]
+  summary: {
+    setor_id: number
+    data_inicio: string
+    data_fim: string
+    colaboradores_ativos: number
+    demandas_cadastradas: number
+    feriados_no_periodo: number
+    fallback_piso: boolean
+  }
+}
+
+export interface EscalaCompletaV3 {
+  escala: Escala
+  alocacoes: Alocacao[]
+  indicadores: Indicadores
+  violacoes: Violacao[]
+  antipatterns: AntipatternViolacao[]
+  decisoes: DecisaoMotor[]
+  comparacao_demanda: SlotComparacao[]
+  timing?: {
+    fase0_ms: number
+    fase1_ms: number
+    fase2_ms: number
+    fase3_ms: number
+    fase4_ms: number
+    fase5_ms: number
+    fase6_ms: number
+    fase7_ms: number
+    total_ms: number
+  }
+}
+
+/** Save transacional da timeline (1 dia) — RFC §11.1 */
+export interface SalvarTimelineDiaInput {
+  setor_id: number
+  dia_semana: DiaSemana
+  ativo: boolean
+  usa_padrao: boolean
+  hora_abertura: string
+  hora_fechamento: string
+  segmentos: Array<{
+    hora_inicio: string
+    hora_fim: string
+    min_pessoas: number
+    override: boolean
+  }>
+}
+
+// ============================================================================
+// COMPOSTOS — v2 (mantidos pra compat frontend)
+// ============================================================================
 
 export interface Violacao {
   severidade: Severidade
@@ -93,13 +305,14 @@ export interface Violacao {
 }
 
 export interface Indicadores {
-  cobertura_percent: number      // 0-100
+  cobertura_percent: number
   violacoes_hard: number
   violacoes_soft: number
-  equilibrio: number             // 0-100
-  pontuacao: number              // 0-100
+  equilibrio: number
+  pontuacao: number
 }
 
+/** EscalaCompleta v2 — mantida pra compat frontend ate S4 */
 export interface EscalaCompleta {
   escala: Escala
   alocacoes: Alocacao[]
@@ -132,7 +345,9 @@ export interface AlertaDashboard {
   mensagem: string
 }
 
-// --- Request Bodies ---
+// ============================================================================
+// REQUEST BODIES
+// ============================================================================
 
 export interface GerarEscalaRequest {
   data_inicio: string
@@ -148,6 +363,9 @@ export interface CriarColaboradorRequest {
   rank?: number
   prefere_turno?: Turno | null
   evitar_dia_semana?: DiaSemana | null
+  // v3.1
+  tipo_trabalhador?: TipoTrabalhador
+  funcao_id?: number | null
 }
 
 export interface ReordenarRankRequest {

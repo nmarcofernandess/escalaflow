@@ -60,9 +60,10 @@ const contratoSchema = z.object({
   trabalha_domingo: z.boolean(),
 })
 
-type ContratoFormData = z.infer<typeof contratoSchema>
+type ContratoFormInput = z.input<typeof contratoSchema>
+type ContratoFormData = z.output<typeof contratoSchema>
 
-const DEFAULTS: ContratoFormData = {
+const DEFAULTS: ContratoFormInput = {
   nome: '',
   horas_semanais: 44,
   dias_trabalho: 6,
@@ -84,7 +85,7 @@ export function ContratoLista() {
   const [deletando, setDeletando] = useState(false)
   const [viewMode, setViewMode] = useViewMode('contratos', 'table')
 
-  const form = useForm<ContratoFormData>({
+  const form = useForm<ContratoFormInput, unknown, ContratoFormData>({
     resolver: zodResolver(contratoSchema),
     defaultValues: DEFAULTS,
   })
@@ -373,7 +374,16 @@ export function ContratoLista() {
                     <FormItem>
                       <FormLabel>Horas Semanais</FormLabel>
                       <FormControl>
-                        <Input type="number" min="1" max="44" {...field} />
+                        <Input
+                          type="number"
+                          min="1"
+                          max="44"
+                          value={typeof field.value === 'number' ? field.value : ''}
+                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -386,7 +396,16 @@ export function ContratoLista() {
                     <FormItem>
                       <FormLabel>Dias de Trabalho</FormLabel>
                       <FormControl>
-                        <Input type="number" min="1" max="6" {...field} />
+                        <Input
+                          type="number"
+                          min="1"
+                          max="6"
+                          value={typeof field.value === 'number' ? field.value : ''}
+                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -401,7 +420,16 @@ export function ContratoLista() {
                   <FormItem>
                     <FormLabel>Max Minutos por Dia</FormLabel>
                     <FormControl>
-                      <Input type="number" min="60" max="600" {...field} />
+                      <Input
+                        type="number"
+                        min="60"
+                        max="600"
+                        value={typeof field.value === 'number' ? field.value : ''}
+                        onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

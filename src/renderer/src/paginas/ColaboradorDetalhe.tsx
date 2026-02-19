@@ -57,10 +57,11 @@ import { colaboradoresService } from '@/servicos/colaboradores'
 import { setoresService } from '@/servicos/setores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { excecoesService } from '@/servicos/excecoes'
+import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
-import type { Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana } from '@shared/index'
+import type { Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana, Funcao } from '@shared/index'
 
 const DIAS_SEMANA_OPTIONS = [
   { value: 'SEG', label: 'Segunda' },
@@ -87,15 +88,18 @@ function ExcecaoIcon({ tipo }: { tipo: string }) {
 
 const colabSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
-  sexo: z.string().min(1, 'Selecione o sexo'),
+  sexo: z.enum(['M', 'F'], { message: 'Selecione o sexo' }),
   setor_id: z.string().min(1, 'Selecione o setor'),
   tipo_contrato_id: z.string().min(1, 'Selecione o tipo de contrato'),
   horas_semanais: z.coerce.number().min(1, 'Minimo 1 hora').max(44, 'Maximo 44 horas'),
-  prefere_turno: z.string(),
-  evitar_dia_semana: z.string(),
+  prefere_turno: z.enum(['none', 'MANHA', 'TARDE']),
+  evitar_dia_semana: z.enum(['none', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']),
+  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'APRENDIZ']),
+  funcao_id: z.string(),
 })
 
-type ColabFormData = z.infer<typeof colabSchema>
+type ColabFormInput = z.input<typeof colabSchema>
+type ColabFormData = z.output<typeof colabSchema>
 
 export function ColaboradorDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -104,11 +108,12 @@ export function ColaboradorDetalhe() {
 
   // Form
   const [salvando, setSalvando] = useState(false)
-  const colabForm = useForm<ColabFormData>({
+  const colabForm = useForm<ColabFormInput, unknown, ColabFormData>({
     resolver: zodResolver(colabSchema),
     defaultValues: {
-      nome: '', sexo: '', setor_id: '', tipo_contrato_id: '',
+      nome: '', sexo: 'M', setor_id: '', tipo_contrato_id: '',
       horas_semanais: 44, prefere_turno: 'none', evitar_dia_semana: 'none',
+      tipo_trabalhador: 'CLT', funcao_id: 'none',
     },
   })
 
@@ -141,9 +146,18 @@ export function ColaboradorDetalhe() {
     [colabId],
   )
 
+  // Funcoes do setor (recarrega quando setor muda)
+  const watchedSetorId = colabForm.watch('setor_id')
+  const setorIdNum = parseInt(watchedSetorId || '0')
+  const { data: funcoes } = useApiData<Funcao[]>(
+    () => setorIdNum > 0 ? funcoesService.listar(setorIdNum, true) : Promise.resolve([]),
+    [setorIdNum],
+  )
+
   const setoresList = setores ?? []
   const contratosList = tiposContrato ?? []
   const excecoesList = excecoes ?? []
+  const funcoesList = funcoes ?? []
 
   // Find selected contrato for template info
   const watchedContratoId = colabForm.watch('tipo_contrato_id')
@@ -160,6 +174,8 @@ export function ColaboradorDetalhe() {
         horas_semanais: colab.horas_semanais,
         prefere_turno: colab.prefere_turno ?? 'none',
         evitar_dia_semana: colab.evitar_dia_semana ?? 'none',
+        tipo_trabalhador: colab.tipo_trabalhador ?? 'CLT',
+        funcao_id: colab.funcao_id != null ? String(colab.funcao_id) : 'none',
       })
     }
   }, [colab, colabForm])
@@ -175,6 +191,8 @@ export function ColaboradorDetalhe() {
         horas_semanais: data.horas_semanais,
         prefere_turno: data.prefere_turno === 'none' ? null : data.prefere_turno as 'MANHA' | 'TARDE',
         evitar_dia_semana: data.evitar_dia_semana === 'none' ? null : data.evitar_dia_semana as DiaSemana,
+        tipo_trabalhador: data.tipo_trabalhador,
+        funcao_id: data.funcao_id === 'none' ? null : parseInt(data.funcao_id),
       })
       toast.success('Colaborador salvo')
     } catch (err) {
@@ -403,12 +421,68 @@ export function ColaboradorDetalhe() {
                       </span>
                     </FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} />
+                      <Input
+                        type="number"
+                        value={typeof field.value === 'number' ? field.value : ''}
+                        onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={colabForm.control}
+                  name="tipo_trabalhador"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tipo de Trabalhador</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="CLT">CLT</SelectItem>
+                          <SelectItem value="APRENDIZ">Menor Aprendiz</SelectItem>
+                          <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={colabForm.control}
+                  name="funcao_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Funcao / Posto</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sem funcao" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">Sem funcao definida</SelectItem>
+                          {funcoesList.map((f) => (
+                            <SelectItem key={f.id} value={String(f.id)}>
+                              {f.apelido}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               {selectedContrato && (
                 <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
                   Template:{' '}

@@ -298,7 +298,7 @@ ${violacoesHtml}
 </div>
 
 <div class="footer">
-  EscalaFlow v2 | Gerado em ${new Date().toLocaleDateString('pt-BR')}
+  EscalaFlow v3.1 | Gerado em ${new Date().toLocaleDateString('pt-BR')}
 </div>
 
 <script>

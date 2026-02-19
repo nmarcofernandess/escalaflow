@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -73,15 +73,18 @@ import { colaboradoresService } from '@/servicos/colaboradores'
 import { setoresService } from '@/servicos/setores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { excecoesService } from '@/servicos/excecoes'
+import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
 import { toast } from 'sonner'
-import type { Colaborador, Setor, TipoContrato, Excecao } from '@shared/index'
+import type { Colaborador, Setor, TipoContrato, Excecao, Funcao } from '@shared/index'
 
 const novoColabSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
   sexo: z.string().min(1, 'Selecione o sexo'),
   setor_id: z.string().min(1, 'Selecione o setor'),
   tipo_contrato_id: z.string().min(1, 'Selecione o tipo de contrato'),
+  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'APRENDIZ']),
+  funcao_id: z.string(),
 })
 
 type NovoColabData = z.infer<typeof novoColabSchema>
@@ -122,13 +125,14 @@ export function ColaboradorLista() {
   const [showArchived, setShowArchived] = useState(false)
   const [showNewDialog, setShowNewDialog] = useState(false)
   const [criando, setCriando] = useState(false)
+  const [funcoesNovo, setFuncoesNovo] = useState<Funcao[]>([])
   const [viewMode, setViewMode] = useViewMode('colaboradores', 'table')
   const [archivingId, setArchivingId] = useState<number | null>(null)
   const [arquivando, setArquivando] = useState(false)
 
   const novoColabForm = useForm<NovoColabData>({
     resolver: zodResolver(novoColabSchema),
-    defaultValues: { nome: '', sexo: '', setor_id: '', tipo_contrato_id: '' },
+    defaultValues: { nome: '', sexo: '', setor_id: '', tipo_contrato_id: '', tipo_trabalhador: 'CLT', funcao_id: 'none' },
   })
 
   const { data: todosColabs, loading: loadingColabs, reload: reloadColabs } = useApiData<Colaborador[]>(
@@ -158,6 +162,28 @@ export function ColaboradorLista() {
 
   const setorMap = new Map(setoresList.map((s) => [s.id, { nome: s.nome, icone: s.icone }]))
   const contratoMap = new Map(contratosList.map((tc) => [tc.id, tc.nome]))
+  const setorSelecionado = novoColabForm.watch('setor_id')
+
+  useEffect(() => {
+    if (!showNewDialog || !setorSelecionado) {
+      setFuncoesNovo([])
+      novoColabForm.setValue('funcao_id', 'none')
+      return
+    }
+
+    let active = true
+    funcoesService.listar(parseInt(setorSelecionado, 10))
+      .then((list) => {
+        if (active) setFuncoesNovo(list)
+      })
+      .catch(() => {
+        if (active) setFuncoesNovo([])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [showNewDialog, setorSelecionado, novoColabForm])
 
   // Map colaborador_id -> excecao tipo (ativa hoje)
   const excecaoMap = new Map<number, string>()
@@ -207,6 +233,8 @@ export function ColaboradorLista() {
         sexo: data.sexo as 'M' | 'F',
         setor_id: parseInt(data.setor_id),
         tipo_contrato_id: parseInt(data.tipo_contrato_id),
+        tipo_trabalhador: data.tipo_trabalhador,
+        funcao_id: data.funcao_id === 'none' ? null : parseInt(data.funcao_id, 10),
       })
       toast.success('Colaborador cadastrado')
       setShowNewDialog(false)
@@ -652,6 +680,53 @@ export function ColaboradorLista() {
                         {contratosList.map((tc) => (
                           <SelectItem key={tc.id} value={String(tc.id)}>
                             {tc.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={novoColabForm.control}
+                name="tipo_trabalhador"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tipo Trabalhador</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="CLT">CLT</SelectItem>
+                        <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
+                        <SelectItem value="APRENDIZ">Aprendiz</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={novoColabForm.control}
+                name="funcao_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Funcao (opcional)</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sem funcao" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">Sem funcao</SelectItem>
+                        {funcoesNovo.map((f) => (
+                          <SelectItem key={f.id} value={String(f.id)}>
+                            {f.apelido}
                           </SelectItem>
                         ))}
                       </SelectContent>

@@ -36,7 +36,7 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import type {
   Setor,
   Escala,
-  EscalaCompleta,
+  EscalaCompletaV3,
   Colaborador,
   Demanda,
   TipoContrato,
@@ -70,7 +70,7 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
   const [loaded, setLoaded] = useState(false)
 
   // Lazy loaded data
-  const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompleta | null>(null)
+  const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [demandas, setDemandas] = useState<Demanda[]>([])
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([])
@@ -267,7 +267,7 @@ function SectionIcon({ icone }: { icone: string | null }) {
 // ─── Section Tabs ───────────────────────────────────────────────────────────
 
 interface SectionTabsProps {
-  escalaCompleta: EscalaCompleta
+  escalaCompleta: EscalaCompletaV3
   colaboradores: Colaborador[]
   demandas: Demanda[]
   tiposContrato: TipoContrato[]
@@ -377,8 +377,8 @@ function SectionTabs({
 
 interface ResumoTableProps {
   colaboradores: Colaborador[]
-  alocacoes: EscalaCompleta['alocacoes']
-  violacoes: EscalaCompleta['violacoes']
+  alocacoes: EscalaCompletaV3['alocacoes']
+  violacoes: EscalaCompletaV3['violacoes']
   tiposContrato: TipoContrato[]
   dataInicio: string
   dataFim: string
@@ -394,8 +394,9 @@ function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataI
     // Sum real minutes per collaborator
     const minutosReais = new Map<number, number>()
     for (const a of alocacoes) {
-      if (a.status === 'TRABALHO' && a.minutos != null) {
-        minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + a.minutos)
+      const minutos = a.minutos_trabalho ?? a.minutos
+      if (a.status === 'TRABALHO' && minutos != null) {
+        minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + minutos)
       }
     }
 

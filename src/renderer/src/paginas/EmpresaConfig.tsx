@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Settings, Save, ShieldCheck, Monitor, Sun, Moon, Check } from 'lucide-react'
+import { Settings, Save, ShieldCheck, Monitor, Sun, Moon, Check, CalendarDays, Plus, Trash2, Lock } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -23,13 +25,22 @@ import {
   FormControl,
   FormMessage,
 } from '@/components/ui/form'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/componentes/PageHeader'
 import { empresaService } from '@/servicos/empresa'
+import { feriadosService } from '@/servicos/feriados'
 import { useApiData } from '@/hooks/useApiData'
 import { useColorTheme } from '@/hooks/useColorTheme'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { Empresa } from '@shared/index'
+import type { Empresa, Feriado } from '@shared/index'
 
 const empresaSchema = z.object({
   nome: z.string().min(1, 'Nome e obrigatorio'),
@@ -37,9 +48,24 @@ const empresaSchema = z.object({
   telefone: z.string(),
   corte_semanal: z.string().min(1, 'Selecione o corte semanal'),
   tolerancia_semanal_min: z.coerce.number().min(0, 'Minimo 0').max(120, 'Maximo 120 minutos'),
+  usa_cct_intervalo_reduzido: z.boolean(),
 })
 
-type EmpresaFormData = z.infer<typeof empresaSchema>
+type EmpresaFormInput = z.input<typeof empresaSchema>
+type EmpresaFormData = z.output<typeof empresaSchema>
+
+const ANO_ATUAL = new Date().getFullYear()
+
+const TIPO_FERIADO_LABEL: Record<string, string> = {
+  NACIONAL: 'Nacional',
+  ESTADUAL: 'Estadual',
+  MUNICIPAL: 'Municipal',
+}
+
+function formatarDataFeriado(data: string): string {
+  const [, mes, dia] = data.split('-')
+  return `${dia}/${mes}`
+}
 
 const REGRAS_CLT = [
   'Maximo de 6 dias seguidos de trabalho',
@@ -55,11 +81,25 @@ export function EmpresaConfig() {
     [],
   )
 
+  const anoAtual = ANO_ATUAL
+  const { data: feriados, reload: reloadFeriados } = useApiData<Feriado[]>(
+    () => feriadosService.listar(anoAtual),
+    [anoAtual],
+  )
+
   const [salvando, setSalvando] = useState(false)
   const { theme: currentMode, setTheme } = useTheme()
   const { colorTheme, setColorTheme } = useColorTheme()
 
-  const form = useForm<EmpresaFormData>({
+  // Feriado dialog state
+  const [showFeriadoDialog, setShowFeriadoDialog] = useState(false)
+  const [novoFeriadoData, setNovoFeriadoData] = useState('')
+  const [novoFeriadoNome, setNovoFeriadoNome] = useState('')
+  const [novoFeriadoTipo, setNovoFeriadoTipo] = useState('NACIONAL')
+  const [novoFeriadoProibido, setNovoFeriadoProibido] = useState(false)
+  const [criandoFeriado, setCriandoFeriado] = useState(false)
+
+  const form = useForm<EmpresaFormInput, unknown, EmpresaFormData>({
     resolver: zodResolver(empresaSchema),
     defaultValues: {
       nome: '',
@@ -67,6 +107,7 @@ export function EmpresaConfig() {
       telefone: '',
       corte_semanal: 'SEG_DOM',
       tolerancia_semanal_min: 30,
+      usa_cct_intervalo_reduzido: true,
     },
   })
 
@@ -78,6 +119,7 @@ export function EmpresaConfig() {
         telefone: empresa.telefone ?? '',
         corte_semanal: empresa.corte_semanal,
         tolerancia_semanal_min: empresa.tolerancia_semanal_min,
+        usa_cct_intervalo_reduzido: empresa.usa_cct_intervalo_reduzido,
       })
     }
   }, [empresa, form])
@@ -91,12 +133,49 @@ export function EmpresaConfig() {
         telefone: data.telefone.trim(),
         corte_semanal: data.corte_semanal,
         tolerancia_semanal_min: data.tolerancia_semanal_min,
+        min_intervalo_almoco_min: data.usa_cct_intervalo_reduzido ? 30 : 60,
+        usa_cct_intervalo_reduzido: data.usa_cct_intervalo_reduzido,
       })
       toast.success('Configuracoes salvas')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
     } finally {
       setSalvando(false)
+    }
+  }
+
+  const handleCriarFeriado = async () => {
+    if (!novoFeriadoData || !novoFeriadoNome) return
+    setCriandoFeriado(true)
+    try {
+      await feriadosService.criar({
+        data: novoFeriadoData,
+        nome: novoFeriadoNome.trim(),
+        tipo: novoFeriadoTipo as 'NACIONAL' | 'ESTADUAL' | 'MUNICIPAL',
+        proibido_trabalhar: novoFeriadoProibido,
+        cct_autoriza: true,
+      })
+      toast.success('Feriado adicionado')
+      setShowFeriadoDialog(false)
+      setNovoFeriadoData('')
+      setNovoFeriadoNome('')
+      setNovoFeriadoTipo('NACIONAL')
+      setNovoFeriadoProibido(false)
+      reloadFeriados()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao criar feriado')
+    } finally {
+      setCriandoFeriado(false)
+    }
+  }
+
+  const handleDeletarFeriado = async (id: number) => {
+    try {
+      await feriadosService.deletar(id)
+      toast.success('Feriado removido')
+      reloadFeriados()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao remover feriado')
     }
   }
 
@@ -225,7 +304,11 @@ export function EmpresaConfig() {
                               min={0}
                               max={120}
                               placeholder="30"
-                              {...field}
+                              value={typeof field.value === 'number' ? field.value : ''}
+                              onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                              onBlur={field.onBlur}
+                              name={field.name}
+                              ref={field.ref}
                             />
                           </FormControl>
                           <FormMessage />
@@ -234,10 +317,173 @@ export function EmpresaConfig() {
                     />
                   </div>
                 </div>
+
+                <Separator />
+
+                {/* CCT toggle */}
+                <div>
+                  <h4 className="mb-1 text-sm font-medium">Intervalo de almoco</h4>
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    A CCT do comercio autoriza reducao do almoco para 30 minutos com acordo escrito.
+                  </p>
+                  <FormField
+                    control={form.control}
+                    name="usa_cct_intervalo_reduzido"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center gap-3 rounded-lg border p-4">
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                          <div>
+                            <FormLabel className="text-sm font-medium">
+                              Usar regra da Convencao Coletiva (CCT)
+                            </FormLabel>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {field.value
+                                ? 'Almoco minimo: 30 minutos (CCT FecomercioSP)'
+                                : 'Almoco minimo: 1 hora (CLT Art. 71)'}
+                            </p>
+                          </div>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </CardContent>
             </Card>
           </form>
         </Form>
+
+        {/* Feriados */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CalendarDays className="size-4" />
+                Feriados {anoAtual}
+              </CardTitle>
+              <CardDescription className="mt-1">
+                O motor nao escala trabalho em feriados proibidos. Adicione municipais se necessario.
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setShowFeriadoDialog(true)}>
+              <Plus className="mr-1 size-3.5" />
+              Novo
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {(feriados ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Nenhum feriado cadastrado. Clique em &quot;Novo&quot; para adicionar.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {(feriados ?? []).sort((a, b) => a.data.localeCompare(b.data)).map((f) => {
+                  const isLocked = f.proibido_trabalhar
+                  return (
+                    <div
+                      key={f.id}
+                      className="flex items-center justify-between rounded-md border px-3 py-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-sm text-muted-foreground w-12 shrink-0">
+                          {formatarDataFeriado(f.data)}
+                        </span>
+                        <span className="text-sm font-medium">{f.nome}</span>
+                        <Badge variant="outline" className="text-[10px]">
+                          {TIPO_FERIADO_LABEL[f.tipo] ?? f.tipo}
+                        </Badge>
+                        {isLocked && (
+                          <div className="flex items-center gap-1 text-destructive">
+                            <Lock className="size-3" />
+                            <span className="text-[10px]">CCT proibe</span>
+                          </div>
+                        )}
+                      </div>
+                      {!isLocked && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeletarFeriado(f.id)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Dialog novo feriado */}
+        <Dialog open={showFeriadoDialog} onOpenChange={setShowFeriadoDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Adicionar Feriado</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Data</Label>
+                <Input
+                  type="date"
+                  value={novoFeriadoData}
+                  onChange={(e) => setNovoFeriadoData(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Nome</Label>
+                <Input
+                  placeholder="Ex: Aniversario da cidade"
+                  value={novoFeriadoNome}
+                  onChange={(e) => setNovoFeriadoNome(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tipo</Label>
+                <Select value={novoFeriadoTipo} onValueChange={setNovoFeriadoTipo}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NACIONAL">Nacional</SelectItem>
+                    <SelectItem value="ESTADUAL">Estadual</SelectItem>
+                    <SelectItem value="MUNICIPAL">Municipal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-3 rounded-lg border p-3">
+                <Switch
+                  checked={novoFeriadoProibido}
+                  onCheckedChange={setNovoFeriadoProibido}
+                />
+                <div>
+                  <p className="text-sm font-medium">Proibido trabalhar</p>
+                  <p className="text-xs text-muted-foreground">
+                    CCT proibe escala neste dia (ex: Natal, Ano Novo)
+                  </p>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowFeriadoDialog(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleCriarFeriado}
+                disabled={criandoFeriado || !novoFeriadoData || !novoFeriadoNome}
+              >
+                {criandoFeriado ? 'Adicionando...' : 'Adicionar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Card>
           <CardHeader>

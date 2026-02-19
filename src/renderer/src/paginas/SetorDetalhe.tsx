@@ -27,6 +27,9 @@ import {
   Users,
   ArrowRight,
   Archive,
+  Plus,
+  Trash2,
+  Briefcase,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -39,6 +42,7 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
   Form,
@@ -48,6 +52,21 @@ import {
   FormControl,
   FormMessage,
 } from '@/components/ui/form'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,15 +82,16 @@ import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { IconPicker } from '@/componentes/IconPicker'
-import { DemandaEditor } from '@/componentes/DemandaEditor'
+import { DemandaTimelineSingleLane } from '@/componentes/DemandaTimelineSingleLane'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
+import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
-import type { Setor, Demanda, Colaborador, Escala, TipoContrato } from '@shared/index'
+import type { Setor, Demanda, Colaborador, Escala, TipoContrato, Funcao, SetorHorarioSemana, SalvarTimelineDiaInput } from '@shared/index'
 
 function SortableColabRow({
   colab,
@@ -135,6 +155,7 @@ const setorSchema = z.object({
   icone: z.string().nullable(),
   hora_abertura: z.string().min(1, 'Hora de abertura e obrigatoria'),
   hora_fechamento: z.string().min(1, 'Hora de fechamento e obrigatoria'),
+  piso_operacional: z.number().int().min(1, 'Piso minimo é 1'),
 })
 
 type SetorFormData = z.infer<typeof setorSchema>
@@ -148,7 +169,7 @@ export function SetorDetalhe() {
   const [salvando, setSalvando] = useState(false)
   const setorForm = useForm<SetorFormData>({
     resolver: zodResolver(setorSchema),
-    defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '' },
+    defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '', piso_operacional: 1 },
   })
 
   // Data loading
@@ -159,6 +180,11 @@ export function SetorDetalhe() {
 
   const { data: demandas, reload: reloadDemandas } = useApiData<Demanda[]>(
     () => setoresService.listarDemandas(setorId),
+    [setorId],
+  )
+
+  const { data: horariosSemana, reload: reloadHorariosSemana } = useApiData<SetorHorarioSemana[]>(
+    () => setoresService.listarHorarioSemana(setorId),
     [setorId],
   )
 
@@ -177,7 +203,19 @@ export function SetorDetalhe() {
     [],
   )
 
+  const { data: funcoes, reload: reloadFuncoes } = useApiData<Funcao[]>(
+    () => funcoesService.listar(setorId),
+    [setorId],
+  )
+
   const contratoMap = new Map((tiposContrato ?? []).map((tc) => [tc.id, tc.nome]))
+  const funcoesList = funcoes ?? []
+
+  // Postos dialog state
+  const [showPostoDialog, setShowPostoDialog] = useState(false)
+  const [novoPostoApelido, setNovoPostoApelido] = useState('')
+  const [novoPostoContratoId, setNovoPostoContratoId] = useState('')
+  const [criandoPosto, setCriandoPosto] = useState(false)
 
   // DnD state - local ordered list for optimistic reorder
   const [orderedColabs, setOrderedColabs] = useState<Colaborador[]>([])
@@ -231,6 +269,7 @@ export function SetorDetalhe() {
         icone: setor.icone,
         hora_abertura: setor.hora_abertura,
         hora_fechamento: setor.hora_fechamento,
+        piso_operacional: setor.piso_operacional ?? 1,
       })
     }
   }, [setor, setorForm])
@@ -243,6 +282,7 @@ export function SetorDetalhe() {
         icone: data.icone ?? null,
         hora_abertura: data.hora_abertura,
         hora_fechamento: data.hora_fechamento,
+        piso_operacional: data.piso_operacional,
       })
       toast.success('Setor atualizado')
     } catch (err) {
@@ -252,36 +292,10 @@ export function SetorDetalhe() {
     }
   }
 
-  const handleCriarDemandaInline = useCallback(async (data: Omit<Demanda, 'id' | 'setor_id'>) => {
-    try {
-      await setoresService.criarDemanda(setorId, data)
-      toast.success('Demanda criada')
-      reloadDemandas()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao criar demanda')
-      throw err
-    }
-  }, [setorId, reloadDemandas])
-
-  const handleDeletarDemanda = useCallback(async (demandaId: number) => {
-    try {
-      await setoresService.deletarDemanda(demandaId)
-      toast.success('Demanda removida')
-      reloadDemandas()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao remover demanda')
-      throw err
-    }
-  }, [reloadDemandas])
-
-  const handleAtualizarDemanda = useCallback(async (id: number, data: Partial<Omit<Demanda, 'id' | 'setor_id'>>) => {
-    try {
-      await setoresService.atualizarDemanda(id, data)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar demanda')
-      throw err
-    }
-  }, [])
+  const handleSalvarTimelineDia = useCallback(async (data: SalvarTimelineDiaInput) => {
+    await setoresService.salvarTimelineDia(data)
+    await Promise.all([reloadDemandas(), reloadHorariosSemana()])
+  }, [reloadDemandas, reloadHorariosSemana])
 
   const handleArquivar = async () => {
     try {
@@ -290,6 +304,37 @@ export function SetorDetalhe() {
       navigate('/setores')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao arquivar setor')
+    }
+  }
+
+  const handleCriarPosto = async () => {
+    if (!novoPostoApelido.trim() || !novoPostoContratoId) return
+    setCriandoPosto(true)
+    try {
+      await funcoesService.criar({
+        setor_id: setorId,
+        apelido: novoPostoApelido.trim(),
+        tipo_contrato_id: parseInt(novoPostoContratoId),
+      })
+      toast.success('Posto criado')
+      setShowPostoDialog(false)
+      setNovoPostoApelido('')
+      setNovoPostoContratoId('')
+      reloadFuncoes()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao criar posto')
+    } finally {
+      setCriandoPosto(false)
+    }
+  }
+
+  const handleDeletarPosto = async (funcaoId: number) => {
+    try {
+      await funcoesService.deletar(funcaoId)
+      toast.success('Posto removido')
+      reloadFuncoes()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao remover posto')
     }
   }
 
@@ -383,7 +428,7 @@ export function SetorDetalhe() {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <FormField
                   control={setorForm.control}
                   name="hora_abertura"
@@ -410,6 +455,25 @@ export function SetorDetalhe() {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={setorForm.control}
+                  name="piso_operacional"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Piso Operacional</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={field.value}
+                          onChange={(e) => field.onChange(parseInt(e.target.value || '1', 10))}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
             </CardContent>
           </Card>
@@ -419,17 +483,83 @@ export function SetorDetalhe() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">
-              Demanda por Faixa Horaria
+              Demanda Planejada (Single-Lane)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <DemandaEditor
+            <DemandaTimelineSingleLane
               setor={setor}
               demandas={demandas ?? []}
-              onCriar={handleCriarDemandaInline}
-              onAtualizar={handleAtualizarDemanda}
-              onDeletar={handleDeletarDemanda}
+              horariosSemana={horariosSemana ?? []}
+              onSalvarDia={handleSalvarTimelineDia}
             />
+          </CardContent>
+        </Card>
+
+        {/* Postos (Funcoes) */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-base font-semibold">
+              Postos
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                (funcoes esperadas neste setor)
+              </span>
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
+              <Plus className="mr-1 size-3.5" /> Novo Posto
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {funcoesList.length === 0 ? (
+              <EmptyState
+                icon={Briefcase}
+                title="Nenhum posto definido"
+                description="Defina os postos de trabalho para organizar a equipe por funcao"
+                action={
+                  <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
+                    <Plus className="mr-1 size-3.5" /> Novo Posto
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="space-y-2">
+                {funcoesList.map((funcao) => {
+                  const contratoNome = contratoMap.get(funcao.tipo_contrato_id) ?? 'Contrato'
+                  return (
+                    <div
+                      key={funcao.id}
+                      className="flex items-center justify-between rounded-lg border p-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{funcao.apelido}</p>
+                        <p className="text-xs text-muted-foreground">{contratoNome}</p>
+                      </div>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remover posto?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              O posto &quot;{funcao.apelido}&quot; sera removido. Colaboradores vinculados a ele ficarao sem funcao definida.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDeletarPosto(funcao.id)}>
+                              Remover
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -549,6 +679,53 @@ export function SetorDetalhe() {
         </Card>
       </div>
 
+      {/* Novo Posto Dialog */}
+      <Dialog open={showPostoDialog} onOpenChange={setShowPostoDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo Posto</DialogTitle>
+            <DialogDescription>
+              Defina um posto de trabalho para este setor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Apelido do Posto</Label>
+              <Input
+                placeholder="Ex: Caixa, Repositor, Seguranca"
+                value={novoPostoApelido}
+                onChange={(e) => setNovoPostoApelido(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Contrato</Label>
+              <Select value={novoPostoContratoId} onValueChange={setNovoPostoContratoId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o contrato" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(tiposContrato ?? []).map((tc) => (
+                    <SelectItem key={tc.id} value={String(tc.id)}>
+                      {tc.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPostoDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleCriarPosto}
+              disabled={criandoPosto || !novoPostoApelido.trim() || !novoPostoContratoId}
+            >
+              {criandoPosto ? 'Criando...' : 'Criar Posto'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

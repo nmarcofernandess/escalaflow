@@ -14,18 +14,19 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
   // Agrupar por colaborador
   const porColaborador = violacoes.reduce(
     (acc, v) => {
-      if (!acc[v.colaborador_id]) {
-        acc[v.colaborador_id] = {
-          colaborador_id: v.colaborador_id,
-          colaborador_nome: v.colaborador_nome,
+      const key = v.colaborador_id ?? -1
+      if (!acc[key]) {
+        acc[key] = {
+          colaborador_id: key,
+          colaborador_nome: v.colaborador_nome || 'Setor',
           hard: [],
           soft: [],
         }
       }
       if (v.severidade === 'HARD') {
-        acc[v.colaborador_id].hard.push(v)
+        acc[key].hard.push(v)
       } else {
-        acc[v.colaborador_id].soft.push(v)
+        acc[key].soft.push(v)
       }
       return acc
     },
