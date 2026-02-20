@@ -1,43 +1,180 @@
-import { tipc } from '@egoist/tipc/main'
-import electron from 'electron'
 import { writeFile } from 'node:fs/promises'
-import { getDb, getDbPathForWorker } from './db/database'
+import { createRequire } from 'node:module'
+import { getDb } from './db/database'
 import { validarEscalaV3 } from './motor/validador'
-import { Worker } from 'node:worker_threads'
+import { buildSolverInput, computeSolverScenarioHash, runSolver } from './motor/solver-bridge'
 import path from 'node:path'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
-  GerarEscalaInput,
   PinnedCell,
   Escala,
   Alocacao,
   DashboardResumo,
   SetorResumo,
   AlertaDashboard,
+  SolverInput,
 } from '../shared'
+
+const require = createRequire(import.meta.url)
+const electron = require('electron') as typeof import('electron')
+const { tipc } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/main')
 
 const t = tipc.create()
 const { dialog, BrowserWindow } = electron
 
-/** Wraps a worker promise with a timeout. On timeout, terminates the worker and rejects. */
-function withTimeout<T>(workerPromise: Promise<T>, worker: Worker, ms = 30000): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>
-  return Promise.race([
-    workerPromise.then(result => { clearTimeout(timer); return result }),
-    new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        worker.terminate()
-        reject(new Error('A geracao demorou mais que o esperado. Tente novamente com menos colaboradores ou um periodo menor.'))
-      }, ms)
-    }),
-  ])
+type RegimeEscalaInput = '5X2' | '6X1'
+
+type SimulacaoRegimeOverride = {
+  colaborador_id: number
+  regime_escala: RegimeEscalaInput
+}
+
+type EscalaSimulacaoConfig = {
+  regimes_override?: SimulacaoRegimeOverride[]
+}
+
+function normalizeRegimesOverride(overrides?: SimulacaoRegimeOverride[]): SimulacaoRegimeOverride[] {
+  const map = new Map<number, RegimeEscalaInput>()
+  for (const o of overrides ?? []) {
+    if (!Number.isInteger(o.colaborador_id) || o.colaborador_id <= 0) continue
+    if (o.regime_escala !== '5X2' && o.regime_escala !== '6X1') continue
+    map.set(o.colaborador_id, o.regime_escala)
+  }
+  return [...map.entries()]
+    .map(([colaborador_id, regime_escala]) => ({ colaborador_id, regime_escala }))
+    .sort((a, b) => a.colaborador_id - b.colaborador_id)
+}
+
+function parseEscalaSimulacaoConfig(raw: string | null | undefined): EscalaSimulacaoConfig {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as EscalaSimulacaoConfig
+    return {
+      regimes_override: normalizeRegimesOverride(parsed?.regimes_override),
+    }
+  } catch {
+    return {}
+  }
+}
+
+function listDays(dataInicio: string, dataFim: string): string[] {
+  const out: string[] = []
+  const start = new Date(`${dataInicio}T00:00:00`)
+  const end = new Date(`${dataFim}T00:00:00`)
+  const d = new Date(start.getTime())
+  while (d <= end) {
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    out.push(iso)
+    d.setDate(d.getDate() + 1)
+  }
+  return out
+}
+
+function dayLabel(isoDate: string): 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM' {
+  const d = new Date(`${isoDate}T00:00:00`)
+  const week = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'] as const
+  return week[d.getDay()] === 'DOM' ? 'DOM' : week[d.getDay()]
+}
+
+function minutesBetween(h1: string, h2: string): number {
+  const [aH, aM] = h1.split(':').map(Number)
+  const [bH, bM] = h2.split(':').map(Number)
+  return Math.max(0, (bH * 60 + bM) - (aH * 60 + aM))
+}
+
+function enrichPreflightWithCapacityChecks(
+  input: SolverInput,
+  blockers: EscalaPreflightResult['blockers'],
+  warnings: EscalaPreflightResult['warnings'],
+): void {
+  const days = listDays(input.data_inicio, input.data_fim)
+  const piso = Math.max(1, Number(input.piso_operacional ?? 1))
+  const holidayForbidden = new Set(
+    input.feriados.filter((f) => f.proibido_trabalhar).map((f) => f.data),
+  )
+
+  const demandByDay = new Map<string, Array<{ min_pessoas: number; hora_inicio: string; hora_fim: string }>>()
+  for (const day of days) {
+    const label = dayLabel(day)
+    const active = input.demanda
+      .filter((d) => d.dia_semana === null || d.dia_semana === label)
+      .filter((d) => d.min_pessoas > 0)
+      .map((d) => ({ min_pessoas: d.min_pessoas, hora_inicio: d.hora_inicio, hora_fim: d.hora_fim }))
+    demandByDay.set(day, active)
+  }
+
+  for (const day of days) {
+    const dayDemand = demandByDay.get(day) ?? []
+    if (dayDemand.length === 0) continue
+
+    const label = dayLabel(day)
+    if (label === 'DOM' && input.colaboradores.every((c) => !c.trabalha_domingo)) {
+      blockers.push({
+        codigo: 'DOMINGO_SEM_COLABORADORES',
+        severidade: 'BLOCKER',
+        mensagem: `Ha demanda no domingo (${day}), mas nenhum colaborador aceita domingo.`,
+        detalhe: 'Ative domingo para alguem ou ajuste demanda.',
+      })
+      break
+    }
+
+    if (holidayForbidden.has(day)) {
+      blockers.push({
+        codigo: 'DEMANDA_EM_FERIADO_PROIBIDO',
+        severidade: 'BLOCKER',
+        mensagem: `Ha demanda no feriado proibido ${day}.`,
+        detalhe: 'Ajuste demanda do dia ou permissao de feriado.',
+      })
+      break
+    }
+
+    const peakDemand = dayDemand.reduce((acc, d) => Math.max(acc, d.min_pessoas), 0)
+    const requiredMin = Math.max(piso, peakDemand)
+    const availableCount = input.colaboradores.filter((c) => {
+      if (label === 'DOM' && !c.trabalha_domingo) return false
+      if (holidayForbidden.has(day)) return false
+      return !input.excecoes.some((e) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
+    }).length
+
+    if (availableCount < requiredMin) {
+      blockers.push({
+        codigo: 'CAPACIDADE_DIARIA_INSUFICIENTE',
+        severidade: 'BLOCKER',
+        mensagem: `Capacidade insuficiente em ${day}: disponiveis=${availableCount}, minimo requerido=${requiredMin}.`,
+        detalhe: 'Revise piso operacional, excecoes, regime dos contratos ou demanda.',
+      })
+      break
+    }
+  }
+
+  const requiredMinutes = days.reduce((accDay, day) => {
+    const segments = demandByDay.get(day) ?? []
+    return accDay + segments.reduce((accSeg, seg) => {
+      return accSeg + minutesBetween(seg.hora_inicio, seg.hora_fim) * seg.min_pessoas
+    }, 0)
+  }, 0)
+
+  const totalWeeksFactor = days.length / 7
+  const availableContractMinutes = input.colaboradores.reduce((acc, c) => {
+    return acc + (c.horas_semanais * 60 * totalWeeksFactor)
+  }, 0)
+
+  if (requiredMinutes > availableContractMinutes * 1.15) {
+    warnings.push({
+      codigo: 'DEMANDA_ACIMA_CAPACIDADE_ESTIMADA',
+      severidade: 'WARNING',
+      mensagem: 'Demanda do periodo parece acima da capacidade estimada da equipe.',
+      detalhe: `Demanda≈${Math.round(requiredMinutes)}min vs capacidade≈${Math.round(availableContractMinutes)}min.`,
+    })
+  }
 }
 
 function buildEscalaPreflight(
   setorId: number,
   dataInicio: string,
   dataFim: string,
+  regimesOverride?: SimulacaoRegimeOverride[],
 ): EscalaPreflightResult {
   const db = getDb()
   const blockers: EscalaPreflightResult['blockers'] = []
@@ -72,13 +209,29 @@ function buildEscalaPreflight(
       codigo: 'SEM_DEMANDA',
       severidade: 'WARNING',
       mensagem: 'Setor sem demanda planejada cadastrada.',
-      detalhe: 'O motor vai usar fallback por piso operacional.',
+      detalhe: 'O motor vai considerar demanda zero nos slots sem segmento cadastrado.',
     })
   }
 
   const feriadosNoPeriodo = (
     db.prepare('SELECT COUNT(*) as count FROM feriados WHERE data BETWEEN ? AND ?').get(dataInicio, dataFim) as { count: number }
   ).count
+
+  if (blockers.length === 0) {
+    try {
+      const input = buildSolverInput(setorId, dataInicio, dataFim, undefined, {
+        regimesOverride: normalizeRegimesOverride(regimesOverride),
+      })
+      enrichPreflightWithCapacityChecks(input, blockers, warnings)
+    } catch (err) {
+      warnings.push({
+        codigo: 'PREFLIGHT_DIAGNOSTICO_INDISPONIVEL',
+        severidade: 'WARNING',
+        mensagem: 'Nao foi possivel rodar o diagnostico de capacidade completo.',
+        detalhe: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
 
   return {
     ok: blockers.length === 0,
@@ -91,7 +244,7 @@ function buildEscalaPreflight(
       colaboradores_ativos: colabsAtivos,
       demandas_cadastradas: demandasCount,
       feriados_no_periodo: feriadosNoPeriodo,
-      fallback_piso: demandasCount === 0,
+      demanda_zero_fallback: demandasCount === 0,
     },
   }
 }
@@ -156,25 +309,44 @@ const tiposContratoBuscar = t.procedure
   })
 
 const tiposContratoCriar = t.procedure
-  .input<{ nome: string; horas_semanais: number; dias_trabalho: number; trabalha_domingo: boolean; max_minutos_dia: number }>()
+  .input<{
+    nome: string
+    horas_semanais: number
+    regime_escala?: '5X2' | '6X1'
+    dias_trabalho?: number
+    trabalha_domingo: boolean
+    max_minutos_dia: number
+  }>()
   .action(async ({ input }) => {
     const db = getDb()
+    const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
+    const diasTrabalho = regime === '5X2' ? 5 : 6
     const result = db.prepare(`
-      INSERT INTO tipos_contrato (nome, horas_semanais, dias_trabalho, trabalha_domingo, max_minutos_dia)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(input.nome, input.horas_semanais, input.dias_trabalho, input.trabalha_domingo ? 1 : 0, input.max_minutos_dia)
+      INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, trabalha_domingo, max_minutos_dia)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo ? 1 : 0, input.max_minutos_dia)
 
     return db.prepare('SELECT * FROM tipos_contrato WHERE id = ?').get(result.lastInsertRowid)
   })
 
 const tiposContratoAtualizar = t.procedure
-  .input<{ id: number; nome: string; horas_semanais: number; dias_trabalho: number; trabalha_domingo: boolean; max_minutos_dia: number }>()
+  .input<{
+    id: number
+    nome: string
+    horas_semanais: number
+    regime_escala?: '5X2' | '6X1'
+    dias_trabalho?: number
+    trabalha_domingo: boolean
+    max_minutos_dia: number
+  }>()
   .action(async ({ input }) => {
     const db = getDb()
+    const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
+    const diasTrabalho = regime === '5X2' ? 5 : 6
     db.prepare(`
-      UPDATE tipos_contrato SET nome = ?, horas_semanais = ?, dias_trabalho = ?,
+      UPDATE tipos_contrato SET nome = ?, horas_semanais = ?, regime_escala = ?, dias_trabalho = ?,
       trabalha_domingo = ?, max_minutos_dia = ? WHERE id = ?
-    `).run(input.nome, input.horas_semanais, input.dias_trabalho, input.trabalha_domingo ? 1 : 0, input.max_minutos_dia, input.id)
+    `).run(input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo ? 1 : 0, input.max_minutos_dia, input.id)
 
     return db.prepare('SELECT * FROM tipos_contrato WHERE id = ?').get(input.id)
   })
@@ -221,13 +393,16 @@ const setoresBuscar = t.procedure
   })
 
 const setoresCriar = t.procedure
-  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null }>()
+  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null; piso_operacional?: number }>()
   .action(async ({ input }) => {
     const db = getDb()
+    if (input.piso_operacional !== undefined && (!Number.isInteger(input.piso_operacional) || input.piso_operacional < 1)) {
+      throw new Error('piso_operacional deve ser inteiro >= 1')
+    }
     const result = db.prepare(`
-      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento)
-      VALUES (?, ?, ?, ?)
-    `).run(input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento)
+      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, piso_operacional)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento, input.piso_operacional ?? 1)
 
     return db.prepare('SELECT * FROM setores WHERE id = ?').get(result.lastInsertRowid)
   })
@@ -244,7 +419,13 @@ const setoresAtualizar = t.procedure
     if (input.hora_abertura !== undefined) { fields.push('hora_abertura = ?'); values.push(input.hora_abertura) }
     if (input.hora_fechamento !== undefined) { fields.push('hora_fechamento = ?'); values.push(input.hora_fechamento) }
     if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo ? 1 : 0) }
-    if (input.piso_operacional !== undefined) { fields.push('piso_operacional = ?'); values.push(input.piso_operacional) }
+    if (input.piso_operacional !== undefined) {
+      if (!Number.isInteger(input.piso_operacional) || input.piso_operacional < 1) {
+        throw new Error('piso_operacional deve ser inteiro >= 1')
+      }
+      fields.push('piso_operacional = ?')
+      values.push(input.piso_operacional)
+    }
 
     if (fields.length > 0) {
       values.push(input.id)
@@ -291,11 +472,30 @@ const setoresCriarDemanda = t.procedure
     const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(input.setor_id) as { hora_abertura: string; hora_fechamento: string } | undefined
     if (!setor) throw new Error('Setor nao encontrado')
 
-    if (input.hora_inicio < setor.hora_abertura) {
-      throw new Error(`Faixa inicia antes da abertura do setor (${setor.hora_abertura})`)
+    if (!Number.isInteger(input.min_pessoas) || input.min_pessoas < 1) {
+      throw new Error('min_pessoas deve ser inteiro >= 1')
     }
-    if (input.hora_fim > setor.hora_fechamento) {
-      throw new Error(`Faixa termina depois do fechamento do setor (${setor.hora_fechamento})`)
+
+    const horarioDia = input.dia_semana
+      ? (db.prepare(`
+          SELECT ativo, hora_abertura, hora_fechamento
+          FROM setor_horario_semana
+          WHERE setor_id = ? AND dia_semana = ?
+        `).get(input.setor_id, input.dia_semana) as { ativo: number; hora_abertura: string; hora_fechamento: string } | undefined)
+      : undefined
+
+    if (horarioDia && horarioDia.ativo === 0) {
+      throw new Error(`Dia ${input.dia_semana} esta inativo no horario semanal do setor`)
+    }
+
+    const abertura = horarioDia?.hora_abertura ?? setor.hora_abertura
+    const fechamento = horarioDia?.hora_fechamento ?? setor.hora_fechamento
+
+    if (input.hora_inicio < abertura) {
+      throw new Error(`Faixa inicia antes da abertura do setor (${abertura})`)
+    }
+    if (input.hora_fim > fechamento) {
+      throw new Error(`Faixa termina depois do fechamento do setor (${fechamento})`)
     }
 
     const result = db.prepare(`
@@ -310,16 +510,37 @@ const setoresAtualizarDemanda = t.procedure
   .input<{ id: number; dia_semana?: string | null; hora_inicio?: string; hora_fim?: string; min_pessoas?: number; override?: boolean }>()
   .action(async ({ input }) => {
     const db = getDb()
-    const demanda = db.prepare('SELECT * FROM demandas WHERE id = ?').get(input.id) as { setor_id: number } | undefined
+    const demanda = db.prepare('SELECT * FROM demandas WHERE id = ?').get(input.id) as { setor_id: number; dia_semana: string | null; hora_inicio: string; hora_fim: string } | undefined
     if (!demanda) throw new Error('Demanda nao encontrada')
 
     const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(demanda.setor_id) as { hora_abertura: string; hora_fechamento: string }
+    const diaSemAtual = input.dia_semana !== undefined ? input.dia_semana : demanda.dia_semana
+    const horarioDia = diaSemAtual
+      ? (db.prepare(`
+          SELECT ativo, hora_abertura, hora_fechamento
+          FROM setor_horario_semana
+          WHERE setor_id = ? AND dia_semana = ?
+        `).get(demanda.setor_id, diaSemAtual) as { ativo: number; hora_abertura: string; hora_fechamento: string } | undefined)
+      : undefined
 
-    if (input.hora_inicio && input.hora_inicio < setor.hora_abertura) {
-      throw new Error(`Faixa inicia antes da abertura do setor (${setor.hora_abertura})`)
+    if (horarioDia && horarioDia.ativo === 0) {
+      throw new Error(`Dia ${diaSemAtual} esta inativo no horario semanal do setor`)
     }
-    if (input.hora_fim && input.hora_fim > setor.hora_fechamento) {
-      throw new Error(`Faixa termina depois do fechamento do setor (${setor.hora_fechamento})`)
+
+    const abertura = horarioDia?.hora_abertura ?? setor.hora_abertura
+    const fechamento = horarioDia?.hora_fechamento ?? setor.hora_fechamento
+
+    const horaInicio = input.hora_inicio ?? demanda.hora_inicio
+    const horaFim = input.hora_fim ?? demanda.hora_fim
+
+    if (horaInicio < abertura) {
+      throw new Error(`Faixa inicia antes da abertura do setor (${abertura})`)
+    }
+    if (horaFim > fechamento) {
+      throw new Error(`Faixa termina depois do fechamento do setor (${fechamento})`)
+    }
+    if (input.min_pessoas !== undefined && (!Number.isInteger(input.min_pessoas) || input.min_pessoas < 1)) {
+      throw new Error('min_pessoas deve ser inteiro >= 1')
     }
 
     const fields: string[] = []
@@ -640,17 +861,47 @@ const escalasListarPorSetor = t.procedure
   })
 
 const escalasPreflight = t.procedure
-  .input<{ setor_id: number; data_inicio: string; data_fim: string }>()
+  .input<{
+    setor_id: number
+    data_inicio: string
+    data_fim: string
+    regimes_override?: SimulacaoRegimeOverride[]
+  }>()
   .action(async ({ input }): Promise<EscalaPreflightResult> => {
-    return buildEscalaPreflight(input.setor_id, input.data_inicio, input.data_fim)
+    return buildEscalaPreflight(
+      input.setor_id,
+      input.data_inicio,
+      input.data_fim,
+      normalizeRegimesOverride(input.regimes_override),
+    )
   })
 
 const escalasOficializar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     const db = getDb()
-    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(input.id) as { setor_id: number; status: string } | undefined
+    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(input.id) as {
+      setor_id: number
+      status: string
+      data_inicio: string
+      data_fim: string
+      input_hash?: string | null
+      simulacao_config_json?: string | null
+    } | undefined
     if (!escala) throw new Error('Escala nao encontrada')
+
+    if (escala.input_hash) {
+      const cfg = parseEscalaSimulacaoConfig(escala.simulacao_config_json ?? null)
+      const currentInput = buildSolverInput(escala.setor_id, escala.data_inicio, escala.data_fim, undefined, {
+        regimesOverride: cfg.regimes_override,
+      })
+      const currentHash = computeSolverScenarioHash(currentInput)
+      if (currentHash !== escala.input_hash) {
+        throw new Error(
+          'ESCALA_DESATUALIZADA: Houve mudancas no cenario (demanda/contratos/excecoes). Gere novamente a simulacao antes de oficializar.',
+        )
+      }
+    }
 
     const { indicadores } = validarEscalaV3(input.id, db)
 
@@ -676,7 +927,13 @@ const escalasAjustar = t.procedure
     const db = getDb()
     const escalaId = input.id
 
-    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as { setor_id: number; data_inicio: string; data_fim: string; status: string } | undefined
+    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as {
+      setor_id: number
+      data_inicio: string
+      data_fim: string
+      status: string
+      simulacao_config_json?: string | null
+    } | undefined
     if (!escala) throw new Error('Escala nao encontrada')
     if (escala.status !== 'RASCUNHO') {
       throw new Error('So e possivel ajustar escalas em rascunho')
@@ -685,53 +942,51 @@ const escalasAjustar = t.procedure
       throw new Error('Nenhuma alocacao fornecida para ajuste')
     }
 
-    // Converter alocacoes do usuário em PinnedCell[] v3.
-    // TRABALHO sem hora = "deve trabalhar neste dia" (horário livre para o motor).
-    const pinnedCells: PinnedCell[] = []
-    for (const a of input.alocacoes) {
-      pinnedCells.push({
-        colaborador_id: a.colaborador_id,
-        data: a.data,
-        status: a.status,
-        hora_inicio: a.hora_inicio ?? undefined,
-        hora_fim: a.hora_fim ?? undefined,
-      })
+    // Converter alocacoes do usuario em PinnedCell[] para o solver
+    const pinnedCells: PinnedCell[] = input.alocacoes.map(a => ({
+      colaborador_id: a.colaborador_id,
+      data: a.data,
+      status: a.status,
+      hora_inicio: a.hora_inicio ?? undefined,
+      hora_fim: a.hora_fim ?? undefined,
+    }))
+
+    // Build input e chamar solver Python
+    const cfg = parseEscalaSimulacaoConfig(escala.simulacao_config_json ?? null)
+    const solverInput = buildSolverInput(
+      escala.setor_id,
+      escala.data_inicio,
+      escala.data_fim,
+      pinnedCells,
+      {
+        regimesOverride: cfg.regimes_override,
+        hintsEscalaId: escalaId,
+      },
+    )
+    const inputHash = computeSolverScenarioHash(solverInput)
+    const solverResult = await runSolver(solverInput)
+
+    if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
+      if (solverResult.status === 'INFEASIBLE') {
+        const diag = buildEscalaPreflight(
+          escala.setor_id,
+          escala.data_inicio,
+          escala.data_fim,
+          cfg.regimes_override,
+        )
+        const blocker = diag.blockers[0]
+        if (blocker) {
+          throw new Error(`INFEASIBLE: ${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`)
+        }
+      }
+      throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
 
-    const dbPath = getDbPathForWorker()
-    const workerPath = path.join(__dirname, 'motor/worker.js')
+    const ind = solverResult.indicadores
+    const decisoes = solverResult.decisoes ?? []
+    const comparacao = solverResult.comparacao_demanda ?? []
 
-    const motorInput: GerarEscalaInput = {
-      setor_id: escala.setor_id,
-      data_inicio: escala.data_inicio,
-      data_fim: escala.data_fim,
-      pinned_cells: pinnedCells.length > 0 ? pinnedCells : undefined,
-    }
-
-    const ajustarWorker = new Worker(workerPath, {
-      workerData: { input: motorInput, dbPath },
-    })
-
-    const ajustarPromise = new Promise<any>((resolve, reject) => {
-      ajustarWorker.on('message', (msg) => {
-        if (msg.type === 'result') resolve(msg.data)
-        else if (msg.type === 'error') reject(new Error(msg.error))
-      })
-      ajustarWorker.on('error', reject)
-      ajustarWorker.on('exit', (code) => {
-        if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`))
-      })
-    })
-
-    const motor = await withTimeout(ajustarPromise, ajustarWorker)
-
-    if (!motor.sucesso) {
-      throw new Error(motor.erro?.mensagem ?? 'Erro ao gerar escala')
-    }
-
-    const motorEscala: EscalaCompletaV3 = motor.escala
-
-    // Persistir resultado do motor (substituir alocacoes + decisoes + comparacao)
+    // Persistir resultado do solver (substituir alocacoes + decisoes + comparacao)
     const persist = db.transaction(() => {
       db.prepare('DELETE FROM alocacoes WHERE escala_id = ?').run(escalaId)
       db.prepare('DELETE FROM escala_decisoes WHERE escala_id = ?').run(escalaId)
@@ -744,11 +999,11 @@ const escalasAjustar = t.procedure
            minutos_almoco, intervalo_15min, funcao_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      for (const a of motorEscala.alocacoes) {
+      for (const a of solverResult.alocacoes!) {
         insertAloc.run(
           escalaId, a.colaborador_id, a.data, a.status,
           a.hora_inicio ?? null, a.hora_fim ?? null,
-          a.minutos ?? null, a.minutos_trabalho ?? null,
+          a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
           a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
           a.minutos_almoco ?? null,
           a.intervalo_15min ? 1 : 0,
@@ -760,7 +1015,7 @@ const escalasAjustar = t.procedure
         INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
         VALUES (?, ?, ?, ?, ?, ?)
       `)
-      for (const d of motorEscala.decisoes) {
+      for (const d of decisoes) {
         insertDecisao.run(escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
       }
 
@@ -768,16 +1023,24 @@ const escalasAjustar = t.procedure
         INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      for (const c of motorEscala.comparacao_demanda) {
+      for (const c of comparacao) {
         insertComp.run(escalaId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ? 1 : 0, c.justificativa ?? null)
       }
 
-      const ind = motorEscala.indicadores
       db.prepare(`
         UPDATE escalas
-        SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?
+        SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?, input_hash = ?, simulacao_config_json = ?
         WHERE id = ?
-      `).run(ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio, escalaId)
+      `).run(
+        ind.pontuacao,
+        ind.cobertura_percent,
+        ind.violacoes_hard,
+        ind.violacoes_soft,
+        ind.equilibrio,
+        inputHash,
+        JSON.stringify({ regimes_override: cfg.regimes_override ?? [] } satisfies EscalaSimulacaoConfig),
+        escalaId,
+      )
     })
     persist()
 
@@ -785,9 +1048,18 @@ const escalasAjustar = t.procedure
     const alocacoesDB = db.prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id').all(escalaId) as Alocacao[]
 
     return {
-      ...motorEscala,
       escala: escalaAtual,
       alocacoes: alocacoesDB,
+      indicadores: ind,
+      violacoes: [],
+      antipatterns: [],
+      decisoes,
+      comparacao_demanda: comparacao,
+      timing: {
+        fase0_ms: 0, fase1_ms: 0, fase2_ms: 0, fase3_ms: 0,
+        fase4_ms: 0, fase5_ms: 0, fase6_ms: 0, fase7_ms: 0,
+        total_ms: solverResult.solve_time_ms,
+      },
     }
   })
 
@@ -799,72 +1071,69 @@ const escalasDeletar = t.procedure
     return undefined
   })
 
-// Gerar escala via worker thread
+// Gerar escala via Python OR-Tools solver
 const escalasGerar = t.procedure
-  .input<{ setor_id: number; data_inicio: string; data_fim: string }>()
+  .input<{
+    setor_id: number
+    data_inicio: string
+    data_fim: string
+    regimes_override?: SimulacaoRegimeOverride[]
+  }>()
   .action(async ({ input }): Promise<EscalaCompletaV3> => {
     const db = getDb()
     const setorId = input.setor_id
+    const regimesOverride = normalizeRegimesOverride(input.regimes_override)
 
-    // Preflight antes de spawnar worker.
-    const preflight = buildEscalaPreflight(setorId, input.data_inicio, input.data_fim)
+    // Preflight antes de chamar solver
+    const preflight = buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
     if (!preflight.ok) {
       const msg = preflight.blockers[0]?.mensagem ?? 'Preflight falhou'
       throw new Error(msg)
     }
 
-    const dbPath = getDbPathForWorker()
-    const workerPath = path.join(__dirname, 'motor/worker.js')
-
-    const motorInput: GerarEscalaInput = {
-      setor_id: setorId,
-      data_inicio: input.data_inicio,
-      data_fim: input.data_fim,
+    // Send solver logs to renderer for progress UI
+    const sendLog = (line: string) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('solver-log', line)
+      }
     }
 
-    const gerarWorker = new Worker(workerPath, {
-      workerData: { input: motorInput, dbPath },
+    sendLog('Montando modelo...')
+
+    // Build input e chamar solver Python
+    const solverInput = buildSolverInput(setorId, input.data_inicio, input.data_fim, undefined, {
+      regimesOverride,
     })
+    const inputHash = computeSolverScenarioHash(solverInput)
+    const solverResult = await runSolver(solverInput, undefined, sendLog)
 
-    const gerarPromise = new Promise<any>((resolve, reject) => {
-      gerarWorker.on('message', (msg) => {
-        if (msg.type === 'result') {
-          resolve(msg.data)
-        } else if (msg.type === 'error') {
-          reject(new Error(msg.error))
+    if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
+      if (solverResult.status === 'INFEASIBLE') {
+        const diag = buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
+        const blocker = diag.blockers[0]
+        if (blocker) {
+          throw new Error(`INFEASIBLE: ${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`)
         }
-      })
-      gerarWorker.on('error', (err) => {
-        console.error('[MOTOR] Worker error:', err)
-        reject(err)
-      })
-      gerarWorker.on('exit', (code) => {
-        if (code !== 0) {
-          console.error('[MOTOR] Worker exited with code:', code)
-          reject(new Error(`Worker stopped with exit code ${code}`))
-        }
-      })
-    })
-
-    const motor = await withTimeout(gerarPromise, gerarWorker)
-
-    if (!motor.sucesso) {
-      throw new Error(motor.erro?.mensagem ?? 'Erro ao gerar escala')
+      }
+      throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
 
-    const motorEscala: EscalaCompletaV3 = motor.escala
-    const ind = motorEscala.indicadores
+    const ind = solverResult.indicadores
+    const decisoes = solverResult.decisoes ?? []
+    const comparacao = solverResult.comparacao_demanda ?? []
 
     // Persist escala + alocacoes + decisoes + comparacao em transaction
     const persist = db.transaction(() => {
       const result = db.prepare(`
         INSERT INTO escalas
           (setor_id, data_inicio, data_fim, status, pontuacao,
-           cobertura_percent, violacoes_hard, violacoes_soft, equilibrio)
-        VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?)
+           cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json)
+        VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?)
       `).run(
         setorId, input.data_inicio, input.data_fim,
-        ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio
+        ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
+        inputHash,
+        JSON.stringify({ regimes_override: regimesOverride } satisfies EscalaSimulacaoConfig),
       )
 
       const escalaId = result.lastInsertRowid
@@ -876,11 +1145,11 @@ const escalasGerar = t.procedure
            minutos_almoco, intervalo_15min, funcao_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      for (const a of motorEscala.alocacoes) {
+      for (const a of solverResult.alocacoes!) {
         insertAloc.run(
           escalaId, a.colaborador_id, a.data, a.status,
           a.hora_inicio ?? null, a.hora_fim ?? null,
-          a.minutos ?? null, a.minutos_trabalho ?? null,
+          a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
           a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
           a.minutos_almoco ?? null,
           a.intervalo_15min ? 1 : 0,
@@ -892,7 +1161,7 @@ const escalasGerar = t.procedure
         INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
         VALUES (?, ?, ?, ?, ?, ?)
       `)
-      for (const d of motorEscala.decisoes) {
+      for (const d of decisoes) {
         insertDecisao.run(escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
       }
 
@@ -900,7 +1169,7 @@ const escalasGerar = t.procedure
         INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      for (const c of motorEscala.comparacao_demanda) {
+      for (const c of comparacao) {
         insertComp.run(escalaId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ? 1 : 0, c.justificativa ?? null)
       }
 
@@ -912,9 +1181,18 @@ const escalasGerar = t.procedure
     const alocacoesDB = db.prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id').all(escalaId) as Alocacao[]
 
     return {
-      ...motorEscala,
       escala: escalaAtual,
       alocacoes: alocacoesDB,
+      indicadores: ind,
+      violacoes: [],
+      antipatterns: [],
+      decisoes,
+      comparacao_demanda: comparacao,
+      timing: {
+        fase0_ms: 0, fase1_ms: 0, fase2_ms: 0, fase3_ms: 0,
+        fase4_ms: 0, fase5_ms: 0, fase6_ms: 0, fase7_ms: 0,
+        total_ms: solverResult.solve_time_ms,
+      },
     }
   })
 
@@ -1245,10 +1523,16 @@ const setoresSalvarTimelineDia = t.procedure
   }>()
   .action(async ({ input }) => {
     const db = getDb()
+
     const toMin = (hhmm: string): number => {
       const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm)
       if (!m) throw new Error(`Horario invalido: "${hhmm}"`)
       return Number(m[1]) * 60 + Number(m[2])
+    }
+    const toHHMM = (min: number): string => {
+      const hh = Math.floor(min / 60)
+      const mm = min % 60
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
     }
 
     const aberturaMin = toMin(input.hora_abertura)
@@ -1256,47 +1540,109 @@ const setoresSalvarTimelineDia = t.procedure
     if (aberturaMin >= fechamentoMin) {
       throw new Error('Horario invalido: abertura deve ser menor que fechamento')
     }
+    if (aberturaMin % 30 !== 0 || fechamentoMin % 30 !== 0) {
+      throw new Error('Horario de abertura/fechamento deve respeitar grid de 30min')
+    }
+    const duracaoJanela = fechamentoMin - aberturaMin
+    if (duracaoJanela % 30 !== 0) {
+      throw new Error('Janela diaria deve ser multipla de 30 minutos')
+    }
+
+    const setor = db.prepare('SELECT id FROM setores WHERE id = ?').get(input.setor_id) as { id: number } | undefined
+    if (!setor) throw new Error('Setor nao encontrado')
 
     if (!input.ativo && input.segmentos.length > 0) {
       throw new Error('Dia inativo nao pode ter segmentos de demanda')
     }
 
+    type SegmentoNormalizado = {
+      hora_inicio: string
+      hora_fim: string
+      min_pessoas: number
+      override: boolean
+    }
+
+    const parsedSegments = input.segmentos.map((seg, idx) => {
+      const inicio = toMin(seg.hora_inicio)
+      const fim = toMin(seg.hora_fim)
+
+      if (!Number.isInteger(seg.min_pessoas) || seg.min_pessoas < 1) {
+        throw new Error(`Segmento ${idx + 1}: min_pessoas invalido`)
+      }
+      if (inicio % 30 !== 0 || fim % 30 !== 0) {
+        throw new Error(`Segmento ${idx + 1}: horarios devem respeitar grid de 30min`)
+      }
+      if (inicio >= fim) {
+        throw new Error(`Segmento ${idx + 1}: hora_inicio deve ser menor que hora_fim`)
+      }
+      if (inicio < aberturaMin || fim > fechamentoMin) {
+        throw new Error(`Segmento ${idx + 1}: fora da janela de abertura/fechamento`)
+      }
+
+      return {
+        inicio,
+        fim,
+        min_pessoas: seg.min_pessoas,
+        override: Boolean(seg.override),
+      }
+    })
+
+    const slotsTotal = input.ativo ? Math.max(0, duracaoJanela / 30) : 0
+    let slotsOverlapDetectados = 0
+    let slotsPreenchidosComPiso = 0
+
+    let normalizados: SegmentoNormalizado[] = []
+
     if (input.ativo) {
-      if (input.segmentos.length === 0) {
-        throw new Error('Dia ativo precisa de ao menos 1 segmento de demanda')
+      const slotState = Array.from({ length: slotsTotal }, () => ({
+        pessoas: 0,
+        override: false,
+        layers: 0,
+      }))
+
+      for (const seg of parsedSegments) {
+        const startIdx = Math.floor((seg.inicio - aberturaMin) / 30)
+        const endIdx = Math.floor((seg.fim - aberturaMin) / 30)
+
+        for (let idx = startIdx; idx < endIdx; idx++) {
+          const slot = slotState[idx]
+          slot.pessoas += seg.min_pessoas
+          slot.override = slot.override || seg.override
+          slot.layers += 1
+        }
       }
 
-      let cursor = aberturaMin
-      for (let i = 0; i < input.segmentos.length; i++) {
-        const seg = input.segmentos[i]
-        const inicio = toMin(seg.hora_inicio)
-        const fim = toMin(seg.hora_fim)
-
-        if (!Number.isInteger(seg.min_pessoas) || seg.min_pessoas < 1) {
-          throw new Error(`Segmento ${i + 1}: min_pessoas invalido`)
-        }
-        if (inicio % 30 !== 0 || fim % 30 !== 0) {
-          throw new Error(`Segmento ${i + 1}: horarios devem respeitar grid de 30min`)
-        }
-        if (inicio >= fim) {
-          throw new Error(`Segmento ${i + 1}: hora_inicio deve ser menor que hora_fim`)
-        }
-        if (inicio < aberturaMin || fim > fechamentoMin) {
-          throw new Error(`Segmento ${i + 1}: fora da janela de abertura/fechamento`)
-        }
-
-        if (inicio !== cursor) {
-          if (inicio < cursor) {
-            throw new Error(`Segmento ${i + 1}: sobreposicao detectada na timeline`)
-          }
-          throw new Error(`Segmento ${i + 1}: gap detectado na timeline`)
-        }
-
-        cursor = fim
+      for (const slot of slotState) {
+        if (slot.layers > 1) slotsOverlapDetectados += 1
+        if (slot.pessoas === 0) slotsPreenchidosComPiso += 1
       }
 
-      if (cursor !== fechamentoMin) {
-        throw new Error('Timeline invalida: segmentos nao cobrem todo o periodo ativo do dia')
+      if (slotState.length > 0) {
+        let segStartIdx = 0
+        let segPeople = slotState[0].pessoas
+        let segOverride = slotState[0].override
+
+        for (let idx = 1; idx < slotState.length; idx++) {
+          const slot = slotState[idx]
+          if (slot.pessoas === segPeople && slot.override === segOverride) continue
+
+          normalizados.push({
+            hora_inicio: toHHMM(aberturaMin + segStartIdx * 30),
+            hora_fim: toHHMM(aberturaMin + idx * 30),
+            min_pessoas: segPeople,
+            override: segOverride,
+          })
+          segStartIdx = idx
+          segPeople = slot.pessoas
+          segOverride = slot.override
+        }
+
+        normalizados.push({
+          hora_inicio: toHHMM(aberturaMin + segStartIdx * 30),
+          hora_fim: toHHMM(fechamentoMin),
+          min_pessoas: segPeople,
+          override: segOverride,
+        })
       }
     }
 
@@ -1328,7 +1674,7 @@ const setoresSalvarTimelineDia = t.procedure
         INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
         VALUES (?, ?, ?, ?, ?, ?)
       `)
-      for (const seg of input.segmentos) {
+      for (const seg of normalizados) {
         insertDemanda.run(
           input.setor_id,
           input.dia_semana,
@@ -1347,6 +1693,11 @@ const setoresSalvarTimelineDia = t.procedure
         .get(input.setor_id, input.dia_semana),
       demandas: db.prepare('SELECT * FROM demandas WHERE setor_id = ? AND dia_semana = ? ORDER BY hora_inicio')
         .all(input.setor_id, input.dia_semana),
+      normalizacao: {
+        slots_total: slotsTotal,
+        slots_overlap_detectados: slotsOverlapDetectados,
+        slots_sem_demanda: slotsPreenchidosComPiso,
+      },
     }
   })
 

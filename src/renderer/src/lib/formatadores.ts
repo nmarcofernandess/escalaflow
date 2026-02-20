@@ -55,6 +55,15 @@ export function mapError(err: unknown): string {
     return 'Erro inesperado. Tente novamente ou reinicie o aplicativo.'
   }
   const m = msg.toLowerCase()
+  if (m.includes('cobertura abaixo do piso operacional') || m.includes('piso operacional')) {
+    return 'Nao foi possivel gerar uma escala valida para o periodo: cobertura ficou abaixo do piso operacional em alguns horarios. Ajuste demanda, periodo ou equipe.'
+  }
+  if (m.includes('setor') && (m.includes('nao encontrado') || m.includes('inativo'))) {
+    return 'O setor selecionado esta inativo ou nao foi encontrado.'
+  }
+  if (m.includes('empresa nao encontrada') || m.includes('empresa não encontrada')) {
+    return 'Configure os dados da empresa antes de gerar escalas.'
+  }
   if (m.includes('colaboradores ativos') || m.includes('nao tem colaboradores')) {
     return 'Cadastre ao menos 1 colaborador ativo neste setor antes de gerar a escala.'
   }
@@ -76,6 +85,10 @@ export function mapError(err: unknown): string {
   }
   if (m.includes('timeout') || m.includes('demorou')) {
     return 'A geracao demorou mais que o esperado. Tente novamente com menos colaboradores ou um periodo menor.'
+  }
+  // Se ja for uma mensagem curta e "humana", reaproveita em vez de mascarar.
+  if (!m.includes('typeerror') && !m.includes('referenceerror') && msg.length <= 220) {
+    return msg
   }
   // Fallback generico (RF6.1 - nao vazar stack trace ou mensagens tecnicas)
   return 'Erro inesperado. Tente novamente ou reinicie o aplicativo.'

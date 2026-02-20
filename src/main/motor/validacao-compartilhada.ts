@@ -61,7 +61,6 @@ export interface SlotGrid {
   hora_fim: string                        // 'HH:MM' (hora_inicio + 30min)
   target_planejado: number                // min_pessoas para este slot
   override: boolean                       // demanda.override = true
-  piso: number                            // setor.piso_operacional
   dia_fechado: boolean
   feriado_proibido: boolean
 }
@@ -184,10 +183,8 @@ export function resolveDemandaSlot(params: {
   dia: DiaSemana
   slotInicioMin: number
   slotFimMin: number
-  pisoOperacional: number
-}): { target_planejado: number; override: boolean; piso: number } {
-  const { demandas, dia, slotInicioMin, slotFimMin, pisoOperacional } = params
-  const piso = Math.max(1, pisoOperacional)
+}): { target_planejado: number; override: boolean } {
+  const { demandas, dia, slotInicioMin, slotFimMin } = params
 
   let targetDia = 0
   let targetLegacy = 0
@@ -213,9 +210,8 @@ export function resolveDemandaSlot(params: {
   const temDiaEspecifico = targetDia > 0
   const targetBruto = temDiaEspecifico ? targetDia : targetLegacy
   return {
-    target_planejado: Math.max(piso, targetBruto || piso),
+    target_planejado: targetBruto || 0,
     override: temDiaEspecifico ? overrideDia : overrideLegacy,
-    piso,
   }
 }
 
@@ -254,30 +250,10 @@ export function checkPisoOperacionalCobertura(
   colaboradores: ColabMotor[],
   resultado: Map<number, Map<string, CelulaMotor>>,
 ): Violacao[] {
-  const violacoes: Violacao[] = []
-  for (const slot of grid) {
-    if (slot.dia_fechado || slot.feriado_proibido) continue
-    const slotInicioMin = timeToMin(slot.hora_inicio)
-    const slotFimMin = timeToMin(slot.hora_fim)
-    const executado = countExecutadoNoSlot({
-      data: slot.data,
-      slotInicioMin,
-      slotFimMin,
-      colaboradores,
-      resultado,
-    })
-    if (executado >= slot.piso) continue
-
-    violacoes.push({
-      severidade: 'HARD',
-      regra: 'PISO_OPERACIONAL_MINIMO',
-      colaborador_id: null,
-      colaborador_nome: 'Setor',
-      data: slot.data,
-      mensagem: `Cobertura abaixo do piso operacional em ${slot.data} ${slot.hora_inicio}-${slot.hora_fim}: ${executado}/${slot.piso}`,
-    })
-  }
-  return violacoes
+  void grid
+  void colaboradores
+  void resultado
+  return []
 }
 
 export function minutosTrabalhoEfetivo(cel: CelulaMotor): number {
@@ -2259,8 +2235,6 @@ export function gerarSlotComparacao(params: {
     if (delta < 0) {
       if (slot.feriado_proibido) {
         justificativa = `Feriado proibido em ${slot.data} — todos os colaboradores indisponíveis (CCT FecomercioSP)`
-      } else if (executado < slot.piso) {
-        justificativa = `Abaixo do piso operacional (${executado}/${slot.piso}) no slot ${slot.hora_inicio}-${slot.hora_fim}`
       } else if (slot.override) {
         justificativa = `Slot override (${planejado}) nao foi totalmente atingido por restricoes HARD (CLT/CCT/interjornada)`
       } else {

@@ -5,13 +5,28 @@ import type {
   EscalaPreflightResult,
   AjustarAlocacaoRequest,
   StatusEscala,
+  RegimeEscala,
 } from '@shared/index'
 
 export const escalasService = {
-  gerar: (setorId: number, data: { data_inicio: string; data_fim: string }) =>
+  gerar: (
+    setorId: number,
+    data: {
+      data_inicio: string
+      data_fim: string
+      regimes_override?: Array<{ colaborador_id: number; regime_escala: RegimeEscala }>
+    },
+  ) =>
     client['escalas.gerar']({ setor_id: setorId, ...data }) as Promise<EscalaCompletaV3>,
 
-  preflight: (setorId: number, data: { data_inicio: string; data_fim: string }) =>
+  preflight: (
+    setorId: number,
+    data: {
+      data_inicio: string
+      data_fim: string
+      regimes_override?: Array<{ colaborador_id: number; regime_escala: RegimeEscala }>
+    },
+  ) =>
     client['escalas.preflight']({ setor_id: setorId, ...data }) as Promise<EscalaPreflightResult>,
 
   buscar: (id: number) =>

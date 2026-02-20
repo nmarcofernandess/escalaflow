@@ -54,10 +54,11 @@ function toHHMM(min: number): string {
 }
 
 function buildDefaultSegment(setor: Setor, abertura: string, fechamento: string): Segmento {
+  void setor
   return {
     hora_inicio: abertura,
     hora_fim: fechamento,
-    min_pessoas: Math.max(1, setor.piso_operacional ?? 1),
+    min_pessoas: 1,
     override: false,
   }
 }

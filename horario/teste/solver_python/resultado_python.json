@@ -1,0 +1,454 @@
+{
+  "solver": "ortools_cpsat",
+  "versao": "2.3_day_aware",
+  "status": "FEASIBLE",
+  "solve_time_ms": 120028.4,
+  "hierarquia": {
+    "hard": [
+      "H1",
+      "H2",
+      "H4",
+      "H6",
+      "H7b",
+      "H8",
+      "H9",
+      "H9b",
+      "H10",
+      "H20"
+    ],
+    "soft_demand_weight": 10000,
+    "surplus_weight": 5000,
+    "ap_weights": {
+      "AP1": 80
+    },
+    "spread_weight": 1
+  },
+  "alocacoes": {
+    "Cleonice": {
+      "2026-02-09": {
+        "inicio": "13:00",
+        "fim": "20:00",
+        "almoco": "13:30-14:00",
+        "minutos": 390,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "10:00",
+        "fim": "20:00",
+        "almoco": "11:00-13:00",
+        "minutos": 480,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "13:00",
+        "fim": "20:00",
+        "almoco": null,
+        "minutos": 420,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "16:00",
+        "fim": "20:00",
+        "almoco": null,
+        "minutos": 240,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "11:00-13:00",
+        "minutos": 510,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "08:30",
+        "fim": "20:00",
+        "almoco": "11:30-13:30",
+        "minutos": 570,
+        "status": "TRABALHO"
+      }
+    },
+    "Gabriel": {
+      "2026-02-09": {
+        "inicio": "08:00",
+        "fim": "16:30",
+        "almoco": "13:00-15:00",
+        "minutos": 390,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "11:00",
+        "fim": "20:00",
+        "almoco": "13:30-15:00",
+        "minutos": 450,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": null,
+        "fim": null,
+        "almoco": null,
+        "minutos": 0,
+        "status": "FOLGA"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "16:00",
+        "almoco": "14:00-15:00",
+        "minutos": 420,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "10:30",
+        "fim": "20:00",
+        "almoco": "12:00-14:00",
+        "minutos": 450,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "11:30",
+        "fim": "20:00",
+        "almoco": "13:30-15:00",
+        "minutos": 420,
+        "status": "TRABALHO"
+      }
+    },
+    "Ana Julia": {
+      "2026-02-09": {
+        "inicio": "10:00",
+        "fim": "19:30",
+        "almoco": "13:00-15:00",
+        "minutos": 450,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "08:00",
+        "fim": "12:00",
+        "almoco": null,
+        "minutos": 240,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "13:00-15:00",
+        "minutos": 510,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "10:00",
+        "fim": "20:00",
+        "almoco": "12:00-14:00",
+        "minutos": 480,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "11:00",
+        "fim": "20:00",
+        "almoco": "13:00-15:00",
+        "minutos": 420,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "12:30-14:30",
+        "minutos": 510,
+        "status": "TRABALHO"
+      }
+    },
+    "Yasmin": {
+      "2026-02-09": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": null,
+        "fim": null,
+        "almoco": null,
+        "minutos": 0,
+        "status": "FOLGA"
+      },
+      "2026-02-11": {
+        "inicio": "08:00",
+        "fim": "13:30",
+        "almoco": null,
+        "minutos": 330,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      }
+    },
+    "Mayumi": {
+      "2026-02-09": {
+        "inicio": null,
+        "fim": null,
+        "almoco": null,
+        "minutos": 0,
+        "status": "FOLGA"
+      },
+      "2026-02-10": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "14:00",
+        "fim": "20:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "08:00",
+        "fim": "13:30",
+        "almoco": null,
+        "minutos": 330,
+        "status": "TRABALHO"
+      }
+    },
+    "Heloisa": {
+      "2026-02-09": {
+        "inicio": "13:00",
+        "fim": "19:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "14:00",
+        "fim": "20:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "14:00",
+        "fim": "20:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "13:30",
+        "almoco": null,
+        "minutos": 330,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": null,
+        "fim": null,
+        "almoco": null,
+        "minutos": 0,
+        "status": "FOLGA"
+      },
+      "2026-02-14": {
+        "inicio": "14:00",
+        "fim": "20:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      }
+    }
+  },
+  "horas_semanais": {
+    "Cleonice": 2610,
+    "Gabriel": 2130,
+    "Ana Julia": 2610,
+    "Yasmin": 1770,
+    "Mayumi": 1770,
+    "Heloisa": 1770
+  },
+  "indicadores": {
+    "deficit_total": 0,
+    "surplus_total": 13,
+    "cobertura_percent": 100.0,
+    "spread_semanal_min": 840,
+    "violacoes_hard": 0,
+    "ap1_excess_total_slots": 6,
+    "objective_value": 66320,
+    "total_demand_slots": 393
+  },
+  "validacao_pos_solve": [
+    {
+      "tipo": "AP10/H20",
+      "pessoa": "Cleonice",
+      "dia": "2026-02-09",
+      "detalhe": "Apenas 30min antes do almoco (min 120)"
+    },
+    {
+      "tipo": "AP10/H20",
+      "pessoa": "Cleonice",
+      "dia": "2026-02-10",
+      "detalhe": "Apenas 60min antes do almoco (min 120)"
+    },
+    {
+      "tipo": "AP10/H20",
+      "pessoa": "Cleonice",
+      "dia": "2026-02-13",
+      "detalhe": "Apenas 90min antes do almoco (min 120)"
+    },
+    {
+      "tipo": "AP2",
+      "pessoa": "Cleonice",
+      "detalhe": "Spread diario 330min (max ideal 120)"
+    },
+    {
+      "tipo": "AP10/H20",
+      "pessoa": "Gabriel",
+      "dia": "2026-02-09",
+      "detalhe": "Apenas 90min apos almoco (min 120)"
+    },
+    {
+      "tipo": "AP10/H20",
+      "pessoa": "Gabriel",
+      "dia": "2026-02-12",
+      "detalhe": "Apenas 60min apos almoco (min 120)"
+    },
+    {
+      "tipo": "AP10/H20",
+      "pessoa": "Gabriel",
+      "dia": "2026-02-13",
+      "detalhe": "Apenas 90min antes do almoco (min 120)"
+    },
+    {
+      "tipo": "AP2",
+      "pessoa": "Ana Julia",
+      "detalhe": "Spread diario 270min (max ideal 120)"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Yasmin",
+      "dia": "2026-02-09",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Yasmin",
+      "dia": "2026-02-11",
+      "detalhe": "Jornada 330min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Yasmin",
+      "dia": "2026-02-12",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Yasmin",
+      "dia": "2026-02-13",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Yasmin",
+      "dia": "2026-02-14",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Mayumi",
+      "dia": "2026-02-10",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Mayumi",
+      "dia": "2026-02-11",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Mayumi",
+      "dia": "2026-02-12",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Mayumi",
+      "dia": "2026-02-13",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Mayumi",
+      "dia": "2026-02-14",
+      "detalhe": "Jornada 330min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Heloisa",
+      "dia": "2026-02-09",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Heloisa",
+      "dia": "2026-02-10",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Heloisa",
+      "dia": "2026-02-11",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Heloisa",
+      "dia": "2026-02-12",
+      "detalhe": "Jornada 330min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "H7_INFO",
+      "pessoa": "Heloisa",
+      "dia": "2026-02-14",
+      "detalhe": "Jornada 360min (>4h <=6h) - direito a 15min"
+    },
+    {
+      "tipo": "AP9",
+      "dia": "2026-02-09",
+      "slot": "13:30",
+      "detalhe": "3/5 em almoco"
+    }
+  ]
+}

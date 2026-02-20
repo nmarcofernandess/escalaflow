@@ -1,0 +1,561 @@
+{
+  "solver": "escalaflow_motor_v3",
+  "status": "OK",
+  "solve_time_ms": 75,
+  "alocacoes": {
+    "CLEONICE": {
+      "2026-02-09": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "12:30-13:00",
+        "minutos": 600,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "12:30-13:00",
+        "minutos": 600,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "12:30-13:00",
+        "minutos": 600,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "12:30-13:00",
+        "minutos": 600,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "09:30",
+        "fim": "20:00",
+        "almoco": "12:30-13:00",
+        "minutos": 600,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": null,
+        "fim": null,
+        "almoco": null,
+        "minutos": 0,
+        "status": "FOLGA"
+      }
+    },
+    "GABRIEL": {
+      "2026-02-09": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "14:00",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "10:30",
+        "fim": "16:30",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "11:30",
+        "fim": "20:00",
+        "almoco": "14:30-15:00",
+        "minutos": 480,
+        "status": "TRABALHO"
+      }
+    },
+    "ANA JULIA": {
+      "2026-02-09": {
+        "inicio": null,
+        "fim": null,
+        "almoco": null,
+        "minutos": 0,
+        "status": "FOLGA"
+      },
+      "2026-02-10": {
+        "inicio": "08:00",
+        "fim": "16:00",
+        "almoco": "11:30-12:00",
+        "minutos": 450,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "08:00",
+        "fim": "18:30",
+        "almoco": "11:30-12:00",
+        "minutos": 600,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "18:30",
+        "almoco": "11:30-12:00",
+        "minutos": 600,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "08:00",
+        "fim": "16:00",
+        "almoco": "11:30-12:00",
+        "minutos": 450,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "08:00",
+        "fim": "16:00",
+        "almoco": "11:30-12:00",
+        "minutos": 450,
+        "status": "TRABALHO"
+      }
+    },
+    "ALICE": {
+      "2026-02-09": {
+        "inicio": "14:00",
+        "fim": "19:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "08:00",
+        "fim": "13:30",
+        "almoco": null,
+        "minutos": 330,
+        "status": "TRABALHO"
+      }
+    },
+    "MAYUMI": {
+      "2026-02-09": {
+        "inicio": "12:30",
+        "fim": "18:30",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "08:00",
+        "fim": "13:30",
+        "almoco": null,
+        "minutos": 330,
+        "status": "TRABALHO"
+      }
+    },
+    "HELOISA": {
+      "2026-02-09": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-10": {
+        "inicio": "11:30",
+        "fim": "17:30",
+        "almoco": null,
+        "minutos": 360,
+        "status": "TRABALHO"
+      },
+      "2026-02-11": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-12": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-13": {
+        "inicio": "08:00",
+        "fim": "13:00",
+        "almoco": null,
+        "minutos": 300,
+        "status": "TRABALHO"
+      },
+      "2026-02-14": {
+        "inicio": "08:00",
+        "fim": "13:30",
+        "almoco": null,
+        "minutos": 330,
+        "status": "TRABALHO"
+      }
+    }
+  },
+  "indicadores": {
+    "pontuacao": 40,
+    "cobertura_percent": 62,
+    "violacoes_hard": 0,
+    "violacoes_soft": 68,
+    "equilibrio": 90
+  },
+  "horas_semanais": {
+    "CLEONICE": 3000,
+    "GABRIEL": 2280,
+    "ANA JULIA": 2550,
+    "ALICE": 1830,
+    "MAYUMI": 1890,
+    "HELOISA": 1890
+  },
+  "violacoes": [
+    {
+      "severidade": "SOFT",
+      "regra": "H10_META_SEMANAL",
+      "colaborador_nome": "CLEONICE",
+      "mensagem": "CLEONICE trabalhou 50h0min na semana de 2026-02-09 (meta proporcional: 37h43min, tolerância: ±30min)",
+      "data": "2026-02-09"
+    },
+    {
+      "severidade": "SOFT",
+      "regra": "H10_META_SEMANAL",
+      "colaborador_nome": "GABRIEL",
+      "mensagem": "GABRIEL trabalhou 38h0min na semana de 2026-02-09 (meta proporcional: 30h51min, tolerância: ±30min)",
+      "data": "2026-02-09"
+    },
+    {
+      "severidade": "SOFT",
+      "regra": "H10_META_SEMANAL",
+      "colaborador_nome": "ANA JULIA",
+      "mensagem": "ANA JULIA trabalhou 42h30min na semana de 2026-02-09 (meta proporcional: 37h43min, tolerância: ±30min)",
+      "data": "2026-02-09"
+    },
+    {
+      "severidade": "SOFT",
+      "regra": "H10_META_SEMANAL",
+      "colaborador_nome": "ALICE",
+      "mensagem": "ALICE trabalhou 30h30min na semana de 2026-02-09 (meta proporcional: 25h43min, tolerância: ±30min)",
+      "data": "2026-02-09"
+    },
+    {
+      "severidade": "SOFT",
+      "regra": "H10_META_SEMANAL",
+      "colaborador_nome": "MAYUMI",
+      "mensagem": "MAYUMI trabalhou 31h30min na semana de 2026-02-09 (meta proporcional: 25h43min, tolerância: ±30min)",
+      "data": "2026-02-09"
+    },
+    {
+      "severidade": "SOFT",
+      "regra": "H10_META_SEMANAL",
+      "colaborador_nome": "HELOISA",
+      "mensagem": "HELOISA trabalhou 31h30min na semana de 2026-02-09 (meta proporcional: 25h43min, tolerância: ±30min)",
+      "data": "2026-02-09"
+    }
+  ],
+  "decisoes": [
+    {
+      "colaborador_nome": "CLEONICE",
+      "data": "2026-02-09",
+      "acao": "ALOCADO",
+      "razao": "CLEONICE alocado: 09:30-20:00 (600min efetivos)"
+    },
+    {
+      "colaborador_nome": "CLEONICE",
+      "data": "2026-02-10",
+      "acao": "ALOCADO",
+      "razao": "CLEONICE alocado: 09:30-20:00 (600min efetivos)"
+    },
+    {
+      "colaborador_nome": "CLEONICE",
+      "data": "2026-02-11",
+      "acao": "ALOCADO",
+      "razao": "CLEONICE alocado: 09:30-20:00 (600min efetivos)"
+    },
+    {
+      "colaborador_nome": "CLEONICE",
+      "data": "2026-02-12",
+      "acao": "ALOCADO",
+      "razao": "CLEONICE alocado: 09:30-20:00 (600min efetivos)"
+    },
+    {
+      "colaborador_nome": "CLEONICE",
+      "data": "2026-02-13",
+      "acao": "ALOCADO",
+      "razao": "CLEONICE alocado: 09:30-20:00 (600min efetivos)"
+    },
+    {
+      "colaborador_nome": "CLEONICE",
+      "data": "2026-02-14",
+      "acao": "FOLGA",
+      "razao": "CLEONICE — folga programada em 2026-02-14"
+    },
+    {
+      "colaborador_nome": "GABRIEL",
+      "data": "2026-02-09",
+      "acao": "ALOCADO",
+      "razao": "GABRIEL alocado: 08:00-14:00 (360min efetivos)"
+    },
+    {
+      "colaborador_nome": "GABRIEL",
+      "data": "2026-02-10",
+      "acao": "ALOCADO",
+      "razao": "GABRIEL alocado: 08:00-14:00 (360min efetivos)"
+    },
+    {
+      "colaborador_nome": "GABRIEL",
+      "data": "2026-02-11",
+      "acao": "ALOCADO",
+      "razao": "GABRIEL alocado: 08:00-14:00 (360min efetivos)"
+    },
+    {
+      "colaborador_nome": "GABRIEL",
+      "data": "2026-02-12",
+      "acao": "ALOCADO",
+      "razao": "GABRIEL alocado: 08:00-14:00 (360min efetivos)"
+    },
+    {
+      "colaborador_nome": "GABRIEL",
+      "data": "2026-02-13",
+      "acao": "ALOCADO",
+      "razao": "GABRIEL alocado: 10:30-16:30 (360min efetivos)"
+    },
+    {
+      "colaborador_nome": "GABRIEL",
+      "data": "2026-02-14",
+      "acao": "ALOCADO",
+      "razao": "GABRIEL alocado: 11:30-20:00 (480min efetivos)"
+    },
+    {
+      "colaborador_nome": "ANA JULIA",
+      "data": "2026-02-09",
+      "acao": "FOLGA",
+      "razao": "ANA JULIA — folga programada em 2026-02-09"
+    },
+    {
+      "colaborador_nome": "ANA JULIA",
+      "data": "2026-02-10",
+      "acao": "ALOCADO",
+      "razao": "ANA JULIA alocado: 08:00-16:00 (450min efetivos)"
+    },
+    {
+      "colaborador_nome": "ANA JULIA",
+      "data": "2026-02-11",
+      "acao": "ALOCADO",
+      "razao": "ANA JULIA alocado: 08:00-18:30 (600min efetivos)"
+    },
+    {
+      "colaborador_nome": "ANA JULIA",
+      "data": "2026-02-12",
+      "acao": "ALOCADO",
+      "razao": "ANA JULIA alocado: 08:00-18:30 (600min efetivos)"
+    },
+    {
+      "colaborador_nome": "ANA JULIA",
+      "data": "2026-02-13",
+      "acao": "ALOCADO",
+      "razao": "ANA JULIA alocado: 08:00-16:00 (450min efetivos)"
+    },
+    {
+      "colaborador_nome": "ANA JULIA",
+      "data": "2026-02-14",
+      "acao": "ALOCADO",
+      "razao": "ANA JULIA alocado: 08:00-16:00 (450min efetivos)"
+    },
+    {
+      "colaborador_nome": "ALICE",
+      "data": "2026-02-09",
+      "acao": "ALOCADO",
+      "razao": "ALICE alocado: 14:00-19:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "ALICE",
+      "data": "2026-02-10",
+      "acao": "ALOCADO",
+      "razao": "ALICE alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "ALICE",
+      "data": "2026-02-11",
+      "acao": "ALOCADO",
+      "razao": "ALICE alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "ALICE",
+      "data": "2026-02-12",
+      "acao": "ALOCADO",
+      "razao": "ALICE alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "ALICE",
+      "data": "2026-02-13",
+      "acao": "ALOCADO",
+      "razao": "ALICE alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "ALICE",
+      "data": "2026-02-14",
+      "acao": "ALOCADO",
+      "razao": "ALICE alocado: 08:00-13:30 (330min efetivos)"
+    },
+    {
+      "colaborador_nome": "MAYUMI",
+      "data": "2026-02-09",
+      "acao": "ALOCADO",
+      "razao": "MAYUMI alocado: 12:30-18:30 (360min efetivos)"
+    },
+    {
+      "colaborador_nome": "MAYUMI",
+      "data": "2026-02-10",
+      "acao": "ALOCADO",
+      "razao": "MAYUMI alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "MAYUMI",
+      "data": "2026-02-11",
+      "acao": "ALOCADO",
+      "razao": "MAYUMI alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "MAYUMI",
+      "data": "2026-02-12",
+      "acao": "ALOCADO",
+      "razao": "MAYUMI alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "MAYUMI",
+      "data": "2026-02-13",
+      "acao": "ALOCADO",
+      "razao": "MAYUMI alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "MAYUMI",
+      "data": "2026-02-14",
+      "acao": "ALOCADO",
+      "razao": "MAYUMI alocado: 08:00-13:30 (330min efetivos)"
+    },
+    {
+      "colaborador_nome": "HELOISA",
+      "data": "2026-02-09",
+      "acao": "ALOCADO",
+      "razao": "HELOISA alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "HELOISA",
+      "data": "2026-02-10",
+      "acao": "ALOCADO",
+      "razao": "HELOISA alocado: 11:30-17:30 (360min efetivos)"
+    },
+    {
+      "colaborador_nome": "HELOISA",
+      "data": "2026-02-11",
+      "acao": "ALOCADO",
+      "razao": "HELOISA alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "HELOISA",
+      "data": "2026-02-12",
+      "acao": "ALOCADO",
+      "razao": "HELOISA alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "HELOISA",
+      "data": "2026-02-13",
+      "acao": "ALOCADO",
+      "razao": "HELOISA alocado: 08:00-13:00 (300min efetivos)"
+    },
+    {
+      "colaborador_nome": "HELOISA",
+      "data": "2026-02-14",
+      "acao": "ALOCADO",
+      "razao": "HELOISA alocado: 08:00-13:30 (330min efetivos)"
+    }
+  ],
+  "timing": {
+    "fase0_ms": 1.763417000000004,
+    "fase1_ms": 3.8567920000000413,
+    "fase2_ms": 0.2281669999999849,
+    "fase3_ms": 0.09266700000000583,
+    "fase4_ms": 0.07262500000001637,
+    "fase5_ms": 0.06579099999999016,
+    "fase6_ms": 62.5798759999999,
+    "fase7_ms": 4.970250000000078,
+    "total_ms": 73.65137500000003,
+    "otimizacao_ms": 57.5542079999999,
+    "otimizacao_moves": 20
+  }
+}

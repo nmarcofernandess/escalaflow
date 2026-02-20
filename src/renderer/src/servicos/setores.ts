@@ -1,5 +1,11 @@
 import { client } from './client'
-import type { Setor, Demanda, SetorHorarioSemana, SalvarTimelineDiaInput } from '@shared/index'
+import type {
+  Setor,
+  Demanda,
+  SetorHorarioSemana,
+  SalvarTimelineDiaInput,
+  SalvarTimelineDiaOutput,
+} from '@shared/index'
 
 export const setoresService = {
   listar: (ativo?: boolean) =>
@@ -8,7 +14,7 @@ export const setoresService = {
   buscar: (id: number) =>
     client['setores.buscar']({ id }) as Promise<Setor>,
 
-  criar: (data: { nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null }) =>
+  criar: (data: { nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null; piso_operacional?: number }) =>
     client['setores.criar'](data) as Promise<Setor>,
 
   atualizar: (id: number, data: Partial<Setor>) =>
@@ -45,5 +51,5 @@ export const setoresService = {
     client['setores.upsertHorarioSemana'](data as any) as Promise<SetorHorarioSemana>,
 
   salvarTimelineDia: (data: SalvarTimelineDiaInput) =>
-    client['setores.salvarTimelineDia'](data as any) as Promise<{ horario: SetorHorarioSemana; demandas: Demanda[] }>,
+    client['setores.salvarTimelineDia'](data as any) as Promise<SalvarTimelineDiaOutput>,
 }

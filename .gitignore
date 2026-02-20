@@ -28,6 +28,13 @@ data/escalaflow.db
 data/escalaflow.db-wal
 data/escalaflow.db-shm
 
+# Solver build artifacts
+solver-bin/
+solver/build/
+solver/dist/
+solver/__pycache__/
+solver/*.egg-info/
+
 # IDE
 .idea/
 .vscode/

@@ -8,6 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Table,
@@ -55,7 +62,7 @@ import type { TipoContrato } from '@shared/index'
 const contratoSchema = z.object({
   nome: z.string().min(1, 'Nome e obrigatorio'),
   horas_semanais: z.coerce.number().min(1, 'Minimo 1h').max(44, 'Maximo 44h'),
-  dias_trabalho: z.coerce.number().min(1, 'Minimo 1 dia').max(6, 'Maximo 6 dias'),
+  regime_escala: z.enum(['5X2', '6X1']),
   max_minutos_dia: z.coerce.number().min(60, 'Minimo 60 min').max(600, 'Maximo 600 min'),
   trabalha_domingo: z.boolean(),
 })
@@ -66,7 +73,7 @@ type ContratoFormData = z.output<typeof contratoSchema>
 const DEFAULTS: ContratoFormInput = {
   nome: '',
   horas_semanais: 44,
-  dias_trabalho: 6,
+  regime_escala: '6X1',
   max_minutos_dia: 570,
   trabalha_domingo: true,
 }
@@ -101,7 +108,7 @@ export function ContratoLista() {
     form.reset({
       nome: tc.nome,
       horas_semanais: tc.horas_semanais,
-      dias_trabalho: tc.dias_trabalho,
+      regime_escala: tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1'),
       max_minutos_dia: tc.max_minutos_dia,
       trabalha_domingo: tc.trabalha_domingo,
     })
@@ -110,12 +117,14 @@ export function ContratoLista() {
 
   const onSubmit = async (data: ContratoFormData) => {
     setSalvando(true)
+    const diasTrabalho = data.regime_escala === '5X2' ? 5 : 6
+    const payload = { ...data, dias_trabalho: diasTrabalho }
     try {
       if (editingId) {
-        await tiposContratoService.atualizar(editingId, data)
+        await tiposContratoService.atualizar(editingId, payload)
         toast.success('Tipo de contrato atualizado')
       } else {
-        await tiposContratoService.criar(data)
+        await tiposContratoService.criar(payload)
         toast.success('Tipo de contrato cadastrado')
       }
       setShowDialog(false)
@@ -219,6 +228,7 @@ export function ContratoLista() {
                 <TableRow>
                   <TableHead className="pl-4">Nome</TableHead>
                   <TableHead>Horas/semana</TableHead>
+                  <TableHead>Regime</TableHead>
                   <TableHead>Dias</TableHead>
                   <TableHead>Max/dia</TableHead>
                   <TableHead>Domingo</TableHead>
@@ -230,6 +240,7 @@ export function ContratoLista() {
                   <TableRow key={tc.id}>
                     <TableCell className="pl-4 font-medium">{tc.nome}</TableCell>
                     <TableCell>{tc.horas_semanais}h</TableCell>
+                    <TableCell>{tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1')}</TableCell>
                     <TableCell>{tc.dias_trabalho} dias</TableCell>
                     <TableCell>{formatarMinutos(tc.max_minutos_dia)}</TableCell>
                     <TableCell>
@@ -295,6 +306,9 @@ export function ContratoLista() {
                       <span className="flex items-center gap-1">
                         <Clock className="size-3" />
                         {tc.horas_semanais}h/semana
+                      </span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground">
+                        {tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1')}
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="size-3" />
@@ -391,22 +405,24 @@ export function ContratoLista() {
                 />
                 <FormField
                   control={form.control}
-                  name="dias_trabalho"
+                  name="regime_escala"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Dias de Trabalho</FormLabel>
+                      <FormLabel>Regime</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="6"
-                          value={typeof field.value === 'number' ? field.value : ''}
-                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                        />
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o regime" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="6X1">6x1 (6 dias + 1 folga)</SelectItem>
+                            <SelectItem value="5X2">5x2 (5 dias + 2 folgas)</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Dias/semana: {form.watch('regime_escala') === '5X2' ? 5 : 6}
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}

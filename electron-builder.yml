@@ -5,6 +5,11 @@ directories:
   output: dist
 files:
   - 'out/**/*'
+extraResources:
+  - from: 'solver-bin/'
+    to: 'solver-bin/'
+    filter:
+      - '**/*'
 asarUnpack:
   - '**/*.node'
   - '**/better-sqlite3/**'

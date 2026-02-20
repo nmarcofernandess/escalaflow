@@ -5,9 +5,10 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "db:reset": "node scripts/db-reset.mjs",
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
@@ -16,7 +17,9 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test:motor": "npm run build && npx electron . --test-motor"
+    "test:motor": "npm run build && env -u ELECTRON_RUN_AS_NODE npx electron . --test-motor",
+    "solver:build": "cd solver && pyinstaller escalaflow-solver.spec --distpath ../solver-bin/ --clean --noconfirm",
+    "solver:test": "echo '{\"setor_id\":1,\"data_inicio\":\"2026-03-02\",\"data_fim\":\"2026-03-07\",\"piso_operacional\":1,\"empresa\":{\"tolerancia_semanal_min\":30,\"hora_abertura\":\"08:00\",\"hora_fechamento\":\"17:00\",\"min_intervalo_almoco_min\":60,\"max_intervalo_almoco_min\":120,\"grid_minutos\":30},\"colaboradores\":[{\"id\":1,\"nome\":\"Test\",\"horas_semanais\":44,\"dias_trabalho\":6,\"max_minutos_dia\":600,\"trabalha_domingo\":true,\"tipo_trabalhador\":\"CLT\",\"sexo\":\"M\",\"funcao_id\":null,\"rank\":1}],\"demanda\":[{\"dia_semana\":\"SEG\",\"hora_inicio\":\"08:00\",\"hora_fim\":\"14:00\",\"min_pessoas\":1}],\"feriados\":[],\"excecoes\":[],\"pinned_cells\":[],\"config\":{\"max_time_seconds\":30,\"num_workers\":4}}' | python3 solver/solver_ortools.py"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

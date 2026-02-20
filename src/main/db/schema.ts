@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS tipos_contrato (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
     horas_semanais INTEGER NOT NULL,
+    regime_escala TEXT NOT NULL DEFAULT '6X1' CHECK (regime_escala IN ('5X2', '6X1')),
     dias_trabalho INTEGER NOT NULL,
     trabalha_domingo INTEGER NOT NULL DEFAULT 1,
     max_minutos_dia INTEGER NOT NULL DEFAULT 600
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS setores (
     icone TEXT,
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
+    piso_operacional INTEGER NOT NULL DEFAULT 1,
     ativo INTEGER NOT NULL DEFAULT 1
 );
 
@@ -74,6 +76,8 @@ CREATE TABLE IF NOT EXISTS escalas (
     violacoes_hard INTEGER DEFAULT 0,
     violacoes_soft INTEGER DEFAULT 0,
     equilibrio REAL DEFAULT 0,
+    input_hash TEXT,
+    simulacao_config_json TEXT,
     criada_em TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -181,7 +185,7 @@ function minToHHMM(min: number): string {
  * Migra demandas legadas (dia_semana = null) para o formato v3.1 por dia.
  * Estratégia:
  * - agrega cobertura por slot de 30min (somando sobreposições)
- * - preenche slots sem cobertura com piso_operacional
+ * - mantém slots sem cobertura como 0
  * - comprime slots contínuos em segmentos
  * - regrava todas as demandas do setor por SEG..DOM
  *
@@ -203,7 +207,6 @@ function migrateLegacyDemandasNullToByDay(): void {
     id: number
     hora_abertura: string
     hora_fechamento: string
-    piso_operacional: number | null
   }
   type DemandaRow = {
     dia_semana: string | null
@@ -214,7 +217,7 @@ function migrateLegacyDemandasNullToByDay(): void {
   }
 
   const setores = db.prepare(`
-    SELECT id, hora_abertura, hora_fechamento, piso_operacional
+    SELECT id, hora_abertura, hora_fechamento
     FROM setores
   `).all() as SetorRow[]
 
@@ -242,7 +245,6 @@ function migrateLegacyDemandasNullToByDay(): void {
       const fechamento = toMin(setor.hora_fechamento)
       if (abertura >= fechamento) continue
 
-      const piso = Math.max(1, setor.piso_operacional ?? 1)
       const rebuilt: Array<{
         dia: string
         inicio: number
@@ -267,7 +269,7 @@ function migrateLegacyDemandasNullToByDay(): void {
             }
           }
 
-          if (pessoas <= 0) pessoas = piso
+          if (pessoas <= 0) pessoas = 0
           slots.push({ pessoas, override })
         }
 
@@ -281,25 +283,29 @@ function migrateLegacyDemandasNullToByDay(): void {
           const s = slots[i]
           if (s.pessoas === segPeople && s.override === segOverride) continue
 
-          rebuilt.push({
-            dia,
-            inicio: segStart,
-            fim: abertura + i * 30,
-            pessoas: segPeople,
-            override: segOverride ? 1 : 0,
-          })
+          if (segPeople > 0) {
+            rebuilt.push({
+              dia,
+              inicio: segStart,
+              fim: abertura + i * 30,
+              pessoas: segPeople,
+              override: segOverride ? 1 : 0,
+            })
+          }
           segStart = abertura + i * 30
           segPeople = s.pessoas
           segOverride = s.override
         }
 
-        rebuilt.push({
-          dia,
-          inicio: segStart,
-          fim: fechamento,
-          pessoas: segPeople,
-          override: segOverride ? 1 : 0,
-        })
+        if (segPeople > 0) {
+          rebuilt.push({
+            dia,
+            inicio: segStart,
+            fim: fechamento,
+            pessoas: segPeople,
+            override: segOverride ? 1 : 0,
+          })
+        }
       }
 
       deleteDemandas.run(setor.id)
@@ -320,6 +326,8 @@ function migrateLegacyDemandasNullToByDay(): void {
 }
 
 function migrateSchema(): void {
+  const db = getDb()
+
   // --- v2.1: cnpj + telefone ---
   const empresaCols = getColumnNames('empresa')
   addColumnIfMissing('empresa', 'cnpj', "TEXT NOT NULL DEFAULT ''", empresaCols)
@@ -328,12 +336,30 @@ function migrateSchema(): void {
   // --- v2.2: icone ---
   addColumnIfMissing('setores', 'icone', 'TEXT')
 
+  // --- v2.4: regime de escala no contrato ---
+  const contratoCols = getColumnNames('tipos_contrato')
+  addColumnIfMissing('tipos_contrato', 'regime_escala', "TEXT NOT NULL DEFAULT '6X1'", contratoCols)
+  db.exec(`
+    UPDATE tipos_contrato
+    SET regime_escala = CASE
+      WHEN dias_trabalho <= 5 THEN '5X2'
+      ELSE '6X1'
+    END
+    WHERE regime_escala IS NULL OR regime_escala NOT IN ('5X2', '6X1')
+  `)
+
+  // --- v2.5: piso operacional no setor ---
+  const setorCols = getColumnNames('setores')
+  addColumnIfMissing('setores', 'piso_operacional', 'INTEGER NOT NULL DEFAULT 1', setorCols)
+
   // --- v2.3: indicadores escalas ---
   const escalaCols = getColumnNames('escalas')
   addColumnIfMissing('escalas', 'cobertura_percent', 'REAL DEFAULT 0', escalaCols)
   addColumnIfMissing('escalas', 'violacoes_hard', 'INTEGER DEFAULT 0', escalaCols)
   addColumnIfMissing('escalas', 'violacoes_soft', 'INTEGER DEFAULT 0', escalaCols)
   addColumnIfMissing('escalas', 'equilibrio', 'REAL DEFAULT 0', escalaCols)
+  addColumnIfMissing('escalas', 'input_hash', 'TEXT', escalaCols)
+  addColumnIfMissing('escalas', 'simulacao_config_json', 'TEXT', escalaCols)
 
   // ==========================================================================
   // v3.1 — Motor v3 schema migration (RFC §12.1)
@@ -343,9 +369,6 @@ function migrateSchema(): void {
   addColumnIfMissing('empresa', 'min_intervalo_almoco_min', 'INTEGER NOT NULL DEFAULT 60', empresaCols)
   addColumnIfMissing('empresa', 'usa_cct_intervalo_reduzido', 'INTEGER NOT NULL DEFAULT 1', empresaCols)
   addColumnIfMissing('empresa', 'grid_minutos', 'INTEGER NOT NULL DEFAULT 30', empresaCols)
-
-  // Setor: +piso_operacional
-  addColumnIfMissing('setores', 'piso_operacional', 'INTEGER NOT NULL DEFAULT 1')
 
   // Colaborador: +tipo_trabalhador, +funcao_id
   const colabCols = getColumnNames('colaboradores')

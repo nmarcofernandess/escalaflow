@@ -40,7 +40,6 @@ import {
   checkS4_FolgaPreferida,
   checkS5_ConsistenciaHorario,
   resolveDemandaSlot,
-  checkPisoOperacionalCobertura,
   calcularScoreV3,
   calcularIndicadoresV3,
   gerarSlotComparacao,
@@ -293,7 +292,6 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
         dia: diaLabel,
         slotInicioMin: slotStart,
         slotFimMin: slotStart + CLT.GRID_MINUTOS,
-        pisoOperacional: setor.piso_operacional ?? 1,
       })
 
       grid.push({
@@ -302,7 +300,6 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
         hora_fim: minToTime(slotStart + CLT.GRID_MINUTOS),
         target_planejado: resolved.target_planejado,
         override: resolved.override,
-        piso: resolved.piso,
         dia_fechado: false,
         feriado_proibido: false,
       })
@@ -328,9 +325,7 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
     corte_semanal: corteSemanal,
   }
 
-  const hardBase = validarTudoV3(validarParams)
-  const pisoViolacoes = checkPisoOperacionalCobertura(grid, colaboradores, resultado)
-  const violacoes = [...hardBase, ...pisoViolacoes]
+  const violacoes = validarTudoV3(validarParams)
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 9. Rodar APs Tier 1 + Tier 2 + SOFT (mesmo padrão do gerador Fase 7)

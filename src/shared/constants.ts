@@ -105,6 +105,10 @@ export type Severidade = (typeof SEVERIDADES)[number]
 export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'APRENDIZ'] as const
 export type TipoTrabalhador = (typeof TIPOS_TRABALHADOR)[number]
 
+// --- Regimes de escala por contrato ---
+export const REGIMES_ESCALA = ['5X2', '6X1'] as const
+export type RegimeEscala = (typeof REGIMES_ESCALA)[number]
+
 // --- Tipos de feriado (v3) ---
 export const TIPOS_FERIADO = ['NACIONAL', 'ESTADUAL', 'MUNICIPAL'] as const
 export type TipoFeriado = (typeof TIPOS_FERIADO)[number]

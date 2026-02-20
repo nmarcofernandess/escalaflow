@@ -1,12 +1,15 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
+import { createRequire } from 'node:module'
+import electron from 'electron'
 import { createTables } from './db/schema'
 import { seedData } from './db/seed'
 import { closeDb, getDb } from './db/database'
 import { runMotorTest } from './motor/test-motor'
 
 let mainWindow: import('electron').BrowserWindow | null = null
+const require = createRequire(import.meta.url)
 
 const isTestMotor = process.argv.includes('--test-motor')
 
@@ -73,15 +76,11 @@ async function bootstrap(): Promise<void> {
     process.exit(code)
     return
   }
-
-  const electron = await import('electron')
   const { app, BrowserWindow, shell } = electron
 
   app.whenReady().then(async () => {
-    const [{ registerIpcMain }, { router }] = await Promise.all([
-      import('@egoist/tipc/main'),
-      import('./tipc'),
-    ])
+    const { registerIpcMain } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/main')
+    const { router } = await import('./tipc')
     registerIpcMain(router)
     createWindow(BrowserWindow, shell)
 

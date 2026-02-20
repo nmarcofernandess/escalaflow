@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -78,29 +78,98 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { cn } from '@/lib/utils'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { IconPicker } from '@/componentes/IconPicker'
-import { DemandaTimelineSingleLane } from '@/componentes/DemandaTimelineSingleLane'
+import { DemandaEditor } from '@/componentes/DemandaEditor'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { funcoesService } from '@/servicos/funcoes'
+import { excecoesService } from '@/servicos/excecoes'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
-import type { Setor, Demanda, Colaborador, Escala, TipoContrato, Funcao, SetorHorarioSemana, SalvarTimelineDiaInput } from '@shared/index'
+import type {
+  Setor,
+  Demanda,
+  Colaborador,
+  Escala,
+  TipoContrato,
+  Funcao,
+  Excecao,
+  SetorHorarioSemana,
+  SalvarTimelineDiaInput,
+} from '@shared/index'
 
+// ─── Posto Card (read-only dashboard) ─────────────────────────────────
+function PostoCard({
+  funcao,
+  ocupante,
+  isAusente,
+  onDeletar,
+}: {
+  funcao: Funcao
+  ocupante: Colaborador | null
+  isAusente: boolean
+  onDeletar: (funcaoId: number) => void
+}) {
+  return (
+    <div
+      className={cn(
+        'group relative flex flex-col items-center gap-1.5 rounded-lg border px-4 py-3 min-w-[110px]',
+        !ocupante && 'border-dashed border-muted-foreground/25',
+        ocupante && !isAusente && 'border-green-500/30 bg-green-500/5 dark:bg-green-500/10',
+        ocupante && isAusente && 'border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10',
+      )}
+    >
+      {!ocupante && (
+        <button
+          type="button"
+          onClick={() => onDeletar(funcao.id)}
+          className="absolute -right-1.5 -top-1.5 hidden size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-destructive group-hover:flex"
+        >
+          <Trash2 className="size-3" />
+        </button>
+      )}
+      <span className="text-sm font-medium">{funcao.apelido}</span>
+      {ocupante ? (
+        isAusente ? (
+          <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-600 dark:text-amber-400">
+            Ausente
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px] border-green-500/40 text-green-600 dark:text-green-400">
+            Ocupado
+          </Badge>
+        )
+      ) : (
+        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+          Vago
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+// ─── Sortable Collaborator Row ─────────────────────────────────────────
 function SortableColabRow({
   colab,
   index,
   contratoNome,
+  excecaoTipo,
+  funcoesList,
+  onPostoChange,
 }: {
   colab: Colaborador
   index: number
   contratoNome: string
+  excecaoTipo: string | null
+  funcoesList: Funcao[]
+  onPostoChange: (colabId: number, funcaoId: number | null) => void
 }) {
   const {
     attributes,
@@ -117,6 +186,11 @@ function SortableColabRow({
     opacity: isDragging ? 0.5 : 1,
   }
 
+  const currentValue =
+    colab.funcao_id != null && funcoesList.some((f) => f.id === colab.funcao_id)
+      ? String(colab.funcao_id)
+      : '__none__'
+
   return (
     <TableRow ref={setNodeRef} style={style}>
       <TableCell className="w-[40px] pl-4">
@@ -131,13 +205,42 @@ function SortableColabRow({
       <TableCell>
         <Badge variant="outline" className="text-[10px]">{contratoNome}</Badge>
       </TableCell>
+      <TableCell>
+        <Select
+          value={currentValue}
+          onValueChange={(v) => onPostoChange(colab.id, v === '__none__' ? null : parseInt(v))}
+        >
+          <SelectTrigger className="h-7 w-[130px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">
+              <span className="text-muted-foreground">Sem posto</span>
+            </SelectItem>
+            {funcoesList.map((f) => (
+              <SelectItem key={f.id} value={String(f.id)}>
+                {f.apelido}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
       <TableCell className="text-muted-foreground">
         {colab.sexo === 'M' ? 'Masc' : 'Fem'}
       </TableCell>
-      <TableCell className="text-muted-foreground">
-        {colab.prefere_turno
-          ? colab.prefere_turno === 'MANHA' ? 'Manha' : 'Tarde'
-          : '—'}
+      <TableCell>
+        {excecaoTipo ? (
+          <Badge variant="outline" className={cn(
+            'text-[10px]',
+            excecaoTipo === 'FERIAS' && 'border-amber-500/40 text-amber-600 dark:text-amber-400',
+            excecaoTipo === 'ATESTADO' && 'border-red-500/40 text-red-600 dark:text-red-400',
+            excecaoTipo === 'BLOQUEIO' && 'border-muted-foreground/40 text-muted-foreground',
+          )}>
+            {excecaoTipo === 'FERIAS' ? 'Ferias' : excecaoTipo === 'ATESTADO' ? 'Atestado' : 'Bloqueio'}
+          </Badge>
+        ) : (
+          <span className="text-xs text-green-600 dark:text-green-400">Ativo</span>
+        )}
       </TableCell>
       <TableCell className="text-right pr-4">
         <Button variant="ghost" size="sm" asChild>
@@ -150,16 +253,19 @@ function SortableColabRow({
   )
 }
 
+// ─── Form schema ───────────────────────────────────────────────────────
 const setorSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
   icone: z.string().nullable(),
   hora_abertura: z.string().min(1, 'Hora de abertura e obrigatoria'),
   hora_fechamento: z.string().min(1, 'Hora de fechamento e obrigatoria'),
-  piso_operacional: z.number().int().min(1, 'Piso minimo é 1'),
+  piso_operacional: z.coerce.number().int().min(1, 'Minimo 1 pessoa'),
 })
 
-type SetorFormData = z.infer<typeof setorSchema>
+type SetorFormInput = z.input<typeof setorSchema>
+type SetorFormData = z.output<typeof setorSchema>
 
+// ─── Main Component ────────────────────────────────────────────────────
 export function SetorDetalhe() {
   const { id } = useParams<{ id: string }>()
   const setorId = parseInt(id!)
@@ -167,12 +273,12 @@ export function SetorDetalhe() {
 
   // Form
   const [salvando, setSalvando] = useState(false)
-  const setorForm = useForm<SetorFormData>({
+  const setorForm = useForm<SetorFormInput, unknown, SetorFormData>({
     resolver: zodResolver(setorSchema),
     defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '', piso_operacional: 1 },
   })
 
-  // Data loading
+  // ─── Data loading ────────────────────────────────────────────────────
   const { data: setor, loading: loadingSetor } = useApiData<Setor>(
     () => setoresService.buscar(setorId),
     [setorId],
@@ -208,20 +314,57 @@ export function SetorDetalhe() {
     [setorId],
   )
 
+  const { data: excecoesAtivas } = useApiData<Excecao[]>(
+    () => excecoesService.listarAtivas(),
+    [],
+  )
+
   const contratoMap = new Map((tiposContrato ?? []).map((tc) => [tc.id, tc.nome]))
   const funcoesList = funcoes ?? []
 
-  // Postos dialog state
+  // ─── State ───────────────────────────────────────────────────────────
   const [showPostoDialog, setShowPostoDialog] = useState(false)
   const [novoPostoApelido, setNovoPostoApelido] = useState('')
-  const [novoPostoContratoId, setNovoPostoContratoId] = useState('')
   const [criandoPosto, setCriandoPosto] = useState(false)
-
-  // DnD state - local ordered list for optimistic reorder
   const [orderedColabs, setOrderedColabs] = useState<Colaborador[]>([])
+  const [pendingAssignment, setPendingAssignment] = useState<{
+    colabId: number
+    funcaoId: number
+    occupantName: string
+    funcaoNome: string
+  } | null>(null)
 
+  // ─── Computed maps ───────────────────────────────────────────────────
+  const funcaoMap = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const f of funcoesList) map.set(f.id, f.apelido)
+    return map
+  }, [funcoesList])
+
+  const excecaoMap = useMemo(() => {
+    const colabIds = new Set((colaboradores ?? []).map((c) => c.id))
+    const map = new Map<number, Excecao>()
+    for (const exc of excecoesAtivas ?? []) {
+      if (colabIds.has(exc.colaborador_id)) {
+        map.set(exc.colaborador_id, exc)
+      }
+    }
+    return map
+  }, [colaboradores, excecoesAtivas])
+
+  const ocupanteMap = useMemo(() => {
+    const map = new Map<number, Colaborador>()
+    for (const c of orderedColabs) {
+      if (c.funcao_id != null) {
+        map.set(c.funcao_id, c)
+      }
+    }
+    return map
+  }, [orderedColabs])
+
+  // ─── DnD setup (rank reorder only) ─────────────────────────────────
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
@@ -234,34 +377,101 @@ export function SetorDetalhe() {
     }
   }, [colaboradores])
 
+  // ─── DnD handler (rank reorder only) ───────────────────────────────
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
     const oldIndex = orderedColabs.findIndex((c) => c.id === active.id)
     const newIndex = orderedColabs.findIndex((c) => c.id === over.id)
-
     if (oldIndex === -1 || newIndex === -1) return
 
     const newOrder = arrayMove(orderedColabs, oldIndex, newIndex)
-    setOrderedColabs(newOrder) // Optimistic update
+    setOrderedColabs(newOrder)
 
     try {
       await setoresService.reordenarRank(setorId, newOrder.map((c) => c.id))
       toast.success('Prioridade atualizada')
     } catch (err) {
-      // Revert on error
       setOrderedColabs([...(colaboradores ?? [])].sort((a, b) => a.rank - b.rank))
       toast.error(err instanceof Error ? err.message : 'Erro ao reordenar')
     }
   }
 
-  // Most recent escala
+  // ─── Posto assignment via dropdown ─────────────────────────────────
+  const handlePostoChange = async (colabId: number, newFuncaoId: number | null) => {
+    const colab = orderedColabs.find((c) => c.id === colabId)
+    if (!colab) return
+
+    // Same value — noop
+    if (colab.funcao_id === newFuncaoId) return
+
+    // Removing from posto
+    if (newFuncaoId === null) {
+      try {
+        await colaboradoresService.atualizar(colabId, { funcao_id: null })
+        setOrderedColabs((prev) =>
+          prev.map((c) => (c.id === colabId ? { ...c, funcao_id: null } : c)),
+        )
+        toast.success(`${colab.nome} removido do posto`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erro ao remover do posto')
+      }
+      return
+    }
+
+    // Check if new posto is occupied by someone else
+    const currentOccupant = ocupanteMap.get(newFuncaoId)
+    if (currentOccupant && currentOccupant.id !== colabId) {
+      setPendingAssignment({
+        colabId,
+        funcaoId: newFuncaoId,
+        occupantName: currentOccupant.nome,
+        funcaoNome: funcaoMap.get(newFuncaoId) ?? '',
+      })
+      return
+    }
+
+    // Assign to vacant posto
+    await handleAtribuirPosto(colabId, newFuncaoId)
+  }
+
+  const handleAtribuirPosto = async (colabId: number, funcaoId: number) => {
+    const currentOccupant = ocupanteMap.get(funcaoId)
+
+    try {
+      if (currentOccupant && currentOccupant.id !== colabId) {
+        await colaboradoresService.atualizar(currentOccupant.id, { funcao_id: null })
+      }
+      await colaboradoresService.atualizar(colabId, { funcao_id: funcaoId })
+
+      setOrderedColabs((prev) =>
+        prev.map((c) => {
+          if (c.id === colabId) return { ...c, funcao_id: funcaoId }
+          if (currentOccupant && c.id === currentOccupant.id) return { ...c, funcao_id: null }
+          return c
+        }),
+      )
+
+      const nome = orderedColabs.find((c) => c.id === colabId)?.nome ?? ''
+      toast.success(`${nome} atribuido a ${funcaoMap.get(funcaoId) ?? 'posto'}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atribuir posto')
+    }
+  }
+
+  const handleConfirmarSubstituicao = async () => {
+    if (!pendingAssignment) return
+    await handleAtribuirPosto(pendingAssignment.colabId, pendingAssignment.funcaoId)
+    setPendingAssignment(null)
+  }
+
+  // ─── Escala ──────────────────────────────────────────────────────────
   const escalaAtual = (escalas ?? []).length > 0
     ? (escalas ?? []).reduce((a, b) => (a.criada_em > b.criada_em ? a : b))
     : null
 
-  // Sync form state from setor data
+  // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
     if (setor) {
       setorForm.reset({
@@ -274,6 +484,7 @@ export function SetorDetalhe() {
     }
   }, [setor, setorForm])
 
+  // ─── Handlers ────────────────────────────────────────────────────────
   const handleSalvar = async (data: SetorFormData) => {
     setSalvando(true)
     try {
@@ -292,9 +503,12 @@ export function SetorDetalhe() {
     }
   }
 
-  const handleSalvarTimelineDia = useCallback(async (data: SalvarTimelineDiaInput) => {
-    await setoresService.salvarTimelineDia(data)
+  const handleSalvarTimeline = useCallback(async (dados: SalvarTimelineDiaInput[]): Promise<void> => {
+    for (const payload of dados) {
+      await setoresService.salvarTimelineDia(payload)
+    }
     await Promise.all([reloadDemandas(), reloadHorariosSemana()])
+    toast.success('Demanda salva')
   }, [reloadDemandas, reloadHorariosSemana])
 
   const handleArquivar = async () => {
@@ -308,18 +522,22 @@ export function SetorDetalhe() {
   }
 
   const handleCriarPosto = async () => {
-    if (!novoPostoApelido.trim() || !novoPostoContratoId) return
+    if (!novoPostoApelido.trim()) return
+    const defaultContratoId = tiposContrato?.[0]?.id
+    if (!defaultContratoId) {
+      toast.error('Cadastre um tipo de contrato antes de criar postos')
+      return
+    }
     setCriandoPosto(true)
     try {
       await funcoesService.criar({
         setor_id: setorId,
         apelido: novoPostoApelido.trim(),
-        tipo_contrato_id: parseInt(novoPostoContratoId),
+        tipo_contrato_id: defaultContratoId,
       })
       toast.success('Posto criado')
       setShowPostoDialog(false)
       setNovoPostoApelido('')
-      setNovoPostoContratoId('')
       reloadFuncoes()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao criar posto')
@@ -329,6 +547,11 @@ export function SetorDetalhe() {
   }
 
   const handleDeletarPosto = async (funcaoId: number) => {
+    const ocupante = ocupanteMap.get(funcaoId)
+    if (ocupante) {
+      toast.error(`Remova ${ocupante.nome} do posto antes de deletar`)
+      return
+    }
     try {
       await funcoesService.deletar(funcaoId)
       toast.success('Posto removido')
@@ -338,6 +561,7 @@ export function SetorDetalhe() {
     }
   }
 
+  // ─── Loading / Not Found ─────────────────────────────────────────────
   if (loadingSetor) {
     return (
       <div className="flex flex-1 flex-col">
@@ -360,6 +584,7 @@ export function SetorDetalhe() {
     )
   }
 
+  // ─── Render ──────────────────────────────────────────────────────────
   return (
     <div className="flex flex-1 flex-col">
       <PageHeader
@@ -428,7 +653,7 @@ export function SetorDetalhe() {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <FormField
                   control={setorForm.control}
                   name="hora_abertura"
@@ -455,26 +680,28 @@ export function SetorDetalhe() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={setorForm.control}
-                  name="piso_operacional"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Piso Operacional</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={field.value}
-                          onChange={(e) => field.onChange(parseInt(e.target.value || '1', 10))}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
+              <FormField
+                control={setorForm.control}
+                name="piso_operacional"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Piso Operacional (pessoas)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={typeof field.value === 'number' ? field.value : ''}
+                        onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
         </Form>
@@ -483,38 +710,42 @@ export function SetorDetalhe() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">
-              Demanda Planejada (Single-Lane)
+              Demanda por Faixa Horaria
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <DemandaTimelineSingleLane
+            <DemandaEditor
               setor={setor}
               demandas={demandas ?? []}
               horariosSemana={horariosSemana ?? []}
-              onSalvarDia={handleSalvarTimelineDia}
+              onSalvar={handleSalvarTimeline}
             />
           </CardContent>
         </Card>
 
-        {/* Postos (Funcoes) */}
+        {/* Postos — read-only dashboard */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base font-semibold">
               Postos
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                (funcoes esperadas neste setor)
-              </span>
             </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
-              <Plus className="mr-1 size-3.5" /> Novo Posto
-            </Button>
+            <div className="flex items-center gap-2">
+              {funcoesList.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {funcoesList.filter((f) => ocupanteMap.has(f.id)).length}/{funcoesList.length} preenchidos
+                </span>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
+                <Plus className="mr-1 size-3.5" /> Novo Posto
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {funcoesList.length === 0 ? (
               <EmptyState
                 icon={Briefcase}
                 title="Nenhum posto definido"
-                description="Defina os postos de trabalho para organizar a equipe por funcao"
+                description="Defina os postos de trabalho para organizar a equipe"
                 action={
                   <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
                     <Plus className="mr-1 size-3.5" /> Novo Posto
@@ -522,40 +753,18 @@ export function SetorDetalhe() {
                 }
               />
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-wrap gap-3">
                 {funcoesList.map((funcao) => {
-                  const contratoNome = contratoMap.get(funcao.tipo_contrato_id) ?? 'Contrato'
+                  const ocupante = ocupanteMap.get(funcao.id) ?? null
+                  const isAusente = ocupante ? excecaoMap.has(ocupante.id) : false
                   return (
-                    <div
+                    <PostoCard
                       key={funcao.id}
-                      className="flex items-center justify-between rounded-lg border p-3"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{funcao.apelido}</p>
-                        <p className="text-xs text-muted-foreground">{contratoNome}</p>
-                      </div>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Remover posto?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              O posto &quot;{funcao.apelido}&quot; sera removido. Colaboradores vinculados a ele ficarao sem funcao definida.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDeletarPosto(funcao.id)}>
-                              Remover
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
+                      funcao={funcao}
+                      ocupante={ocupante}
+                      isAusente={isAusente}
+                      onDeletar={handleDeletarPosto}
+                    />
                   )
                 })}
               </div>
@@ -563,7 +772,7 @@ export function SetorDetalhe() {
           </CardContent>
         </Card>
 
-        {/* Colaboradores com rank */}
+        {/* Colaboradores com rank — DnD only for reorder */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base font-semibold">
@@ -609,8 +818,9 @@ export function SetorDetalhe() {
                         <TableHead className="w-[40px] text-center">#</TableHead>
                         <TableHead>Nome</TableHead>
                         <TableHead>Contrato</TableHead>
+                        <TableHead>Posto</TableHead>
                         <TableHead>Sexo</TableHead>
-                        <TableHead>Preferencia</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead className="w-[60px] text-right pr-4" />
                       </TableRow>
                     </TableHeader>
@@ -621,6 +831,9 @@ export function SetorDetalhe() {
                           colab={colab}
                           index={i}
                           contratoNome={contratoMap.get(colab.tipo_contrato_id) ?? 'Contrato'}
+                          excecaoTipo={excecaoMap.get(colab.id)?.tipo ?? null}
+                          funcoesList={funcoesList}
+                          onPostoChange={handlePostoChange}
                         />
                       ))}
                     </TableBody>
@@ -679,9 +892,9 @@ export function SetorDetalhe() {
         </Card>
       </div>
 
-      {/* Novo Posto Dialog */}
+      {/* ─── Novo Posto Dialog ─── */}
       <Dialog open={showPostoDialog} onOpenChange={setShowPostoDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Novo Posto</DialogTitle>
             <DialogDescription>
@@ -690,27 +903,16 @@ export function SetorDetalhe() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Apelido do Posto</Label>
+              <Label>Nome do Posto</Label>
               <Input
                 placeholder="Ex: Caixa, Repositor, Seguranca"
                 value={novoPostoApelido}
                 onChange={(e) => setNovoPostoApelido(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCriarPosto()
+                }}
+                autoFocus
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Tipo de Contrato</Label>
-              <Select value={novoPostoContratoId} onValueChange={setNovoPostoContratoId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o contrato" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(tiposContrato ?? []).map((tc) => (
-                    <SelectItem key={tc.id} value={String(tc.id)}>
-                      {tc.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter>
@@ -719,13 +921,38 @@ export function SetorDetalhe() {
             </Button>
             <Button
               onClick={handleCriarPosto}
-              disabled={criandoPosto || !novoPostoApelido.trim() || !novoPostoContratoId}
+              disabled={criandoPosto || !novoPostoApelido.trim()}
             >
               {criandoPosto ? 'Criando...' : 'Criar Posto'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Substituicao Confirmation Dialog ─── */}
+      <AlertDialog open={!!pendingAssignment} onOpenChange={(open) => { if (!open) setPendingAssignment(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Substituir posto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAssignment && (
+                <>
+                  <strong>{orderedColabs.find((c) => c.id === pendingAssignment.colabId)?.nome}</strong>
+                  {' '}vai assumir o posto{' '}
+                  <strong>{pendingAssignment.funcaoNome}</strong>.
+                  {' '}<strong>{pendingAssignment.occupantName}</strong> ficara sem posto.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmarSubstituicao}>
+              Substituir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import type {
   TipoFeriado,
   AcaoMotor,
   AntipatternTier,
+  RegimeEscala,
 } from './constants'
 
 // ============================================================================
@@ -32,6 +33,7 @@ export interface TipoContrato {
   id: number
   nome: string
   horas_semanais: number
+  regime_escala: RegimeEscala
   dias_trabalho: number
   trabalha_domingo: boolean
   max_minutos_dia: number
@@ -43,9 +45,8 @@ export interface Setor {
   icone: string | null
   hora_abertura: string
   hora_fechamento: string
+  piso_operacional: number
   ativo: boolean
-  // v3.1
-  piso_operacional: number                // default 1
 }
 
 export interface Demanda {
@@ -92,6 +93,8 @@ export interface Escala {
   status: StatusEscala
   pontuacao: number | null
   criada_em: string
+  input_hash?: string | null
+  simulacao_config_json?: string | null
 }
 
 /** Alocacao v2 — mantida pra compat do frontend ate S4 */
@@ -217,6 +220,10 @@ export interface GerarEscalaInput {
   data_inicio: string
   data_fim: string
   pinned_cells?: PinnedCell[]
+  regimes_override?: Array<{
+    colaborador_id: number
+    regime_escala: RegimeEscala
+  }>
 }
 
 export interface GerarEscalaOutput {
@@ -250,7 +257,7 @@ export interface EscalaPreflightResult {
     colaboradores_ativos: number
     demandas_cadastradas: number
     feriados_no_periodo: number
-    fallback_piso: boolean
+    demanda_zero_fallback: boolean
   }
 }
 
@@ -272,10 +279,17 @@ export interface EscalaCompletaV3 {
     fase6_ms: number
     fase7_ms: number
     total_ms: number
+    otimizacao_ms?: number
+    otimizacao_moves?: number
+    otimizacao_neighborhoods?: Record<string, { attempts: number; accepted: number }>
+    otimizacao_temperature?: number
+    otimizacao_stagnation?: number
   }
 }
 
-/** Save transacional da timeline (1 dia) — RFC §11.1 */
+/** Save transacional da timeline (1 dia) — RFC §11.1
+ * segmentos aceita input bruto (com overlap/gap) e o backend normaliza.
+ */
 export interface SalvarTimelineDiaInput {
   setor_id: number
   dia_semana: DiaSemana
@@ -289,6 +303,16 @@ export interface SalvarTimelineDiaInput {
     min_pessoas: number
     override: boolean
   }>
+}
+
+export interface SalvarTimelineDiaOutput {
+  horario: SetorHorarioSemana
+  demandas: Demanda[]
+  normalizacao: {
+    slots_total: number
+    slots_overlap_detectados: number
+    slots_sem_demanda: number
+  }
 }
 
 // ============================================================================
@@ -380,4 +404,90 @@ export interface AjustarAlocacaoRequest {
     hora_inicio?: string | null
     hora_fim?: string | null
   }[]
+}
+
+// ============================================================================
+// SOLVER BRIDGE — Python OR-Tools I/O contracts
+// ============================================================================
+
+export interface SolverInputColab {
+  id: number
+  nome: string
+  horas_semanais: number
+  regime_escala?: RegimeEscala
+  dias_trabalho: number
+  max_minutos_dia: number
+  trabalha_domingo: boolean
+  tipo_trabalhador: string
+  sexo: string
+  funcao_id: number | null
+  rank: number
+}
+
+export interface SolverInputDemanda {
+  dia_semana: string | null
+  hora_inicio: string
+  hora_fim: string
+  min_pessoas: number
+  override?: boolean
+}
+
+export interface SolverInputHint {
+  colaborador_id: number
+  data: string
+  status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
+  hora_inicio?: string | null
+  hora_fim?: string | null
+}
+
+export interface SolverInput {
+  setor_id: number
+  data_inicio: string
+  data_fim: string
+  piso_operacional?: number
+  empresa: {
+    tolerancia_semanal_min: number
+    hora_abertura: string
+    hora_fechamento: string
+    min_intervalo_almoco_min: number
+    max_intervalo_almoco_min: number
+    grid_minutos: number
+  }
+  colaboradores: SolverInputColab[]
+  demanda: SolverInputDemanda[]
+  feriados: { data: string; nome: string; proibido_trabalhar: boolean }[]
+  excecoes: { colaborador_id: number; data_inicio: string; data_fim: string; tipo: string }[]
+  pinned_cells: PinnedCell[]
+  hints?: SolverInputHint[]
+  config: { max_time_seconds: number; num_workers: number }
+}
+
+export interface SolverOutputAlocacao {
+  colaborador_id: number
+  data: string
+  status: 'TRABALHO' | 'FOLGA'
+  hora_inicio: string | null
+  hora_fim: string | null
+  minutos_trabalho: number
+  hora_almoco_inicio: string | null
+  hora_almoco_fim: string | null
+  minutos_almoco: number
+  intervalo_15min: boolean
+  funcao_id: number | null
+}
+
+export interface SolverOutput {
+  sucesso: boolean
+  status: string
+  solve_time_ms: number
+  alocacoes?: SolverOutputAlocacao[]
+  indicadores?: Indicadores
+  decisoes?: DecisaoMotor[]
+  comparacao_demanda?: SlotComparacao[]
+  erro?: {
+    tipo: 'PREFLIGHT' | 'CONSTRAINT'
+    regra: string
+    mensagem: string
+    sugestoes: string[]
+  }
 }

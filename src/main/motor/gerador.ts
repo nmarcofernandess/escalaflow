@@ -24,7 +24,6 @@ import {
   celulaIndisponivel,
   janelaOperacional,
   resolveDemandaSlot,
-  checkPisoOperacionalCobertura,
   isFeriadoProibido,
   isFeriadoSemCCT,
   isAprendiz,
@@ -52,6 +51,8 @@ import {
   checkS4_FolgaPreferida,
   checkS5_ConsistenciaHorario,
 } from './validacao-compartilhada'
+import { runOptimizerV2 } from './optimizer-v2/orchestrator'
+import { cloneResultadoMap, overwriteResultadoMap } from './optimizer-v2/utils'
 
 // ─── Tipo interno: colaborador com dados do contrato (query JOIN) ──────────────
 
@@ -61,6 +62,21 @@ interface ColabComContrato extends Colaborador {
   trabalha_domingo: boolean
   max_minutos_dia: number
   tipo_contrato_nome?: string
+}
+
+function readOptimizerBudgetMs(): number {
+  const raw = process.env.ESCALAFLOW_OPTIMIZER_BUDGET_MS
+  if (raw === '0') return 0  // explicitamente desabilitado
+  const parsed = raw ? Number(raw) : NaN
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed)
+  return 1200
+}
+
+function readOptimizerMaxIterations(): number {
+  const raw = process.env.ESCALAFLOW_OPTIMIZER_MAX_ITERATIONS
+  const parsed = raw ? Number(raw) : NaN
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed)
+  return 96
 }
 
 // ─── MOTOR PRINCIPAL ─────────────────────────────────────────────────────────
@@ -80,6 +96,10 @@ interface ColabComContrato extends Colaborador {
  */
 export function gerarEscalaV3(db: Database.Database, input: GerarEscalaInput): GerarEscalaOutput {
   const timing: Record<string, number> = {}
+  // Dados extras do optimizer (nao-numericos) armazenados separadamente
+  let otimNeighborhoods: Record<string, { attempts: number; accepted: number }> | undefined
+  let otimTemperature: number | undefined
+  let otimStagnation: number | undefined
   const t_total = performance.now()
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -370,7 +390,6 @@ export function gerarEscalaV3(db: Database.Database, input: GerarEscalaInput): G
         dia: diaLabel,
         slotInicioMin: slotStart,
         slotFimMin: slotStart + CLT.GRID_MINUTOS,
-        pisoOperacional: setor.piso_operacional ?? 1,
       })
 
       grid.push({
@@ -379,7 +398,6 @@ export function gerarEscalaV3(db: Database.Database, input: GerarEscalaInput): G
         hora_fim,
         target_planejado: resolved.target_planejado,
         override: resolved.override,
-        piso: resolved.piso,
         dia_fechado: false,
         feriado_proibido: false,
       })
@@ -1099,8 +1117,7 @@ export function gerarEscalaV3(db: Database.Database, input: GerarEscalaInput): G
 
   do {
     const hardBase = validarTudoV3(validarParams).filter(v => v.severidade === 'HARD')
-    const pisoViolacoes = checkPisoOperacionalCobertura(grid, colaboradores, resultado)
-    hardViolacoes = [...hardBase, ...pisoViolacoes]
+    hardViolacoes = [...hardBase]
 
     if (hardViolacoes.length === 0) break
 
@@ -1148,6 +1165,46 @@ export function gerarEscalaV3(db: Database.Database, input: GerarEscalaInput): G
   }
 
   timing['fase6_ms'] = performance.now() - t6
+
+  // ── FASE 6.5 — OTIMIZACAO ANYTIME (v2) ───────────────────────────────────
+  // Executa busca local com objetivo lexicográfico:
+  // HARD > override deficit > deficit total > excesso.
+  // Guardrail: se qualquer violação HARD surgir após otimização, reverte.
+
+  const t65 = performance.now()
+  const optimizerBudget = readOptimizerBudgetMs()
+
+  if (optimizerBudget > 0) {
+    const resultadoAntesOtim = cloneResultadoMap(resultado)
+
+    const otimResult = runOptimizerV2({
+      resultado,
+      colaboradores,
+      grid,
+      dias,
+      demandas,
+      feriados,
+      excecoes,
+      lookback,
+      empresa,
+      corteSemanal,
+      pinnedMap,
+      maxMs: optimizerBudget,
+      maxIterations: readOptimizerMaxIterations(),
+    })
+    timing['otimizacao_ms'] = otimResult.elapsedMs
+    timing['otimizacao_moves'] = otimResult.acceptedMoves
+    otimNeighborhoods = otimResult.neighborhoods
+    otimTemperature = otimResult.temperatureFinal
+    otimStagnation = otimResult.stagnationEvents
+
+    const hardAfterOtim = validarTudoV3(validarParams).filter(v => v.severidade === 'HARD')
+    if (hardAfterOtim.length > 0) {
+      overwriteResultadoMap(resultado, resultadoAntesOtim)
+    }
+  }
+
+  timing['fase6_ms'] += performance.now() - t65
 
   // ═══════════════════════════════════════════════════════════════════════════
   // FASE 7 — PONTUAR E EXPLICAR
@@ -1271,7 +1328,6 @@ export function gerarEscalaV3(db: Database.Database, input: GerarEscalaInput): G
 
   const violacoes = [
     ...validarTudoV3(validarParams),
-    ...checkPisoOperacionalCobertura(grid, colaboradores, resultado),
   ]
 
   const indicadores = calcularIndicadoresV3({
@@ -1413,6 +1469,11 @@ export function gerarEscalaV3(db: Database.Database, input: GerarEscalaInput): G
       fase6_ms: timing['fase6_ms'] ?? 0,
       fase7_ms: timing['fase7_ms'] ?? 0,
       total_ms: timing['total_ms'] ?? 0,
+      otimizacao_ms: timing['otimizacao_ms'] ?? 0,
+      otimizacao_moves: timing['otimizacao_moves'] ?? 0,
+      otimizacao_neighborhoods: otimNeighborhoods,
+      otimizacao_temperature: otimTemperature,
+      otimizacao_stagnation: otimStagnation,
     },
   }
 
@@ -1437,7 +1498,7 @@ function tryFixViolation(
   feriados: Feriado[],
   h1LockedFolgas: Set<string>,
 ): boolean {
-  if (violacao.regra === 'PISO_OPERACIONAL_MINIMO') {
+  if (violacao.regra === '__SLOT_COBERTURA_INTERNA__') {
     const data = violacao.data
     if (!data) return false
 

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   CalendarDays,
@@ -14,6 +14,7 @@ import {
   Loader2,
   Info,
   Download,
+  Terminal,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,13 @@ import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,6 +69,7 @@ import type {
   Alocacao,
   Colaborador,
   Setor,
+  RegimeEscala,
 } from '@shared/index'
 
 export function EscalaPagina() {
@@ -105,6 +114,9 @@ export function EscalaPagina() {
   const [exportOpen, setExportOpen] = useState(false)
   const [exportEscala, setExportEscala] = useState<EscalaCompletaV3 | null>(null)
   const exportCtrl = useExportController({ context: 'escala' })
+  const [regimeOverrides, setRegimeOverrides] = useState<Record<number, RegimeEscala>>({})
+  const [regerarModalOpen, setRegerarModalOpen] = useState(false)
+  const [regerarWarning, setRegerarWarning] = useState<string | null>(null)
 
   // Oficial tab state
   const [oficialEscala, setOficialEscala] = useState<EscalaCompletaV3 | null>(null)
@@ -112,6 +124,50 @@ export function EscalaPagina() {
   const [oficialLoaded, setOficialLoaded] = useState(false)
 
   const prevAlocacoesRef = useRef<Alocacao[]>([])
+  const [solverLogs, setSolverLogs] = useState<string[]>([])
+  const solverLogsEndRef = useRef<HTMLDivElement>(null)
+  const solverStartRef = useRef<number>(0)
+
+  const getContratoRegime = useCallback((colab: Colaborador): RegimeEscala => {
+    const tc = tiposContrato?.find((t) => t.id === colab.tipo_contrato_id)
+    if (tc?.regime_escala) return tc.regime_escala
+    return (tc?.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1'
+  }, [tiposContrato])
+
+  const regimesOverridePayload = useCallback(() => {
+    return (colaboradores ?? [])
+      .filter((c) => regimeOverrides[c.id] && regimeOverrides[c.id] !== getContratoRegime(c))
+      .map((c) => ({
+        colaborador_id: c.id,
+        regime_escala: regimeOverrides[c.id]!,
+      }))
+  }, [colaboradores, regimeOverrides, getContratoRegime])
+
+  // Auto-scroll solver logs and listen for solver-log IPC events
+  useEffect(() => {
+    if (solverLogsEndRef.current) {
+      solverLogsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [solverLogs])
+
+  useEffect(() => {
+    if (!gerando) return
+    setSolverLogs([])
+    solverStartRef.current = Date.now()
+
+    const handler = (...args: any[]) => {
+      const line = String(args[0] ?? '')
+      if (line) {
+        const elapsed = ((Date.now() - solverStartRef.current) / 1000).toFixed(1)
+        setSolverLogs(prev => [...prev, `[${elapsed}s] ${line}`])
+      }
+    }
+
+    window.electron.ipcRenderer.on('solver-log', handler)
+    return () => {
+      window.electron.ipcRenderer.removeAllListeners('solver-log')
+    }
+  }, [gerando])
 
   // Historico tab state
   const [escalasArquivadas, setEscalasArquivadas] = useState<Escala[]>([])
@@ -123,11 +179,16 @@ export function EscalaPagina() {
 
   // Generate escala
   async function handleGerar() {
+    setRegerarWarning(null)
+    setRegerarModalOpen(false)
+    const regimesOverride = regimesOverridePayload()
+
     setPreflightLoading(true)
     try {
       const preflight = await escalasService.preflight(setorId, {
         data_inicio: dataInicio,
         data_fim: dataFim,
+        regimes_override: regimesOverride,
       })
 
       if (!preflight.ok) {
@@ -156,6 +217,7 @@ export function EscalaPagina() {
       const result = await escalasService.gerar(setorId, {
         data_inicio: dataInicio,
         data_fim: dataFim,
+        regimes_override: regimesOverride,
       })
       setEscalaCompleta(result)
       toast.success('Escala gerada')
@@ -180,8 +242,16 @@ export function EscalaPagina() {
       setEscalaCompleta(null)
       setOficialLoaded(false)
       setHistoricoLoaded(false)
+      setRegerarWarning(null)
     } catch (err) {
-      toast.error(mapError(err) || 'Erro ao oficializar')
+      const msg = mapError(err) || 'Erro ao oficializar'
+      if (msg.includes('ESCALA_DESATUALIZADA')) {
+        const friendly = msg.replace('ESCALA_DESATUALIZADA:', '').trim()
+        setRegerarWarning(friendly || 'A simulacao ficou desatualizada e precisa ser gerada novamente.')
+        setRegerarModalOpen(true)
+        return
+      }
+      toast.error(msg)
     } finally {
       setOficializando(false)
     }
@@ -448,6 +518,77 @@ export function EscalaPagina() {
                     disabled={gerando || preflightLoading}
                   />
                 </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" disabled={gerando || preflightLoading}>
+                      Cenário 5x2/6x1
+                      {regimesOverridePayload().length > 0 && (
+                        <Badge variant="secondary" className="ml-2">
+                          {regimesOverridePayload().length}
+                        </Badge>
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="max-w-2xl">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Cenário de Regimes (simulação)</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Ajuste 5x2/6x1 por colaborador apenas para esta simulação. Não altera cadastro.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+
+                    <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
+                      {colaboradores.map((colab) => {
+                        const regimePadrao = getContratoRegime(colab)
+                        const regimeAtual = regimeOverrides[colab.id] ?? 'AUTO'
+                        return (
+                          <div key={colab.id} className="grid grid-cols-1 gap-2 rounded border p-3 md:grid-cols-[1fr_220px] md:items-center">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{colab.nome}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Padrão do contrato: {regimePadrao}
+                              </p>
+                            </div>
+                            <Select
+                              value={regimeAtual}
+                              onValueChange={(value) => {
+                                setRegimeOverrides((prev) => {
+                                  const next = { ...prev }
+                                  if (value === 'AUTO') {
+                                    delete next[colab.id]
+                                  } else {
+                                    next[colab.id] = value as RegimeEscala
+                                  }
+                                  return next
+                                })
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Usar padrão" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="AUTO">Usar padrão ({regimePadrao})</SelectItem>
+                                <SelectItem value="5X2">5x2</SelectItem>
+                                <SelectItem value="6X1">6x1</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <AlertDialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setRegimeOverrides({})}
+                        disabled={Object.keys(regimeOverrides).length === 0}
+                      >
+                        Limpar overrides
+                      </Button>
+                      <AlertDialogAction>Aplicar cenário</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <Button onClick={handleGerar} disabled={gerando || preflightLoading}>
                   {gerando ? (
                     <Loader2 className="mr-1 size-4 animate-spin" />
@@ -458,6 +599,35 @@ export function EscalaPagina() {
                 </Button>
               </CardContent>
             </Card>
+
+            {gerando && (
+              <Card className="border-blue-500/30 bg-blue-950/20">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Terminal className="size-4 text-blue-400" />
+                    <span>Solver OR-Tools</span>
+                    <Loader2 className="ml-auto size-4 animate-spin text-blue-400" />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[200px] overflow-y-auto rounded-md border border-border/50 bg-black/40 p-3 font-mono text-xs text-green-400">
+                    {solverLogs.length === 0 ? (
+                      <div className="text-muted-foreground">Iniciando solver...</div>
+                    ) : (
+                      solverLogs.map((line, i) => (
+                        <div key={i} className="leading-5">
+                          {line}
+                        </div>
+                      ))
+                    )}
+                    <div ref={solverLogsEndRef} />
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    O solver esta buscando a melhor escala possivel. Isso pode levar alguns minutos.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {escalaCompleta ? (
               <SimulacaoResult
@@ -475,6 +645,9 @@ export function EscalaPagina() {
                 getIndicators={getIndicators}
                 oficializando={oficializando}
                 descartando={descartando}
+                precisaRegerar={Boolean(regerarWarning)}
+                mensagemRegerar={regerarWarning}
+                onRegerar={handleGerar}
                 onCelulaClick={handleCelulaClick}
                 ajustando={ajustando}
                 changedCells={changedCells}
@@ -723,6 +896,28 @@ export function EscalaPagina() {
         </Tabs>
       </div>
 
+      <AlertDialog open={regerarModalOpen} onOpenChange={setRegerarModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Simulação desatualizada</AlertDialogTitle>
+            <AlertDialogDescription>
+              {regerarWarning ?? 'Houve mudanças no cenário e a escala precisa ser gerada novamente antes de oficializar.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Fechar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setRegerarModalOpen(false)
+                handleGerar()
+              }}
+            >
+              Regerar simulação
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Export Modal */}
       {setor && colaboradores && exportEscala && (
         <ExportModal
@@ -805,6 +1000,9 @@ interface SimulacaoResultProps {
   }
   oficializando: boolean
   descartando: boolean
+  precisaRegerar: boolean
+  mensagemRegerar: string | null
+  onRegerar: () => void
   onCelulaClick?: (colaboradorId: number, data: string, statusAtual: string) => void
   ajustando?: { colaboradorId: number; data: string } | null
   changedCells?: Set<string>
@@ -828,6 +1026,9 @@ function SimulacaoResult({
   getIndicators,
   oficializando,
   descartando,
+  precisaRegerar,
+  mensagemRegerar,
+  onRegerar,
   onCelulaClick,
   ajustando,
   changedCells = new Set(),
@@ -1103,7 +1304,7 @@ function SimulacaoResult({
       <div className="flex items-center gap-3">
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button disabled={oficializando || !!ajustando || indicators.violacoesHard > 0}>
+            <Button disabled={oficializando || !!ajustando || indicators.violacoesHard > 0 || precisaRegerar}>
               <CheckCircle2 className="mr-1 size-4" />
               {oficializando ? 'Oficializando...' : 'Oficializar'}
             </Button>
@@ -1125,6 +1326,16 @@ function SimulacaoResult({
           <span className="text-xs text-destructive">
             Corrija {indicators.violacoesHard} violacao(oes) critica(s) antes de oficializar
           </span>
+        )}
+        {precisaRegerar && (
+          <span className="text-xs text-amber-700 dark:text-amber-300">
+            {mensagemRegerar ?? 'Simulacao desatualizada. Gere novamente antes de oficializar.'}
+          </span>
+        )}
+        {precisaRegerar && (
+          <Button variant="outline" onClick={onRegerar} disabled={oficializando || !!ajustando}>
+            Regerar agora
+          </Button>
         )}
         <Button variant="outline" onClick={() => onExportar(escalaCompleta)} disabled={!!ajustando}>
           <Download className="mr-1 size-4" />

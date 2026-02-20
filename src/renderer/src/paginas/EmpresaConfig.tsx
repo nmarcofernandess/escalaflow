@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -369,11 +370,19 @@ export function EmpresaConfig() {
               <CardDescription className="mt-1">
                 O motor nao escala trabalho em feriados proibidos. Adicione municipais se necessario.
               </CardDescription>
+              <CardDescription className="mt-1">
+                Horario operacional e configurado por setor/dia em Setores.
+              </CardDescription>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowFeriadoDialog(true)}>
-              <Plus className="mr-1 size-3.5" />
-              Novo
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/setores">Ir para Setores</Link>
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowFeriadoDialog(true)}>
+                <Plus className="mr-1 size-3.5" />
+                Novo
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {(feriados ?? []).length === 0 ? (

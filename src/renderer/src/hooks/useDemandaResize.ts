@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { minutesToTime } from '@/lib/formatadores'
+import { normalizeTimelineInterval } from '@/lib/timeline-demanda'
 
 interface ResizeState {
   demandaId: number
@@ -7,8 +8,11 @@ interface ResizeState {
   initialX: number
   initialMinutes: number
   containerWidth: number
-  totalMinutes: number
-  openMin: number
+  axisOpenMin: number
+  axisCloseMin: number
+  axisTotalMinutes: number
+  boundOpenMin: number
+  boundCloseMin: number
 }
 
 interface ResizeResult {
@@ -17,16 +21,20 @@ interface ResizeResult {
 }
 
 interface UseDemandaResizeOptions {
-  openMin: number
-  closeMin: number
+  axisOpenMin: number
+  axisCloseMin: number
+  boundsOpenMin?: number
+  boundsCloseMin?: number
   minDuration?: number  // minimum bar duration in minutes
   snapInterval?: number // snap granularity in minutes
   onResizeEnd: (demandaId: number, result: ResizeResult) => void
 }
 
 export function useDemandaResize({
-  openMin,
-  closeMin,
+  axisOpenMin,
+  axisCloseMin,
+  boundsOpenMin,
+  boundsCloseMin,
   minDuration = 60,
   snapInterval = 30,
   onResizeEnd,
@@ -37,36 +45,43 @@ export function useDemandaResize({
   const currentStartRef = useRef(0)
   const currentEndRef = useRef(0)
 
-  const snap = (val: number) => Math.round(val / snapInterval) * snapInterval
-
   const handlePointerMove = useCallback((e: PointerEvent) => {
     const s = stateRef.current
     if (!s) return
 
+    if (s.containerWidth <= 0) return
+
     const dx = e.clientX - s.initialX
-    const minutesDelta = (dx / s.containerWidth) * s.totalMinutes
-    const snapped = snap(minutesDelta)
+    const minutesDelta = (dx / s.containerWidth) * s.axisTotalMinutes
 
-    let newStart = currentStartRef.current
-    let newEnd = currentEndRef.current
+    const candidateStart = s.side === 'left'
+      ? s.initialMinutes + minutesDelta
+      : currentStartRef.current
+    const candidateEnd = s.side === 'right'
+      ? s.initialMinutes + minutesDelta
+      : currentEndRef.current
 
-    if (s.side === 'left') {
-      newStart = snap(s.initialMinutes + snapped)
-      newStart = Math.max(s.openMin, Math.min(newStart, newEnd - minDuration))
-    } else {
-      newEnd = snap(s.initialMinutes + snapped)
-      newEnd = Math.min(closeMin, Math.max(newEnd, newStart + minDuration))
-    }
+    const normalized = normalizeTimelineInterval({
+      startMin: candidateStart,
+      endMin: candidateEnd,
+      axisOpenMin: s.axisOpenMin,
+      axisCloseMin: s.axisCloseMin,
+      boundsOpenMin: s.boundOpenMin,
+      boundsCloseMin: s.boundCloseMin,
+      minDurationMin: minDuration,
+      snapIntervalMin: snapInterval,
+    })
+    if (!normalized) return
 
-    if (s.side === 'left') currentStartRef.current = newStart
-    else currentEndRef.current = newEnd
+    currentStartRef.current = normalized.startMin
+    currentEndRef.current = normalized.endMin
 
     setPreview({
       id: s.demandaId,
       hora_inicio: minutesToTime(currentStartRef.current),
       hora_fim: minutesToTime(currentEndRef.current),
     })
-  }, [closeMin, minDuration, snapInterval])
+  }, [minDuration, snapInterval])
 
   const handlePointerUp = useCallback(() => {
     const s = stateRef.current
@@ -97,7 +112,7 @@ export function useDemandaResize({
     e.stopPropagation()
 
     const rect = containerEl.getBoundingClientRect()
-    const totalMinutes = closeMin - openMin
+    const axisTotalMinutes = axisCloseMin - axisOpenMin
 
     currentStartRef.current = currentStartMin
     currentEndRef.current = currentEndMin
@@ -108,14 +123,17 @@ export function useDemandaResize({
       initialX: e.clientX,
       initialMinutes: side === 'left' ? currentStartMin : currentEndMin,
       containerWidth: rect.width,
-      totalMinutes,
-      openMin,
+      axisOpenMin,
+      axisCloseMin,
+      axisTotalMinutes,
+      boundOpenMin: boundsOpenMin ?? axisOpenMin,
+      boundCloseMin: boundsCloseMin ?? axisCloseMin,
     }
 
     setResizingId(demandaId)
     document.addEventListener('pointermove', handlePointerMove)
     document.addEventListener('pointerup', handlePointerUp)
-  }, [openMin, closeMin, handlePointerMove, handlePointerUp])
+  }, [axisOpenMin, axisCloseMin, boundsOpenMin, boundsCloseMin, handlePointerMove, handlePointerUp])
 
   return { resizingId, preview, startResize }
 }

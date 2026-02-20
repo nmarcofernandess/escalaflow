@@ -1,13 +1,17 @@
 import { useRef, useState } from 'react'
 import { Trash2, Minus, Plus, Users, MoreHorizontal, Clock } from 'lucide-react'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { toMinutes, formatarMinutos, minutesToTime } from '@/lib/formatadores'
+import {
+  buildTimelineBarGeometry,
+  normalizeTimelineInterval,
+  DEMANDA_MIN_DURATION_MINUTES,
+  DEMANDA_SNAP_MINUTES,
+} from '@/lib/timeline-demanda'
 import type { Demanda } from '@shared/index'
 
 const CORES_FAIXA = [
@@ -53,6 +57,8 @@ interface DemandaBarProps {
   index: number
   openMin: number
   closeMin: number
+  boundsOpenMin?: number
+  boundsCloseMin?: number
   previewHoraInicio?: string
   previewHoraFim?: string
   isResizing: boolean
@@ -74,6 +80,8 @@ export function DemandaBar({
   index,
   openMin,
   closeMin,
+  boundsOpenMin,
+  boundsCloseMin,
   previewHoraInicio,
   previewHoraFim,
   isResizing,
@@ -85,32 +93,25 @@ export function DemandaBar({
   const containerRef = useRef<HTMLDivElement>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const colors = CORES_FAIXA[index % CORES_FAIXA.length]
-  const totalMinutes = closeMin - openMin
+  const minBound = boundsOpenMin ?? openMin
+  const maxBound = boundsCloseMin ?? closeMin
 
   const horaInicio = previewHoraInicio ?? demanda.hora_inicio
   const horaFim = previewHoraFim ?? demanda.hora_fim
 
-  const startMin = toMinutes(horaInicio)
-  const endMin = toMinutes(horaFim)
+  const rawStartMin = toMinutes(horaInicio)
+  const rawEndMin = toMinutes(horaFim)
+  const barGeometry = buildTimelineBarGeometry({
+    startMin: rawStartMin,
+    endMin: rawEndMin,
+    axisOpenMin: openMin,
+    axisCloseMin: closeMin,
+    boundsOpenMin: minBound,
+    boundsCloseMin: maxBound,
+  })
+  const startMin = barGeometry.startMin
+  const endMin = barGeometry.endMin
   const duration = endMin - startMin
-
-  const leftPercent = ((startMin - openMin) / totalMinutes) * 100
-  const widthPercent = (duration / totalMinutes) * 100
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: demanda.id })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
 
   const handleResizeLeft = (e: React.PointerEvent) => {
     if (!containerRef.current) return
@@ -128,89 +129,150 @@ export function DemandaBar({
 
   const handleTimeChange = (field: 'inicio' | 'fim', value: string) => {
     if (!value.match(/^\d{2}:\d{2}$/)) return
-    const newMin = toMinutes(value)
-    if (field === 'inicio') {
-      if (newMin >= openMin && endMin - newMin >= 60) {
-        onUpdateTimes(demanda.id, value, horaFim)
-      }
-    } else {
-      if (newMin <= closeMin && newMin - startMin >= 60) {
-        onUpdateTimes(demanda.id, horaInicio, value)
-      }
-    }
+    const candidateStart = field === 'inicio' ? toMinutes(value) : startMin
+    const candidateEnd = field === 'fim' ? toMinutes(value) : endMin
+    const normalized = normalizeTimelineInterval({
+      startMin: candidateStart,
+      endMin: candidateEnd,
+      axisOpenMin: openMin,
+      axisCloseMin: closeMin,
+      boundsOpenMin: minBound,
+      boundsCloseMin: maxBound,
+      minDurationMin: DEMANDA_MIN_DURATION_MINUTES,
+      snapIntervalMin: DEMANDA_SNAP_MINUTES,
+    })
+    if (!normalized) return
+
+    onUpdateTimes(
+      demanda.id,
+      minutesToTime(normalized.startMin),
+      minutesToTime(normalized.endMin),
+    )
   }
 
   return (
     <div
-      ref={(node) => {
-        setNodeRef(node)
-        ;(containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node
-      }}
-      style={style}
+      ref={containerRef}
       className="group relative h-10"
     >
       {/* Track background */}
       <div className="absolute inset-0 rounded-md bg-muted/30 dark:bg-muted/20" />
 
-      {/* The bar — positioned absolute inside the track */}
-      <div
-        className={cn(
-          'absolute top-0 h-full rounded-md border flex items-center transition-shadow select-none',
-          colors.bar, colors.text, colors.border,
-          isResizing ? 'ring-2 ring-primary shadow-lg cursor-col-resize' : 'cursor-grab active:cursor-grabbing hover:shadow-md',
-          isDragging && 'ring-2 ring-primary/60 shadow-lg',
-          popoverOpen && 'ring-2 ring-primary/60 shadow-lg',
-        )}
-        style={{
-          left: `${leftPercent}%`,
-          width: `${widthPercent}%`,
-          minWidth: '60px',
-        }}
-        {...attributes}
-        {...listeners}
-      >
-        {/* Left resize handle */}
-        <div
-          data-resize-handle
-          role="slider"
-          aria-label={`Ajustar inicio da faixa ${horaInicio}`}
-          aria-valuemin={openMin}
-          aria-valuemax={endMin - 60}
-          aria-valuenow={startMin}
-          tabIndex={0}
-          className={cn(
-            'absolute left-0 top-0 h-full w-2 cursor-col-resize rounded-l-md opacity-0 transition-opacity z-10',
-            'hover:opacity-100 group-hover:opacity-60',
-            colors.handle,
-          )}
-          onPointerDown={handleResizeLeft}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft') {
-              const newStart = Math.max(openMin, startMin - 30)
-              if (endMin - newStart >= 60) {
-                onUpdateTimes(demanda.id, minutesToTime(newStart), minutesToTime(endMin))
-              }
-            } else if (e.key === 'ArrowRight') {
-              const newStart = Math.min(endMin - 60, startMin + 30)
-              onUpdateTimes(demanda.id, minutesToTime(newStart), minutesToTime(endMin))
-            }
-          }}
-        />
-
-        {/* Center label — Tooltip wraps this for hover info */}
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        {/* The bar — positioned absolute inside the track */}
         <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex flex-1 items-center justify-center gap-1.5 overflow-hidden px-3 text-xs font-medium min-w-0">
-              <span className="truncate">
-                {horaInicio} - {horaFim}
-              </span>
-              {isResizing && (
-                <span className="shrink-0 text-[10px] opacity-80">
-                  ({formatarMinutos(duration)})
-                </span>
-              )}
-            </div>
-          </TooltipTrigger>
+          <PopoverTrigger asChild>
+            <TooltipTrigger asChild>
+              <div
+                role="button"
+                tabIndex={0}
+                className={cn(
+                  'absolute top-0 h-full rounded-md border flex items-center transition-shadow select-none',
+                  colors.bar, colors.text, colors.border,
+                  isResizing ? 'ring-2 ring-primary shadow-lg cursor-col-resize' : 'cursor-pointer hover:shadow-md',
+                  popoverOpen && 'ring-2 ring-primary/60 shadow-lg',
+                )}
+                style={{
+                  left: `${barGeometry.leftPercent}%`,
+                  width: barGeometry.widthStyle,
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setPopoverOpen(true)
+                  }
+                }}
+              >
+                {/* Left resize handle */}
+                <div
+                  data-resize-handle
+                  role="slider"
+                  aria-label={`Ajustar inicio da faixa ${horaInicio}`}
+                  aria-valuemin={minBound}
+                  aria-valuemax={endMin - DEMANDA_MIN_DURATION_MINUTES}
+                  aria-valuenow={startMin}
+                  tabIndex={0}
+                  className={cn(
+                    'absolute left-0 top-0 h-full w-2 cursor-col-resize rounded-l-md opacity-0 transition-opacity z-10',
+                    'hover:opacity-100 group-hover:opacity-60',
+                    colors.handle,
+                  )}
+                  onPointerDown={handleResizeLeft}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowLeft') {
+                      const newStart = Math.max(minBound, startMin - DEMANDA_SNAP_MINUTES)
+                      if (endMin - newStart >= DEMANDA_MIN_DURATION_MINUTES) {
+                        onUpdateTimes(demanda.id, minutesToTime(newStart), minutesToTime(endMin))
+                      }
+                    } else if (e.key === 'ArrowRight') {
+                      const newStart = Math.min(endMin - DEMANDA_MIN_DURATION_MINUTES, startMin + DEMANDA_SNAP_MINUTES)
+                      onUpdateTimes(demanda.id, minutesToTime(newStart), minutesToTime(endMin))
+                    }
+                  }}
+                />
+
+                {/* Center label */}
+                <div className="flex flex-1 items-center justify-center gap-1.5 overflow-hidden px-3 text-xs font-medium min-w-0">
+                  <span className="truncate">
+                    {horaInicio} - {horaFim}
+                  </span>
+                  {isResizing && (
+                    <span className="shrink-0 text-[10px] opacity-80">
+                      ({formatarMinutos(duration)})
+                    </span>
+                  )}
+                </div>
+
+                {/* Right side: badge + icon */}
+                <div className="flex shrink-0 items-center gap-2 mr-3">
+                  <div className={cn(
+                    'flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold',
+                    colors.badge,
+                  )}>
+                    <Users className="size-2.5" />
+                    {demanda.min_pessoas}
+                  </div>
+                  <div className={cn(
+                    'flex items-center justify-center rounded size-6 pointer-events-none',
+                    'opacity-0 group-hover:opacity-70 transition-opacity',
+                  )}>
+                    <MoreHorizontal className="size-3.5" />
+                  </div>
+                </div>
+
+                {/* Right resize handle */}
+                <div
+                  data-resize-handle
+                  role="slider"
+                  aria-label={`Ajustar fim da faixa ${horaFim}`}
+                  aria-valuemin={startMin + DEMANDA_MIN_DURATION_MINUTES}
+                  aria-valuemax={maxBound}
+                  aria-valuenow={endMin}
+                  tabIndex={0}
+                  className={cn(
+                    'absolute right-0 top-0 h-full w-2 cursor-col-resize rounded-r-md opacity-0 transition-opacity z-10',
+                    'hover:opacity-100 group-hover:opacity-60',
+                    colors.handle,
+                  )}
+                  onPointerDown={handleResizeRight}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight') {
+                      const newEnd = Math.min(maxBound, endMin + DEMANDA_SNAP_MINUTES)
+                      if (newEnd - startMin >= DEMANDA_MIN_DURATION_MINUTES) {
+                        onUpdateTimes(demanda.id, minutesToTime(startMin), minutesToTime(newEnd))
+                      }
+                    } else if (e.key === 'ArrowLeft') {
+                      const newEnd = Math.max(startMin + DEMANDA_MIN_DURATION_MINUTES, endMin - DEMANDA_SNAP_MINUTES)
+                      onUpdateTimes(demanda.id, minutesToTime(startMin), minutesToTime(newEnd))
+                    }
+                  }}
+                />
+              </div>
+            </TooltipTrigger>
+          </PopoverTrigger>
+
           <TooltipContent side="top" className="space-y-1 text-xs">
             <div className="flex items-center gap-1.5 font-medium">
               <Clock className="size-3" />
@@ -223,151 +285,90 @@ export function DemandaBar({
           </TooltipContent>
         </Tooltip>
 
-        {/* Right side: badge + kebab menu with proper spacing */}
-        <div className="flex shrink-0 items-center gap-2 mr-3">
-          {/* People badge */}
-          <div className={cn(
-            'flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold',
-            colors.badge,
-          )}>
-            <Users className="size-2.5" />
-            {demanda.min_pessoas}
+        <PopoverContent side="top" align="end" className="w-64 p-4 space-y-4">
+          {/* Time inputs */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Horario</label>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <Input
+                type="time"
+                defaultValue={horaInicio}
+                className="h-8 text-xs"
+                step={DEMANDA_SNAP_MINUTES * 60}
+                min={minutesToTime(minBound)}
+                max={minutesToTime(endMin - DEMANDA_MIN_DURATION_MINUTES)}
+                onBlur={(e) => handleTimeChange('inicio', e.target.value)}
+              />
+              <span className="text-xs text-muted-foreground">ate</span>
+              <Input
+                type="time"
+                defaultValue={horaFim}
+                className="h-8 text-xs"
+                step={DEMANDA_SNAP_MINUTES * 60}
+                min={minutesToTime(startMin + DEMANDA_MIN_DURATION_MINUTES)}
+                max={minutesToTime(maxBound)}
+                onBlur={(e) => handleTimeChange('fim', e.target.value)}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground text-center">
+              Duracao: {formatarMinutos(duration)}
+            </p>
           </div>
 
-          {/* Kebab menu button — Popover trigger */}
-          <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  'flex items-center justify-center rounded size-6',
-                  'opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity',
-                  'hover:bg-black/10 dark:hover:bg-white/10',
-                )}
-                onClick={(e) => {
-                  e.stopPropagation()
-                }}
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                }}
-              >
-                <MoreHorizontal className="size-3.5" />
-              </button>
-            </PopoverTrigger>
-
-            <PopoverContent side="top" align="end" className="w-64 p-4 space-y-4">
-              {/* Time inputs */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Horario</label>
-                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                  <Input
-                    type="time"
-                    defaultValue={horaInicio}
-                    className="h-8 text-xs"
-                    min={minutesToTime(openMin)}
-                    max={minutesToTime(endMin - 60)}
-                    onBlur={(e) => handleTimeChange('inicio', e.target.value)}
-                  />
-                  <span className="text-xs text-muted-foreground">ate</span>
-                  <Input
-                    type="time"
-                    defaultValue={horaFim}
-                    className="h-8 text-xs"
-                    min={minutesToTime(startMin + 60)}
-                    max={minutesToTime(closeMin)}
-                    onBlur={(e) => handleTimeChange('fim', e.target.value)}
-                  />
-                </div>
-                <p className="text-[10px] text-muted-foreground text-center">
-                  Duracao: {formatarMinutos(duration)}
-                </p>
-              </div>
-
-              {/* People stepper */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Min. pessoas</label>
-                <div className="flex items-center justify-center gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="size-8"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      e.preventDefault()
-                      onUpdatePessoas(demanda.id, -1)
-                    }}
-                    disabled={demanda.min_pessoas <= 1}
-                  >
-                    <Minus className="size-3.5" />
-                  </Button>
-                  <span className="w-8 text-center text-base font-bold tabular-nums">{demanda.min_pessoas}</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="size-8"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      e.preventDefault()
-                      onUpdatePessoas(demanda.id, 1)
-                    }}
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Delete */}
+          {/* People stepper */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Min. pessoas</label>
+            <div className="flex items-center justify-center gap-3">
               <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-8"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()
                   e.preventDefault()
-                  // Delete first — bar unmounts taking popover with it
-                  onDelete(demanda.id)
+                  onUpdatePessoas(demanda.id, -1)
+                }}
+                disabled={demanda.min_pessoas <= 1}
+              >
+                <Minus className="size-3.5" />
+              </Button>
+              <span className="w-8 text-center text-base font-bold tabular-nums">{demanda.min_pessoas}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-8"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onUpdatePessoas(demanda.id, 1)
                 }}
               >
-                <Trash2 className="mr-1.5 size-3.5" />
-                Remover faixa
+                <Plus className="size-3.5" />
               </Button>
-            </PopoverContent>
-          </Popover>
-        </div>
+            </div>
+          </div>
 
-        {/* Right resize handle */}
-        <div
-          data-resize-handle
-          role="slider"
-          aria-label={`Ajustar fim da faixa ${horaFim}`}
-          aria-valuemin={startMin + 60}
-          aria-valuemax={closeMin}
-          aria-valuenow={endMin}
-          tabIndex={0}
-          className={cn(
-            'absolute right-0 top-0 h-full w-2 cursor-col-resize rounded-r-md opacity-0 transition-opacity z-10',
-            'hover:opacity-100 group-hover:opacity-60',
-            colors.handle,
-          )}
-          onPointerDown={handleResizeRight}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowRight') {
-              const newEnd = Math.min(closeMin, endMin + 30)
-              if (newEnd - startMin >= 60) {
-                onUpdateTimes(demanda.id, minutesToTime(startMin), minutesToTime(newEnd))
-              }
-            } else if (e.key === 'ArrowLeft') {
-              const newEnd = Math.max(startMin + 60, endMin - 30)
-              onUpdateTimes(demanda.id, minutesToTime(startMin), minutesToTime(newEnd))
-            }
-          }}
-        />
-      </div>
+          {/* Delete */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+              onDelete(demanda.id)
+            }}
+          >
+            <Trash2 className="mr-1.5 size-3.5" />
+            Remover faixa
+          </Button>
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
