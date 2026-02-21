@@ -1,7 +1,7 @@
 # PRD — EscalaFlow: IA, Configurações e Capacidades
 **Versão:** 3.1
 **Data:** 2026-02-21
-**Status:** APROVADO — Todas as decisões resolvidas. SPEC-01 e SPEC-03 implementadas.
+**Status:** APROVADO — Todas as decisões resolvidas. SPEC-01, SPEC-03 e SPEC-04 implementadas.
 
 ---
 
@@ -17,7 +17,7 @@ O EscalaFlow é um app Electron de gestão de escalas com sidebar shadcn, motor 
 2. [SPEC-02A: Reorganização da Navegação](#spec-02a)
 3. [SPEC-02B: Sistema de Regras Configuráveis (Engine)](#spec-02b)
 4. [SPEC-03: Remoção do Ícone IA da Sidebar](#spec-03) — IMPLEMENTADO
-5. [SPEC-04: Sistema de Histórico de Chats da IA](#spec-04) — Spec detalhada em arquivo dedicado
+5. [SPEC-04: Sistema de Histórico de Chats da IA](#spec-04) — IMPLEMENTADO
 6. [SPEC-05: Mapa de Capacidades da IA para RH](#spec-05)
 7. [SPEC-06: Atualização do Tour "Como Funciona"](#spec-06)
 8. [SPEC-07: Drawer de Configuração do Motor](#spec-07)
@@ -390,13 +390,15 @@ config: {
 ---
 
 <a id="spec-04"></a>
-## SPEC-04: Sistema de Histórico de Chats da IA
+## SPEC-04: Sistema de Histórico de Chats da IA — IMPLEMENTADO ✅
 
 > **Spec detalhada:** [`docs/SPEC-04-historico-chat-ia.md`](./SPEC-04-historico-chat-ia.md)
 
 ### Resumo
 
-Persistencia SQLite para conversas da IA + navegacao interna no proprio `<aside>` (duas telas: chat e historico). Schema: `ia_conversas` + `ia_mensagens`. 10 IPC handlers novos. Zustand redesign completo. 7 componentes React novos. Acoes bulk (arquivar todas / deletar arquivadas) como icon-only com tooltip no header de cada secao.
+Persistencia SQLite para conversas da IA + navegacao interna no proprio `<aside>` (duas telas: chat e historico). Schema: `ia_conversas` + `ia_mensagens`. 10 IPC handlers novos (67 → 77). Zustand redesign completo (5 → 15 campos, 12 acoes async). 7 componentes React novos. Acoes bulk (arquivar todas / deletar arquivadas) como icon-only com tooltip.
+
+**Implementado em:** 2026-02-21
 
 ### Decisões Tomadas
 
@@ -409,6 +411,19 @@ Persistencia SQLite para conversas da IA + navegacao interna no proprio `<aside>
 | 4.5 | Limite | **ILIMITADO** — SQLite aguenta. |
 | 4.6 | Persistência | **SQLITE** — Zustand = cache de sessão. |
 | 4.7 | Acoes bulk | **Icon-only + Tooltip** na mesma linha do header de secao. |
+
+### Componentes Criados
+
+| Componente | Responsabilidade |
+|-----------|-----------------|
+| `IaChatPanel.tsx` | Router interno (chat ↔ historico), inicializacao lazy |
+| `IaChatHeader.tsx` | Header adaptavel por tela |
+| `IaChatView.tsx` | Tela de chat com persistencia SQLite |
+| `IaChatInput.tsx` | Textarea + Send extraido |
+| `IaMensagemBubble.tsx` | Bolha de mensagem extraida |
+| `IaHistoricoView.tsx` | Lista de conversas com busca + secoes |
+| `IaConversaItem.tsx` | Item com rename inline, DropdownMenu, AlertDialog |
+| `IaSecaoConversas.tsx` | Secao reutilizavel com bulk actions e confirmacao |
 
 ---
 
@@ -617,7 +632,7 @@ Com as mudanças de SPEC-01 a SPEC-07, os steps do tour ficarão desatualizados.
 |--------|------|-----------|------|--------|
 | **S1** | SPEC-01 + SPEC-03 | P0 | Leve | CONCLUIDO |
 | **S2** | SPEC-02A | P1 | Leve — reorganizar sidebar/routing/cleanup | Pendente |
-| **S3** | SPEC-04 | P1 | Média — schema + IPC + Zustand + UI interna | Pendente |
+| **S3** | SPEC-04 | P1 | Média — schema + IPC + Zustand + UI interna | **CONCLUIDO** |
 | **S4** | SPEC-02B | P1 | **PESADA** — engine de regras, schema, seed, IPC, UI /regras | Pendente |
 | **S5** | SPEC-07 | P2 | **PESADA** — Drawer + bridge refactor + Python refactor | Pendente |
 | **S6** | SPEC-05 | P2 | Média — tools, system prompt, validações IA | Pendente |
@@ -678,7 +693,7 @@ SPEC-07 (drawer motor) ──────► SPEC-06 (tour — ÚLTIMA)
 - `src/main/ia/system-prompt.ts` — System prompt
 - `src/main/db/schema.ts` — Schema SQLite
 - `src/main/db/seed.ts` — Seed de dados iniciais
-- `src/main/tipc.ts` — IPC handlers (67+)
+- `src/main/tipc.ts` — IPC handlers (77+)
 - `src/main/motor/solver-bridge.ts` — Bridge TS → Python
 - `src/main/motor/validador.ts` — Validador pós-geração
 - `solver/solver_ortools.py` — Solver Python (constraints)

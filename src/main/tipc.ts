@@ -2175,6 +2175,110 @@ const iaChatEnviar = t.procedure
   })
 
 // =============================================================================
+// IA HISTÓRICO DE CONVERSAS
+// =============================================================================
+
+const iaConversasListar = t.procedure
+  .input<{ status?: string; busca?: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const status = input.status ?? 'ativo'
+    const busca = input.busca ? `%${input.busca}%` : '%'
+    return db
+      .prepare(
+        `SELECT * FROM ia_conversas WHERE status = ? AND titulo LIKE ? ORDER BY atualizado_em DESC`,
+      )
+      .all(status, busca) as import('@shared/index').IaConversa[]
+  })
+
+const iaConversasObter = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const conversa = db
+      .prepare(`SELECT * FROM ia_conversas WHERE id = ?`)
+      .get(input.id) as import('@shared/index').IaConversa | undefined
+    if (!conversa) throw new Error('Conversa não encontrada')
+    const mensagens = db
+      .prepare(
+        `SELECT id, conversa_id, papel, conteudo, timestamp FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC`,
+      )
+      .all(input.id) as import('@shared/index').IaMensagem[]
+    return { conversa, mensagens }
+  })
+
+const iaConversasCriar = t.procedure
+  .input<{ id?: string; titulo?: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const id = input.id ?? crypto.randomUUID()
+    const titulo = input.titulo ?? 'Nova conversa'
+    db.prepare(`INSERT INTO ia_conversas (id, titulo) VALUES (?, ?)`).run(id, titulo)
+    return db
+      .prepare(`SELECT * FROM ia_conversas WHERE id = ?`)
+      .get(id) as import('@shared/index').IaConversa
+  })
+
+const iaConversasRenomear = t.procedure
+  .input<{ id: string; titulo: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare(
+      `UPDATE ia_conversas SET titulo = ?, atualizado_em = datetime('now') WHERE id = ?`,
+    ).run(input.titulo, input.id)
+  })
+
+const iaConversasArquivar = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare(
+      `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = datetime('now') WHERE id = ?`,
+    ).run(input.id)
+  })
+
+const iaConversasRestaurar = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare(
+      `UPDATE ia_conversas SET status = 'ativo', atualizado_em = datetime('now') WHERE id = ?`,
+    ).run(input.id)
+  })
+
+const iaConversasDeletar = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare(`DELETE FROM ia_conversas WHERE id = ?`).run(input.id)
+  })
+
+const iaMensagensSalvar = t.procedure
+  .input<{ conversa_id: string; mensagem: import('@shared/index').IaMensagem }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const { conversa_id, mensagem } = input
+    db.prepare(
+      `INSERT OR IGNORE INTO ia_mensagens (id, conversa_id, papel, conteudo, timestamp) VALUES (?, ?, ?, ?, ?)`,
+    ).run(mensagem.id, conversa_id, mensagem.papel, mensagem.conteudo, mensagem.timestamp)
+    db.prepare(
+      `UPDATE ia_conversas SET atualizado_em = datetime('now') WHERE id = ?`,
+    ).run(conversa_id)
+  })
+
+const iaConversasArquivarTodas = t.procedure.action(async () => {
+  const db = getDb()
+  db.prepare(
+    `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = datetime('now') WHERE status = 'ativo'`,
+  ).run()
+})
+
+const iaConversasDeletarArquivadas = t.procedure.action(async () => {
+  const db = getDb()
+  db.prepare(`DELETE FROM ia_conversas WHERE status = 'arquivado'`).run()
+})
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -2261,6 +2365,16 @@ export const router = {
   'ia.configuracao.salvar': iaConfiguracaoSalvar,
   'ia.configuracao.testar': iaConfiguracaoTestar,
   'ia.chat.enviar': iaChatEnviar,
+  'ia.conversas.listar': iaConversasListar,
+  'ia.conversas.obter': iaConversasObter,
+  'ia.conversas.criar': iaConversasCriar,
+  'ia.conversas.renomear': iaConversasRenomear,
+  'ia.conversas.arquivar': iaConversasArquivar,
+  'ia.conversas.restaurar': iaConversasRestaurar,
+  'ia.conversas.deletar': iaConversasDeletar,
+  'ia.conversas.arquivarTodas': iaConversasArquivarTodas,
+  'ia.conversas.deletarArquivadas': iaConversasDeletarArquivadas,
+  'ia.mensagens.salvar': iaMensagensSalvar,
 }
 
 export type Router = typeof router

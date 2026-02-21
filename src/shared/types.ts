@@ -633,3 +633,15 @@ export interface IaConfiguracao {
   criado_em: string
   atualizado_em: string
 }
+
+export interface IaConversa {
+  id: string
+  titulo: string
+  status: 'ativo' | 'arquivado'
+  criado_em: string
+  atualizado_em: string
+}
+
+export interface IaMensagemDB extends IaMensagem {
+  conversa_id: string
+}

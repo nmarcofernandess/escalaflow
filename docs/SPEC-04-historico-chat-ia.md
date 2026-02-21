@@ -1,6 +1,6 @@
 # SPEC-04 — Sistema de Historico de Chats da IA
 
-**Status:** PRONTO PARA IMPLEMENTACAO
+**Status:** IMPLEMENTADO ✅ (2026-02-21)
 **Prioridade:** P1 (Sprint 3 do PRD v3.0)
 **Dependencias:** SPEC-01 (OK), SPEC-03 (OK) — ambas implementadas
 **Complexidade:** Media (~3-4 sessoes de trabalho)
@@ -684,6 +684,47 @@ stop
 |---------|-------|--------|
 | Tabelas SQLite | 0 IA chat | +2 (`ia_conversas`, `ia_mensagens`) |
 | IPC handlers | 67 | 77 (+10) |
-| Componentes novos | 0 | 6 (Header, ChatView, Input, Bubble, HistoricoView, ConversaItem, SecaoConversas) |
-| Store Zustand | 5 campos | ~15 campos + ~12 acoes |
+| Componentes novos | 0 | 7 (Header, ChatView, Input, Bubble, HistoricoView, ConversaItem, SecaoConversas) |
+| Store Zustand | 5 campos | 15 campos + 12 acoes |
 | Persistencia | Nenhuma (Zustand volatil) | SQLite (sobrevive restart) |
+
+---
+
+## IMPLEMENTACAO — O QUE FOI FEITO
+
+### Arquivos Modificados
+
+| Arquivo | Acao | Detalhes |
+|---------|------|---------|
+| `src/main/db/schema.ts` | EDITADO | +DDL `ia_conversas` + `ia_mensagens` + 2 indices. Constante `DDL_IA_HISTORICO` adicionada e chamada em `createTables()`. |
+| `src/shared/types.ts` | EDITADO | +`IaConversa`, `IaMensagemDB` apos `IaConfiguracao` |
+| `src/main/tipc.ts` | EDITADO | +10 handlers (`iaConversasListar`, `iaConversasObter`, `iaConversasCriar`, `iaConversasRenomear`, `iaConversasArquivar`, `iaConversasRestaurar`, `iaConversasDeletar`, `iaMensagensSalvar`, `iaConversasArquivarTodas`, `iaConversasDeletarArquivadas`) + registrados no router |
+| `src/renderer/src/store/iaStore.ts` | REESCRITO | ~190 linhas. 15 campos + 12 acoes async. Auto-titulo, limpeza de conversas vazias, inicializacao lazy (so na primeira abertura do painel) |
+| `src/renderer/src/componentes/IaChatPanel.tsx` | REFATORADO | Router interno de 20 linhas. Chama `inicializar()` na primeira abertura |
+
+### Arquivos Criados
+
+| Arquivo | Descricao |
+|---------|-----------|
+| `src/renderer/src/componentes/IaChatHeader.tsx` | Header adaptavel: modo chat mostra `[< Historico] titulo [+]`, modo historico mostra `[BrainCircuit] Historico [+]` |
+| `src/renderer/src/componentes/IaChatView.tsx` | Tela de chat com persistencia. Salva cada msg no SQLite via `adicionarMensagem()` do store |
+| `src/renderer/src/componentes/IaChatInput.tsx` | Textarea + botao Send extraido. Props: value, onChange, onEnviar, disabled |
+| `src/renderer/src/componentes/IaMensagemBubble.tsx` | Bolha de mensagem extraida. Props: `msg: IaMensagem`. Estilos: bg-primary (usuario), bg-muted (assistente), bg-amber-500/10 (tool_result) |
+| `src/renderer/src/componentes/IaHistoricoView.tsx` | Tela de historico. Input de busca + secoes Ativas/Arquivadas via `IaSecaoConversas`. Empty state se nenhuma conversa |
+| `src/renderer/src/componentes/IaConversaItem.tsx` | Item de conversa com `DropdownMenu` (Renomear/Arquivar ou Restaurar/Deletar). Rename inline com Input. AlertDialog para confirmar delete. Tempo relativo via `Intl.RelativeTimeFormat` |
+| `src/renderer/src/componentes/IaSecaoConversas.tsx` | Secao reutilizavel (Ativas/Arquivadas). Header com badge count + bulk action icon-only com Tooltip. AlertDialog de confirmacao para acoes bulk. Collapsible manual via useState |
+
+### Decisoes de Implementacao
+
+| Decisao | Escolha | Motivo |
+|---------|---------|--------|
+| Collapsible | `useState` proprio | Componente shadcn `Collapsible` nao estava instalado |
+| `inicializar()` | Flag `_inicializado` no store + ref no componente | Evita double-init (React StrictMode + hot reload) |
+| Limpeza de conversa vazia | Silenciosa ao trocar/criar | UX mais limpa, sem confirmacoes para conversas sem mensagens |
+| Tempo relativo | `Intl.RelativeTimeFormat` nativo | Zero deps extras |
+| Auto-titulo | Corte na ultima palavra + "..." | Nunca quebra palavras no meio |
+
+### Validacao
+
+- `npm run typecheck` — 0 erros
+- `npm run build` — OK (2.25MB bundle renderer)

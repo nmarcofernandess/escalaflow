@@ -248,6 +248,35 @@ CREATE TABLE IF NOT EXISTS configuracao_ia (
 `
 
 // ============================================================================
+// DDL — Histórico de Chat IA
+// ============================================================================
+
+const DDL_IA_HISTORICO = `
+CREATE TABLE IF NOT EXISTS ia_conversas (
+  id TEXT PRIMARY KEY,
+  titulo TEXT NOT NULL DEFAULT 'Nova conversa',
+  status TEXT NOT NULL DEFAULT 'ativo'
+    CHECK (status IN ('ativo', 'arquivado')),
+  criado_em TEXT NOT NULL DEFAULT (datetime('now')),
+  atualizado_em TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ia_mensagens (
+  id TEXT PRIMARY KEY,
+  conversa_id TEXT NOT NULL REFERENCES ia_conversas(id) ON DELETE CASCADE,
+  papel TEXT NOT NULL
+    CHECK (papel IN ('usuario', 'assistente', 'tool_result')),
+  conteudo TEXT NOT NULL,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ia_mensagens_conversa
+  ON ia_mensagens(conversa_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_ia_conversas_status
+  ON ia_conversas(status, atualizado_em DESC);
+`
+
+// ============================================================================
 // Migrations — idempotentes (check column exists antes de ALTER)
 // ============================================================================
 
@@ -514,6 +543,7 @@ export function createTables(): void {
   db.exec(DDL)
   db.exec(DDL_V3)
   db.exec(DDL_IA)
+  db.exec(DDL_IA_HISTORICO)
   migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v4 + IA)')
+  console.log('[DB] Tabelas criadas com sucesso (v4 + IA + Histórico)')
 }
