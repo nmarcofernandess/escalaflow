@@ -1,25 +1,59 @@
 import path from 'node:path'
-import fs from 'node:fs'
-import os from 'node:os'
 import { createRequire } from 'node:module'
 import electron from 'electron'
 import { createTables } from './db/schema'
 import { seedData } from './db/seed'
-import { closeDb, getDb } from './db/database'
-import { runMotorTest } from './motor/test-motor'
+import { closeDb } from './db/database'
+import { autoUpdater } from 'electron-updater'
+
+// Em modo packaged nao ha terminal — EPIPE em stdout/stderr nao deve crashar o app
+process.stdout.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') console.error(err) })
+process.stderr.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') console.error(err) })
+process.on('uncaughtException', (err: Error) => {
+  if ((err as NodeJS.ErrnoException).code === 'EPIPE') return
+  console.error('[MAIN] uncaughtException:', err)
+})
 
 let mainWindow: import('electron').BrowserWindow | null = null
 const require = createRequire(import.meta.url)
 
-const isTestMotor = process.argv.includes('--test-motor')
+function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('electron').App): void {
+  // Não roda auto-update em dev
+  if (process.env.ELECTRON_RENDERER_URL) return
 
-function prepareMotorTestDb(): string {
-  const baseDir = path.join(os.tmpdir(), 'escalaflow-motor-tests')
-  fs.mkdirSync(baseDir, { recursive: true })
-  const dbPath = path.join(baseDir, `motor-${process.pid}-${Date.now()}.db`)
-  process.env.ESCALAFLOW_DB_PATH = dbPath
-  if (fs.existsSync(dbPath)) fs.rmSync(dbPath, { force: true })
-  return dbPath
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => {
+    mainWindow?.webContents.send('update:checking')
+  })
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('update:available', info)
+  })
+  autoUpdater.on('update-not-available', () => {
+    mainWindow?.webContents.send('update:not-available')
+  })
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('update:progress', progress)
+  })
+  autoUpdater.on('update-downloaded', () => {
+    mainWindow?.webContents.send('update:downloaded')
+  })
+  autoUpdater.on('error', (err) => {
+    mainWindow?.webContents.send('update:error', err.message)
+  })
+
+  // Checa ao iniciar (5s de delay pra janela estar pronta)
+  setTimeout(() => autoUpdater.checkForUpdates(), 5000)
+
+  ipcMain.handle('update:check', () => {
+    if (process.env.ELECTRON_RENDERER_URL) return
+    return autoUpdater.checkForUpdates()
+  })
+  ipcMain.handle('update:install', () => {
+    autoUpdater.quitAndInstall()
+  })
+  ipcMain.handle('app:version', () => app.getVersion())
 }
 
 function createWindow(
@@ -59,30 +93,17 @@ function createWindow(
 }
 
 async function bootstrap(): Promise<void> {
-  let motorTestDbPath: string | null = null
-  if (isTestMotor) {
-    motorTestDbPath = prepareMotorTestDb()
-  }
-
   createTables()
   seedData()
 
-  if (isTestMotor) {
-    const code = runMotorTest(getDb())
-    closeDb()
-    if (motorTestDbPath && fs.existsSync(motorTestDbPath)) {
-      fs.rmSync(motorTestDbPath, { force: true })
-    }
-    process.exit(code)
-    return
-  }
-  const { app, BrowserWindow, shell } = electron
+  const { app, BrowserWindow, shell, ipcMain } = electron
 
   app.whenReady().then(async () => {
     const { registerIpcMain } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/main')
     const { router } = await import('./tipc')
     registerIpcMain(router)
     createWindow(BrowserWindow, shell)
+    setupAutoUpdater(ipcMain, app)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

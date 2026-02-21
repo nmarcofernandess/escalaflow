@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Settings, Save, ShieldCheck, Monitor, Sun, Moon, Check, CalendarDays, Plus, Trash2, Lock } from 'lucide-react'
+import { Settings, Save, ShieldCheck, Monitor, Sun, Moon, Check, CalendarDays, Plus, Trash2, Lock, RefreshCw, Download, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -91,6 +91,44 @@ export function EmpresaConfig() {
   const [salvando, setSalvando] = useState(false)
   const { theme: currentMode, setTheme } = useTheme()
   const { colorTheme, setColorTheme } = useColorTheme()
+
+  // Update state
+  type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle')
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState(0)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+  const [appVersion, setAppVersion] = useState<string>('...')
+
+  useEffect(() => {
+    window.electron.ipcRenderer.invoke('app:version').then((v: string) => setAppVersion(v)).catch(() => {})
+
+    window.electron.ipcRenderer.on('update:checking', () => setUpdateStatus('checking'))
+    window.electron.ipcRenderer.on('update:available', (info: { version: string }) => {
+      setUpdateStatus('available')
+      setUpdateVersion(info?.version ?? null)
+    })
+    window.electron.ipcRenderer.on('update:not-available', () => setUpdateStatus('up-to-date'))
+    window.electron.ipcRenderer.on('update:progress', (p: { percent: number }) => {
+      setUpdateStatus('downloading')
+      setDownloadProgress(Math.round(p?.percent ?? 0))
+    })
+    window.electron.ipcRenderer.on('update:downloaded', () => setUpdateStatus('ready'))
+    window.electron.ipcRenderer.on('update:error', (msg: string) => {
+      setUpdateStatus('error')
+      setUpdateError(msg)
+    })
+  }, [])
+
+  const handleCheckUpdate = () => {
+    setUpdateError(null)
+    setUpdateStatus('checking')
+    window.electron.ipcRenderer.invoke('update:check').catch(() => {})
+  }
+
+  const handleInstallUpdate = () => {
+    window.electron.ipcRenderer.invoke('update:install').catch(() => {})
+  }
 
   // Feriado dialog state
   const [showFeriadoDialog, setShowFeriadoDialog] = useState(false)
@@ -579,6 +617,90 @@ export function EmpresaConfig() {
                     </button>
                   )
                 })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Atualizações */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Download className="size-4" />
+              Atualizacoes do sistema
+            </CardTitle>
+            <CardDescription>
+              Versao atual: <span className="font-mono font-medium text-foreground">v{appVersion}</span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                {updateStatus === 'idle' && (
+                  <span className="text-sm text-muted-foreground">Clique para verificar se ha uma nova versao disponivel.</span>
+                )}
+                {updateStatus === 'checking' && (
+                  <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Verificando...
+                  </span>
+                )}
+                {updateStatus === 'up-to-date' && (
+                  <span className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                    <CheckCircle2 className="size-4" />
+                    Voce esta na versao mais recente.
+                  </span>
+                )}
+                {updateStatus === 'available' && (
+                  <span className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+                    <Download className="size-4" />
+                    Nova versao disponivel{updateVersion ? `: v${updateVersion}` : ''}. Baixando...
+                  </span>
+                )}
+                {updateStatus === 'downloading' && (
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="size-4 animate-spin text-blue-500" />
+                    <div className="space-y-1">
+                      <p className="text-sm">Baixando atualizacao... {downloadProgress}%</p>
+                      <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                          style={{ width: `${downloadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {updateStatus === 'ready' && (
+                  <span className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                    <CheckCircle2 className="size-4" />
+                    Atualizacao pronta! Reinicie para instalar.
+                  </span>
+                )}
+                {updateStatus === 'error' && (
+                  <span className="flex items-center gap-2 text-sm text-destructive">
+                    <AlertCircle className="size-4" />
+                    {updateError ?? 'Erro ao verificar atualizacao.'}
+                  </span>
+                )}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                {updateStatus === 'ready' ? (
+                  <Button size="sm" onClick={handleInstallUpdate}>
+                    <RefreshCw className="mr-1.5 size-3.5" />
+                    Reiniciar e instalar
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCheckUpdate}
+                    disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                  >
+                    <RefreshCw className={cn('mr-1.5 size-3.5', updateStatus === 'checking' && 'animate-spin')} />
+                    Verificar atualizacoes
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>

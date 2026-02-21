@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FileText, Plus, Edit, Trash2, Info, Search, Clock, Calendar, Timer } from 'lucide-react'
+import { FileText, Plus, Edit, Trash2, Info, Search, Clock, Calendar, Timer, Settings2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -57,7 +57,7 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarMinutos, mapError } from '@/lib/formatadores'
 import { toast } from 'sonner'
-import type { TipoContrato } from '@shared/index'
+import type { TipoContrato, PerfilHorarioContrato } from '@shared/index'
 
 const contratoSchema = z.object({
   nome: z.string().min(1, 'Nome e obrigatorio'),
@@ -91,6 +91,109 @@ export function ContratoLista() {
   const [salvando, setSalvando] = useState(false)
   const [deletando, setDeletando] = useState(false)
   const [viewMode, setViewMode] = useViewMode('contratos', 'table')
+
+  // --- Perfis de Horario ---
+  const [perfisContratoId, setPerfisContratoId] = useState<number | null>(null)
+  const [perfis, setPerfis] = useState<PerfilHorarioContrato[]>([])
+  const [perfisLoading, setPerfisLoading] = useState(false)
+  const [showPerfilForm, setShowPerfilForm] = useState(false)
+  const [editingPerfilId, setEditingPerfilId] = useState<number | null>(null)
+  const [perfilSalvando, setPerfilSalvando] = useState(false)
+  const [perfilForm, setPerfilForm] = useState({
+    nome: '',
+    inicio_min: '06:00',
+    inicio_max: '08:00',
+    fim_min: '14:00',
+    fim_max: '18:00',
+    preferencia_turno_soft: '' as string,
+    ordem: 0,
+  })
+
+  const abrirPerfisDialog = async (tipoContratoId: number) => {
+    setPerfisContratoId(tipoContratoId)
+    setPerfisLoading(true)
+    try {
+      const data = await tiposContratoService.listarPerfisHorario(tipoContratoId)
+      setPerfis(data)
+    } catch (err) {
+      toast.error(mapError(err))
+    } finally {
+      setPerfisLoading(false)
+    }
+  }
+
+  const fecharPerfisDialog = () => {
+    setPerfisContratoId(null)
+    setPerfis([])
+    setShowPerfilForm(false)
+    setEditingPerfilId(null)
+  }
+
+  const abrirPerfilCriar = () => {
+    setEditingPerfilId(null)
+    setPerfilForm({
+      nome: '',
+      inicio_min: '06:00',
+      inicio_max: '08:00',
+      fim_min: '14:00',
+      fim_max: '18:00',
+      preferencia_turno_soft: '',
+      ordem: perfis.length,
+    })
+    setShowPerfilForm(true)
+  }
+
+  const abrirPerfilEditar = (p: PerfilHorarioContrato) => {
+    setEditingPerfilId(p.id)
+    setPerfilForm({
+      nome: p.nome,
+      inicio_min: p.inicio_min,
+      inicio_max: p.inicio_max,
+      fim_min: p.fim_min,
+      fim_max: p.fim_max,
+      preferencia_turno_soft: p.preferencia_turno_soft ?? '',
+      ordem: p.ordem,
+    })
+    setShowPerfilForm(true)
+  }
+
+  const salvarPerfil = async () => {
+    if (!perfisContratoId || !perfilForm.nome.trim()) return
+    setPerfilSalvando(true)
+    try {
+      const payload = {
+        ...perfilForm,
+        tipo_contrato_id: perfisContratoId,
+        preferencia_turno_soft: (perfilForm.preferencia_turno_soft || null) as 'MANHA' | 'TARDE' | null,
+      }
+      if (editingPerfilId) {
+        await tiposContratoService.atualizarPerfilHorario(editingPerfilId, payload)
+        toast.success('Perfil atualizado')
+      } else {
+        await tiposContratoService.criarPerfilHorario(payload as any)
+        toast.success('Perfil criado')
+      }
+      setShowPerfilForm(false)
+      const data = await tiposContratoService.listarPerfisHorario(perfisContratoId)
+      setPerfis(data)
+    } catch (err) {
+      toast.error(mapError(err))
+    } finally {
+      setPerfilSalvando(false)
+    }
+  }
+
+  const deletarPerfil = async (id: number) => {
+    if (!perfisContratoId) return
+    try {
+      await tiposContratoService.deletarPerfilHorario(id)
+      toast.success('Perfil excluido')
+      const data = await tiposContratoService.listarPerfisHorario(perfisContratoId)
+      setPerfis(data)
+    } catch (err) {
+      toast.error(mapError(err))
+    }
+  }
 
   const form = useForm<ContratoFormInput, unknown, ContratoFormData>({
     resolver: zodResolver(contratoSchema),
@@ -257,6 +360,15 @@ export function ContratoLista() {
                           variant="ghost"
                           size="icon"
                           className="size-8"
+                          title="Perfis de Horario"
+                          onClick={() => abrirPerfisDialog(tc.id)}
+                        >
+                          <Settings2 className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
                           onClick={() => abrirDialogEditar(tc)}
                         >
                           <Edit className="size-3.5" />
@@ -320,6 +432,9 @@ export function ContratoLista() {
                       </span>
                     </div>
                     <div className="mt-3 flex items-center gap-1">
+                      <Button variant="outline" size="sm" onClick={() => abrirPerfisDialog(tc.id)}>
+                        <Settings2 className="mr-1 size-3" /> Perfis
+                      </Button>
                       <Button variant="outline" size="sm" className="flex-1" onClick={() => abrirDialogEditar(tc)}>
                         <Edit className="mr-1 size-3" /> Editar
                       </Button>
@@ -501,6 +616,126 @@ export function ContratoLista() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Perfis de Horario Dialog */}
+      <Dialog open={!!perfisContratoId} onOpenChange={() => fecharPerfisDialog()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Perfis de Horario — {allTipos.find((t) => t.id === perfisContratoId)?.nome ?? ''}
+            </DialogTitle>
+            <DialogDescription>
+              Perfis definem janelas de horario padrao para colaboradores deste contrato.
+            </DialogDescription>
+          </DialogHeader>
+
+          {perfisLoading ? (
+            <p className="text-sm text-muted-foreground py-4">Carregando...</p>
+          ) : showPerfilForm ? (
+            <div className="space-y-3 py-2">
+              <div>
+                <label className="text-xs font-medium">Nome do Perfil</label>
+                <Input
+                  value={perfilForm.nome}
+                  onChange={(e) => setPerfilForm({ ...perfilForm, nome: e.target.value })}
+                  placeholder="Ex: Manha, Tarde, Integral"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium">Inicio mais cedo</label>
+                  <Input
+                    type="time"
+                    value={perfilForm.inicio_min}
+                    onChange={(e) => setPerfilForm({ ...perfilForm, inicio_min: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Inicio mais tarde</label>
+                  <Input
+                    type="time"
+                    value={perfilForm.inicio_max}
+                    onChange={(e) => setPerfilForm({ ...perfilForm, inicio_max: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Fim mais cedo</label>
+                  <Input
+                    type="time"
+                    value={perfilForm.fim_min}
+                    onChange={(e) => setPerfilForm({ ...perfilForm, fim_min: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Fim mais tarde</label>
+                  <Input
+                    type="time"
+                    value={perfilForm.fim_max}
+                    onChange={(e) => setPerfilForm({ ...perfilForm, fim_max: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium">Preferencia de Turno</label>
+                <Select
+                  value={perfilForm.preferencia_turno_soft || '_none'}
+                  onValueChange={(v) => setPerfilForm({ ...perfilForm, preferencia_turno_soft: v === '_none' ? '' : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sem preferencia" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Sem preferencia</SelectItem>
+                    <SelectItem value="MANHA">Manha</SelectItem>
+                    <SelectItem value="TARDE">Tarde</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setShowPerfilForm(false)}>
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={salvarPerfil} disabled={perfilSalvando || !perfilForm.nome.trim()}>
+                  {perfilSalvando ? 'Salvando...' : editingPerfilId ? 'Salvar' : 'Criar Perfil'}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-3 py-2">
+              {perfis.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  Nenhum perfil cadastrado. Perfis definem janelas de horario (ex: Manha 06:00-08:00, Tarde 12:00-18:00).
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {perfis.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                      <div>
+                        <div className="text-sm font-medium">{p.nome}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Inicio: {p.inicio_min} - {p.inicio_max} | Fim: {p.fim_min} - {p.fim_max}
+                          {p.preferencia_turno_soft && ` | ${p.preferencia_turno_soft}`}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="size-7" onClick={() => abrirPerfilEditar(p)}>
+                          <Edit className="size-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="size-7 text-destructive" onClick={() => deletarPerfil(p.id)}>
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button variant="outline" size="sm" className="w-full" onClick={abrirPerfilCriar}>
+                <Plus className="mr-1 size-3" /> Novo Perfil
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

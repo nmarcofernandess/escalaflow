@@ -14,16 +14,19 @@ asarUnpack:
   - '**/*.node'
   - '**/better-sqlite3/**'
 mac:
+  icon: icon.icns
   category: public.app-category.business
   target:
     - dmg
     - zip
   artifactName: '${productName}-${version}-${arch}.${ext}'
 win:
+  icon: icon.ico
   target:
     - nsis
   artifactName: '${productName}-Setup-${version}.${ext}'
 linux:
+  icon: icon.png
   target:
     - AppImage
   category: Office
@@ -31,3 +34,9 @@ linux:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+publish:
+  provider: github
+  owner: nmarcofernandess
+  repo: escalaflow
