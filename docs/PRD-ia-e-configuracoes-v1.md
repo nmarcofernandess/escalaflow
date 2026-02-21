@@ -19,6 +19,7 @@ O EscalaFlow é um app Electron de gestão de escalas com sidebar shadcn, motor 
 4. [SPEC-04: Sistema de Histórico de Chats da IA](#spec-04)
 5. [SPEC-05: Mapa de Capacidades da IA para RH](#spec-05)
 6. [SPEC-06: Atualização do Tour "Como Funciona"](#spec-06)
+7. [SPEC-07: Drawer de Configuração do Motor e Modal de Execução](#spec-07)
 
 ---
 
@@ -158,11 +159,13 @@ Visão: Uma página dedicada que mostra TODAS as regras que o motor e a IA segue
 - [ ] As regras SOFT devem ser por empresa ou por setor? (hoje parece ser global)
 - [ ] "Regras da Empresa" deveria se chamar "Regras e Compliance"? Ou "Motor de Escalas"?
 
+*(Nota: O perfil destas regras será utilizado como base para o "Reset" no Drawer de Geração, especificado na SPEC-07).*
+
 ### Entregáveis
 - Página `/empresa` simplificada (só dados + horários de funcionamento)
 - Página `/configuracoes` nova (tema, IA, atualizações)
 - Página `/feriados` extraída como página própria na sidebar
-- Página `/regras` nova com todas as regras categorizadas
+- Página `/regras` nova com todas as regras categorizadas e status default configurável (Hard/Soft/Off).
 - Dropdown do usuário reorganizado
 - Remoção do piso operacional e CCT
 
@@ -411,6 +414,55 @@ O motor **NUNCA** deve quebrar silenciosamente. Para cada cenário de falha:
 
 ---
 
+<a id="spec-07"></a>
+## SPEC-07: Drawer de Configuração do Motor e Modal de Execução
+
+### Problema Atual
+A *Action Bar* (barra de cima na página de escalas, com o botão "Gerar Escala") possui Dropdowns hardcoded: "Rápido / Otimizado", e "Nível de Rigor". Eles abstraem demais a matemática do OR-Tools. Quando o motor "Dá timeout ou Unknown", o usuário não tem poder pra ligar/desligar restrições isoladas, fazendo as escalas falharem inexplicavelmente. 
+
+Além disso, a distinção entre "Antipatterns", "Regras CLT" e "Preferências (Soft)" na hora de gerar a escala estava invisível ao gestor.
+
+### Ação Necessária
+
+#### 1. Remover Elementos Abstratos Atuais
+- Remover o dropdown "Rápido / Otimizado".
+- Remover o dropdown "Nível de Rigor".
+- Manter o botão primário "Gerar Escala".
+
+#### 2. Ícone de Configuração e Drawer
+- Adicionar um botão de configurações (ex: `Settings2`, ou um ícone de "sliders") **do lado esquerdo** do botão de `Gerar Escala`.
+- Clicar nesse botão deve abrir um `<Drawer>` / `<Sheet>` na direita chamado **Modo de Geração e Parâmetros**.
+
+#### 3. Estratégia de Geração (Topo do Drawer)
+Uma seção pra definir *quando o motor deve parar*:
+- **A. Modo Viável Rápido:** *Rodar só até encontrar a primeira solução válida.* (StopAfterFirstSolution do CP-SAT).
+- **B. Modo Tempo (Manual):** Deixar rodando e parar no limite temporal que for definido (ex: input numérico `[ 30 ] segundos`). 
+- **C. Modo Qualidade (Opcional):** Rodar até finalizar todas as tentativas ou alcançar X% de qualidade alvo.
+
+#### 4. Controle Granular de Regras
+O Drawer deve ser dividido em seções para que o usuário possa sintonizar o rigor daquela geração em particular.
+- Cada grupo de regras listadas abaixo possui um **Dropdown Master** na header de sua seção (Hard / Soft / Standby(Off)) e toggles idênticos para as regras específicas abaixo deles (pra configurar individualmente):
+  - **SEÇÃO CLT**: Regras baseadas na lei Trabalhista Inviolável (mas que a gente permite flexibilizar pra contornar exceções).
+  - **SEÇÃO Anti-Patterns**: Exemplos mapeados que não se podem fazer via algoritmo de forma grosseira.
+  - **SEÇÃO Regras da Empresa / Soft**: Preferências e peculiaridades de acordo coletivo que ficam guardadas.
+- Se a seção inteira for marcada como "Hard" no master, todas de dentro assumem as diretrizes.
+- Lembrete: Na matemática do motor, o status vira (Hard = Constraint Inviolável, Soft = Objetivo a Otimizar/Penalizar, Off/Standby = Regra ignorada).
+
+#### 5. Botão "Reset para Default"
+- Um botão na parte superior do Drawer ou próximo aos grupos chamado "Restaurar Padrões da Empresa".
+- Ele buscará os status default pré-configurados pelo gestor na tela `/regras` (construída na SPEC-02) e fará um _override_ neste Drawer para resetar as brincadeiras que o RH montou e não lembre quais eram.
+
+#### 6. Feedbacks Pós-Geração e Loading
+- No sucesso (e mesmo na falha da solução relaxada completa), devemos mostrar métricas de status: **[ 100% Constraints Hard | 80% Regras Soft ]**. Isso reporta quão aderente ficou a Escala em relação àquilo que ele desligou/ligou.
+
+### Entregáveis
+- Limpeza da `Action Bar` com foco no novo botão Action-Trigger.
+- Criação do componente `SolverConfigDrawer`.
+- Refatoração da Bridge TS/Py enviando o pacote granular de restrições em vez de strings genéricas `"ALTO" | "BAIXO"`.
+- Atualização do motor Python para acatar a string de regra: *"HARD"* | *"SOFT"* | *"OFF"* por nome.
+
+---
+
 <a id="spec-06"></a>
 ## SPEC-06: Atualização do Tour "Como Funciona"
 
@@ -439,6 +491,7 @@ O sistema possui um tour guiado (onboarding) interativo. Com a introdução do p
 | SPEC-02 | 🟡 P1 | Organização necessária mas não bloqueia uso |
 | SPEC-04 | 🟡 P1 | Histórico é essencial para uso real da IA |
 | SPEC-05 | 🟠 P2 | Estratégico — define a capacidade do produto |
+| SPEC-07 | 🟠 P2 | Essencial para dar controle sobre a performance e sucesso do OR-Tools. |
 | SPEC-06 | 🔵 P3 | Fechamento — Deve ser a ÚLTIMA coisa a fazer após testar a nova organização |
 
 ---
@@ -451,12 +504,12 @@ SPEC-03 (remove icon) ─────────────┐│
                                     ││
                                     ▼▼
 SPEC-02 (reorg configs) ────────► SPEC-04 (histórico chats)
-                                    │
-                                    ▼
-                              SPEC-05 (capabilities map)
-                                    │
-                                    ▼
-                              SPEC-06 (atualiza tour)
+      │                             │
+      ▼                             ▼
+   SPEC-07 (config drawer)    SPEC-05 (capabilities map)
+      │                             │
+      └─────────────► ▼ ◄───────────┘
+               SPEC-06 (atualiza tour)
 ```
 
 - SPEC-01 e SPEC-03 são independentes e podem ser feitos primeiro
