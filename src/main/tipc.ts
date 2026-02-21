@@ -1274,7 +1274,7 @@ const dashboardResumo = t.procedure
       WHERE tipo = 'ATESTADO' AND data_inicio <= ? AND data_fim >= ?
     `).get(hoje, hoje) as { count: number }).count
 
-    const setoresDb = db.prepare('SELECT * FROM setores WHERE ativo = 1 ORDER BY nome').all() as { id: number; nome: string }[]
+    const setoresDb = db.prepare('SELECT * FROM setores WHERE ativo = 1 ORDER BY nome').all() as { id: number; nome: string; icone?: string | null }[]
     const setores: SetorResumo[] = setoresDb.map((s) => {
       const totalColab = (db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(s.id) as { count: number }).count
       const escalaAtual = db.prepare(`
@@ -1285,6 +1285,7 @@ const dashboardResumo = t.procedure
       return {
         id: s.id,
         nome: s.nome,
+        icone: s.icone ?? null,
         total_colaboradores: totalColab,
         escala_atual: (escalaAtual?.status ?? 'SEM_ESCALA') as SetorResumo['escala_atual'],
         proxima_geracao: null,

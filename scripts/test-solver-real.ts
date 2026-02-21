@@ -74,28 +74,28 @@ async function main() {
             console.log(`\nERRO DO SOLVER: ${output.erro.mensagem}\nDetalhes/Sugestões: ${JSON.stringify((output.erro as any).detalhes || output.erro.sugestoes)}`);
         }
 
-        if (output.sucesso && output.escala) {
+        if (output.sucesso && output.alocacoes) {
             console.log('\n[test-solver] TESTE PASSOU COM SUCESSO 🎉')
-            
+
             // Formatando o resultado em uma tabela para visualizacao rapida
             console.log('\n=== PREVIEW DA ESCALA GERADA ===')
             const cols = payload.colaboradores
             const previewData: any[] = []
 
             for (const col of cols) {
-                const turnosDoColaborador = output.escala.filter((e: any) => e.colaborador_id === col.id)
-                const turnosResumo = turnosDoColaborador.map((t: any) => `${t.data.split('-')[2]}: ${t.turno}`).join(', ')
+                const turnosDoColaborador = output.alocacoes.filter((e: any) => e.colaborador_id === col.id)
+                const turnosResumo = turnosDoColaborador.map((t: any) => `${t.data.split('-')[2]}: ${t.status === 'FOLGA' ? 'FOLGA' : t.hora_inicio + '-' + t.hora_fim}`).join(', ')
                 previewData.push({
                     ID: col.id,
                     Nome: col.nome,
                     Turnos: turnosResumo.substring(0, 80) + (turnosResumo.length > 80 ? '...' : '')
                 })
             }
-            
+
             console.table(previewData)
 
         } else if (output.sucesso) {
-             console.log('\n[test-solver] TESTE PASSOU COM SUCESSO 🎉 (Porém sem array de escala no output)')
+            console.log('\n[test-solver] TESTE PASSOU COM SUCESSO 🎉 (Porém sem array de alocacoes no output)')
         } else {
             console.warn('\n[test-solver] TESTE FINALIZOU COM TRATAMENTO (Infeasible/Error).')
         }
