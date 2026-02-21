@@ -25,7 +25,7 @@ App desktop offline para gerar escalas de trabalho em supermercados, com motor d
 | Build | electron-vite |
 | IPC | @egoist/tipc (type-safe) |
 | Database | SQLite via better-sqlite3 |
-| Motor | Worker thread com timeout 30s |
+| Motor | Python OR-Tools (`solver/solver_ortools.py`) via bridge TS |
 | Frontend | React 19 + Vite |
 | Estilo | Tailwind CSS + shadcn/ui (22 componentes) |
 | Estado | Zustand |
@@ -65,11 +65,12 @@ Um comando. Abre o app Electron com hot reload (main + renderer).
 | `npm run build` | Build de producao (main + preload + renderer) |
 | `npm run preview` | Preview do build de producao |
 | `npm run typecheck` | TypeScript check (node + web) |
-| `npm run test:motor` | Build + roda 10 testes do motor |
+| `npm run solver:test` | Smoke test no DB real com o motor Python real |
 | `npm run pack` | Empacota sem gerar instalador |
-| `npm run dist:mac` | Gera .dmg (macOS) |
+| `npm run dist:mac` | Gera .dmg (macOS) localmente |
 | `npm run dist:win` | Gera .exe installer (Windows) |
 | `npm run dist:linux` | Gera .AppImage (Linux) |
+| `npm run release:mac` | **Build + upload automatico para GitHub Releases** |
 
 ---
 
@@ -162,11 +163,10 @@ escalaflow/
 │   │   │   ├── schema.ts             # DDL (CREATE TABLE)
 │   │   │   └── seed.ts               # Seed 4 contratos CLT
 │   │   └── motor/
-│   │       ├── gerador.ts             # Motor 7 fases (~780 linhas)
+│   │       ├── solver-bridge.ts       # Bridge TS -> solver Python
 │   │       ├── validador.ts           # PolicyEngine (10 regras)
 │   │       ├── validacao-compartilhada.ts
-│   │       ├── worker.ts             # Worker thread entry
-│   │       └── test-motor.ts          # 10 testes
+│   │       └── (sem motor TS legado)
 │   │
 │   ├── renderer/src/                  # React Frontend
 │   │   ├── paginas/                   # 10 paginas
@@ -179,6 +179,10 @@ escalaflow/
 │   │
 │   ├── preload/                       # contextBridge (IPC seguro)
 │   └── shared/                        # Types + constants compartilhados
+│
+├── solver/                            # Motor real Python (OR-Tools)
+│   ├── solver_ortools.py
+│   └── constraints.py
 │
 ├── specs/                             # Specs de cada orchestrate
 │   ├── 003-electron-migration/
@@ -224,18 +228,49 @@ escalaflow/
 - **Banco corrompido:** Delete `data/escalaflow.db` e reinicie. Seed roda automaticamente.
 - **Typecheck falha:** `npm run typecheck` mostra erros separados por node e web.
 - **Motor trava:** Timeout de 30s protege. Se persistir, verifique dados do setor (demandas, colabs).
-- **Teste do motor falha:** `npm run test:motor` roda build + 10 testes. Saida mostra qual falhou.
+- **Teste do motor falha:** `npm run solver:test` roda no DB real e mostra status/erro do solver Python real.
 - **Dark mode quebrado:** Todas as cores usam tokens semanticos de `cores.ts`. Se adicionou cor nova, inclua `dark:` variant.
 
 ---
 
-## 12) Documentacao
+## 12) Releases e Auto-Update
+
+O app tem sistema de atualizacao automatica via GitHub Releases.
+
+### Como funciona para o usuario
+
+1. App abre → checa GitHub silenciosamente (5s de delay)
+2. Se tem versao nova → baixa em background
+3. Card "Atualizacoes" em Configuracoes acende com botao "Reiniciar e instalar"
+4. Pronto — versao nova instalada sem reinstalar nada
+
+### Como fazer um release (para o dev)
+
+```bash
+# 1. Sobe a versao no package.json (ex: 1.0.0 → 1.1.0)
+# 2. Commit e tag
+git add package.json
+git commit -m "chore: bump v1.1.0"
+git tag v1.1.0
+git push && git push --tags
+
+# 3. Build Mac + upload automatico para o GitHub Release
+GH_TOKEN=$(gh auth token) npm run release:mac
+
+# 4. Acesse github.com/nmarcofernandess/escalaflow/releases
+#    Revise o draft e clique em "Publish release"
+```
+
+Guia completo com todos os detalhes: `docs/COMO_FAZER_RELEASE.md`
+
+---
+
+## 13) Documentacao
 
 | Arquivo | Conteudo |
 |---------|----------|
-| `specs/004-finalize-v2/ITERACAO.md` | Roadmap iterativo — FONTE DE VERDADE |
+| `docs/COMO_FAZER_RELEASE.md` | **Guia completo de releases e auto-update** |
+| `docs/MOTOR_V3_RFC.md` | RFC canonico do motor v3 (20 HARD + SOFT) |
 | `docs/BUILD_V2_ESCALAFLOW.md` | Arquitetura completa (modelo, motor, frontend) |
-| `specs/005-motor-fundacao/` | Motor: 10 regras, pinnedCells, testes |
-| `specs/006-front-blockers-ux/` | Dark mode, violacoes humanizadas, ContratoLista CRUD |
-| `specs/007-polish-qualidade/` | EmptyState, Zod forms, Perfil, QA final |
+| `specs/` | Specs e logs de cada feature implementada |
 | `CLAUDE.md` | Instrucoes para Claude Code |
