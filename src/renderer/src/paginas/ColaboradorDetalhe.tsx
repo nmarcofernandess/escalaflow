@@ -11,6 +11,8 @@ import {
   Stethoscope,
   Ban,
   Archive,
+  Clock,
+  CalendarDays,
 } from 'lucide-react'
 import { CORES_EXCECAO } from '@/lib/cores'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,6 +53,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
 import { colaboradoresService } from '@/servicos/colaboradores'
@@ -61,7 +65,10 @@ import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
-import type { Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana, Funcao } from '@shared/index'
+import type {
+  Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana, Funcao,
+  RegraHorarioColaborador, RegraHorarioColaboradorExcecaoData, PerfilHorarioContrato,
+} from '@shared/index'
 
 const DIAS_SEMANA_OPTIONS = [
   { value: 'SEG', label: 'Segunda' },
@@ -125,6 +132,36 @@ export function ColaboradorDetalhe() {
   const [novaExcecaoObs, setNovaExcecaoObs] = useState('')
   const [criandoExcecao, setCriandoExcecao] = useState(false)
 
+  // Regra de horario state
+  const [regraHorario, setRegraHorario] = useState<RegraHorarioColaborador | null>(null)
+  const [perfisHorario, setPerfisHorario] = useState<PerfilHorarioContrato[]>([])
+  const [regraSalvando, setRegraSalvando] = useState(false)
+  const [regraForm, setRegraForm] = useState({
+    perfil_horario_id: 'none' as string,
+    inicio_min: '',
+    inicio_max: '',
+    fim_min: '',
+    fim_max: '',
+    preferencia_turno_soft: 'none' as string,
+    domingo_ciclo_trabalho: 2,
+    domingo_ciclo_folga: 1,
+    folga_fixa_dia_semana: 'none' as string,
+  })
+
+  // Excecoes por data
+  const [excecoesPorData, setExcecoesPorData] = useState<RegraHorarioColaboradorExcecaoData[]>([])
+  const [showExcDataDialog, setShowExcDataDialog] = useState(false)
+  const [excDataSalvando, setExcDataSalvando] = useState(false)
+  const [excDataForm, setExcDataForm] = useState({
+    data: '',
+    inicio_min: '',
+    inicio_max: '',
+    fim_min: '',
+    fim_max: '',
+    preferencia_turno_soft: 'none' as string,
+    domingo_forcar_folga: false,
+  })
+
   // Data loading
   const { data: colab, loading: loadingColab } = useApiData<Colaborador>(
     () => colaboradoresService.buscar(colabId),
@@ -179,6 +216,38 @@ export function ColaboradorDetalhe() {
       })
     }
   }, [colab, colabForm])
+
+  // Carregar regra de horario + excecoes por data
+  useEffect(() => {
+    if (!colabId) return
+    colaboradoresService.buscarRegraHorario(colabId).then((r) => {
+      setRegraHorario(r)
+      if (r) {
+        setRegraForm({
+          perfil_horario_id: r.perfil_horario_id != null ? String(r.perfil_horario_id) : 'none',
+          inicio_min: r.inicio_min ?? '',
+          inicio_max: r.inicio_max ?? '',
+          fim_min: r.fim_min ?? '',
+          fim_max: r.fim_max ?? '',
+          preferencia_turno_soft: r.preferencia_turno_soft ?? 'none',
+          domingo_ciclo_trabalho: r.domingo_ciclo_trabalho,
+          domingo_ciclo_folga: r.domingo_ciclo_folga,
+          folga_fixa_dia_semana: r.folga_fixa_dia_semana ?? 'none',
+        })
+      }
+    }).catch(() => {})
+    colaboradoresService.listarRegrasExcecaoData(colabId).then(setExcecoesPorData).catch(() => {})
+  }, [colabId])
+
+  // Carregar perfis do contrato selecionado
+  useEffect(() => {
+    const contratoId = parseInt(watchedContratoId)
+    if (contratoId > 0) {
+      tiposContratoService.listarPerfisHorario(contratoId).then(setPerfisHorario).catch(() => {})
+    } else {
+      setPerfisHorario([])
+    }
+  }, [watchedContratoId])
 
   const handleSalvar = async (data: ColabFormData) => {
     setSalvando(true)
@@ -243,6 +312,87 @@ export function ColaboradorDetalhe() {
       navigate('/colaboradores')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao arquivar colaborador')
+    }
+  }
+
+  // --- Regra de horario handlers ---
+  const handleSalvarRegra = async () => {
+    setRegraSalvando(true)
+    try {
+      const payload = {
+        colaborador_id: colabId,
+        ativo: true,
+        perfil_horario_id: regraForm.perfil_horario_id === 'none' ? null : parseInt(regraForm.perfil_horario_id),
+        inicio_min: regraForm.inicio_min || null,
+        inicio_max: regraForm.inicio_max || null,
+        fim_min: regraForm.fim_min || null,
+        fim_max: regraForm.fim_max || null,
+        preferencia_turno_soft: regraForm.preferencia_turno_soft === 'none' ? null : regraForm.preferencia_turno_soft,
+        domingo_ciclo_trabalho: regraForm.domingo_ciclo_trabalho,
+        domingo_ciclo_folga: regraForm.domingo_ciclo_folga,
+        folga_fixa_dia_semana: regraForm.folga_fixa_dia_semana === 'none' ? null : regraForm.folga_fixa_dia_semana,
+      }
+      const saved = await colaboradoresService.salvarRegraHorario(payload as any)
+      setRegraHorario(saved)
+      toast.success('Regra de horario salva')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar regra')
+    } finally {
+      setRegraSalvando(false)
+    }
+  }
+
+  const handlePreencherDoPerfil = (perfilId: string) => {
+    setRegraForm(f => ({ ...f, perfil_horario_id: perfilId }))
+    if (perfilId !== 'none') {
+      const perfil = perfisHorario.find(p => p.id === parseInt(perfilId))
+      if (perfil) {
+        setRegraForm(f => ({
+          ...f,
+          perfil_horario_id: perfilId,
+          inicio_min: perfil.inicio_min,
+          inicio_max: perfil.inicio_max,
+          fim_min: perfil.fim_min,
+          fim_max: perfil.fim_max,
+          preferencia_turno_soft: perfil.preferencia_turno_soft ?? 'none',
+        }))
+      }
+    }
+  }
+
+  const handleSalvarExcData = async () => {
+    if (!excDataForm.data) return
+    setExcDataSalvando(true)
+    try {
+      await colaboradoresService.upsertRegraExcecaoData({
+        colaborador_id: colabId,
+        data: excDataForm.data,
+        ativo: true,
+        inicio_min: excDataForm.inicio_min || null,
+        inicio_max: excDataForm.inicio_max || null,
+        fim_min: excDataForm.fim_min || null,
+        fim_max: excDataForm.fim_max || null,
+        preferencia_turno_soft: excDataForm.preferencia_turno_soft === 'none' ? null : excDataForm.preferencia_turno_soft,
+        domingo_forcar_folga: excDataForm.domingo_forcar_folga,
+      } as any)
+      toast.success('Excecao por data salva')
+      setShowExcDataDialog(false)
+      setExcDataForm({ data: '', inicio_min: '', inicio_max: '', fim_min: '', fim_max: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
+      colaboradoresService.listarRegrasExcecaoData(colabId).then(setExcecoesPorData).catch(() => {})
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar excecao')
+    } finally {
+      setExcDataSalvando(false)
+    }
+  }
+
+  const handleDeletarExcData = async (excId: number) => {
+    try {
+      await colaboradoresService.deletarRegraExcecaoData(excId)
+      toast.success('Excecao removida')
+      colaboradoresService.listarRegrasExcecaoData(colabId).then(setExcecoesPorData).catch(() => {})
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao remover excecao')
     }
   }
 
@@ -562,6 +712,226 @@ export function ColaboradorDetalhe() {
           </Card>
         </Form>
 
+        {/* Regras de Horario */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div className="flex items-center gap-2">
+              <Clock className="size-4 text-muted-foreground" />
+              <CardTitle className="text-base font-semibold">
+                Regras de Horario
+              </CardTitle>
+              {regraHorario && (
+                <Badge variant="outline" className="text-xs">Configurado</Badge>
+              )}
+            </div>
+            <Button size="sm" onClick={handleSalvarRegra} disabled={regraSalvando}>
+              <Save className="mr-1 size-3.5" />
+              {regraSalvando ? 'Salvando...' : 'Salvar Regra'}
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Perfil de horario */}
+            {perfisHorario.length > 0 && (
+              <div className="space-y-2">
+                <Label>Perfil de horario (do contrato)</Label>
+                <Select
+                  value={regraForm.perfil_horario_id}
+                  onValueChange={handlePreencherDoPerfil}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sem perfil" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem perfil (manual)</SelectItem>
+                    {perfisHorario.filter(p => p.ativo).map(p => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.nome} ({p.inicio_min}-{p.fim_max})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[0.75rem] text-muted-foreground">
+                  Selecionar um perfil preenche a janela automaticamente. Voce pode sobrescrever depois.
+                </p>
+              </div>
+            )}
+
+            {/* Janela de horario */}
+            <div>
+              <Label className="mb-2 block">Janela de horario (hard constraint)</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Inicio mais cedo</Label>
+                  <Input
+                    type="time"
+                    value={regraForm.inicio_min}
+                    onChange={e => setRegraForm(f => ({ ...f, inicio_min: e.target.value }))}
+                    placeholder="07:00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Inicio mais tarde</Label>
+                  <Input
+                    type="time"
+                    value={regraForm.inicio_max}
+                    onChange={e => setRegraForm(f => ({ ...f, inicio_max: e.target.value }))}
+                    placeholder="09:00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Saida mais cedo</Label>
+                  <Input
+                    type="time"
+                    value={regraForm.fim_min}
+                    onChange={e => setRegraForm(f => ({ ...f, fim_min: e.target.value }))}
+                    placeholder="16:00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Saida mais tarde</Label>
+                  <Input
+                    type="time"
+                    value={regraForm.fim_max}
+                    onChange={e => setRegraForm(f => ({ ...f, fim_max: e.target.value }))}
+                    placeholder="18:00"
+                  />
+                </div>
+              </div>
+              <p className="mt-1 text-[0.75rem] text-muted-foreground">
+                Se inicio_min = inicio_max, o motor forca horario fixo. Deixe vazio para sem restricao.
+              </p>
+            </div>
+
+            {/* Ciclo domingo + Folga fixa + Turno */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs">Ciclo domingo (trabalho/folga)</Label>
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={6}
+                    className="w-16"
+                    value={regraForm.domingo_ciclo_trabalho}
+                    onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_trabalho: parseInt(e.target.value) || 2 }))}
+                  />
+                  <span className="text-xs text-muted-foreground">/</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={4}
+                    className="w-16"
+                    value={regraForm.domingo_ciclo_folga}
+                    onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_folga: parseInt(e.target.value) || 1 }))}
+                  />
+                </div>
+                <p className="text-[0.7rem] text-muted-foreground">
+                  Ex: 2/1 = trabalha 2 dom, folga 1
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Folga fixa (5x2)</Label>
+                <Select
+                  value={regraForm.folga_fixa_dia_semana}
+                  onValueChange={v => setRegraForm(f => ({ ...f, folga_fixa_dia_semana: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem folga fixa</SelectItem>
+                    {DIAS_SEMANA_OPTIONS.map(d => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Pref. turno (regra)</Label>
+                <Select
+                  value={regraForm.preferencia_turno_soft}
+                  onValueChange={v => setRegraForm(f => ({ ...f, preferencia_turno_soft: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem preferencia</SelectItem>
+                    <SelectItem value="MANHA">Manha</SelectItem>
+                    <SelectItem value="TARDE">Tarde</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Excecoes por Data */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="size-4 text-muted-foreground" />
+              <CardTitle className="text-base font-semibold">
+                Excecoes por Data
+              </CardTitle>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => {
+              setExcDataForm({ data: '', inicio_min: '', inicio_max: '', fim_min: '', fim_max: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
+              setShowExcDataDialog(true)
+            }}>
+              <Plus className="mr-1 size-3.5" /> Nova Excecao
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {excecoesPorData.length === 0 ? (
+              <EmptyState
+                icon={CalendarDays}
+                title="Nenhuma excecao por data"
+                description="Sobrescreva horario ou force folga em datas especificas"
+              />
+            ) : (
+              <div className="space-y-2">
+                {excecoesPorData.map(exc => (
+                  <div key={exc.id} className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <span className="text-sm font-medium">{formatarData(exc.data)}</span>
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        {exc.domingo_forcar_folga && (
+                          <Badge variant="destructive" className="text-[0.65rem]">Folga forcada</Badge>
+                        )}
+                        {exc.inicio_min && <span>Inicio: {exc.inicio_min}-{exc.inicio_max}</span>}
+                        {exc.fim_min && <span>Saida: {exc.fim_min}-{exc.fim_max}</span>}
+                        {exc.preferencia_turno_soft && <span>Turno: {exc.preferencia_turno_soft}</span>}
+                      </div>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remover excecao?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            A excecao de {formatarData(exc.data)} sera removida.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDeletarExcData(exc.id)}>Remover</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Excecoes */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -633,6 +1003,95 @@ export function ColaboradorDetalhe() {
         </Card>
 
       </div>
+
+      {/* Excecao por Data Dialog */}
+      <Dialog open={showExcDataDialog} onOpenChange={setShowExcDataDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excecao por Data</DialogTitle>
+            <DialogDescription>
+              Sobrescreva horario ou force folga em uma data especifica.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Data</Label>
+              <Input
+                type="date"
+                value={excDataForm.data}
+                onChange={e => setExcDataForm(f => ({ ...f, data: e.target.value }))}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={excDataForm.domingo_forcar_folga}
+                onCheckedChange={v => setExcDataForm(f => ({ ...f, domingo_forcar_folga: v }))}
+              />
+              <Label>Forcar folga neste dia</Label>
+            </div>
+            {!excDataForm.domingo_forcar_folga && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Inicio mais cedo</Label>
+                    <Input
+                      type="time"
+                      value={excDataForm.inicio_min}
+                      onChange={e => setExcDataForm(f => ({ ...f, inicio_min: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Inicio mais tarde</Label>
+                    <Input
+                      type="time"
+                      value={excDataForm.inicio_max}
+                      onChange={e => setExcDataForm(f => ({ ...f, inicio_max: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Saida mais cedo</Label>
+                    <Input
+                      type="time"
+                      value={excDataForm.fim_min}
+                      onChange={e => setExcDataForm(f => ({ ...f, fim_min: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Saida mais tarde</Label>
+                    <Input
+                      type="time"
+                      value={excDataForm.fim_max}
+                      onChange={e => setExcDataForm(f => ({ ...f, fim_max: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Turno preferido</Label>
+                  <Select
+                    value={excDataForm.preferencia_turno_soft}
+                    onValueChange={v => setExcDataForm(f => ({ ...f, preferencia_turno_soft: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sem preferencia</SelectItem>
+                      <SelectItem value="MANHA">Manha</SelectItem>
+                      <SelectItem value="TARDE">Tarde</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExcDataDialog(false)}>Cancelar</Button>
+            <Button onClick={handleSalvarExcData} disabled={excDataSalvando || !excDataForm.data}>
+              {excDataSalvando ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Nova Excecao Dialog */}
       <Dialog open={showExcecaoDialog} onOpenChange={setShowExcecaoDialog}>

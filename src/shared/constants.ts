@@ -25,7 +25,9 @@ export const CLT = {
   APRENDIZ_MAX_SEMANAL_MIN: 1800,           // 30h/sem
   APRENDIZ_HORARIO_NOTURNO_INICIO: '22:00',
   APRENDIZ_HORARIO_NOTURNO_FIM: '05:00',
-  GRID_MINUTOS: 30,
+  GRID_MINUTOS: 15,
+  MAX_COMPENSACAO_DIA_MIN: 585,             // 9h45 (compensacao CLT 44h/36h)
+  COMPENSACAO_CONTRATOS: ['CLT 44h', 'CLT 36h'] as readonly string[],
   /** @deprecated Use MAX_JORNADA_COM_EXTRA_MIN — mantido pra compat motor v2 */
   MAX_JORNADA_DIARIA_MIN: 600,
 } as const
@@ -120,3 +122,25 @@ export type AcaoMotor = (typeof ACOES_MOTOR)[number]
 // --- Tiers de antipattern ---
 export const ANTIPATTERN_TIERS = [1, 2, 3] as const
 export type AntipatternTier = (typeof ANTIPATTERN_TIERS)[number]
+
+// --- v4: Paleta fixa de cores para postos/funcoes (15 cores) ---
+export const PALETA_FUNCAO_CORES = [
+  '#3B82F6', // blue-500
+  '#EF4444', // red-500
+  '#10B981', // emerald-500
+  '#F59E0B', // amber-500
+  '#8B5CF6', // violet-500
+  '#EC4899', // pink-500
+  '#14B8A6', // teal-500
+  '#F97316', // orange-500
+  '#6366F1', // indigo-500
+  '#84CC16', // lime-500
+  '#06B6D4', // cyan-500
+  '#D946EF', // fuchsia-500
+  '#78716C', // stone-500
+  '#0EA5E9', // sky-500
+  '#A3E635', // lime-400
+] as const
+
+// --- v4: Ciclo domingo default ---
+export const DOMINGO_CICLO_DEFAULT = { trabalho: 2, folga: 1 } as const

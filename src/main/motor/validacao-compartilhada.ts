@@ -8,7 +8,7 @@ import type {
 
 // Imports usados por checkers nas subtasks subsequentes (1-2 a 1-6)
 // CLT, ANTIPATTERNS: constantes para checks HARD e APs
-// Tipos: re-exportados para que gerador.ts e validador.ts importem daqui
+// Tipos: re-exportados para o validador e utilitarios de motor
 export type {
   Demanda, Violacao, Indicadores, Feriado, Setor, SetorHorarioSemana,
   Excecao, AntipatternViolacao, SlotComparacao, DecisaoMotor,
@@ -58,7 +58,7 @@ export interface LookbackV3 {
 export interface SlotGrid {
   data: string                            // 'YYYY-MM-DD'
   hora_inicio: string                     // 'HH:MM'
-  hora_fim: string                        // 'HH:MM' (hora_inicio + 30min)
+  hora_fim: string                        // 'HH:MM' (hora_inicio + CLT.GRID_MINUTOS)
   target_planejado: number                // min_pessoas para este slot
   override: boolean                       // demanda.override = true
   dia_fechado: boolean
@@ -414,10 +414,14 @@ export function checkH2b(
 }
 
 /**
- * H3 — RODIZIO_DOMINGO
+ * H3 — RODIZIO_DOMINGO (v3.1: rebaixado para SOFT)
  * Mulher: max 1 domingo consecutivo trabalhado (Art. 386 CLT).
  * Homem: max 2 domingos consecutivos (Lei 10.101/2000).
  * Usa lookback.domConsec para checar continuidade de escala anterior.
+ *
+ * v3.1 PRD: H3 deixa de ser HARD e vira indicador SOFT.
+ * O solver Python agora usa add_domingo_ciclo_soft() com peso 3000.
+ * Este checker reporta como SOFT para o dashboard, nao bloqueia oficializacao.
  */
 export function checkH3(
   c: ColabMotor,
@@ -440,11 +444,11 @@ export function checkH3(
           ? `máximo 1 domingo consecutivo para mulheres (Art. 386 CLT)`
           : `máximo 2 domingos consecutivos para homens (Lei 10.101/2000)`
         violacoes.push({
-          severidade: 'HARD',
+          severidade: 'SOFT',
           regra: 'H3_RODIZIO_DOMINGO',
           colaborador_id: c.id,
           colaborador_nome: c.nome,
-          mensagem: `${c.nome} trabalhou ${consec} domingos consecutivos (${descricao})`,
+          mensagem: `${c.nome} trabalhou ${consec} domingos consecutivos (${descricao}) — indicador de justiça dominical`,
           data,
         })
       }
@@ -590,8 +594,8 @@ export function checkH7b(
 
 /**
  * H8 — GRID_HORARIOS
- * Todos os horários definidos devem ser múltiplos de 30min (CLT.GRID_MINUTOS = 30).
- * Decisão de produto: grid fixo de 30min para simplificar a alocação.
+ * Todos os horários definidos devem ser múltiplos de CLT.GRID_MINUTOS (15min).
+ * Decisão de produto: grid fixo para simplificar a alocação.
  */
 export function checkH8(
   cel: CelulaMotor,
@@ -617,7 +621,7 @@ export function checkH8(
         regra: 'H8_GRID_HORARIOS',
         colaborador_id: c.id,
         colaborador_nome: c.nome,
-        mensagem: `${c.nome} tem ${campo} = ${valor} em ${data} que não é múltiplo de ${CLT.GRID_MINUTOS}min — todos horários devem seguir o grid de 30min`,
+        mensagem: `${c.nome} tem ${campo} = ${valor} em ${data} que não é múltiplo de ${CLT.GRID_MINUTOS}min — todos horários devem seguir o grid de ${CLT.GRID_MINUTOS}min`,
         data,
       })
     }
@@ -1048,6 +1052,107 @@ export function checkH19(
   return violacoes
 }
 
+// ─── Checkers v3.1: Regra hard de janela por colaborador + Folga fixa 5x2 ────
+
+/**
+ * Regra de horario individual resolvida para um (colaborador, dia).
+ * Produzida pela bridge (precedencia: excecao_data > regra_colab > perfil_contrato).
+ */
+export interface RegraHorarioDiaResolvida {
+  colaborador_id: number
+  data: string
+  inicio_min: string | null
+  inicio_max: string | null
+  fim_min: string | null
+  fim_max: string | null
+  domingo_forcar_folga: boolean
+  folga_fixa: boolean
+}
+
+/**
+ * checkHardJanelaColaborador — Valida que ajuste manual respeita janela de horario.
+ * Se colaborador tem regra ativa com inicio_min/fim_max, a celula deve estar dentro.
+ * Violacao HARD (nao pode oficializar).
+ */
+export function checkHardJanelaColaborador(
+  c: ColabMotor,
+  diasOrdered: Array<[string, CelulaMotor]>,
+  regras: RegraHorarioDiaResolvida[],
+): Violacao[] {
+  const violacoes: Violacao[] = []
+  const regrasPorData = new Map<string, RegraHorarioDiaResolvida>()
+  for (const r of regras) {
+    if (r.colaborador_id === c.id) regrasPorData.set(r.data, r)
+  }
+
+  for (const [data, cel] of diasOrdered) {
+    if (cel.status !== 'TRABALHO') continue
+    if (!cel.hora_inicio || !cel.hora_fim) continue
+
+    const regra = regrasPorData.get(data)
+    if (!regra) continue
+
+    const celInicioMin = timeToMin(cel.hora_inicio)
+    const celFimMin = timeToMin(cel.hora_fim)
+
+    // Inicio nao pode ser antes do inicio_min
+    if (regra.inicio_min) {
+      const limiteMin = timeToMin(regra.inicio_min)
+      if (celInicioMin < limiteMin) {
+        violacoes.push({
+          severidade: 'HARD',
+          regra: 'JANELA_COLABORADOR_INICIO',
+          colaborador_id: c.id,
+          colaborador_nome: c.nome,
+          mensagem: `${c.nome} inicia as ${cel.hora_inicio} em ${data} mas a regra individual permite inicio a partir de ${regra.inicio_min}`,
+          data,
+        })
+      }
+    }
+
+    // Fim nao pode ser depois do fim_max
+    if (regra.fim_max) {
+      const limiteMax = timeToMin(regra.fim_max)
+      if (celFimMin > limiteMax) {
+        violacoes.push({
+          severidade: 'HARD',
+          regra: 'JANELA_COLABORADOR_FIM',
+          colaborador_id: c.id,
+          colaborador_nome: c.nome,
+          mensagem: `${c.nome} sai as ${cel.hora_fim} em ${data} mas a regra individual permite saida ate ${regra.fim_max}`,
+          data,
+        })
+      }
+    }
+
+    // Domingo forcar folga — se esta como TRABALHO e regra diz folga
+    if (regra.domingo_forcar_folga) {
+      violacoes.push({
+        severidade: 'HARD',
+        regra: 'DOMINGO_FORCAR_FOLGA',
+        colaborador_id: c.id,
+        colaborador_nome: c.nome,
+        mensagem: `${c.nome} esta alocado em ${data} mas tem excecao de folga obrigatoria neste domingo`,
+        data,
+      })
+    }
+
+    // Folga fixa — se esta como TRABALHO e regra diz folga fixa
+    if (regra.folga_fixa) {
+      violacoes.push({
+        severidade: 'HARD',
+        regra: 'FOLGA_FIXA_5X2',
+        colaborador_id: c.id,
+        colaborador_nome: c.nome,
+        mensagem: `${c.nome} esta alocado em ${data} mas tem folga fixa configurada neste dia da semana`,
+        data,
+      })
+    }
+  }
+
+  return violacoes
+}
+
 // ─── Orquestrador geral H1-H20 ───────────────────────────────────────────────
 
 export interface ValidarTudoParams {
@@ -1104,7 +1209,8 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
     // H2b — DSR interjornada (por colaborador)
     violacoes.push(...checkH2b(c, diasOrdered))
 
-    // H3 — rodízio de domingo (por colaborador)
+    // H3 — rodízio de domingo (v3.1: SOFT — nao bloqueia, apenas indicador)
+    // Retornado junto com as violacoes para o dashboard, mas com severidade SOFT
     violacoes.push(...checkH3(c, domingos, mapa, lb))
 
     // H4 — max jornada diária (por colaborador, itera internamente)

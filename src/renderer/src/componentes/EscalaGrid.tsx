@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import type { Alocacao, Colaborador, Demanda, TipoContrato } from '@shared/index'
+import type { Alocacao, Colaborador, Demanda, TipoContrato, Funcao } from '@shared/index'
 import {
   Tooltip,
   TooltipContent,
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CORES_ALOCACAO, CORES_GENERO } from '@/lib/cores'
-import { iniciais } from '@/lib/formatadores'
+import { formatarMinutos, iniciais } from '@/lib/formatadores'
 
 const DIAS_SEMANA_CURTO = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
 
@@ -46,6 +46,7 @@ interface EscalaGridProps {
   dataFim: string
   demandas?: Demanda[]
   tiposContrato?: TipoContrato[]
+  funcoes?: Funcao[]
   readOnly?: boolean
   onCelulaClick?: (colaboradorId: number, data: string, statusAtual: string) => void
   loadingCell?: { colaboradorId: number; data: string } | null
@@ -60,6 +61,7 @@ export function EscalaGrid({
   dataFim,
   demandas,
   tiposContrato,
+  funcoes,
   readOnly = false,
   onCelulaClick,
   loadingCell,
@@ -86,6 +88,14 @@ export function EscalaGrid({
     }
     return map
   }, [tiposContrato])
+
+  // Build funcao lookup map
+  const funcaoMap = useMemo(() => {
+    if (!funcoes) return new Map<number, Funcao>()
+    const map = new Map<number, Funcao>()
+    for (const f of funcoes) map.set(f.id, f)
+    return map
+  }, [funcoes])
 
   // Generate all dates in range
   const allDates = useMemo(() => {
@@ -130,7 +140,8 @@ export function EscalaGrid({
     let total = 0
     for (const date of weekDates) {
       const alloc = getAlloc(colabId, date)
-      if (alloc?.minutos) total += alloc.minutos
+      const minutos = alloc?.minutos_trabalho ?? alloc?.minutos
+      if (minutos) total += minutos
     }
     return total
   }
@@ -248,11 +259,19 @@ export function EscalaGrid({
                         {iniciais(colab.nome)}
                       </div>
                       <div>
-                        <div className="text-xs font-medium leading-tight text-foreground">
+                        <div className="flex items-center gap-1 text-xs font-medium leading-tight text-foreground">
+                          {colab.funcao_id != null && funcaoMap.get(colab.funcao_id)?.cor_hex && (
+                            <span
+                              className="inline-block size-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: funcaoMap.get(colab.funcao_id!)!.cor_hex! }}
+                            />
+                          )}
                           {colab.nome.split(' ').slice(0, 2).join(' ')}
                         </div>
                         <div className="text-[10px] text-muted-foreground">
-                          {contratoMap.get(colab.tipo_contrato_id) ?? `Contrato #${colab.tipo_contrato_id}`}
+                          {colab.funcao_id != null && funcaoMap.get(colab.funcao_id)
+                            ? funcaoMap.get(colab.funcao_id!)!.apelido
+                            : contratoMap.get(colab.tipo_contrato_id) ?? `Contrato #${colab.tipo_contrato_id}`}
                         </div>
                       </div>
                     </div>
@@ -310,16 +329,26 @@ export function EscalaGrid({
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="text-xs">
-                            {colab.nome.split(' ').slice(0, 2).join(' ')} -{' '}
+                            {colab.nome.split(' ').slice(0, 2).join(' ')}
+                            {colab.funcao_id != null && funcaoMap.get(colab.funcao_id) && (
+                              <> ({funcaoMap.get(colab.funcao_id!)!.apelido})</>
+                            )}
+                            {' - '}
                             {DIAS_SEMANA_CURTO[dow]}{' '}
                             {String(date.getDate()).padStart(2, '0')}/
                             {String(date.getMonth() + 1).padStart(2, '0')}
                             <br />
                             {status === 'TRABALHO'
-                              ? `${alloc?.hora_inicio} - ${alloc?.hora_fim} (${alloc?.minutos}min)`
+                              ? `${alloc?.hora_inicio} - ${alloc?.hora_fim} (${formatarMinutos(alloc?.minutos_trabalho ?? alloc?.minutos ?? 0)})`
                               : status === 'INDISPONIVEL'
                                 ? 'INDISPONIVEL'
                                 : status}
+                            {status === 'TRABALHO' && alloc?.hora_almoco_inicio && alloc?.hora_almoco_fim && (
+                              <>
+                                <br />
+                                {`Almoço: ${alloc.hora_almoco_inicio} - ${alloc.hora_almoco_fim}`}
+                              </>
+                            )}
                           </TooltipContent>
                         </Tooltip>
                       </td>
@@ -397,6 +426,22 @@ export function EscalaGrid({
           INDISPONIVEL
         </div>
       </div>
+
+      {/* Legenda de funcoes/postos */}
+      {funcoes && funcoes.filter(f => f.ativo && f.cor_hex).length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+          <span className="font-medium text-foreground/70">Postos:</span>
+          {funcoes.filter(f => f.ativo && f.cor_hex).map(f => (
+            <div key={f.id} className="flex items-center gap-1">
+              <span
+                className="inline-block size-2.5 rounded-full"
+                style={{ backgroundColor: f.cor_hex! }}
+              />
+              {f.apelido}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

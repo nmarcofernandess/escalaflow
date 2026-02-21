@@ -150,6 +150,101 @@ CREATE TABLE IF NOT EXISTS escala_comparacao_demanda (
     override INTEGER NOT NULL DEFAULT 0,
     justificativa TEXT
 );
+
+-- v4: Perfis de horario por contrato (ex: estagiario manha, estagiario tarde)
+CREATE TABLE IF NOT EXISTS contrato_perfis_horario (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo_contrato_id INTEGER NOT NULL REFERENCES tipos_contrato(id),
+    nome TEXT NOT NULL,
+    ativo INTEGER NOT NULL DEFAULT 1,
+    inicio_min TEXT NOT NULL,
+    inicio_max TEXT NOT NULL,
+    fim_min TEXT NOT NULL,
+    fim_max TEXT NOT NULL,
+    preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
+    ordem INTEGER NOT NULL DEFAULT 0
+);
+
+-- v4: Regra de horario individual por colaborador (1 janela ativa)
+CREATE TABLE IF NOT EXISTS colaborador_regra_horario (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    colaborador_id INTEGER NOT NULL UNIQUE REFERENCES colaboradores(id) ON DELETE CASCADE,
+    ativo INTEGER NOT NULL DEFAULT 1,
+    perfil_horario_id INTEGER REFERENCES contrato_perfis_horario(id),
+    inicio_min TEXT,
+    inicio_max TEXT,
+    fim_min TEXT,
+    fim_max TEXT,
+    preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
+    domingo_ciclo_trabalho INTEGER NOT NULL DEFAULT 2,
+    domingo_ciclo_folga INTEGER NOT NULL DEFAULT 1,
+    folga_fixa_dia_semana TEXT CHECK (folga_fixa_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR folga_fixa_dia_semana IS NULL)
+);
+
+-- v4: Excecao de horario por data especifica (sobrescreve regra semanal)
+CREATE TABLE IF NOT EXISTS colaborador_regra_horario_excecao_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    ativo INTEGER NOT NULL DEFAULT 1,
+    inicio_min TEXT,
+    inicio_max TEXT,
+    fim_min TEXT,
+    fim_max TEXT,
+    preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
+    domingo_forcar_folga INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(colaborador_id, data)
+);
+
+-- v4: Excecao de demanda por data (calendario)
+CREATE TABLE IF NOT EXISTS demandas_excecao_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setor_id INTEGER NOT NULL REFERENCES setores(id),
+    data TEXT NOT NULL,
+    hora_inicio TEXT NOT NULL,
+    hora_fim TEXT NOT NULL,
+    min_pessoas INTEGER NOT NULL DEFAULT 0,
+    override INTEGER NOT NULL DEFAULT 0
+);
+
+-- v4: Modelo de ciclo rotativo (escala fixa que repete)
+CREATE TABLE IF NOT EXISTS escala_ciclo_modelos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setor_id INTEGER NOT NULL REFERENCES setores(id),
+    nome TEXT NOT NULL,
+    semanas_no_ciclo INTEGER NOT NULL,
+    ativo INTEGER NOT NULL DEFAULT 1,
+    origem_escala_id INTEGER REFERENCES escalas(id),
+    criado_em TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- v4: Itens do ciclo rotativo (por colaborador/dia)
+CREATE TABLE IF NOT EXISTS escala_ciclo_itens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ciclo_modelo_id INTEGER NOT NULL REFERENCES escala_ciclo_modelos(id) ON DELETE CASCADE,
+    semana_idx INTEGER NOT NULL,
+    colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id),
+    dia_semana TEXT NOT NULL CHECK (dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM')),
+    trabalha INTEGER NOT NULL DEFAULT 1,
+    ancora_domingo INTEGER NOT NULL DEFAULT 0,
+    prioridade INTEGER NOT NULL DEFAULT 0
+);
+`
+
+// ============================================================================
+// DDL — Configurações IA
+// ============================================================================
+
+const DDL_IA = `
+CREATE TABLE IF NOT EXISTS configuracao_ia (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  provider TEXT NOT NULL DEFAULT 'gemini',
+  api_key TEXT NOT NULL DEFAULT '',
+  modelo TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
+  ativo INTEGER NOT NULL DEFAULT 0,
+  criado_em TEXT NOT NULL DEFAULT (datetime('now')),
+  atualizado_em TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // ============================================================================
@@ -158,7 +253,8 @@ CREATE TABLE IF NOT EXISTS escala_comparacao_demanda (
 
 function getColumnNames(table: string): Set<string> {
   const db = getDb()
-  const cols = db.prepare(`PRAGMA table_info('${table}')`).all() as { name: string }[]
+  const query = "PRAGMA table_info('" + table + "')"
+  const cols = db.prepare(query).all() as { name: string }[]
   return new Set(cols.map((c) => c.name))
 }
 
@@ -166,7 +262,7 @@ function addColumnIfMissing(table: string, column: string, definition: string, c
   const colNames = cols ?? getColumnNames(table)
   if (!colNames.has(column)) {
     const db = getDb()
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition} `)
   }
 }
 
@@ -178,7 +274,7 @@ function toMin(hhmm: string): number {
 function minToHHMM(min: number): string {
   const h = Math.floor(min / 60)
   const m = min % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} `
 }
 
 /**
@@ -226,13 +322,13 @@ function migrateLegacyDemandasNullToByDay(): void {
       SELECT dia_semana, hora_inicio, hora_fim, min_pessoas, override
       FROM demandas
       WHERE setor_id = ?
-      ORDER BY hora_inicio, hora_fim
+  ORDER BY hora_inicio, hora_fim
     `)
     const deleteDemandas = db.prepare('DELETE FROM demandas WHERE setor_id = ?')
     const insertDemanda = db.prepare(`
-      INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
+      INSERT INTO demandas(setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
+VALUES(?, ?, ?, ?, ?, ?)
+  `)
 
     for (const setor of setores) {
       const allRows = selectDemandas.all(setor.id) as DemandaRow[]
@@ -344,8 +440,8 @@ function migrateSchema(): void {
     SET regime_escala = CASE
       WHEN dias_trabalho <= 5 THEN '5X2'
       ELSE '6X1'
-    END
-    WHERE regime_escala IS NULL OR regime_escala NOT IN ('5X2', '6X1')
+END
+    WHERE regime_escala IS NULL OR regime_escala NOT IN('5X2', '6X1')
   `)
 
   // --- v2.5: piso operacional no setor ---
@@ -390,6 +486,23 @@ function migrateSchema(): void {
   // Rename real fica pra quando frontend migrar.
 
   migrateLegacyDemandasNullToByDay()
+
+  // ==========================================================================
+  // v4 — PRD Motor Python + Regras Colaborador + Grid 15min
+  // ==========================================================================
+
+  // Funcao: +cor_hex
+  addColumnIfMissing('funcoes', 'cor_hex', 'TEXT')
+
+  // Empresa: grid_minutos default 30→15 (atualiza se ainda no default antigo)
+  db.exec(`UPDATE empresa SET grid_minutos = 15 WHERE grid_minutos = 30`)
+
+  // Indices para novas tabelas v4
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_contrato_perfis_contrato ON contrato_perfis_horario(tipo_contrato_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_demandas_excecao_setor_data ON demandas_excecao_data(setor_id, data)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_colab_regra_excecao_colab_data ON colaborador_regra_horario_excecao_data(colaborador_id, data)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ciclo_modelo_setor_ativo ON escala_ciclo_modelos(setor_id, ativo)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ciclo_itens_modelo_semana ON escala_ciclo_itens(ciclo_modelo_id, semana_idx)`)
 }
 
 // ============================================================================
@@ -400,6 +513,7 @@ export function createTables(): void {
   const db = getDb()
   db.exec(DDL)
   db.exec(DDL_V3)
+  db.exec(DDL_IA)
   migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v3.1)')
+  console.log('[DB] Tabelas criadas com sucesso (v4 + IA)')
 }

@@ -5,7 +5,7 @@
  * Python = função pura. TS = orquestrador (DB, persistência, IPC).
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -17,16 +17,23 @@ import type {
   SolverInputColab,
   SolverInputDemanda,
   SolverInputHint,
+  SolverInputRegraColaboradorDia,
+  SolverInputDemandaExcecaoData,
   PinnedCell,
+  DiaSemana,
 } from '../../shared'
 
 const require = createRequire(import.meta.url)
 
 type RegimeEscalaInput = '5X2' | '6X1'
 
+export type SolveMode = 'rapido' | 'otimizado'
+
 export interface BuildSolverInputOptions {
   regimesOverride?: Array<{ colaborador_id: number; regime_escala: RegimeEscalaInput }>
   hintsEscalaId?: number
+  solveMode?: SolveMode
+  nivelRigor?: 'ALTO' | 'MEDIO' | 'BAIXO'
 }
 
 // ---------------------------------------------------------------------------
@@ -34,12 +41,36 @@ export interface BuildSolverInputOptions {
 // ---------------------------------------------------------------------------
 
 export function resolveSolverPath(): string {
+  const explicitPath = process.env.ESCALAFLOW_SOLVER_PATH?.trim()
+  if (explicitPath) {
+    if (existsSync(explicitPath)) return explicitPath
+    throw new Error(`ESCALAFLOW_SOLVER_PATH aponta para arquivo inexistente: ${explicitPath}`)
+  }
+
   const isWin = process.platform === 'win32'
   const binNames = isWin
     ? ['escalaflow-solver.exe', 'escalaflow-solver']
     : ['escalaflow-solver']
 
-  // 1. Built binary (PyInstaller) in project
+  // Dev source solver (always the freshest code path)
+  const devPython = path.join(process.cwd(), 'solver', 'solver_ortools.py')
+  const preferBinaryInDev = process.env.ESCALAFLOW_SOLVER_MODE === 'binary'
+
+  // Detect packaged Electron context.
+  let isPackaged = false
+  try {
+    const electron = require('electron') as { app?: { isPackaged?: boolean } }
+    isPackaged = Boolean(electron.app?.isPackaged)
+  } catch {
+    // not in Electron context
+  }
+
+  // Default: prefer Python source unless explicitly forced to binary.
+  if (!preferBinaryInDev && existsSync(devPython)) {
+    return devPython
+  }
+
+  // Built binary (PyInstaller) in project (dev fallback / explicit binary mode).
   for (const name of binNames) {
     const devBin = path.join(process.cwd(), 'solver-bin', name)
     if (existsSync(devBin)) {
@@ -47,25 +78,19 @@ export function resolveSolverPath(): string {
     }
   }
 
-  // 2. Dev fallback: run Python directly
-  const devPython = path.join(process.cwd(), 'solver', 'solver_ortools.py')
-  if (existsSync(devPython)) {
-    return devPython
-  }
-
-  // 3. Production: packaged with Electron
-  try {
-    const electron = require('electron') as { app?: { isPackaged?: boolean } }
-    if (electron.app?.isPackaged) {
-      for (const name of binNames) {
-        const prodBin = path.join(process.resourcesPath, 'solver-bin', name)
-        if (existsSync(prodBin)) {
-          return prodBin
-        }
+  // Production: packaged with Electron resources.
+  if (isPackaged) {
+    for (const name of binNames) {
+      const prodBin = path.join(process.resourcesPath, 'solver-bin', name)
+      if (existsSync(prodBin)) {
+        return prodBin
       }
     }
-  } catch {
-    // not in Electron context
+  }
+
+  // Last fallback: Python source (if binary was unavailable).
+  if (existsSync(devPython)) {
+    return devPython
   }
 
   throw new Error(
@@ -79,6 +104,55 @@ export function resolveSolverPath(): string {
  */
 function isPythonScript(solverPath: string): boolean {
   return solverPath.endsWith('.py')
+}
+
+/**
+ * Resolve the best Python 3 command to use for the solver.
+ * Avoids virtualenvs without ortools by probing candidates in order.
+ * Result is cached after first successful probe.
+ */
+let _cachedPythonCmd: string | null = null
+
+function resolvePythonCmd(): string {
+  if (_cachedPythonCmd) return _cachedPythonCmd
+
+  // 1. Explicit env var always wins
+  const explicit = process.env.ESCALAFLOW_PYTHON?.trim()
+  if (explicit) {
+    _cachedPythonCmd = explicit
+    return explicit
+  }
+
+  // 2. Probe candidates — prefer well-known system paths over bare `python3`
+  //    (bare `python3` might resolve to a virtualenv without ortools)
+  const candidates = [
+    '/opt/homebrew/bin/python3',
+    '/usr/local/bin/python3',
+    '/usr/bin/python3',
+    'python3',
+  ]
+
+  for (const candidate of candidates) {
+    // Skip non-existent absolute paths
+    if (candidate.startsWith('/') && !existsSync(candidate)) continue
+
+    try {
+      execFileSync(candidate, ['-c', 'import ortools'], {
+        timeout: 5000,
+        stdio: 'ignore',
+      })
+      _cachedPythonCmd = candidate
+      console.log(`[solver-bridge] Python resolvido: ${candidate}`)
+      return candidate
+    } catch {
+      // candidate doesn't have ortools — try next
+    }
+  }
+
+  // 3. Fallback — will likely fail but gives a clear error message downstream
+  console.warn('[solver-bridge] Nenhum Python com ortools encontrado. Usando python3 do PATH.')
+  _cachedPythonCmd = 'python3'
+  return 'python3'
 }
 
 // ---------------------------------------------------------------------------
@@ -134,17 +208,17 @@ export function buildSolverInput(
     const regimeEfetivo = overrideByColab.get(r.id) ?? r.regime_escala ?? (r.dias_trabalho <= 5 ? '5X2' : '6X1')
     const diasTrabalhoEfetivo = regimeEfetivo === '5X2' ? 5 : 6
     return ({
-    id: r.id,
-    nome: r.nome,
-    horas_semanais: r.horas_semanais,
-    regime_escala: regimeEfetivo,
-    dias_trabalho: diasTrabalhoEfetivo,
-    max_minutos_dia: r.max_minutos_dia,
-    trabalha_domingo: Boolean(r.trabalha_domingo),
-    tipo_trabalhador: r.tipo_trabalhador || 'CLT',
-    sexo: r.sexo,
-    funcao_id: r.funcao_id,
-    rank: r.rank ?? 0,
+      id: r.id,
+      nome: r.nome,
+      horas_semanais: r.horas_semanais,
+      regime_escala: regimeEfetivo,
+      dias_trabalho: diasTrabalhoEfetivo,
+      max_minutos_dia: r.max_minutos_dia,
+      trabalha_domingo: Boolean(r.trabalha_domingo),
+      tipo_trabalhador: r.tipo_trabalhador || 'CLT',
+      sexo: r.sexo,
+      funcao_id: r.funcao_id,
+      rank: r.rank ?? 0,
     })
   })
 
@@ -184,6 +258,139 @@ export function buildSolverInput(
   `).all(dataFim, dataInicio) as Array<{
     colaborador_id: number; data_inicio: string; data_fim: string; tipo: string;
   }>
+
+  // v4: Regras de horario por colaborador
+  const regraHorarioRows = db.prepare(`
+    SELECT r.colaborador_id, r.ativo, r.perfil_horario_id,
+           r.inicio_min, r.inicio_max, r.fim_min, r.fim_max,
+           r.preferencia_turno_soft, r.domingo_ciclo_trabalho, r.domingo_ciclo_folga,
+           r.folga_fixa_dia_semana,
+           p.inicio_min AS p_inicio_min, p.inicio_max AS p_inicio_max,
+           p.fim_min AS p_fim_min, p.fim_max AS p_fim_max,
+           p.preferencia_turno_soft AS p_preferencia_turno_soft
+    FROM colaborador_regra_horario r
+    LEFT JOIN contrato_perfis_horario p ON p.id = r.perfil_horario_id AND p.ativo = 1
+    WHERE r.ativo = 1
+      AND r.colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
+  `).all(setorId) as Array<{
+    colaborador_id: number; ativo: number; perfil_horario_id: number | null;
+    inicio_min: string | null; inicio_max: string | null;
+    fim_min: string | null; fim_max: string | null;
+    preferencia_turno_soft: string | null;
+    domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
+    folga_fixa_dia_semana: string | null;
+    p_inicio_min: string | null; p_inicio_max: string | null;
+    p_fim_min: string | null; p_fim_max: string | null;
+    p_preferencia_turno_soft: string | null;
+  }>
+  const regraByColab = new Map(regraHorarioRows.map(r => [r.colaborador_id, r]))
+
+  // v4: Excecoes de horario por data
+  const excecaoDataRows = db.prepare(`
+    SELECT colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max,
+           preferencia_turno_soft, domingo_forcar_folga
+    FROM colaborador_regra_horario_excecao_data
+    WHERE ativo = 1
+      AND data BETWEEN ? AND ?
+      AND colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
+  `).all(dataInicio, dataFim, setorId) as Array<{
+    colaborador_id: number; data: string; ativo: number;
+    inicio_min: string | null; inicio_max: string | null;
+    fim_min: string | null; fim_max: string | null;
+    preferencia_turno_soft: string | null; domingo_forcar_folga: number;
+  }>
+  const excecaoDataMap = new Map<string, typeof excecaoDataRows[0]>()
+  for (const ed of excecaoDataRows) {
+    excecaoDataMap.set(`${ed.colaborador_id}|${ed.data}`, ed)
+  }
+
+  // v4: Demanda excecao por data
+  const demandaExcecaoRows = db.prepare(`
+    SELECT setor_id, data, hora_inicio, hora_fim, min_pessoas, override
+    FROM demandas_excecao_data
+    WHERE setor_id = ? AND data BETWEEN ? AND ?
+  `).all(setorId, dataInicio, dataFim) as Array<{
+    setor_id: number; data: string; hora_inicio: string; hora_fim: string;
+    min_pessoas: number; override: number;
+  }>
+
+  // v4: Build regras_colaborador_dia[] — resolve precedencia por (colab, data)
+  const DIAS_SEMANA_MAP: Record<number, DiaSemana> = {
+    0: 'SEG', 1: 'TER', 2: 'QUA', 3: 'QUI', 4: 'SEX', 5: 'SAB', 6: 'DOM',
+  }
+
+  const regrasColaboradorDia: SolverInputRegraColaboradorDia[] = []
+  {
+    const start = new Date(dataInicio + 'T00:00:00')
+    const end = new Date(dataFim + 'T00:00:00')
+    for (const colab of colabRows) {
+      const regra = regraByColab.get(colab.id)
+      const d = new Date(start)
+      while (d <= end) {
+        const isoDate = d.toISOString().slice(0, 10)
+        const diaSemana = DIAS_SEMANA_MAP[d.getDay() === 0 ? 6 : d.getDay() - 1]
+
+        const excecaoData = excecaoDataMap.get(`${colab.id}|${isoDate}`)
+
+        // Precedencia: excecao_data > regra_colaborador > perfil_contrato > sem regra
+        let inicio_min: string | null = null
+        let inicio_max: string | null = null
+        let fim_min: string | null = null
+        let fim_max: string | null = null
+        let pref_turno: string | null = null
+        let dom_forcar_folga = false
+        let folga_fixa = false
+
+        if (excecaoData) {
+          inicio_min = excecaoData.inicio_min
+          inicio_max = excecaoData.inicio_max
+          fim_min = excecaoData.fim_min
+          fim_max = excecaoData.fim_max
+          pref_turno = excecaoData.preferencia_turno_soft
+          dom_forcar_folga = Boolean(excecaoData.domingo_forcar_folga)
+        } else if (regra) {
+          // Regra individual sobrescreve perfil (campos nao-null)
+          inicio_min = regra.inicio_min ?? regra.p_inicio_min
+          inicio_max = regra.inicio_max ?? regra.p_inicio_max
+          fim_min = regra.fim_min ?? regra.p_fim_min
+          fim_max = regra.fim_max ?? regra.p_fim_max
+          pref_turno = regra.preferencia_turno_soft ?? regra.p_preferencia_turno_soft
+        }
+
+        // Folga fixa: se dia da semana bate
+        if (regra?.folga_fixa_dia_semana && regra.folga_fixa_dia_semana === diaSemana) {
+          folga_fixa = true
+        }
+
+        // Só inclui se tem alguma regra efetiva
+        if (inicio_min || inicio_max || fim_min || fim_max || pref_turno || dom_forcar_folga || folga_fixa) {
+          regrasColaboradorDia.push({
+            colaborador_id: colab.id,
+            data: isoDate,
+            inicio_min,
+            inicio_max,
+            fim_min,
+            fim_max,
+            preferencia_turno_soft: pref_turno,
+            domingo_forcar_folga: dom_forcar_folga,
+            folga_fixa,
+          })
+        }
+
+        d.setDate(d.getDate() + 1)
+      }
+    }
+  }
+
+  // Enriquecer colaboradores com dados de regra individual
+  for (const c of colaboradores) {
+    const regra = regraByColab.get(c.id)
+    if (regra) {
+      c.domingo_ciclo_trabalho = regra.domingo_ciclo_trabalho
+      c.domingo_ciclo_folga = regra.domingo_ciclo_folga
+      c.folga_fixa_dia_semana = (regra.folga_fixa_dia_semana as DiaSemana | null) ?? null
+    }
+  }
 
   // Warm-start hints: reuse last schedule solution for same setor+period.
   const lastScale = options.hintsEscalaId !== undefined
@@ -237,9 +444,9 @@ export function buildSolverInput(
     feriados: feriados.map(f => ({
       data: f.data,
       nome: f.nome,
-      // H17: proibido_trabalhar=1 (25/12, 01/01)
-      // H18: cct_autoriza=0 (feriado sem CCT = proibido)
-      proibido_trabalhar: Boolean(f.proibido_trabalhar) || !Boolean(f.cct_autoriza),
+      // v4: so 25/12 e 01/01 sao hard-blocked (proibido_trabalhar=1 AND cct_autoriza=0)
+      // Outros feriados: orientados por demanda (solver so nao aloca se demanda = 0)
+      proibido_trabalhar: Boolean(f.proibido_trabalhar) && !Boolean(f.cct_autoriza),
     })),
     excecoes: excecoes.map(e => ({
       colaborador_id: e.colaborador_id,
@@ -249,9 +456,21 @@ export function buildSolverInput(
     })),
     pinned_cells: pinnedCells ?? [],
     hints,
+    regras_colaborador_dia: regrasColaboradorDia.length > 0 ? regrasColaboradorDia : undefined,
+    demanda_excecao_data: demandaExcecaoRows.length > 0
+      ? demandaExcecaoRows.map(r => ({
+          setor_id: r.setor_id,
+          data: r.data,
+          hora_inicio: r.hora_inicio,
+          hora_fim: r.hora_fim,
+          min_pessoas: r.min_pessoas,
+          override: Boolean(r.override),
+        }))
+      : undefined,
     config: {
-      max_time_seconds: 3600,
+      solve_mode: options.solveMode ?? 'rapido',
       num_workers: 8,
+      nivel_rigor: options.nivelRigor ?? 'ALTO',
     },
   }
 }
@@ -280,6 +499,9 @@ export function computeSolverScenarioHash(input: SolverInput): string {
         trabalha_domingo: c.trabalha_domingo,
         tipo_trabalhador: c.tipo_trabalhador,
         sexo: c.sexo,
+        domingo_ciclo_trabalho: c.domingo_ciclo_trabalho ?? 2,
+        domingo_ciclo_folga: c.domingo_ciclo_folga ?? 1,
+        folga_fixa_dia_semana: c.folga_fixa_dia_semana ?? null,
       }))
       .sort((a, b) => a.id - b.id),
     demanda: [...input.demanda]
@@ -310,6 +532,10 @@ export function computeSolverScenarioHash(input: SolverInput): string {
           `${b.colaborador_id}|${b.data_inicio}|${b.data_fim}|${b.tipo}`,
         ),
       ),
+    regras_colaborador_dia: [...(input.regras_colaborador_dia ?? [])]
+      .sort((a, b) => `${a.colaborador_id}|${a.data}`.localeCompare(`${b.colaborador_id}|${b.data}`)),
+    demanda_excecao_data: [...(input.demanda_excecao_data ?? [])]
+      .sort((a, b) => `${a.data}|${a.hora_inicio}`.localeCompare(`${b.data}|${b.hora_inicio}`)),
   }
 
   return createHash('sha256').update(JSON.stringify(norm)).digest('hex')
@@ -328,7 +554,7 @@ export function runSolver(
     const solverPath = resolveSolverPath()
     const isPy = isPythonScript(solverPath)
 
-    const cmd = isPy ? 'python3' : solverPath
+    const cmd = isPy ? resolvePythonCmd() : solverPath
     const args = isPy ? [solverPath] : []
 
     let child
@@ -429,6 +655,14 @@ export function runSolver(
           `Resposta invalida do solver (exit ${code}): ${stdout.substring(0, 200)}`
         ))
       }
+    })
+
+    // Prevent uncaught EPIPE if the child dies before we finish writing
+    child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code !== 'EPIPE') {
+        console.error('[solver-bridge] stdin error:', err.message)
+      }
+      // EPIPE is handled by the 'close' event which fires with a non-zero exit code
     })
 
     // Send input and close stdin

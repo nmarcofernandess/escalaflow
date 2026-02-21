@@ -1,5 +1,10 @@
 import { client } from './client'
-import type { Colaborador, CriarColaboradorRequest } from '@shared/index'
+import type {
+  Colaborador,
+  CriarColaboradorRequest,
+  RegraHorarioColaborador,
+  RegraHorarioColaboradorExcecaoData,
+} from '@shared/index'
 
 export const colaboradoresService = {
   listar: (params?: { setor_id?: number; ativo?: boolean }) =>
@@ -16,4 +21,42 @@ export const colaboradoresService = {
 
   deletar: (id: number) =>
     client['colaboradores.deletar']({ id }) as Promise<void>,
+
+  // --- Regras de Horario ---
+  buscarRegraHorario: (colaboradorId: number) =>
+    client['colaboradores.buscarRegraHorario']({ colaborador_id: colaboradorId }) as Promise<RegraHorarioColaborador | null>,
+
+  salvarRegraHorario: (data: {
+    colaborador_id: number
+    ativo?: boolean
+    perfil_horario_id?: number | null
+    inicio_min?: string | null
+    inicio_max?: string | null
+    fim_min?: string | null
+    fim_max?: string | null
+    preferencia_turno_soft?: string | null
+    domingo_ciclo_trabalho?: number
+    domingo_ciclo_folga?: number
+    folga_fixa_dia_semana?: string | null
+  }) =>
+    client['colaboradores.salvarRegraHorario'](data as any) as Promise<RegraHorarioColaborador>,
+
+  listarRegrasExcecaoData: (colaboradorId: number) =>
+    client['colaboradores.listarRegrasExcecaoData']({ colaborador_id: colaboradorId }) as Promise<RegraHorarioColaboradorExcecaoData[]>,
+
+  upsertRegraExcecaoData: (data: {
+    colaborador_id: number
+    data: string
+    ativo?: boolean
+    inicio_min?: string | null
+    inicio_max?: string | null
+    fim_min?: string | null
+    fim_max?: string | null
+    preferencia_turno_soft?: string | null
+    domingo_forcar_folga?: boolean
+  }) =>
+    client['colaboradores.upsertRegraExcecaoData'](data as any) as Promise<RegraHorarioColaboradorExcecaoData>,
+
+  deletarRegraExcecaoData: (id: number) =>
+    client['colaboradores.deletarRegraExcecaoData']({ id }) as Promise<void>,
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { SidebarTrigger } from '@/components/ui/sidebar'
+import { ChevronLeft, ChevronRight, BrainCircuit, PanelRightClose } from 'lucide-react'
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -13,6 +13,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
+import { useIaStore } from '@/store/iaStore'
 
 interface BreadcrumbEntry {
   label: string
@@ -68,8 +69,19 @@ export function PageHeader({
     return () => window.removeEventListener('escalaflow:nav-link', handleClick)
   }, [])
 
+  const iaStore = useIaStore()
+  const { setOpen: setSidebarOpen } = useSidebar()
+
+  const toggleIa = () => {
+    const abrindo = !iaStore.aberto
+    iaStore.toggleAberto()
+    if (abrindo) {
+      setSidebarOpen(false)
+    }
+  }
+
   return (
-    <header className="flex h-14 shrink-0 items-center gap-1 border-b bg-background px-4">
+    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-1 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mx-1 !h-4" />
 
@@ -128,7 +140,31 @@ export function PageHeader({
           })}
         </BreadcrumbList>
       </Breadcrumb>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+
+      {/* Actions da página + Toggle IA */}
+      <div className="flex items-center gap-2">
+        {actions}
+        <Separator orientation="vertical" className="mx-1 !h-4" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={toggleIa}
+            >
+              {iaStore.aberto ? (
+                <PanelRightClose className="size-4" />
+              ) : (
+                <BrainCircuit className="size-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {iaStore.aberto ? 'Fechar Assistente IA' : 'Abrir Assistente IA'}
+          </TooltipContent>
+        </Tooltip>
+      </div>
     </header>
   )
 }

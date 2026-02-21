@@ -19,7 +19,8 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "solver:build": "cd solver && pyinstaller escalaflow-solver.spec --distpath ../solver-bin/ --clean --noconfirm",
     "solver:test:db": "python3 scripts/solver_test_db.py --setor-id 1 --solve-mode rapido --nivel-rigor ALTO",
-    "solver:test": "npm run solver:test:db",
+    "solver:test:real": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/test-solver-real.ts",
+    "solver:test": "npm run solver:test:real",
     "release:mac": "electron-vite build && electron-builder --mac --publish always"
   },
   "dependencies": {
@@ -71,9 +72,11 @@
     "autoprefixer": "^10.4.0",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
+    "electron-rebuild": "^3.2.9",
     "electron-vite": "^3.0.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   },
   "optionalDependencies": {

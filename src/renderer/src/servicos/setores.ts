@@ -2,6 +2,7 @@ import { client } from './client'
 import type {
   Setor,
   Demanda,
+  DemandaExcecaoData,
   SetorHorarioSemana,
   SalvarTimelineDiaInput,
   SalvarTimelineDiaOutput,
@@ -30,7 +31,6 @@ export const setoresService = {
     client['setores.criarDemanda']({ setor_id: setorId, ...data }) as Promise<Demanda>,
 
   atualizarDemanda: (id: number, data: Partial<Omit<Demanda, 'id' | 'setor_id'>>) => {
-    // Strip undefined values to prevent null serialization over IPC
     const clean: Record<string, unknown> = { id }
     for (const [k, v] of Object.entries(data)) {
       if (v !== undefined) clean[k] = v
@@ -52,4 +52,21 @@ export const setoresService = {
 
   salvarTimelineDia: (data: SalvarTimelineDiaInput) =>
     client['setores.salvarTimelineDia'](data as any) as Promise<SalvarTimelineDiaOutput>,
+
+  // --- Demandas Excecao por Data ---
+  listarDemandasExcecaoData: (setorId: number, dataInicio?: string, dataFim?: string) =>
+    client['setores.listarDemandasExcecaoData']({ setor_id: setorId, data_inicio: dataInicio, data_fim: dataFim } as any) as Promise<DemandaExcecaoData[]>,
+
+  salvarDemandaExcecaoData: (data: {
+    setor_id: number
+    data: string
+    hora_inicio: string
+    hora_fim: string
+    min_pessoas: number
+    override?: boolean
+  }) =>
+    client['setores.salvarDemandaExcecaoData'](data as any) as Promise<DemandaExcecaoData>,
+
+  deletarDemandaExcecaoData: (id: number) =>
+    client['setores.deletarDemandaExcecaoData']({ id }) as Promise<void>,
 }

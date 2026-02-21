@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, Download, Search, Filter, X, FileText, FileSpreadsheet } from 'lucide-react'
+import { Loader2, Download, Search, Filter, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -19,12 +18,13 @@ import { useSetorSelection } from '@/hooks/useSetorSelection'
 import { BulkActionBar } from '@/componentes/BulkActionBar'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { setoresService } from '@/servicos/setores'
+import { funcoesService } from '@/servicos/funcoes'
 import { escalasService } from '@/servicos/escalas'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { exportarService } from '@/servicos/exportar'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda, CSV_BOM } from '@/lib/gerarCSV'
-import type { Setor, Colaborador, EscalaCompletaV3, TipoContrato } from '@shared/index'
+import type { Setor, Colaborador, EscalaCompletaV3, TipoContrato, Funcao, SetorHorarioSemana } from '@shared/index'
 
 interface SetorComEscala {
   setor: Setor
@@ -218,6 +218,8 @@ export function EscalasHub() {
   const [exportColabs, setExportColabs] = useState<{ id: number; nome: string }[]>([])
   const [exportEscalas, setExportEscalas] = useState<Map<number, EscalaCompletaV3>>(new Map())
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([])
+  const [exportFuncoes, setExportFuncoes] = useState<Map<number, Funcao[]>>(new Map())
+  const [exportHorariosSemana, setExportHorariosSemana] = useState<Map<number, SetorHorarioSemana[]>>(new Map())
 
   // Abrir export modal com contexto inteligente
   async function handleOpenExport(overrideSetorIds?: Set<number>) {
@@ -235,16 +237,25 @@ export function EscalasHub() {
     setExportSetores(setoresExp)
 
     // Carregar escalas completas + tipos contrato para export
-    const [escalas, tcs] = await Promise.all([
+    const [escalas, tcs, funcoesBySetor, horariosBySetor] = await Promise.all([
       Promise.all(comEscala.map((s) => escalasService.buscar(s.escalaResumo!.id))),
       tiposContratoService.listar(),
+      Promise.all(comEscala.map((s) => funcoesService.listar(s.setor.id, true).catch(() => []))),
+      Promise.all(comEscala.map((s) => setoresService.listarHorarioSemana(s.setor.id).catch(() => []))),
     ])
     const escMap = new Map<number, EscalaCompletaV3>()
+    const funcoesMap = new Map<number, Funcao[]>()
+    const horariosMap = new Map<number, SetorHorarioSemana[]>()
     for (let i = 0; i < comEscala.length; i++) {
-      escMap.set(comEscala[i].setor.id, escalas[i])
+      const setorId = comEscala[i].setor.id
+      escMap.set(setorId, escalas[i])
+      funcoesMap.set(setorId, funcoesBySetor[i] ?? [])
+      horariosMap.set(setorId, horariosBySetor[i] ?? [])
     }
     setExportEscalas(escMap)
     setTiposContrato(tcs)
+    setExportFuncoes(funcoesMap)
+    setExportHorariosSemana(horariosMap)
 
     // Se 1 setor, pre-carregar colaboradores dele
     if (comEscala.length === 1) {
@@ -351,9 +362,13 @@ export function EscalasHub() {
     Promise.all([
       escalasService.buscar(s.escalaResumo.id),
       tiposContratoService.listar(),
-    ]).then(([ec, tcs]) => {
+      funcoesService.listar(setorId, true).catch(() => []),
+      setoresService.listarHorarioSemana(setorId).catch(() => []),
+    ]).then(([ec, tcs, funcoesSetor, horariosSetor]) => {
       setExportEscalas(new Map([[setorId, ec as EscalaCompletaV3]]))
       setTiposContrato(tcs)
+      setExportFuncoes(new Map([[setorId, funcoesSetor]]))
+      setExportHorariosSemana(new Map([[setorId, horariosSetor]]))
       setExportOpen(true)
     })
   }
@@ -475,29 +490,16 @@ export function EscalasHub() {
             {/* View mode toggle */}
             <EscalaViewToggle mode={viewMode} onChange={setViewMode} />
 
-            {/* Export / selection mode toggle */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={selectionMode ? 'default' : 'outline'}
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => {
-                    if (selectionMode) {
-                      exitSelectionMode()
-                    } else {
-                      enterSelectionMode()
-                    }
-                  }}
-                >
-                  <Download className="size-4" />
-                  Exportar
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                {selectionMode ? 'Sair do modo exportacao' : 'Selecionar setores para exportar'}
-              </TooltipContent>
-            </Tooltip>
+            {/* Export all button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => handleOpenExport()}
+            >
+              <Download className="size-4" />
+              Exportar Todos
+            </Button>
           </div>
         )}
 
@@ -531,6 +533,7 @@ export function EscalasHub() {
                 searchHighlight={searchQuery || undefined}
                 matchedColabs={matchedColabsPorSetor.get(setor.id)}
                 onExportFunc={handleExportFunc}
+                onExport={escalaResumo ? () => handleOpenExport(new Set([setor.id])) : undefined}
                 selectionMode={selectionMode}
                 isSelected={isSelected(setor.id)}
                 onToggleSelection={() => toggleSelection(setor.id)}
@@ -598,6 +601,8 @@ export function EscalasHub() {
                 setor={setorObj}
                 violacoes={ec.violacoes}
                 tiposContrato={tiposContrato}
+                funcoes={exportFuncoes.get(s.id) ?? []}
+                horariosSemana={exportHorariosSemana.get(s.id) ?? []}
                 opcoes={exportCtrl.opcoes}
               />
             )

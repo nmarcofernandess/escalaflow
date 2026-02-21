@@ -26,17 +26,18 @@ from constraints import (
     SlotGrid,
     WorksDay,
     add_ap1_jornada_excessiva,
+    add_colaborador_soft_preferences,
+    add_colaborador_time_window_hard,
+    add_consistencia_horario_soft,
     add_demand_soft,
     add_dias_trabalho,
+    add_domingo_ciclo_soft,
+    add_folga_fixa_5x2,
     add_h1_max_dias_consecutivos,
     add_h2_interjornada,
-    add_h3_rodizio_domingo,
     add_h4_max_jornada_diaria,
     add_h5_excecoes,
-    add_h6_almoco_obrigatorio,
-    add_h7b_max_gap,
-    add_h9_max_blocos,
-    add_h9b_bloco_unico_dia_curto,
+    add_human_blocks,
     add_h10_meta_semanal,
     add_h11_aprendiz_domingo,
     add_h12_aprendiz_feriado,
@@ -46,7 +47,6 @@ from constraints import (
     add_h16_estagiario_hora_extra,
     add_h17_h18_feriado_proibido,
     add_h19_folga_comp_domingo,
-    add_h20_gap_na_janela,
     add_min_diario,
     add_piso_operacional,
     add_surplus_soft,
@@ -56,11 +56,15 @@ from constraints import (
 
 
 WEIGHTS = {
-    "demand_deficit": 10000,
     "override_deficit": 40000,
+    "demand_deficit": 10000,
     "surplus": 5000,
-    "ap1_excess": 250,
+    "domingo_ciclo": 3000,
+    "time_window_pref": 2000,
+    "compensacao": 1500,
+    "consistencia": 1000,
     "spread": 800,
+    "ap1_excess": 250,
 }
 
 DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
@@ -102,11 +106,31 @@ def parse_demand(
     demand_list: List[dict],
     days: List[str],
     base_hour: int = 8,
-    grid_min: int = 30,
+    grid_min: int = 15,
+    demanda_excecao_data: List[dict] | None = None,
 ) -> Tuple[DaySlotDemand, DaySlotOverride]:
     demand_by_day_slot: DaySlotDemand = {}
     override_by_day_slot: DaySlotOverride = {}
 
+    # Build set of (date, slot) that have excecao overrides
+    excecao_slots: set = set()
+    if demanda_excecao_data:
+        for exc in demanda_excecao_data:
+            exc_date = exc.get("data")
+            for d_idx, day in enumerate(days):
+                if day != exc_date:
+                    continue
+                start = time_to_slot(exc["hora_inicio"], base_hour, grid_min)
+                end = time_to_slot(exc["hora_fim"], base_hour, grid_min)
+                target = int(exc["min_pessoas"])
+                for s in range(max(0, start), max(0, end)):
+                    key = (d_idx, s)
+                    excecao_slots.add(key)
+                    demand_by_day_slot[key] = max(demand_by_day_slot.get(key, 0), target)
+                    if bool(exc.get("override", False)):
+                        override_by_day_slot[key] = True
+
+    # Standard weekly demand (skip slots with excecao override)
     for d_idx, day in enumerate(days):
         label = day_label(day)
         for entry in demand_list:
@@ -119,6 +143,8 @@ def parse_demand(
             target = int(entry["min_pessoas"])
             for s in range(max(0, start), max(0, end)):
                 key = (d_idx, s)
+                if key in excecao_slots:
+                    continue  # excecao por data tem precedencia
                 demand_by_day_slot[key] = max(demand_by_day_slot.get(key, 0), target)
                 if bool(entry.get("override", False)):
                     override_by_day_slot[key] = True
@@ -203,6 +229,7 @@ def build_model(data: dict) -> Tuple[
     int,
 ]:
     model = cp_model.CpModel()
+    config = data.get("config", {})
 
     colabs = data["colaboradores"]
     empresa = data["empresa"]
@@ -228,7 +255,11 @@ def build_model(data: dict) -> Tuple[
     lunch_win_end = (15 * 60 - base_h * 60) // grid_min
 
     demand_by_slot, override_by_slot = parse_demand(
-        data["demanda"], days=days, base_hour=base_h, grid_min=grid_min
+        data["demanda"],
+        days=days,
+        base_hour=base_h,
+        grid_min=grid_min,
+        demanda_excecao_data=data.get("demanda_excecao_data"),
     )
     piso_operacional = int(data.get("piso_operacional", 1))
 
@@ -357,27 +388,38 @@ def build_model(data: dict) -> Tuple[
     works_day = make_works_day(model, work, C, D, S)
     block_starts = make_block_starts(model, work, C, D, S)
 
+    nivel_rigor = config.get("nivel_rigor", "ALTO")
+
     # ---------------------------------------------------------------
     # HARD constraints (CLT Legal)
     # ---------------------------------------------------------------
-    add_h1_max_dias_consecutivos(model, works_day, C, D)
+    regras_dia = data.get("regras_colaborador_dia", [])
+
+    if nivel_rigor in ["ALTO", "MEDIO"]:
+        add_h1_max_dias_consecutivos(model, works_day, C, D)
+
     add_h2_interjornada(model, work, C, D, S, grid_min=grid_min)
-    add_h3_rodizio_domingo(model, works_day, colabs, C, sunday_indices)
+    # v4: H3 removido como hard — substitudo por domingo_ciclo_soft abaixo
     add_h4_max_jornada_diaria(model, work, colabs, C, D, S, grid_min)
     add_h5_excecoes(model, work, colabs, days, C, S, excecoes)
-    add_h6_almoco_obrigatorio(
-        model,
-        work,
-        C,
-        D,
-        S,
-        min_lunch_slots=min_lunch_slots,
-        lunch_window_start=lunch_win_start,
-        lunch_window_end=lunch_win_end,
-    )
-    add_h7b_max_gap(model, work, C, D, S, max_gap_slots=max_gap_slots)
-    add_h9_max_blocos(model, block_starts, C, D, S)
-    add_h9b_bloco_unico_dia_curto(model, work, block_starts, C, D, S)
+
+    if nivel_rigor == "ALTO":
+        add_human_blocks(
+            model,
+            work,
+            block_starts,
+            C,
+            D,
+            S,
+            base_h=base_h,
+            grid_min=grid_min,
+            min_gap_slots=min_lunch_slots,
+            max_gap_slots=max_gap_slots,
+            threshold_slots=360 // grid_min,   # >6h -> almoco (scale for grid)
+            min_work_slots=120 // grid_min,    # min 2h per block
+            max_work_slots=360 // grid_min,    # max 6h continuous work
+        )
+
     weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal(
         model,
         work,
@@ -408,24 +450,33 @@ def build_model(data: dict) -> Tuple[
     add_h16_estagiario_hora_extra(model, weekly_minutes_by_colab, colabs, C, week_chunks)
     add_h17_h18_feriado_proibido(model, works_day, C, holiday_prohibited_indices)
     add_h19_folga_comp_domingo(model, works_day, C, D, sunday_indices)
-    add_h20_gap_na_janela(
-        model,
-        work,
-        C,
-        D,
-        S,
-        lunch_window_start=lunch_win_start,
-        lunch_window_end=lunch_win_end,
+
+    # v4: Regra hard de janela por colaborador
+    add_colaborador_time_window_hard(
+        model, work, works_day, regras_dia, colabs, days, C, D, S, base_h, grid_min
     )
 
+    # v4: Folga fixa 5x2
+    add_folga_fixa_5x2(model, works_day, colabs, days, C, D)
+
     # Product rules (with blocked_days awareness)
-    add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days)
-    add_min_diario(model, work, works_day, C, D, S, min_slots=min_daily_slots)
+    if nivel_rigor in ["ALTO", "MEDIO"]:
+        add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days)
+
+    if nivel_rigor == "ALTO":
+        add_min_diario(model, work, works_day, C, D, S, min_slots=min_daily_slots)
     add_piso_operacional(model, work, demand_by_slot, C, D, S, piso_operacional)
 
     deficit = add_demand_soft(model, work, demand_by_slot, C, D, S)
     surplus = add_surplus_soft(model, work, demand_by_slot, C, D, S)
     ap1_excess = add_ap1_jornada_excessiva(model, work, C, D, S)
+
+    # v4: Novos soft constraints
+    domingo_ciclo_penalties = add_domingo_ciclo_soft(model, works_day, colabs, C, sunday_indices)
+    turno_pref_penalties = add_colaborador_soft_preferences(
+        model, work, works_day, regras_dia, colabs, days, C, D, S, base_h, grid_min
+    )
+    consistencia_penalties = add_consistencia_horario_soft(model, work, works_day, C, D, S, grid_min)
 
     max_total_minutes = D * S * grid_min
     max_weekly = model.new_int_var(0, max_total_minutes, "max_weekly")
@@ -443,6 +494,12 @@ def build_model(data: dict) -> Tuple[
             objective_terms.append(WEIGHTS["override_deficit"] * sum(override_deficit))
     if surplus:
         objective_terms.append(WEIGHTS["surplus"] * sum(surplus.values()))
+    if domingo_ciclo_penalties:
+        objective_terms.append(WEIGHTS["domingo_ciclo"] * sum(domingo_ciclo_penalties))
+    if turno_pref_penalties:
+        objective_terms.append(WEIGHTS["time_window_pref"] * sum(turno_pref_penalties))
+    if consistencia_penalties:
+        objective_terms.append(WEIGHTS["consistencia"] * sum(consistencia_penalties))
     if ap1_excess:
         objective_terms.append(WEIGHTS["ap1_excess"] * sum(ap1_excess))
     objective_terms.append(WEIGHTS["spread"] * spread)
@@ -535,6 +592,7 @@ def extract_solution(
             if not slots_worked:
                 alocacoes.append({
                     "colaborador_id": colab_id,
+                    "colaborador": colab_nome,
                     "data": days[d],
                     "status": "FOLGA",
                     "hora_inicio": None,
@@ -583,6 +641,7 @@ def extract_solution(
 
             alocacoes.append({
                 "colaborador_id": colab_id,
+                "colaborador": colab_nome,
                 "data": days[d],
                 "status": "TRABALHO",
                 "hora_inicio": inicio,
@@ -700,8 +759,18 @@ def solve(data: dict) -> dict:
         }
 
     config = data.get("config", {})
-    max_time = config.get("max_time_seconds", 120)
+    solve_mode = config.get("solve_mode", "rapido")  # "rapido" | "otimizado"
     num_workers = config.get("num_workers", 8)
+
+    # Profiles:
+    # rapido:    30s timeout, stop when gap < 5% (good-enough fast)
+    # otimizado: 120s timeout, run until OPTIMAL or timeout (best possible)
+    if solve_mode == "otimizado":
+        max_time = config.get("max_time_seconds", 120)
+        gap_limit = 0.0  # prove full optimality
+    else:
+        max_time = config.get("max_time_seconds", 30)
+        gap_limit = 0.05  # stop at 5% of optimal
 
     log(
         f"Building model: {len(colabs)} colabs, "
@@ -732,8 +801,11 @@ def solve(data: dict) -> dict:
     solver.parameters.max_time_in_seconds = max_time
     solver.parameters.num_workers = num_workers
     solver.parameters.log_search_progress = True
+    solver.parameters.log_to_stdout = False
+    if gap_limit > 0:
+        solver.parameters.relative_gap_limit = gap_limit
 
-    log(f"Solving (max {max_time}s, {num_workers} workers)...")
+    log(f"Solving [{solve_mode}] (max {max_time}s, {num_workers} workers, gap {gap_limit*100:.0f}%)...")
     t0 = time.time()
     status = solver.solve(model)
     solve_time_ms = (time.time() - t0) * 1000
@@ -766,9 +838,111 @@ def solve(data: dict) -> dict:
     return result
 
 
+def parse_from_db(db_path: str) -> dict:
+    """Parse solver input directly from SQLite DB (for testing/CLI use)."""
+    import sqlite3
+    from datetime import date as dt_date, timedelta as dt_timedelta
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    emp = conn.execute("select * from empresa limit 1").fetchone()
+    setor = conn.execute("select * from setores where id=1 limit 1").fetchone()
+    setor_id = int(setor["id"]) if setor else 1
+
+    col_rows = conn.execute(
+        """
+        select c.id, c.nome, c.horas_semanais, c.rank,
+               tc.dias_trabalho, tc.max_minutos_dia, tc.regime_escala
+        from colaboradores c
+        join tipos_contrato tc on tc.id = c.tipo_contrato_id
+        where c.setor_id = ? and c.ativo = 1
+        order by c.rank
+        """,
+        (setor_id,),
+    ).fetchall()
+
+    dem_rows = conn.execute(
+        "select * from demandas where setor_id = ? order by hora_inicio",
+        (setor_id,),
+    ).fetchall()
+
+    exc_rows = conn.execute("select * from excecoes").fetchall()
+
+    # Use fixed reference period matching ground truth for comparison
+    # In production, these come from the UI via solver-bridge.ts
+    days = ["2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-14"]
+
+    colaboradores = []
+    for r in col_rows:
+        # Match solver-bridge.ts logic:
+        # regime_escala from DB, then derive dias_trabalho from it (6X1→6, 5X2→5)
+        regime = r["regime_escala"] or ("5X2" if int(r["dias_trabalho"]) <= 5 else "6X1")
+        dias_efetivo = 5 if regime == "5X2" else 6
+        colaboradores.append({
+            "id": r["id"],
+            "nome": r["nome"],
+            "horas_semanais": int(r["horas_semanais"]),
+            "dias_trabalho": dias_efetivo,
+            "regime_escala": regime,
+            "max_minutos_dia": int(r["max_minutos_dia"]),
+            "rank": r["rank"],
+            "trabalha_domingo": True,
+            "tipo_trabalhador": "CLT",
+        })
+
+    demanda = []
+    for r in dem_rows:
+        demanda.append({
+            "dia_semana": r["dia_semana"],
+            "hora_inicio": r["hora_inicio"],
+            "hora_fim": r["hora_fim"],
+            "min_pessoas": int(r["min_pessoas"]),
+            "override": bool(r["override"]),
+        })
+
+    excecoes = []
+    for r in exc_rows:
+        excecoes.append(dict(r))
+
+    conn.close()
+
+    return {
+        "data_inicio": days[0],
+        "data_fim": days[-1],
+        "empresa": {
+            "hora_abertura": "08:00",
+            "hora_fechamento": "20:00",
+            "tolerancia_semanal_min": int(emp["tolerancia_semanal_min"]) if emp else 30,
+            "grid_minutos": int(emp["grid_minutos"]) if emp else 30,
+            "min_intervalo_almoco_min": int(emp["min_intervalo_almoco_min"]) if emp and "min_intervalo_almoco_min" in emp.keys() else 60,
+        },
+        "colaboradores": colaboradores,
+        "demanda": demanda,
+        "excecoes": excecoes,
+        "feriados": [],
+        "pinned_cells": [],
+    }
+
+
 def main() -> None:
-    """Entry point: read JSON from stdin, write JSON to stdout."""
+    """Entry point: accepts DB path as argument OR JSON via stdin."""
     try:
+        # If a .db file is passed as argument, use parse_from_db
+        if len(sys.argv) > 1 and sys.argv[1].endswith(".db"):
+            db_path = sys.argv[1]
+            log(f"Reading from DB: {db_path}")
+            data = parse_from_db(db_path)
+            result = solve(data)
+            # Write result to file next to the solver
+            import os
+            out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resultado_python.json")
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            log(f"Result written to {out_path}")
+            json.dump(result, sys.stdout, ensure_ascii=False)
+            return
+
         raw = sys.stdin.read()
         if not raw.strip():
             result = {

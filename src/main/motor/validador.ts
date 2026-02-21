@@ -20,7 +20,6 @@ import {
   celulaFolga,
   janelaOperacional,
   isFeriadoProibido,
-  isFeriadoSemCCT,
   validarTudoV3,
   checkAP1_Clopening,
   checkAP3_LunchCollision,
@@ -273,12 +272,12 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
 
   for (const data of dias) {
     const janela = janelaOperacional(data, setor, horariosSemana)
+    // v3.1 PRD: so 25/12 e 01/01 sao hard-blocked (CCT).
+    // Outros feriados sao orientados por demanda — geram slots normalmente.
     const feriadoProib = isFeriadoProibido(data, feriados)
-    const feriadoSemCCT = isFeriadoSemCCT(data, feriados)
-    const diaProibido = feriadoProib || feriadoSemCCT
     const diaClosed = janela === null
 
-    if (diaClosed || diaProibido) continue
+    if (diaClosed || feriadoProib) continue
 
     let slotStart = timeToMin(janela.abertura)
     const slotEnd = timeToMin(janela.fechamento)

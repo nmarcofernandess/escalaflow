@@ -9,6 +9,7 @@ import {
   CalendarDays,
   CircleAlert,
 } from 'lucide-react'
+import { SetorIcon } from '@/componentes/IconPicker'
 import { CORES_VIOLACAO } from '@/lib/cores'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -97,8 +98,8 @@ export function Dashboard() {
                       className="flex items-center justify-between rounded-lg border p-3"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex size-9 items-center justify-center rounded-md bg-primary/10">
-                          <Building2 className="size-4 text-primary" />
+                        <div className="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                          <SetorIcon name={setor.icone} className="size-4" />
                         </div>
                         <div>
                           <p className="text-sm font-medium text-foreground">{setor.nome}</p>

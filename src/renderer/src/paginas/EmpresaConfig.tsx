@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Settings, Save, ShieldCheck, Monitor, Sun, Moon, Check, CalendarDays, Plus, Trash2, Lock, RefreshCw, Download, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { Settings, Save, ShieldCheck, Monitor, Sun, Moon, Check, CalendarDays, Plus, Trash2, Lock, RefreshCw, Download, CheckCircle2, AlertCircle, Loader2, BrainCircuit, Eye, EyeOff } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -101,7 +101,7 @@ export function EmpresaConfig() {
   const [appVersion, setAppVersion] = useState<string>('...')
 
   useEffect(() => {
-    window.electron.ipcRenderer.invoke('app:version').then((v: string) => setAppVersion(v)).catch(() => {})
+    window.electron.ipcRenderer.invoke('app:version').then((v: string) => setAppVersion(v)).catch(() => { })
 
     window.electron.ipcRenderer.on('update:checking', () => setUpdateStatus('checking'))
     window.electron.ipcRenderer.on('update:available', (info: { version: string }) => {
@@ -123,11 +123,11 @@ export function EmpresaConfig() {
   const handleCheckUpdate = () => {
     setUpdateError(null)
     setUpdateStatus('checking')
-    window.electron.ipcRenderer.invoke('update:check').catch(() => {})
+    window.electron.ipcRenderer.invoke('update:check').catch(() => { })
   }
 
   const handleInstallUpdate = () => {
-    window.electron.ipcRenderer.invoke('update:install').catch(() => {})
+    window.electron.ipcRenderer.invoke('update:install').catch(() => { })
   }
 
   // Feriado dialog state
@@ -137,6 +137,78 @@ export function EmpresaConfig() {
   const [novoFeriadoTipo, setNovoFeriadoTipo] = useState('NACIONAL')
   const [novoFeriadoProibido, setNovoFeriadoProibido] = useState(false)
   const [criandoFeriado, setCriandoFeriado] = useState(false)
+
+  // IA Config
+  const iaForm = useForm({
+    resolver: zodResolver(z.object({
+      provider: z.string(),
+      api_key: z.string().optional(),
+      modelo: z.string(),
+      ativo: z.boolean(),
+    })),
+    defaultValues: {
+      provider: 'gemini',
+      api_key: '',
+      modelo: 'gemini-2.5-flash',
+      ativo: false,
+    },
+  })
+
+  const { data: iaConfig } = useApiData<any>(
+    () => window.electron.ipcRenderer.invoke('ia.configuracao.obter'),
+    []
+  )
+
+  useEffect(() => {
+    if (iaConfig) {
+      iaForm.reset({
+        provider: iaConfig.provider,
+        api_key: iaConfig.api_key,
+        modelo: iaConfig.modelo,
+        ativo: Boolean(iaConfig.ativo),
+      })
+    }
+  }, [iaConfig, iaForm])
+
+  const [testandoIa, setTestandoIa] = useState(false)
+  const [salvandoIa, setSalvandoIa] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
+
+  const onTestarIa = async () => {
+    const values = iaForm.getValues()
+    setTestandoIa(true)
+    try {
+      const res = await window.electron.ipcRenderer.invoke('ia.configuracao.testar', {
+        provider: values.provider,
+        api_key: values.api_key,
+        modelo: values.modelo
+      })
+      if (res.sucesso) {
+        toast.success(res.mensagem || 'Conectado com sucesso!')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao testar conexão.')
+    } finally {
+      setTestandoIa(false)
+    }
+  }
+
+  const onSubmitIa = async (data: any) => {
+    setSalvandoIa(true)
+    try {
+      await window.electron.ipcRenderer.invoke('ia.configuracao.salvar', {
+        provider: data.provider,
+        api_key: data.api_key || '',
+        modelo: data.modelo,
+        ativo: data.ativo
+      })
+      toast.success('Configurações de IA salvas.')
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao salvar configurações.')
+    } finally {
+      setSalvandoIa(false)
+    }
+  }
 
   const form = useForm<EmpresaFormInput, unknown, EmpresaFormData>({
     resolver: zodResolver(empresaSchema),
@@ -619,6 +691,144 @@ export function EmpresaConfig() {
                 })}
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Inteligência Artificial */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BrainCircuit className="size-4 text-purple-500" />
+                Assistente IA
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Configure o provedor para usar o chat inteligente e a pré-análise de escalas.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa}>
+                {testandoIa ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}
+                Testar
+              </Button>
+              <Button size="sm" onClick={iaForm.handleSubmit(onSubmitIa)} disabled={salvandoIa}>
+                {salvandoIa ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <Save className="mr-1 size-3.5" />}
+                Salvar IA
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Form {...iaForm}>
+              <form className="space-y-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
+                <div className="flex items-center gap-3 rounded-lg border p-4">
+                  <FormField
+                    control={iaForm.control}
+                    name="ativo"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center gap-3 space-y-0">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <div>
+                          <FormLabel className="text-sm font-medium">
+                            Ativar Assistente
+                          </FormLabel>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Habilita o painel de chat e a analise via LLM em todo o aplicativo.
+                          </p>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField
+                    control={iaForm.control}
+                    name="provider"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Provedor</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o provedor..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="gemini">Google Gemini</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={iaForm.control}
+                    name="modelo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Modelo</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o modelo..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado)</SelectItem>
+                            <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                            <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-[10px] text-muted-foreground mt-1">Flash = rápido e barato · Pro = mais inteligente</p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={iaForm.control}
+                    name="api_key"
+                    render={({ field }) => (
+                      <FormItem className="sm:col-span-2 lg:col-span-3">
+                        <FormLabel>API Key</FormLabel>
+                        <div className="flex w-full items-center gap-2">
+                          <FormControl>
+                            <div className="relative flex-1">
+                              <Input
+                                type={showApiKey ? 'text' : 'password'}
+                                placeholder="sk-..."
+                                {...field}
+                                className="pr-10"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                                onClick={() => setShowApiKey(!showApiKey)}
+                              >
+                                {showApiKey ? (
+                                  <EyeOff className="size-4 text-muted-foreground" />
+                                ) : (
+                                  <Eye className="size-4 text-muted-foreground" />
+                                )}
+                              </Button>
+                            </div>
+                          </FormControl>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </form>
+            </Form>
           </CardContent>
         </Card>
 

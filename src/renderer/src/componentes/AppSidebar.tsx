@@ -16,6 +16,7 @@ import {
   HelpCircle,
   Info,
   Palette,
+  BrainCircuit,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -47,6 +48,7 @@ import { cn } from '@/lib/utils'
 import { empresaService } from '@/servicos/empresa'
 import { TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
 import { useTour } from './Tour'
+import { useIaStore } from '@/store/iaStore'
 
 const mainNav = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard },
@@ -76,10 +78,11 @@ function extrairIniciais(nome: string): string {
 
 export function AppSidebar() {
   const { pathname } = useLocation()
-  const { isMobile } = useSidebar()
+  const { isMobile, setOpen: setSidebarOpen } = useSidebar()
   const { theme, setTheme } = useTheme()
   const { startTour } = useTour()
   const [empresaNome, setEmpresaNome] = useState('Empresa')
+  const iaStore = useIaStore()
 
   useEffect(() => {
     empresaService.buscar().then((emp) => {
@@ -90,6 +93,12 @@ export function AppSidebar() {
   }, [])
 
   const iniciais = extrairIniciais(empresaNome)
+
+  const abrirChat = () => {
+    iaStore.setAberto(true)
+    // Fecha a sidebar quando abre o chat
+    setSidebarOpen(false)
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -126,22 +135,22 @@ export function AppSidebar() {
                         ? TOUR_STEP_IDS.NAV_ESCALAS
                         : undefined
                 return (
-                <SidebarMenuItem key={item.label} id={tourId}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={
-                      item.to === '/'
-                        ? pathname === '/'
-                        : pathname.startsWith(item.to)
-                    }
-                    tooltip={item.label}
-                  >
-                    <Link to={item.to}>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                  <SidebarMenuItem key={item.label} id={tourId}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={
+                        item.to === '/'
+                          ? pathname === '/'
+                          : pathname.startsWith(item.to)
+                      }
+                      tooltip={item.label}
+                    >
+                      <Link to={item.to}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 )
               })}
             </SidebarMenu>
@@ -166,6 +175,24 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Botão de IA — sempre visível na sidebar */}
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Assistente IA"
+                  onClick={abrirChat}
+                  className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-700 dark:hover:text-emerald-300"
+                >
+                  <BrainCircuit />
+                  <span>Assistente IA</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

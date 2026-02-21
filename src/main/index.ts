@@ -4,7 +4,8 @@ import electron from 'electron'
 import { createTables } from './db/schema'
 import { seedData } from './db/seed'
 import { closeDb } from './db/database'
-import { autoUpdater } from 'electron-updater'
+import pkg from 'electron-updater'
+const { autoUpdater } = pkg
 
 // Em modo packaged nao ha terminal — EPIPE em stdout/stderr nao deve crashar o app
 process.stdout.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') console.error(err) })

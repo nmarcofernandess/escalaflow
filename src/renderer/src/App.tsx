@@ -5,6 +5,7 @@ import { AppSidebar } from './componentes/AppSidebar'
 import { ErrorBoundary } from './componentes/ErrorBoundary'
 import { TourProvider } from './componentes/Tour'
 import { TourSetup } from './componentes/TourSetup'
+import { IaChatPanel } from './componentes/IaChatPanel'
 import { TOUR_NAVIGATE_EVENT, TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
 import { Dashboard } from './paginas/Dashboard'
 import { SetorLista } from './paginas/SetorLista'
@@ -23,7 +24,6 @@ export function App() {
     localStorage.getItem(TOUR_STORAGE_KEY) === 'true',
   )
 
-  // Listen for tour navigation events
   useEffect(() => {
     const handler = (e: Event) => {
       const path = (e as CustomEvent<{ path: string }>).detail.path
@@ -45,21 +45,26 @@ export function App() {
       >
         <AppSidebar />
         <SidebarInset>
-          <div id={TOUR_STEP_IDS.CONTENT_AREA} className="flex-1">
-            <ErrorBoundary>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/setores" element={<SetorLista />} />
-                <Route path="/setores/:id" element={<SetorDetalhe />} />
-                <Route path="/setores/:id/escala" element={<EscalaPagina />} />
-                <Route path="/escalas" element={<EscalasHub />} />
-                <Route path="/colaboradores" element={<ColaboradorLista />} />
-                <Route path="/colaboradores/:id" element={<ColaboradorDetalhe />} />
-                <Route path="/tipos-contrato" element={<ContratoLista />} />
-                <Route path="/empresa" element={<EmpresaConfig />} />
-                <Route path="*" element={<NaoEncontrado />} />
-              </Routes>
-            </ErrorBoundary>
+          <div id={TOUR_STEP_IDS.CONTENT_AREA} className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex flex-1 overflow-hidden">
+              <main className="flex-1 min-w-0 overflow-auto">
+                <ErrorBoundary>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/setores" element={<SetorLista />} />
+                    <Route path="/setores/:id" element={<SetorDetalhe />} />
+                    <Route path="/setores/:id/escala" element={<EscalaPagina />} />
+                    <Route path="/escalas" element={<EscalasHub />} />
+                    <Route path="/colaboradores" element={<ColaboradorLista />} />
+                    <Route path="/colaboradores/:id" element={<ColaboradorDetalhe />} />
+                    <Route path="/tipos-contrato" element={<ContratoLista />} />
+                    <Route path="/empresa" element={<EmpresaConfig />} />
+                    <Route path="*" element={<NaoEncontrado />} />
+                  </Routes>
+                </ErrorBoundary>
+              </main>
+              <IaChatPanel />
+            </div>
           </div>
         </SidebarInset>
         <TourSetup />

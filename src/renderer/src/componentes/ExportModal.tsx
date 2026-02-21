@@ -232,6 +232,12 @@ function EscalaOptions({
             Batch (todos individuais)
           </Label>
         </div>
+        <div className="flex items-center space-x-2">
+          <RadioGroupItem value="csv" id="fmt-csv" />
+          <Label htmlFor="fmt-csv" className="text-sm font-normal">
+            CSV (dados brutos)
+          </Label>
+        </div>
       </RadioGroup>
 
       {formato === 'funcionario' && colaboradores && onFuncionarioChange && (

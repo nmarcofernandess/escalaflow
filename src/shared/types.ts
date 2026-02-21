@@ -127,6 +127,8 @@ export interface Funcao {
   tipo_contrato_id: number
   ativo: boolean
   ordem: number
+  // v4
+  cor_hex: string | null
 }
 
 export interface Feriado {
@@ -169,6 +171,82 @@ export interface EscalaComparacaoDemanda {
   delta: number
   override: boolean
   justificativa: string | null
+}
+
+// ============================================================================
+// ENTIDADES NOVAS v4 — PRD Motor Python + Regras Colaborador + Grid 15min
+// ============================================================================
+
+export interface PerfilHorarioContrato {
+  id: number
+  tipo_contrato_id: number
+  nome: string
+  ativo: boolean
+  inicio_min: string              // HH:MM (mais cedo que pode comecar)
+  inicio_max: string              // HH:MM (mais tarde que pode comecar)
+  fim_min: string                 // HH:MM (mais cedo que pode sair)
+  fim_max: string                 // HH:MM (mais tarde que pode sair)
+  preferencia_turno_soft: Turno | null
+  ordem: number
+}
+
+export interface RegraHorarioColaborador {
+  id: number
+  colaborador_id: number
+  ativo: boolean
+  perfil_horario_id: number | null
+  inicio_min: string | null       // override do perfil
+  inicio_max: string | null
+  fim_min: string | null
+  fim_max: string | null
+  preferencia_turno_soft: Turno | null
+  domingo_ciclo_trabalho: number  // default 2
+  domingo_ciclo_folga: number     // default 1
+  folga_fixa_dia_semana: DiaSemana | null
+}
+
+export interface RegraHorarioColaboradorExcecaoData {
+  id: number
+  colaborador_id: number
+  data: string
+  ativo: boolean
+  inicio_min: string | null
+  inicio_max: string | null
+  fim_min: string | null
+  fim_max: string | null
+  preferencia_turno_soft: Turno | null
+  domingo_forcar_folga: boolean
+}
+
+export interface DemandaExcecaoData {
+  id: number
+  setor_id: number
+  data: string
+  hora_inicio: string
+  hora_fim: string
+  min_pessoas: number
+  override: boolean
+}
+
+export interface ModeloCicloEscala {
+  id: number
+  setor_id: number
+  nome: string
+  semanas_no_ciclo: number
+  ativo: boolean
+  origem_escala_id: number | null
+  criado_em: string
+}
+
+export interface ModeloCicloEscalaItem {
+  id: number
+  ciclo_modelo_id: number
+  semana_idx: number
+  colaborador_id: number
+  dia_semana: DiaSemana
+  trabalha: boolean
+  ancora_domingo: boolean
+  prioridade: number
 }
 
 // ============================================================================
@@ -356,6 +434,7 @@ export interface DashboardResumo {
 export interface SetorResumo {
   id: number
   nome: string
+  icone: string | null
   total_colaboradores: number
   escala_atual: 'SEM_ESCALA' | 'RASCUNHO' | 'OFICIAL'
   proxima_geracao: string | null
@@ -422,6 +501,10 @@ export interface SolverInputColab {
   sexo: string
   funcao_id: number | null
   rank: number
+  // v4: regras individuais
+  domingo_ciclo_trabalho?: number
+  domingo_ciclo_folga?: number
+  folga_fixa_dia_semana?: DiaSemana | null
 }
 
 export interface SolverInputDemanda {
@@ -438,6 +521,27 @@ export interface SolverInputHint {
   status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
   hora_inicio?: string | null
   hora_fim?: string | null
+}
+
+export interface SolverInputRegraColaboradorDia {
+  colaborador_id: number
+  data: string
+  inicio_min: string | null
+  inicio_max: string | null
+  fim_min: string | null
+  fim_max: string | null
+  preferencia_turno_soft: string | null
+  domingo_forcar_folga: boolean
+  folga_fixa: boolean
+}
+
+export interface SolverInputDemandaExcecaoData {
+  setor_id: number
+  data: string
+  hora_inicio: string
+  hora_fim: string
+  min_pessoas: number
+  override: boolean
 }
 
 export interface SolverInput {
@@ -459,7 +563,16 @@ export interface SolverInput {
   excecoes: { colaborador_id: number; data_inicio: string; data_fim: string; tipo: string }[]
   pinned_cells: PinnedCell[]
   hints?: SolverInputHint[]
-  config: { max_time_seconds: number; num_workers: number }
+  // v4: regras individuais por colaborador/dia
+  regras_colaborador_dia?: SolverInputRegraColaboradorDia[]
+  // v4: excecoes de demanda por data
+  demanda_excecao_data?: SolverInputDemandaExcecaoData[]
+  config: {
+    max_time_seconds?: number
+    num_workers: number
+    solve_mode?: 'rapido' | 'otimizado'
+    nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'
+  }
 }
 
 export interface SolverOutputAlocacao {
@@ -490,4 +603,33 @@ export interface SolverOutput {
     mensagem: string
     sugestoes: string[]
   }
+}
+
+// ============================================================================
+// ASSISTENTE DE IA
+// ============================================================================
+
+export interface ToolCall {
+  id: string
+  name: string
+  args: Record<string, any>
+  result?: any
+}
+
+export interface IaMensagem {
+  id: string
+  papel: 'usuario' | 'assistente' | 'tool_result'
+  conteudo: string
+  timestamp: string
+  tool_calls?: ToolCall[]
+}
+
+export interface IaConfiguracao {
+  id: number
+  provider: 'gemini' | 'anthropic' | 'openai'
+  api_key: string
+  modelo: string
+  ativo: boolean
+  criado_em: string
+  atualizado_em: string
 }

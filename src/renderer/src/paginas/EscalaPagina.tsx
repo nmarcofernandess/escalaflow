@@ -15,6 +15,8 @@ import {
   Info,
   Download,
   Terminal,
+  Repeat,
+  Save,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,6 +44,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { EmptyState } from '@/componentes/EmptyState'
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
 import { PontuacaoBadge } from '@/componentes/PontuacaoBadge'
@@ -54,11 +65,13 @@ import { ViolacoesAgrupadas } from '@/componentes/ViolacoesAgrupadas'
 import { ExportModal } from '@/componentes/ExportModal'
 import { useExportController } from '@/hooks/useExportController'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
+import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda } from '@/lib/gerarCSV'
 import { exportarService } from '@/servicos/exportar'
 import { cn } from '@/lib/utils'
 import { formatarData, formatarMes, mapError, iniciais } from '@/lib/formatadores'
 import { useApiData } from '@/hooks/useApiData'
 import { setoresService } from '@/servicos/setores'
+import { funcoesService } from '@/servicos/funcoes'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
@@ -69,6 +82,8 @@ import type {
   Alocacao,
   Colaborador,
   Setor,
+  Funcao,
+  ModeloCicloEscala,
   RegimeEscala,
 } from '@shared/index'
 
@@ -89,6 +104,14 @@ export function EscalaPagina() {
   const { data: tiposContrato } = useApiData(
     () => tiposContratoService.listar(),
     [],
+  )
+  const { data: funcoes } = useApiData(
+    () => funcoesService.listar(setorId, true),
+    [setorId],
+  )
+  const { data: horariosSemana } = useApiData(
+    () => setoresService.listarHorarioSemana(setorId),
+    [setorId],
   )
 
   // Simulacao state — auto-preenche com proximo mes
@@ -117,6 +140,11 @@ export function EscalaPagina() {
   const [regimeOverrides, setRegimeOverrides] = useState<Record<number, RegimeEscala>>({})
   const [regerarModalOpen, setRegerarModalOpen] = useState(false)
   const [regerarWarning, setRegerarWarning] = useState<string | null>(null)
+  const [preflightWarningsOpen, setPreflightWarningsOpen] = useState(false)
+  const [preflightWarningsText, setPreflightWarningsText] = useState<string[]>([])
+  const preflightResolveRef = useRef<((proceed: boolean) => void) | null>(null)
+  const [solveMode, setSolveMode] = useState<'rapido' | 'otimizado'>('rapido')
+  const [nivelRigor, setNivelRigor] = useState<'ALTO' | 'MEDIO' | 'BAIXO'>('ALTO')
 
   // Oficial tab state
   const [oficialEscala, setOficialEscala] = useState<EscalaCompletaV3 | null>(null)
@@ -177,6 +205,22 @@ export function EscalaPagina() {
   const [historicoDetail, setHistoricoDetail] = useState<EscalaCompletaV3 | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
+  // Ciclo rotativo state
+  const [cicloDetecting, setCicloDetecting] = useState(false)
+  const [cicloResult, setCicloResult] = useState<{
+    ciclo_detectado: boolean
+    T: number
+    P: number
+    semanas: number
+    match_percent: number
+  } | null>(null)
+  const [cicloSaving, setCicloSaving] = useState(false)
+  const [cicloNome, setCicloNome] = useState('')
+  const [showCicloSaveDialog, setShowCicloSaveDialog] = useState(false)
+  const [ciclosModelos, setCiclosModelos] = useState<ModeloCicloEscala[]>([])
+  const [ciclosLoaded, setCiclosLoaded] = useState(false)
+  const [gerandoPorCiclo, setGerandoPorCiclo] = useState(false)
+
   // Generate escala
   async function handleGerar() {
     setRegerarWarning(null)
@@ -197,13 +241,16 @@ export function EscalaPagina() {
       }
 
       if (preflight.warnings.length > 0) {
-        const warnings = preflight.warnings
-          .map((w) => `- ${w.mensagem}${w.detalhe ? ` (${w.detalhe})` : ''}`)
-          .join('\n')
-        const confirmed = window.confirm(
-          `Preflight com avisos:\n${warnings}\n\nDeseja continuar com a geracao?`,
+        const warningsList = preflight.warnings.map(
+          (w) => `${w.mensagem}${w.detalhe ? ` (${w.detalhe})` : ''}`,
         )
-        if (!confirmed) return
+        setPreflightWarningsText(warningsList)
+        setPreflightLoading(false)
+        const proceed = await new Promise<boolean>((resolve) => {
+          preflightResolveRef.current = resolve
+          setPreflightWarningsOpen(true)
+        })
+        if (!proceed) return
       }
     } catch (err) {
       toast.error(mapError(err) || 'Falha no preflight da escala')
@@ -218,6 +265,8 @@ export function EscalaPagina() {
         data_inicio: dataInicio,
         data_fim: dataFim,
         regimes_override: regimesOverride,
+        solveMode,
+        nivelRigor,
       })
       setEscalaCompleta(result)
       toast.success('Escala gerada')
@@ -361,6 +410,75 @@ export function EscalaPagina() {
     }
   }
 
+  // Ciclo rotativo handlers
+  async function handleDetectarCiclo() {
+    if (!escalaCompleta) return
+    setCicloDetecting(true)
+    setCicloResult(null)
+    try {
+      const result = await escalasService.detectarCicloRotativo(escalaCompleta.escala.id)
+      setCicloResult(result)
+      if (result.ciclo_detectado) {
+        toast.success(`Ciclo detectado: periodo de ${result.P} semana(s)`)
+      } else {
+        toast.info('Nenhum ciclo rotativo detectado nesta escala')
+      }
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao detectar ciclo')
+    } finally {
+      setCicloDetecting(false)
+    }
+  }
+
+  async function handleSalvarCiclo() {
+    if (!escalaCompleta || !cicloResult?.ciclo_detectado || !cicloNome.trim()) return
+    setCicloSaving(true)
+    try {
+      await escalasService.salvarCicloRotativo({
+        setor_id: setorId,
+        nome: cicloNome.trim(),
+        semanas_no_ciclo: cicloResult.P,
+        origem_escala_id: escalaCompleta.escala.id,
+        itens: [],
+      })
+      toast.success('Ciclo rotativo salvo')
+      setShowCicloSaveDialog(false)
+      setCicloNome('')
+      setCiclosLoaded(false)
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao salvar ciclo')
+    } finally {
+      setCicloSaving(false)
+    }
+  }
+
+  async function loadCiclosModelos() {
+    if (ciclosLoaded) return
+    try {
+      const ciclos = await escalasService.listarCiclosRotativos(setorId)
+      setCiclosModelos(ciclos)
+      setCiclosLoaded(true)
+    } catch {
+      setCiclosModelos([])
+      setCiclosLoaded(true)
+    }
+  }
+
+  async function handleGerarPorCiclo(cicloModeloId: number) {
+    setGerandoPorCiclo(true)
+    try {
+      const result = await escalasService.gerarPorCicloRotativo(cicloModeloId, dataInicio, dataFim)
+      setEscalaCompleta(result)
+      toast.success('Escala gerada a partir do ciclo rotativo')
+      setOficialLoaded(false)
+      setHistoricoLoaded(false)
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao gerar por ciclo')
+    } finally {
+      setGerandoPorCiclo(false)
+    }
+  }
+
   // Tab change handler
   function handleTabChange(value: string) {
     if (value === 'oficial') loadOficial()
@@ -384,6 +502,9 @@ export function EscalaPagina() {
           alocacoes={ec.alocacoes}
           colaboradores={colaboradores}
           setor={setor}
+          tiposContrato={tiposContrato ?? []}
+          funcoes={funcoes ?? []}
+          horariosSemana={horariosSemana ?? []}
         />
       )
 
@@ -442,6 +563,15 @@ export function EscalaPagina() {
       alocacoes: exportEscala.alocacoes.filter((a) => a.colaborador_id === colabId),
       violacoes: exportEscala.violacoes.filter((v) => v.colaborador_id === colabId),
     })
+  }
+
+  async function handleCSVExportEscala() {
+    if (!exportEscala || !setor || !colaboradores) return
+    const csvAloc = gerarCSVAlocacoes([exportEscala], [setor], colaboradores)
+    const csvViol = gerarCSVViolacoes([exportEscala], [setor])
+    const csvDelta = gerarCSVComparacaoDemanda([exportEscala], [setor])
+    const combined = `${csvAloc}\n\n${csvViol}\n\n${csvDelta}`
+    await exportCtrl.handleCSV(combined, `escala-${setor.nome.toLowerCase().replace(/\s+/g, '-')}.csv`)
   }
 
   if (!setor || !colaboradores) {
@@ -589,6 +719,34 @@ export function EscalaPagina() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Motor de IA</Label>
+                  <Select value={solveMode} onValueChange={(v) => setSolveMode(v as 'rapido' | 'otimizado')} disabled={gerando || preflightLoading}>
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Modo de busca" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rapido">Super Flash (1s-30s)</SelectItem>
+                      <SelectItem value="otimizado">Otimizada (Profunda)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Rigor CLT</Label>
+                  <Select value={nivelRigor} onValueChange={(v) => setNivelRigor(v as 'ALTO' | 'MEDIO' | 'BAIXO')} disabled={gerando || preflightLoading}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Rigor Leis" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALTO">Restrito (Padrão)</SelectItem>
+                      <SelectItem value="MEDIO">De boa (Flexível)</SelectItem>
+                      <SelectItem value="BAIXO">Relaxado (Livre)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <Button onClick={handleGerar} disabled={gerando || preflightLoading}>
                   {gerando ? (
                     <Loader2 className="mr-1 size-4 animate-spin" />
@@ -629,6 +787,66 @@ export function EscalaPagina() {
               </Card>
             )}
 
+            {/* Ciclos Rotativos Salvos */}
+            {!escalaCompleta && !gerando && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                    <Repeat className="size-4 text-primary" />
+                    Ciclos Rotativos
+                  </CardTitle>
+                  {!ciclosLoaded && (
+                    <Button variant="outline" size="sm" onClick={loadCiclosModelos}>
+                      Carregar ciclos
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {!ciclosLoaded ? (
+                    <p className="text-xs text-muted-foreground">
+                      Clique em &quot;Carregar ciclos&quot; para ver modelos salvos.
+                    </p>
+                  ) : ciclosModelos.length === 0 ? (
+                    <EmptyState
+                      icon={Repeat}
+                      title="Nenhum ciclo salvo"
+                      description="Gere uma escala de multiplas semanas e detecte o ciclo para salvar um modelo reutilizavel."
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      {ciclosModelos.map((ciclo) => (
+                        <div
+                          key={ciclo.id}
+                          className="flex items-center justify-between rounded-lg border px-4 py-3"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">{ciclo.nome}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {ciclo.semanas_no_ciclo} semana(s) de ciclo
+                              {ciclo.criado_em && ` · Criado em ${formatarData(ciclo.criado_em.split('T')[0])}`}
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleGerarPorCiclo(ciclo.id)}
+                            disabled={gerandoPorCiclo || !dataInicio || !dataFim}
+                          >
+                            {gerandoPorCiclo ? (
+                              <Loader2 className="mr-1 size-3.5 animate-spin" />
+                            ) : (
+                              <CalendarDays className="mr-1 size-3.5" />
+                            )}
+                            Gerar por ciclo
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {escalaCompleta ? (
               <SimulacaoResult
                 escalaCompleta={escalaCompleta}
@@ -651,9 +869,14 @@ export function EscalaPagina() {
                 onCelulaClick={handleCelulaClick}
                 ajustando={ajustando}
                 changedCells={changedCells}
+                funcoes={funcoes ?? undefined}
                 escalaViewMode={escalaViewMode}
                 setEscalaViewMode={setEscalaViewMode}
                 setor={setor}
+                onDetectarCiclo={handleDetectarCiclo}
+                cicloDetecting={cicloDetecting}
+                cicloResult={cicloResult}
+                onSalvarCicloOpen={() => setShowCicloSaveDialog(true)}
               />
             ) : (
               <Card>
@@ -750,6 +973,7 @@ export function EscalaPagina() {
                         dataFim={oficialEscala.escala.data_fim}
                         demandas={demandas ?? undefined}
                         tiposContrato={tiposContrato ?? undefined}
+                        funcoes={funcoes ?? undefined}
                         readOnly
                       />
                     ) : (
@@ -859,6 +1083,7 @@ export function EscalaPagina() {
                                   dataFim={historicoDetail.escala.data_fim}
                                   demandas={demandas ?? undefined}
                                   tiposContrato={tiposContrato ?? undefined}
+                                  funcoes={funcoes ?? undefined}
                                   readOnly
                                 />
                               ) : (
@@ -918,6 +1143,51 @@ export function EscalaPagina() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Preflight Warnings Modal */}
+      <AlertDialog open={preflightWarningsOpen} onOpenChange={(open) => {
+        if (!open) {
+          preflightResolveRef.current?.(false)
+          preflightResolveRef.current = null
+          setPreflightWarningsOpen(false)
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              Avisos do preflight
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>O sistema detectou os seguintes avisos antes de gerar a escala:</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  {preflightWarningsText.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+                <p className="pt-2">Deseja continuar com a geração mesmo assim?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              preflightResolveRef.current?.(false)
+              preflightResolveRef.current = null
+              setPreflightWarningsOpen(false)
+            }}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              preflightResolveRef.current?.(true)
+              preflightResolveRef.current = null
+              setPreflightWarningsOpen(false)
+            }}>
+              Continuar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Export Modal */}
       {setor && colaboradores && exportEscala && (
         <ExportModal
@@ -959,6 +1229,7 @@ export function EscalaPagina() {
               exportCtrl.handlePrint(`escala-${slug}.pdf`)
             }
           }}
+          onCSV={handleCSVExportEscala}
           loading={exportCtrl.loading}
           progress={exportCtrl.progress}
         >
@@ -969,10 +1240,55 @@ export function EscalaPagina() {
             setor={setor}
             violacoes={exportEscala.violacoes}
             tiposContrato={tiposContrato ?? []}
+            funcoes={funcoes ?? []}
+            horariosSemana={horariosSemana ?? []}
             opcoes={exportCtrl.opcoes}
           />
         </ExportModal>
       )}
+
+      {/* Salvar Ciclo Dialog */}
+      <Dialog open={showCicloSaveDialog} onOpenChange={setShowCicloSaveDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Salvar Ciclo Rotativo</DialogTitle>
+            <DialogDescription>
+              Salve este padrao como modelo reutilizavel para gerar escalas futuras.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nome do Ciclo</Label>
+              <Input
+                placeholder="Ex: Padrao Verao, Ciclo Normal"
+                value={cicloNome}
+                onChange={(e) => setCicloNome(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSalvarCiclo()
+                }}
+                autoFocus
+              />
+            </div>
+            {cicloResult?.ciclo_detectado && (
+              <div className="rounded-lg border bg-muted/20 p-3 text-xs space-y-1">
+                <p><strong>Periodo:</strong> {cicloResult.P} semana(s)</p>
+                <p><strong>Match:</strong> {cicloResult.match_percent}%</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCicloSaveDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSalvarCiclo}
+              disabled={cicloSaving || !cicloNome.trim()}
+            >
+              {cicloSaving ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1006,9 +1322,20 @@ interface SimulacaoResultProps {
   onCelulaClick?: (colaboradorId: number, data: string, statusAtual: string) => void
   ajustando?: { colaboradorId: number; data: string } | null
   changedCells?: Set<string>
+  funcoes?: Funcao[]
   escalaViewMode: 'grid' | 'timeline'
   setEscalaViewMode: (mode: 'grid' | 'timeline') => void
   setor: Setor
+  onDetectarCiclo?: () => void
+  cicloDetecting?: boolean
+  cicloResult?: {
+    ciclo_detectado: boolean
+    T: number
+    P: number
+    semanas: number
+    match_percent: number
+  } | null
+  onSalvarCicloOpen?: () => void
 }
 
 function SimulacaoResult({
@@ -1016,6 +1343,7 @@ function SimulacaoResult({
   colaboradores,
   demandas,
   tiposContrato,
+  funcoes,
   setorNome,
   expandViolacoes,
   setExpandViolacoes,
@@ -1035,6 +1363,10 @@ function SimulacaoResult({
   escalaViewMode,
   setEscalaViewMode,
   setor,
+  onDetectarCiclo,
+  cicloDetecting = false,
+  cicloResult = null,
+  onSalvarCicloOpen,
 }: SimulacaoResultProps) {
   const indicators = getIndicators(escalaCompleta)
   const violacoes = escalaCompleta.violacoes
@@ -1110,6 +1442,7 @@ function SimulacaoResult({
               dataFim={escalaCompleta.escala.data_fim}
               demandas={demandas}
               tiposContrato={tiposContrato}
+              funcoes={funcoes}
               readOnly={false}
               onCelulaClick={onCelulaClick}
               loadingCell={ajustando ?? undefined}
@@ -1198,8 +1531,8 @@ function SimulacaoResult({
                           isNegative
                             ? '[&>div]:bg-destructive/50'
                             : isPositive
-                            ? '[&>div]:bg-amber-400/70'
-                            : '[&>div]:bg-emerald-500/60',
+                              ? '[&>div]:bg-amber-400/70'
+                              : '[&>div]:bg-emerald-500/60',
                         )}
                       />
                       <Badge
@@ -1209,8 +1542,8 @@ function SimulacaoResult({
                           isNegative
                             ? 'border-destructive/40 bg-destructive/10 text-destructive'
                             : isPositive
-                            ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300'
-                            : 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300',
+                              ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300'
+                              : 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300',
                         )}
                       >
                         {isPositive ? '+' : ''}{vals.delta}
@@ -1294,6 +1627,78 @@ function SimulacaoResult({
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ciclo Rotativo — Deteccao */}
+      {onDetectarCiclo && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <Repeat className="size-4 text-primary" />
+              Ciclo Rotativo
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onDetectarCiclo}
+                disabled={cicloDetecting}
+              >
+                {cicloDetecting ? (
+                  <Loader2 className="mr-1 size-3.5 animate-spin" />
+                ) : (
+                  <Repeat className="mr-1 size-3.5" />
+                )}
+                {cicloDetecting ? 'Detectando...' : 'Detectar Ciclo'}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Analisa se a escala gerada segue um padrao rotativo reutilizavel.
+              </p>
+            </div>
+            {cicloResult && (
+              <div className="rounded-lg border p-4 space-y-2">
+                {cicloResult.ciclo_detectado ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                        Ciclo Detectado
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        Match: {cicloResult.match_percent}%
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Transiente (T)</p>
+                        <p className="font-medium">{cicloResult.T} semana(s)</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Periodo (P)</p>
+                        <p className="font-medium">{cicloResult.P} semana(s)</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Total semanas</p>
+                        <p className="font-medium">{cicloResult.semanas}</p>
+                      </div>
+                    </div>
+                    {onSalvarCicloOpen && (
+                      <Button variant="outline" size="sm" onClick={onSalvarCicloOpen}>
+                        <Save className="mr-1 size-3.5" />
+                        Salvar como modelo
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum padrao rotativo detectado nesta escala. Tente gerar uma escala com mais semanas para melhorar a deteccao.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>

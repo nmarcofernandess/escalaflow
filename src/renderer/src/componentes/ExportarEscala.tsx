@@ -1,5 +1,14 @@
-import type { Escala, Alocacao, Colaborador, Setor, Violacao, TipoContrato } from '@shared/index'
-import { formatarData, formatarMinutos, REGRAS_TEXTO } from '@/lib/formatadores'
+import type {
+  Escala,
+  Alocacao,
+  Colaborador,
+  Setor,
+  Violacao,
+  TipoContrato,
+  Funcao,
+  SetorHorarioSemana,
+} from '@shared/index'
+import { formatarData, formatarMinutos, REGRAS_TEXTO, toMinutes, minutesToTime } from '@/lib/formatadores'
 
 interface ExportarEscalaProps {
   escala: Escala
@@ -8,12 +17,25 @@ interface ExportarEscalaProps {
   setor: Setor
   violacoes?: Violacao[]
   tiposContrato?: TipoContrato[]
+  funcoes?: Funcao[]
+  horariosSemana?: SetorHorarioSemana[]
   opcoes?: { avisos?: boolean; horas?: boolean }
 }
 
+interface TimeSlot {
+  startMin: number
+  endMin: number
+  start: string
+  end: string
+}
+
+const DIAS_SEMANA_CURTO = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'] as const
+
+type DiaSemanaCurto = (typeof DIAS_SEMANA_CURTO)[number]
+
 /**
  * Componente de exportação HTML self-contained para impressão.
- * CSS inline — funciona offline. Tabela pessoa x dia com horários.
+ * CSS inline — funciona offline.
  */
 export function ExportarEscala({
   escala,
@@ -22,6 +44,8 @@ export function ExportarEscala({
   setor,
   violacoes = [],
   tiposContrato = [],
+  funcoes = [],
+  horariosSemana = [],
   opcoes = {},
 }: ExportarEscalaProps) {
   // Generate all dates in range
@@ -40,20 +64,105 @@ export function ExportarEscala({
     alocMap.set(`${a.colaborador_id}-${a.data}`, a)
   }
 
-  function getAlloc(colabId: number, dateStr: string): Alocacao | undefined {
-    return alocMap.get(`${colabId}-${dateStr}`)
+  // Build posto map
+  const funcaoMap = new Map<number, string>()
+  for (const f of funcoes) {
+    funcaoMap.set(f.id, f.apelido)
   }
 
-  function formatTime(time: string | null): string {
-    if (!time) return ''
-    return time.replace(':00', '').replace(':30', ':30')
+  // Build horario map
+  const horarioSemanaMap = new Map<string, SetorHorarioSemana>()
+  for (const h of horariosSemana) {
+    horarioSemanaMap.set(h.dia_semana, h)
+  }
+
+  function getAlloc(colabId: number, dateStr: string): Alocacao | undefined {
+    return alocMap.get(`${colabId}-${dateStr}`)
   }
 
   function toDateStr(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   }
 
-  const DIAS_SEMANA_CURTO = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
+  function formatTime(time: string | null): string {
+    return time ?? ''
+  }
+
+  function resolvePosto(alloc: Alocacao | undefined, colab: Colaborador): string {
+    if (alloc?.funcao_id != null) {
+      return funcaoMap.get(alloc.funcao_id) ?? 'Sem posto'
+    }
+    if (colab.funcao_id != null) {
+      return funcaoMap.get(colab.funcao_id) ?? 'Sem posto'
+    }
+    return 'Sem posto'
+  }
+
+  function getDiaSemanaKey(date: Date): DiaSemanaCurto {
+    return DIAS_SEMANA_CURTO[date.getDay()]
+  }
+
+  function resolveOperationalWindow(date: Date): { ativo: boolean; abertura: string; fechamento: string } {
+    const diaKey = getDiaSemanaKey(date)
+    const diaCfg = horarioSemanaMap.get(diaKey)
+
+    if (diaCfg) {
+      if (!Boolean(diaCfg.ativo)) {
+        return {
+          ativo: false,
+          abertura: setor.hora_abertura,
+          fechamento: setor.hora_fechamento,
+        }
+      }
+
+      const aberturaCfg = diaCfg.hora_abertura || setor.hora_abertura
+      const fechamentoCfg = diaCfg.hora_fechamento || setor.hora_fechamento
+      if (toMinutes(fechamentoCfg) > toMinutes(aberturaCfg)) {
+        return { ativo: true, abertura: aberturaCfg, fechamento: fechamentoCfg }
+      }
+    }
+
+    return {
+      ativo: true,
+      abertura: setor.hora_abertura,
+      fechamento: setor.hora_fechamento,
+    }
+  }
+
+  function buildSlots(horaAbertura: string, horaFechamento: string): TimeSlot[] {
+    const openMin = toMinutes(horaAbertura)
+    const closeMin = toMinutes(horaFechamento)
+    if (closeMin <= openMin) return []
+
+    const slots: TimeSlot[] = []
+    for (let startMin = openMin; startMin < closeMin; startMin += 15) {
+      const endMin = Math.min(startMin + 15, closeMin)
+      slots.push({
+        startMin,
+        endMin,
+        start: minutesToTime(startMin),
+        end: minutesToTime(endMin),
+      })
+    }
+    return slots
+  }
+
+  function isLunchSlot(alloc: Alocacao | undefined, slot: TimeSlot): boolean {
+    if (!alloc?.hora_almoco_inicio || !alloc?.hora_almoco_fim) return false
+    const lunchStart = toMinutes(alloc.hora_almoco_inicio)
+    const lunchEnd = toMinutes(alloc.hora_almoco_fim)
+    return lunchStart <= slot.startMin && lunchEnd >= slot.endMin
+  }
+
+  function isWorkSlot(alloc: Alocacao | undefined, slot: TimeSlot): boolean {
+    if (!alloc || alloc.status !== 'TRABALHO' || !alloc.hora_inicio || !alloc.hora_fim) return false
+
+    const workStart = toMinutes(alloc.hora_inicio)
+    const workEnd = toMinutes(alloc.hora_fim)
+    if (!(workStart <= slot.startMin && workEnd >= slot.endMin)) return false
+
+    return !isLunchSlot(alloc, slot)
+  }
 
   // Group into weeks (7 days each)
   const weeks: Date[][] = []
@@ -106,7 +215,7 @@ export function ExportarEscala({
         </div>
       </div>
 
-      {/* Weeks */}
+      {/* Weeks (resumo macro) */}
       {weeks.map((weekDates, weekIndex) => (
         <div key={weekIndex} style={{ marginBottom: '24px', pageBreakInside: 'avoid' }}>
           <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
@@ -142,7 +251,7 @@ export function ExportarEscala({
                         fontSize: '10px',
                         fontWeight: '600',
                         color: isWeekend ? '#2563eb' : '#111827',
-                        minWidth: '60px',
+                        minWidth: '95px',
                       }}
                     >
                       <div>{DIAS_SEMANA_CURTO[dow]}</div>
@@ -175,6 +284,7 @@ export function ExportarEscala({
                     const status = alloc?.status ?? 'FOLGA'
                     const dow = date.getDay()
                     const isSunday = dow === 0
+                    const posto = resolvePosto(alloc, colab)
 
                     let cellBg = '#ffffff'
                     let cellColor = '#6b7280'
@@ -190,24 +300,30 @@ export function ExportarEscala({
                       cellColor = '#9ca3af'
                     }
 
-                    const cellStyle: React.CSSProperties = {
-                      border: '1px solid #d1d5db',
-                      padding: '4px',
-                      textAlign: 'center',
-                      fontSize: '9px',
-                      background: cellBg,
-                      color: cellColor,
-                    }
-
                     return (
-                      <td key={dateStr} style={cellStyle}>
+                      <td
+                        key={dateStr}
+                        style={{
+                          border: '1px solid #d1d5db',
+                          padding: '4px',
+                          textAlign: 'center',
+                          fontSize: '9px',
+                          background: cellBg,
+                          color: cellColor,
+                        }}
+                      >
                         {status === 'TRABALHO' ? (
                           <>
                             <div style={{ fontWeight: '600', fontSize: '10px' }}>
-                              {formatTime(alloc?.hora_inicio ?? null)}
+                              {formatTime(alloc?.hora_inicio ?? null)} - {formatTime(alloc?.hora_fim ?? null)}
                             </div>
-                            <div style={{ fontSize: '8px', opacity: 0.8 }}>
-                              {formatTime(alloc?.hora_fim ?? null)}
+                            {alloc?.hora_almoco_inicio && alloc?.hora_almoco_fim && (
+                              <div style={{ fontSize: '8px', opacity: 0.9 }}>
+                                Almoço {alloc.hora_almoco_inicio} - {alloc.hora_almoco_fim}
+                              </div>
+                            )}
+                            <div style={{ fontSize: '8px', opacity: 0.85, marginTop: '1px' }}>
+                              Posto {posto}
                             </div>
                           </>
                         ) : status === 'FOLGA' ? (
@@ -224,6 +340,284 @@ export function ExportarEscala({
           </table>
         </div>
       ))}
+
+      {/* Timeline detalhada por dia */}
+      <div style={{ marginTop: '24px' }}>
+        <h2
+          style={{
+            fontSize: '14px',
+            fontWeight: '600',
+            color: '#111827',
+            marginBottom: '10px',
+            borderBottom: '1px solid #e5e7eb',
+            paddingBottom: '6px',
+          }}
+        >
+          Timeline Diária de Postos
+        </h2>
+
+        {allDates.map((date) => {
+          const dateStr = toDateStr(date)
+          const diaKey = getDiaSemanaKey(date)
+          const operational = resolveOperationalWindow(date)
+
+          const dayBlockStyle: React.CSSProperties = {
+            marginBottom: '18px',
+            pageBreakInside: 'avoid',
+            border: '1px solid #e5e7eb',
+            borderRadius: '6px',
+            padding: '8px',
+          }
+
+          if (!operational.ativo) {
+            return (
+              <div key={dateStr} style={dayBlockStyle}>
+                <div style={{ marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#1f2937' }}>
+                  {diaKey} {formatarData(dateStr)}
+                </div>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: '#6b7280',
+                    background: '#f9fafb',
+                    border: '1px dashed #d1d5db',
+                    borderRadius: '4px',
+                    padding: '6px 8px',
+                  }}
+                >
+                  Dia inativo: timeline fechada.
+                </div>
+              </div>
+            )
+          }
+
+          const slots = buildSlots(operational.abertura, operational.fechamento)
+          if (slots.length === 0) {
+            return (
+              <div key={dateStr} style={dayBlockStyle}>
+                <div style={{ marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#1f2937' }}>
+                  {diaKey} {formatarData(dateStr)}
+                </div>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: '#6b7280',
+                    background: '#f9fafb',
+                    border: '1px dashed #d1d5db',
+                    borderRadius: '4px',
+                    padding: '6px 8px',
+                  }}
+                >
+                  Horário operacional inválido para este dia.
+                </div>
+              </div>
+            )
+          }
+
+          const fluxoPorSlot = slots.map((slot) => {
+            let count = 0
+            for (const colab of colaboradores) {
+              const alloc = getAlloc(colab.id, dateStr)
+              if (isWorkSlot(alloc, slot)) count++
+            }
+            return count
+          })
+
+          return (
+            <div key={dateStr} style={dayBlockStyle}>
+              <div
+                style={{
+                  marginBottom: '6px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#1f2937' }}>
+                  {diaKey} {formatarData(dateStr)}
+                </div>
+                <div style={{ fontSize: '10px', color: '#6b7280' }}>
+                  Operação: {operational.abertura} - {operational.fechamento}
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: `${220 + slots.length * 46}px` }}>
+                  <thead>
+                    <tr style={{ background: '#f9fafb' }}>
+                      <th
+                        style={{
+                          border: '1px solid #d1d5db',
+                          padding: '4px 6px',
+                          textAlign: 'left',
+                          fontSize: '10px',
+                          minWidth: '150px',
+                        }}
+                      >
+                        Colaborador
+                      </th>
+                      {slots.map((slot) => (
+                        <th
+                          key={`${dateStr}-${slot.start}`}
+                          style={{
+                            border: '1px solid #d1d5db',
+                            padding: '4px 2px',
+                            textAlign: 'center',
+                            fontSize: '9px',
+                            minWidth: '46px',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={`${slot.start} - ${slot.end}`}
+                        >
+                          {slot.start}
+                        </th>
+                      ))}
+                      <th
+                        style={{
+                          border: '1px solid #d1d5db',
+                          padding: '4px 6px',
+                          textAlign: 'center',
+                          fontSize: '10px',
+                          minWidth: '72px',
+                        }}
+                      >
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {colaboradores.map((colab) => {
+                      const alloc = getAlloc(colab.id, dateStr)
+                      const posto = resolvePosto(alloc, colab)
+                      const totalMin = alloc?.status === 'TRABALHO'
+                        ? (alloc.minutos_trabalho ?? alloc.minutos ?? 0)
+                        : 0
+
+                      return (
+                        <tr key={`${colab.id}-${dateStr}`}>
+                          <td
+                            style={{
+                              border: '1px solid #d1d5db',
+                              padding: '4px 6px',
+                              fontSize: '9px',
+                              color: '#111827',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <div style={{ fontWeight: 600 }}>{colab.nome}</div>
+                            <div style={{ fontSize: '8px', color: '#6b7280' }}>
+                              {alloc?.status === 'INDISPONIVEL' ? 'Indisponível' : alloc?.status === 'TRABALHO' ? `Posto ${posto}` : 'Folga'}
+                            </div>
+                          </td>
+
+                          {slots.map((slot) => {
+                            const lunchSlot = isLunchSlot(alloc, slot)
+                            const workSlot = isWorkSlot(alloc, slot)
+
+                            let background = '#ffffff'
+                            let color = '#6b7280'
+                            let text = ''
+                            if (lunchSlot) {
+                              background = '#fef3c7'
+                              color = '#92400e'
+                              text = 'ALM'
+                            } else if (workSlot) {
+                              background = '#d1fae5'
+                              color = '#065f46'
+                              text = posto
+                            }
+
+                            return (
+                              <td
+                                key={`${colab.id}-${slot.start}`}
+                                style={{
+                                  border: '1px solid #d1d5db',
+                                  padding: '3px 2px',
+                                  textAlign: 'center',
+                                  fontSize: '8px',
+                                  fontWeight: 600,
+                                  background,
+                                  color,
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={text ? `${colab.nome}: ${text} (${slot.start}-${slot.end})` : `${colab.nome}: sem alocação (${slot.start}-${slot.end})`}
+                              >
+                                {text}
+                              </td>
+                            )
+                          })}
+
+                          <td
+                            style={{
+                              border: '1px solid #d1d5db',
+                              padding: '4px 6px',
+                              textAlign: 'center',
+                              fontSize: '9px',
+                              fontWeight: 600,
+                              color: '#374151',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {formatarMinutos(totalMin)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+
+                    {/* Fluxo por slot */}
+                    <tr style={{ background: '#f9fafb' }}>
+                      <td
+                        style={{
+                          border: '1px solid #d1d5db',
+                          padding: '4px 6px',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          color: '#1f2937',
+                        }}
+                      >
+                        Fluxo (pessoas)
+                      </td>
+                      {fluxoPorSlot.map((count, idx) => {
+                        const active = count > 0
+                        return (
+                          <td
+                            key={`${dateStr}-fluxo-${idx}`}
+                            style={{
+                              border: '1px solid #d1d5db',
+                              padding: '3px 2px',
+                              textAlign: 'center',
+                              fontSize: '9px',
+                              fontWeight: 700,
+                              color: active ? '#065f46' : '#9ca3af',
+                              background: active ? '#ecfdf5' : '#f9fafb',
+                            }}
+                          >
+                            {count}
+                          </td>
+                        )
+                      })}
+                      <td
+                        style={{
+                          border: '1px solid #d1d5db',
+                          padding: '4px 6px',
+                          textAlign: 'center',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          color: '#1f2937',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        max {Math.max(...fluxoPorSlot, 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
       {/* Horas por Colaborador */}
       {opcoes.horas && colaboradores.length > 0 && (
@@ -354,7 +748,7 @@ export function ExportarEscala({
         }}
       >
         <div>
-          <strong>Legenda:</strong> F = Folga | I = Indisponível | Horários = Turno de Trabalho
+          <strong>Legenda:</strong> F = Folga | I = Indisponível | ALM = almoço | Posto = posição no fluxo
         </div>
         <div>
           Gerada em {new Date().toLocaleDateString('pt-BR')} | <strong>EscalaFlow v2</strong>

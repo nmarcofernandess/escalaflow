@@ -93,9 +93,11 @@ import { excecoesService } from '@/servicos/excecoes'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
+import { Switch } from '@/components/ui/switch'
 import type {
   Setor,
   Demanda,
+  DemandaExcecaoData,
   Colaborador,
   Escala,
   TipoContrato,
@@ -334,6 +336,18 @@ export function SetorDetalhe() {
     funcaoNome: string
   } | null>(null)
 
+  // Demanda excecao por data
+  const [demandasExcecao, setDemandasExcecao] = useState<DemandaExcecaoData[]>([])
+  const [showExcDemandaDialog, setShowExcDemandaDialog] = useState(false)
+  const [excDemandaSalvando, setExcDemandaSalvando] = useState(false)
+  const [excDemandaForm, setExcDemandaForm] = useState({
+    data: '',
+    hora_inicio: '',
+    hora_fim: '',
+    min_pessoas: 1,
+    override: false,
+  })
+
   // ─── Computed maps ───────────────────────────────────────────────────
   const funcaoMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -376,6 +390,12 @@ export function SetorDetalhe() {
       setOrderedColabs([...colaboradores].sort((a, b) => a.rank - b.rank))
     }
   }, [colaboradores])
+
+  // Carregar demandas excecao por data
+  useEffect(() => {
+    if (!setorId) return
+    setoresService.listarDemandasExcecaoData(setorId).then(setDemandasExcecao).catch(() => {})
+  }, [setorId])
 
   // ─── DnD handler (rank reorder only) ───────────────────────────────
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -510,6 +530,42 @@ export function SetorDetalhe() {
     await Promise.all([reloadDemandas(), reloadHorariosSemana()])
     toast.success('Demanda salva')
   }, [reloadDemandas, reloadHorariosSemana])
+
+  const handleSalvarExcDemanda = async () => {
+    if (!excDemandaForm.data || !excDemandaForm.hora_inicio || !excDemandaForm.hora_fim) {
+      toast.error('Preencha data, hora inicio e hora fim')
+      return
+    }
+    setExcDemandaSalvando(true)
+    try {
+      const created = await setoresService.salvarDemandaExcecaoData({
+        setor_id: setorId,
+        data: excDemandaForm.data,
+        hora_inicio: excDemandaForm.hora_inicio,
+        hora_fim: excDemandaForm.hora_fim,
+        min_pessoas: excDemandaForm.min_pessoas,
+        override: excDemandaForm.override,
+      })
+      setDemandasExcecao((prev) => [...prev, created])
+      setShowExcDemandaDialog(false)
+      setExcDemandaForm({ data: '', hora_inicio: '', hora_fim: '', min_pessoas: 1, override: false })
+      toast.success('Excecao de demanda salva')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar excecao de demanda')
+    } finally {
+      setExcDemandaSalvando(false)
+    }
+  }
+
+  const handleDeletarExcDemanda = async (excId: number) => {
+    try {
+      await setoresService.deletarDemandaExcecaoData(excId)
+      setDemandasExcecao((prev) => prev.filter((e) => e.id !== excId))
+      toast.success('Excecao removida')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao remover excecao')
+    }
+  }
 
   const handleArquivar = async () => {
     try {
@@ -723,6 +779,77 @@ export function SetorDetalhe() {
           </CardContent>
         </Card>
 
+        {/* Excecoes de Demanda por Data */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-base font-semibold">
+              Excecoes de Demanda por Data
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={() => setShowExcDemandaDialog(true)}>
+              <Plus className="mr-1 size-3.5" /> Nova Excecao
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {demandasExcecao.length === 0 ? (
+              <EmptyState
+                icon={CalendarDays}
+                title="Nenhuma excecao cadastrada"
+                description="Ajuste a demanda para datas especificas (feriados, eventos, etc.)"
+                action={
+                  <Button variant="outline" size="sm" onClick={() => setShowExcDemandaDialog(true)}>
+                    <Plus className="mr-1 size-3.5" /> Nova Excecao
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="space-y-2">
+                {demandasExcecao
+                  .sort((a, b) => a.data.localeCompare(b.data))
+                  .map((exc) => (
+                  <div
+                    key={exc.id}
+                    className="flex items-center justify-between rounded-lg border px-4 py-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium">{formatarData(exc.data)}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {exc.hora_inicio} - {exc.hora_fim}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        Min: {exc.min_pessoas} {exc.min_pessoas === 1 ? 'pessoa' : 'pessoas'}
+                      </span>
+                      {exc.override && (
+                        <Badge variant="secondary" className="text-[10px]">Override</Badge>
+                      )}
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remover excecao?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            A excecao de demanda para {formatarData(exc.data)} ({exc.hora_inicio}-{exc.hora_fim}) sera removida.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDeletarExcDemanda(exc.id)}>
+                            Remover
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Postos — read-only dashboard */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -891,6 +1018,77 @@ export function SetorDetalhe() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── Excecao Demanda por Data Dialog ─── */}
+      <Dialog open={showExcDemandaDialog} onOpenChange={setShowExcDemandaDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excecao de Demanda por Data</DialogTitle>
+            <DialogDescription>
+              Defina uma demanda diferente para uma data especifica (feriado, evento, etc.).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Data</Label>
+              <Input
+                type="date"
+                value={excDemandaForm.data}
+                onChange={(e) => setExcDemandaForm((p) => ({ ...p, data: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Hora Inicio</Label>
+                <Input
+                  type="time"
+                  step="900"
+                  value={excDemandaForm.hora_inicio}
+                  onChange={(e) => setExcDemandaForm((p) => ({ ...p, hora_inicio: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Hora Fim</Label>
+                <Input
+                  type="time"
+                  step="900"
+                  value={excDemandaForm.hora_fim}
+                  onChange={(e) => setExcDemandaForm((p) => ({ ...p, hora_fim: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Minimo de Pessoas</Label>
+              <Input
+                type="number"
+                min="0"
+                value={excDemandaForm.min_pessoas}
+                onChange={(e) => setExcDemandaForm((p) => ({ ...p, min_pessoas: parseInt(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={excDemandaForm.override}
+                onCheckedChange={(checked) => setExcDemandaForm((p) => ({ ...p, override: checked }))}
+              />
+              <div>
+                <Label>Sobrescrever demanda padrao</Label>
+                <p className="text-xs text-muted-foreground">
+                  Quando ativo, substitui completamente a demanda semanal nesta faixa
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExcDemandaDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSalvarExcDemanda} disabled={excDemandaSalvando}>
+              {excDemandaSalvando ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Novo Posto Dialog ─── */}
       <Dialog open={showPostoDialog} onOpenChange={setShowPostoDialog}>

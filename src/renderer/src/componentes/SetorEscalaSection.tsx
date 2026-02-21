@@ -57,6 +57,7 @@ interface SetorEscalaSectionProps {
   searchHighlight?: string
   matchedColabs?: { id: number; nome: string }[]
   onExportFunc?: (colabId: number, setorId: number) => void
+  onExport?: () => void
   selectionMode?: boolean
   isSelected?: boolean
   onToggleSelection?: () => void
@@ -64,7 +65,7 @@ interface SetorEscalaSectionProps {
 
 const TOLERANCIA_DEFAULT = 30
 
-export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighlight, matchedColabs, onExportFunc, selectionMode, isSelected, onToggleSelection }: SetorEscalaSectionProps) {
+export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighlight, matchedColabs, onExportFunc, onExport, selectionMode, isSelected, onToggleSelection }: SetorEscalaSectionProps) {
   const [expanded, setExpanded] = useState(true)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -193,6 +194,12 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
               {avisosCount}
             </Badge>
           )}
+          {onExport && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={onExport}>
+              <Download className="size-3.5" />
+              Exportar
+            </Button>
+          )}
           <Button variant="ghost" size="sm" asChild>
             <Link to={`/setores/${setor.id}/escala`}>
               Editar
@@ -253,13 +260,12 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
 
 // ─── Section Icon ───────────────────────────────────────────────────────────
 
+import { SetorIcon } from '@/componentes/IconPicker'
+
 function SectionIcon({ icone }: { icone: string | null }) {
-  if (icone) {
-    return <span className="text-lg">{icone}</span>
-  }
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-      <CalendarDays className="size-4" />
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+      <SetorIcon name={icone} className="size-5" />
     </div>
   )
 }

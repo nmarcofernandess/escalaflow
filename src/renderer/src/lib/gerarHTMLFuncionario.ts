@@ -111,6 +111,9 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
             const width = Math.max(right - left, 2)
             barHtml = `<div class="bar-track"><div class="bar-fill ${isSunday ? 'bar-dom' : ''}" style="left:${left}%;width:${width}%"></div></div>`
           }
+          if (a?.hora_almoco_inicio && a?.hora_almoco_fim) {
+            statusLabel += ` | Almoço ${fmtTime(a.hora_almoco_inicio)}-${fmtTime(a.hora_almoco_fim)}`
+          }
           if (a?.minutos != null) {
             statusLabel += ` (${fmtMinutos(a.minutos)})`
           }
@@ -177,7 +180,10 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
         <tr>${w.map((dt) => {
           const a = alocMap.get(dt)
           const st = a?.status ?? 'FOLGA'
-          if (st === 'TRABALHO') return `<td class="print-work">${fmtTime(a?.hora_inicio ?? null)}-${fmtTime(a?.hora_fim ?? null)}</td>`
+          if (st === 'TRABALHO') {
+            const almoco = a?.hora_almoco_inicio && a?.hora_almoco_fim ? `<br><small>Alm ${fmtTime(a.hora_almoco_inicio)}-${fmtTime(a.hora_almoco_fim)}</small>` : ''
+            return `<td class="print-work">${fmtTime(a?.hora_inicio ?? null)}-${fmtTime(a?.hora_fim ?? null)}${almoco}</td>`
+          }
           if (st === 'INDISPONIVEL') return `<td class="print-off">I</td>`
           return `<td class="print-off">F</td>`
         }).join('')}</tr>

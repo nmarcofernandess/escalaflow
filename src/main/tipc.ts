@@ -4,6 +4,7 @@ import { getDb } from './db/database'
 import { validarEscalaV3 } from './motor/validador'
 import { buildSolverInput, computeSolverScenarioHash, runSolver } from './motor/solver-bridge'
 import path from 'node:path'
+import { iaEnviarMensagem, iaTestarConexao } from './ia/cliente'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
@@ -167,6 +168,61 @@ function enrichPreflightWithCapacityChecks(
       mensagem: 'Demanda do periodo parece acima da capacidade estimada da equipe.',
       detalhe: `Demanda≈${Math.round(requiredMinutes)}min vs capacidade≈${Math.round(availableContractMinutes)}min.`,
     })
+  }
+
+  // v4: Validar limite de capacidade individual por colaborador
+  // Verifica se a janela (fim_max - inicio_min) de cada dia multiplicada pelos dias de trabalho
+  // e apos deducao do intervalo de almoco obrigatorio nao torna a meta de horas matematicamente impossivel.
+  for (const c of input.colaboradores) {
+    if (c.tipo_trabalhador === 'ESTAGIARIO') continue;
+
+    const horasSemanaisMinutos = c.horas_semanais * 60;
+    const toleranciaMinutos = input.empresa.tolerancia_semanal_min;
+    const limiteInferiorSemanal = Math.max(0, horasSemanaisMinutos - toleranciaMinutos);
+
+    // Identificar a janela padrao do colaborador pelas regras
+    let maxJanelaDoColaborador = c.max_minutos_dia;
+
+    const regras = input.regras_colaborador_dia?.filter(r => r.colaborador_id === c.id) || [];
+
+    // Simplificacao: preflight busca apenas detectar casos endemicos (padrao semanal de janela curta)
+    if (regras.length > 0) {
+      const regraTipica = regras.find(r => r.inicio_min || r.fim_max);
+
+      if (regraTipica) {
+        let janelaMinutos = c.max_minutos_dia; // default fallback
+
+        let startToUse = regraTipica.inicio_min || input.empresa.hora_abertura;
+        let endToUse = regraTipica.fim_max || input.empresa.hora_fechamento;
+
+        const possibleMinutes = minutesBetween(startToUse, endToUse);
+        if (possibleMinutes > 0 && possibleMinutes < janelaMinutos) {
+          janelaMinutos = possibleMinutes;
+        }
+
+        maxJanelaDoColaborador = Math.min(janelaMinutos, c.max_minutos_dia);
+      }
+    }
+
+    // Se a meta e > 6h (360 minutos), um almoco obrigatorio de X minutos sera descontado.
+    let capacidadeDiaria = maxJanelaDoColaborador;
+    const metaDiariaMedia = horasSemanaisMinutos / c.dias_trabalho;
+
+    if (metaDiariaMedia > 360) {
+      capacidadeDiaria -= input.empresa.min_intervalo_almoco_min;
+    }
+
+    const capacidadeMaxSemanal = capacidadeDiaria * c.dias_trabalho;
+
+    // Se a capacidade total e menor que a tolerancia minima do contrato, o modelo VAI FALHAR
+    if (capacidadeMaxSemanal < limiteInferiorSemanal) {
+      blockers.push({
+        codigo: 'CAPACIDADE_INDIVIDUAL_INSUFICIENTE',
+        severidade: 'BLOCKER',
+        mensagem: `A janela de disponibilidade de ${c.nome} torna a carga horaria incompativel.`,
+        detalhe: `Capacidade max da jornada (descontando almoço) é ${Math.round(capacidadeMaxSemanal / 60)}h. Contrato exige minimo de ${Math.round(limiteInferiorSemanal / 60)}h. Altere a escala de horario dele ou reduza o contrato.`,
+      });
+    }
   }
 }
 
@@ -1702,6 +1758,50 @@ const setoresSalvarTimelineDia = t.procedure
   })
 
 // =============================================================================
+// IA CONFIGURAÇÃO
+// =============================================================================
+
+const iaConfiguracaoObter = t.procedure
+  .action(async () => {
+    const db = getDb()
+    const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get()
+    return config || null
+  })
+
+const iaConfiguracaoSalvar = t.procedure
+  .input<{ provider: string; api_key: string; modelo: string; ativo: boolean }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const existe = db.prepare('SELECT id FROM configuracao_ia LIMIT 1').get() as { id: number } | undefined
+
+    if (existe) {
+      db.prepare(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, ativo = ?, atualizado_em = datetime('now') WHERE id = ?`)
+        .run(input.provider, input.api_key, input.modelo, input.ativo ? 1 : 0, existe.id)
+    } else {
+      db.prepare(`INSERT INTO configuracao_ia (provider, api_key, modelo, ativo) VALUES (?, ?, ?, ?)`)
+        .run(input.provider, input.api_key, input.modelo, input.ativo ? 1 : 0)
+    }
+
+    return db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get()
+  })
+
+const iaConfiguracaoTestar = t.procedure
+  .input<{ provider: string; api_key: string; modelo: string }>()
+  .action(async ({ input }) => {
+    try {
+      return await iaTestarConexao(input.provider, input.api_key, input.modelo)
+    } catch (error: any) {
+      throw new Error(error.message || 'Erro desconhecido ao testar conexão.')
+    }
+  })
+
+const iaChatEnviar = t.procedure
+  .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[] }>()
+  .action(async ({ input }) => {
+    return await iaEnviarMensagem(input.mensagem, input.historico)
+  })
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -1767,6 +1867,11 @@ export const router = {
   'export.imprimirPDF': exportImprimirPDF,
   'export.salvarCSV': exportSalvarCSV,
   'export.batchHTML': exportBatchHTML,
+  // IA
+  'ia.configuracao.obter': iaConfiguracaoObter,
+  'ia.configuracao.salvar': iaConfiguracaoSalvar,
+  'ia.configuracao.testar': iaConfiguracaoTestar,
+  'ia.chat.enviar': iaChatEnviar,
 }
 
 export type Router = typeof router

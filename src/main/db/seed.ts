@@ -18,20 +18,34 @@ interface SegmentoSeed {
   override?: boolean
 }
 
+// ============================================================================
+// Paleta fixa de cores (15 cores — PRD v4)
+// ============================================================================
+
+const PALETA_CORES = [
+  '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
+  '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#84CC16',
+  '#06B6D4', '#D946EF', '#78716C', '#0EA5E9', '#A3E635',
+]
+
+// ============================================================================
+// SEED principal
+// ============================================================================
+
 export function seedData(): void {
   const db = getDb()
 
-  // --- Empresa ---
+  // ── 1. Empresa ─────────────────────────────────────────────────────────
   const empresaExiste = db.prepare('SELECT COUNT(*) as count FROM empresa').get() as { count: number }
   if (empresaExiste.count === 0) {
     db.prepare(`
       INSERT INTO empresa (nome, cnpj, telefone, corte_semanal, tolerancia_semanal_min)
       VALUES (?, ?, ?, ?, ?)
-    `).run('Supermercado Fernandes', '', '', 'SEG_DOM', 30)
-    console.log('[SEED] Empresa criada')
+    `).run('Supermercado Fernandes', '', '', 'SEG_DOM', 90)
+    console.log('[SEED] Empresa criada (tolerancia_semanal=90, grid_minutos→15 via migration)')
   }
 
-  // --- Tipos de Contrato ---
+  // ── 2. Tipos de Contrato ──────────────────────────────────────────────
   const tiposExistem = db.prepare('SELECT COUNT(*) as count FROM tipos_contrato').get() as { count: number }
   if (tiposExistem.count === 0) {
     const insertTipo = db.prepare(`
@@ -39,21 +53,23 @@ export function seedData(): void {
       VALUES (?, ?, ?, ?, ?, ?)
     `)
 
+    // CLT 44h/36h: regime 5X2 com compensacao ate 9h45 (585min)
+    // Estagiarios: NUNCA domingo, max conforme jornada
     const tipos = [
-      ['CLT 44h', 44, '6X1', 6, 1, 600],
-      ['CLT 36h', 36, '5X2', 5, 1, 480],
-      ['CLT 30h', 30, '5X2', 5, 1, 360],
-      ['Estagiario 30h', 30, '5X2', 5, 0, 360],
-      ['Aprendiz 30h', 30, '5X2', 5, 0, 360],
+      ['CLT 44h', 44, '5X2', 5, 1, 585],   // id=1
+      ['CLT 36h', 36, '5X2', 5, 1, 585],   // id=2
+      ['Estagiario Manha', 20, '5X2', 5, 0, 240],   // id=3  4h/dia
+      ['Estagiario Tarde', 30, '5X2', 5, 0, 360],   // id=4  6h/dia
+      ['Estagiario Noite-Estudo', 30, '5X2', 5, 0, 360],  // id=5  6h/dia
     ] as const
 
     db.transaction(() => {
       for (const tipo of tipos) insertTipo.run(...tipo)
     })()
-    console.log('[SEED] 5 tipos de contrato criados')
+    console.log('[SEED] 5 tipos de contrato criados (CLT 44h, CLT 36h, 3x Estagiario)')
   }
 
-  // --- Setores (apenas Caixa e Acougue) ---
+  // ── 3. Setores ────────────────────────────────────────────────────────
   const setoresExistem = db.prepare('SELECT COUNT(*) as count FROM setores').get() as { count: number }
   if (setoresExistem.count === 0) {
     const insertSetor = db.prepare(`
@@ -82,7 +98,7 @@ export function seedData(): void {
     return
   }
 
-  // --- Horario semanal por setor/dia (14 linhas) ---
+  // ── 4. Horario semanal por setor/dia ──────────────────────────────────
   const horariosCaixa: Record<DiaSemana, HorarioDiaSeed> = {
     SEG: { ativo: true, usa_padrao: false, hora_abertura: '08:00', hora_fechamento: '20:00' },
     TER: { ativo: true, usa_padrao: false, hora_abertura: '08:00', hora_fechamento: '20:00' },
@@ -90,7 +106,7 @@ export function seedData(): void {
     QUI: { ativo: true, usa_padrao: false, hora_abertura: '08:00', hora_fechamento: '20:00' },
     SEX: { ativo: true, usa_padrao: false, hora_abertura: '08:00', hora_fechamento: '20:00' },
     SAB: { ativo: true, usa_padrao: false, hora_abertura: '08:00', hora_fechamento: '20:00' },
-    DOM: { ativo: false, usa_padrao: false, hora_abertura: '08:00', hora_fechamento: '12:00' },
+    DOM: { ativo: true, usa_padrao: false, hora_abertura: '08:00', hora_fechamento: '13:00' },
   }
 
   const horariosAcougue: Record<DiaSemana, HorarioDiaSeed> = {
@@ -122,9 +138,9 @@ export function seedData(): void {
       upsertHorarioDia.run(acougueId, dia, a.ativo ? 1 : 0, a.usa_padrao ? 1 : 0, a.hora_abertura, a.hora_fechamento)
     }
   })()
-  console.log('[SEED] Horario semanal de Caixa/Acougue atualizado (14 linhas)')
+  console.log('[SEED] Horario semanal Caixa/Acougue atualizado (Caixa DOM ativo=true 08-13h)')
 
-  // --- Demandas por dia (sem dia_semana null) ---
+  // ── 5. Demandas por dia (grid 15min compliant) ────────────────────────
   const demandasExistem = db.prepare('SELECT COUNT(*) as count FROM demandas').get() as { count: number }
   if (demandasExistem.count === 0) {
     const insertDemanda = db.prepare(`
@@ -188,7 +204,12 @@ export function seedData(): void {
         { hora_inicio: '16:00', hora_fim: '19:00', min_pessoas: 4 },
         { hora_inicio: '19:00', hora_fim: '19:30', min_pessoas: 3 },
       ],
-      DOM: [],
+      DOM: [
+        { hora_inicio: '08:00', hora_fim: '09:00', min_pessoas: 1 },
+        { hora_inicio: '09:00', hora_fim: '11:00', min_pessoas: 3 },
+        { hora_inicio: '11:00', hora_fim: '12:00', min_pessoas: 2 },
+        { hora_inicio: '12:00', hora_fim: '13:00', min_pessoas: 1 },
+      ],
     }
 
     const acouguePadraoSegSab: SegmentoSeed[] = [
@@ -220,19 +241,22 @@ export function seedData(): void {
       }
     })()
 
-    console.log('[SEED] Demandas por dia criadas para Caixa/Acougue (sem legado null)')
+    console.log('[SEED] Demandas por dia criadas Caixa/Acougue (DOM Caixa: 08-13h, 1-3 pessoas)')
   }
 
-  // --- Postos (Funcoes) ---
+  // ── 6. Postos (Funcoes) — 15 para Caixa, 5 para Acougue ──────────────
   const insertFuncao = db.prepare(`
-    INSERT INTO funcoes (setor_id, apelido, tipo_contrato_id, ativo, ordem)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO funcoes (setor_id, apelido, tipo_contrato_id, ativo, ordem, cor_hex)
+    VALUES (?, ?, ?, ?, ?, ?)
   `)
   const existeFuncao = db.prepare(`
     SELECT 1 FROM funcoes WHERE setor_id = ? AND upper(apelido) = upper(?) LIMIT 1
   `)
 
-  const postosCaixa = ['CAI1', 'CAI2', 'CAI3', 'CAI4', 'CAI5', 'CAI6']
+  const postosCaixa = [
+    'CAI1', 'CAI2', 'CAI3', 'CAI4', 'CAI5', 'CAI6', 'CAI7', 'CAI8',
+    'CAI9', 'CAI10', 'CAI11', 'CAI12', 'CAI13', 'CAI14', 'CAI15',
+  ]
   const postosAcougue = ['AC1', 'AC2', 'AC3', 'AC4', 'AC5']
 
   let postosInseridos = 0
@@ -240,22 +264,35 @@ export function seedData(): void {
     postosCaixa.forEach((apelido, i) => {
       const jaExiste = existeFuncao.get(caixaId, apelido) as { 1: 1 } | undefined
       if (jaExiste) return
-      insertFuncao.run(caixaId, apelido, 1, 1, i + 1)
+      insertFuncao.run(caixaId, apelido, 1, 1, i + 1, PALETA_CORES[i % PALETA_CORES.length])
       postosInseridos++
     })
 
     postosAcougue.forEach((apelido, i) => {
       const jaExiste = existeFuncao.get(acougueId, apelido) as { 1: 1 } | undefined
       if (jaExiste) return
-      insertFuncao.run(acougueId, apelido, 1, 1, i + 1)
+      const corIdx = (postosCaixa.length + i) % PALETA_CORES.length
+      insertFuncao.run(acougueId, apelido, 1, 1, i + 1, PALETA_CORES[corIdx])
       postosInseridos++
     })
   })()
   if (postosInseridos > 0) {
-    console.log(`[SEED] ${postosInseridos} postos criados (Caixa/Acougue)`) 
+    console.log(`[SEED] ${postosInseridos} postos criados (15 Caixa + 5 Acougue)`)
   }
 
-  // --- Colaboradores ---
+  // v4: Atribuir cores a funcoes existentes sem cor_hex
+  const funcoesSemCor = db.prepare('SELECT id, ordem FROM funcoes WHERE cor_hex IS NULL').all() as Array<{ id: number; ordem: number }>
+  if (funcoesSemCor.length > 0) {
+    const updateCor = db.prepare('UPDATE funcoes SET cor_hex = ? WHERE id = ?')
+    db.transaction(() => {
+      for (const f of funcoesSemCor) {
+        updateCor.run(PALETA_CORES[(f.ordem - 1) % PALETA_CORES.length], f.id)
+      }
+    })()
+    console.log(`[SEED] ${funcoesSemCor.length} funcoes atualizadas com cor_hex`)
+  }
+
+  // ── 7. Colaboradores ──────────────────────────────────────────────────
   const colabsExistem = db.prepare('SELECT COUNT(*) as count FROM colaboradores').get() as { count: number }
   if (colabsExistem.count === 0) {
     const funcoesCaixa = db.prepare('SELECT id, apelido FROM funcoes WHERE setor_id = ?').all(caixaId) as Array<{ id: number; apelido: string }>
@@ -274,15 +311,20 @@ export function seedData(): void {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
+    // Caixa: 5 CLT + 3 estagiarios = 8 colaboradores
+    // 5 CLT podem trabalhar domingo, 3 estagiarios NUNCA
     const caixaColabs = [
-      { nome: 'Cleonice', sexo: 'F', funcao: 'CAI1', contrato: 'CLT 44h', horas: 44 },
-      { nome: 'Gabriel', sexo: 'M', funcao: 'CAI2', contrato: 'CLT 36h', horas: 36 },
-      { nome: 'Ana Julia', sexo: 'F', funcao: 'CAI3', contrato: 'CLT 44h', horas: 44 },
-      { nome: 'Yasmin', sexo: 'F', funcao: 'CAI4', contrato: 'CLT 30h', horas: 30 },
-      { nome: 'Mayumi', sexo: 'F', funcao: 'CAI5', contrato: 'CLT 30h', horas: 30 },
-      { nome: 'Heloisa', sexo: 'F', funcao: 'CAI6', contrato: 'CLT 30h', horas: 30 },
+      { nome: 'Cleunice', sexo: 'F', funcao: 'CAI1', contrato: 'CLT 44h', horas: 44, tipo_trabalhador: 'CLT' },
+      { nome: 'Gabriel', sexo: 'M', funcao: 'CAI2', contrato: 'CLT 36h', horas: 36, tipo_trabalhador: 'CLT' },
+      { nome: 'Ana Julia', sexo: 'F', funcao: 'CAI3', contrato: 'CLT 44h', horas: 44, tipo_trabalhador: 'CLT' },
+      { nome: 'Marcos', sexo: 'M', funcao: 'CAI4', contrato: 'CLT 44h', horas: 44, tipo_trabalhador: 'CLT' },
+      { nome: 'Fernanda', sexo: 'F', funcao: 'CAI5', contrato: 'CLT 44h', horas: 44, tipo_trabalhador: 'CLT' },
+      { nome: 'Lucas', sexo: 'M', funcao: 'CAI6', contrato: 'Estagiario Manha', horas: 20, tipo_trabalhador: 'ESTAGIARIO' },
+      { nome: 'Camila', sexo: 'F', funcao: 'CAI7', contrato: 'Estagiario Tarde', horas: 30, tipo_trabalhador: 'ESTAGIARIO' },
+      { nome: 'Pedro', sexo: 'M', funcao: 'CAI8', contrato: 'Estagiario Noite-Estudo', horas: 30, tipo_trabalhador: 'ESTAGIARIO' },
     ] as const
 
+    // Acougue: 5 CLT 44h
     const acougueColabs = [
       { nome: 'Alex', sexo: 'M', funcao: 'AC1' },
       { nome: 'Mateus', sexo: 'M', funcao: 'AC2' },
@@ -303,7 +345,7 @@ export function seedData(): void {
           i + 1,
           null,
           null,
-          'CLT',
+          c.tipo_trabalhador,
           funcaoCaixaByApelido.get(c.funcao) ?? null,
         )
       })
@@ -311,7 +353,7 @@ export function seedData(): void {
       acougueColabs.forEach((c, i) => {
         insertColab.run(
           acougueId,
-          1,
+          tipoByNome.get('CLT 44h') ?? 1,
           c.nome,
           c.sexo,
           44,
@@ -324,21 +366,274 @@ export function seedData(): void {
       })
     })()
 
-    console.log('[SEED] 11 colaboradores criados (Caixa + Acougue)')
+    console.log('[SEED] 13 colaboradores criados (8 Caixa + 5 Acougue)')
   }
 
-  // v3.1 — Feriados nacionais (RFC §12.2)
+  // ── 8. Perfis de Horario por Contrato ─────────────────────────────────
+  const perfisExistem = db.prepare('SELECT COUNT(*) as count FROM contrato_perfis_horario').get() as { count: number }
+  if (perfisExistem.count === 0) {
+    const tipoByNome = new Map(
+      (db.prepare('SELECT id, nome FROM tipos_contrato').all() as Array<{ id: number; nome: string }>)
+        .map((t) => [t.nome, t.id]),
+    )
+
+    const insertPerfil = db.prepare(`
+      INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const perfis = [
+      // Estagiario Manha: fixo 08:00-12:00 (4h)
+      {
+        contrato: 'Estagiario Manha', nome: 'MANHA_08_12',
+        inicio_min: '08:00', inicio_max: '08:00',
+        fim_min: '12:00', fim_max: '12:00',
+        turno: 'MANHA', ordem: 1,
+      },
+      // Estagiario Tarde: janela 13:30-17:00 inicio, 19:00-20:00 fim (ate 6h)
+      {
+        contrato: 'Estagiario Tarde', nome: 'TARDE_1330_PLUS',
+        inicio_min: '13:30', inicio_max: '17:00',
+        fim_min: '19:00', fim_max: '20:00',
+        turno: 'TARDE', ordem: 2,
+      },
+      // Estagiario Noite-Estudo: fixo 08:00-14:00 (6h, sai pra faculdade)
+      {
+        contrato: 'Estagiario Noite-Estudo', nome: 'ESTUDA_NOITE_08_14',
+        inicio_min: '08:00', inicio_max: '08:00',
+        fim_min: '14:00', fim_max: '14:00',
+        turno: 'MANHA', ordem: 3,
+      },
+    ] as const
+
+    db.transaction(() => {
+      for (const p of perfis) {
+        const tipoId = tipoByNome.get(p.contrato)
+        if (!tipoId) {
+          console.warn(`[SEED] Contrato '${p.contrato}' nao encontrado. Perfil '${p.nome}' ignorado.`)
+          continue
+        }
+        insertPerfil.run(tipoId, p.nome, 1, p.inicio_min, p.inicio_max, p.fim_min, p.fim_max, p.turno, p.ordem)
+      }
+    })()
+    console.log('[SEED] 3 perfis de horario criados (MANHA_08_12, TARDE_1330_PLUS, ESTUDA_NOITE_08_14)')
+  }
+
+  // ── 9. Regras de Horario por Colaborador ──────────────────────────────
+  const regrasExistem = db.prepare('SELECT COUNT(*) as count FROM colaborador_regra_horario').get() as { count: number }
+  if (regrasExistem.count === 0) {
+    const colabs = db.prepare('SELECT id, nome FROM colaboradores WHERE setor_id = ?').all(caixaId) as Array<{ id: number; nome: string }>
+    const colabByNome = new Map(colabs.map((c) => [c.nome, c.id]))
+
+    const perfis = db.prepare('SELECT id, nome FROM contrato_perfis_horario').all() as Array<{ id: number; nome: string }>
+    const perfilByNome = new Map(perfis.map((p) => [p.nome, p.id]))
+
+    const insertRegra = db.prepare(`
+      INSERT INTO colaborador_regra_horario (
+        colaborador_id, ativo, perfil_horario_id,
+        inicio_min, inicio_max, fim_min, fim_max,
+        preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga,
+        folga_fixa_dia_semana
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const regras: Array<{
+      nome: string
+      perfil?: string
+      inicio_min?: string
+      inicio_max?: string
+      fim_min?: string
+      fim_max?: string
+      turno_soft?: string | null
+      dom_trab?: number
+      dom_folga?: number
+      folga_fixa?: string | null
+    }> = [
+        // Cleunice: SEMPRE inicia 08:00, horario fixo
+        {
+          nome: 'Cleunice',
+          inicio_min: '08:00', inicio_max: '08:00',
+          dom_trab: 2, dom_folga: 1,
+        },
+        // Gabriel: nunca passa das 16:30, prefere manha, ciclo domingo 2/1
+        {
+          nome: 'Gabriel',
+          fim_max: '16:30',
+          turno_soft: 'MANHA',
+          dom_trab: 2, dom_folga: 1,
+        },
+        // Ana Julia: 5x2 com folga fixa na quarta
+        {
+          nome: 'Ana Julia',
+          folga_fixa: 'QUA',
+          dom_trab: 2, dom_folga: 1,
+        },
+        // Marcos: 5x2 SEM folga fixa (solver decide)
+        {
+          nome: 'Marcos',
+          folga_fixa: null,
+          dom_trab: 2, dom_folga: 1,
+        },
+        // Fernanda: 5x2 com folga fixa na segunda
+        {
+          nome: 'Fernanda',
+          folga_fixa: 'SEG',
+          dom_trab: 2, dom_folga: 1,
+        },
+        // Lucas: estagiario manha → perfil MANHA_08_12
+        {
+          nome: 'Lucas',
+          perfil: 'MANHA_08_12',
+          dom_trab: 0, dom_folga: 0,
+        },
+        // Camila: estagiaria tarde → perfil TARDE_1330_PLUS
+        {
+          nome: 'Camila',
+          perfil: 'TARDE_1330_PLUS',
+          dom_trab: 0, dom_folga: 0,
+        },
+        // Pedro: estagiario noite-estudo → perfil ESTUDA_NOITE_08_14
+        {
+          nome: 'Pedro',
+          perfil: 'ESTUDA_NOITE_08_14',
+          dom_trab: 0, dom_folga: 0,
+        },
+      ]
+
+    db.transaction(() => {
+      for (const r of regras) {
+        const colabId = colabByNome.get(r.nome)
+        if (!colabId) {
+          console.warn(`[SEED] Colaborador '${r.nome}' nao encontrado. Regra ignorada.`)
+          continue
+        }
+        const perfilId = r.perfil ? (perfilByNome.get(r.perfil) ?? null) : null
+        insertRegra.run(
+          colabId,
+          1,                             // ativo
+          perfilId,
+          r.inicio_min ?? null,
+          r.inicio_max ?? null,
+          r.fim_min ?? null,
+          r.fim_max ?? null,
+          r.turno_soft ?? null,
+          r.dom_trab ?? 2,
+          r.dom_folga ?? 1,
+          r.folga_fixa ?? null,
+        )
+      }
+    })()
+    console.log('[SEED] 8 regras de horario criadas (Cleunice=fixo 08h, Gabriel=max 16h, 3 folga fixa, 3 perfis estagiario)')
+  }
+
+  // ── 10. Excecoes de Horario por Data ──────────────────────────────────
+  // Periodo de teste sugerido: 2026-03-02 a 2026-04-26 (8 semanas)
+  const excHorarioExistem = db.prepare('SELECT COUNT(*) as count FROM colaborador_regra_horario_excecao_data').get() as { count: number }
+  if (excHorarioExistem.count === 0) {
+    const colabs = db.prepare('SELECT id, nome FROM colaboradores WHERE setor_id = ?').all(caixaId) as Array<{ id: number; nome: string }>
+    const colabByNome = new Map(colabs.map((c) => [c.nome, c.id]))
+
+    const insertExcData = db.prepare(`
+      INSERT INTO colaborador_regra_horario_excecao_data (
+        colaborador_id, data, ativo,
+        inicio_min, inicio_max, fim_min, fim_max,
+        preferencia_turno_soft, domingo_forcar_folga
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const excecoes = [
+      // Lucas: prova na sexta 13/03 — forcar folga
+      { nome: 'Lucas', data: '2026-03-13', forcar_folga: 1 },
+      // Gabriel: medico quarta 25/03 — so pode ir a tarde (14:00+)
+      {
+        nome: 'Gabriel', data: '2026-03-25',
+        inicio_min: '14:00', inicio_max: '14:00',
+        fim_min: '18:00', fim_max: '20:00',
+        turno_soft: 'TARDE', forcar_folga: 0,
+      },
+      // Camila: compromisso manha quarta 18/03 — inicia 14:00 (override do perfil tarde)
+      {
+        nome: 'Camila', data: '2026-03-18',
+        inicio_min: '14:00', inicio_max: '14:00',
+        fim_min: '19:00', fim_max: '20:00',
+        turno_soft: 'TARDE', forcar_folga: 0,
+      },
+    ]
+
+    db.transaction(() => {
+      for (const e of excecoes) {
+        const colabId = colabByNome.get(e.nome)
+        if (!colabId) continue
+        insertExcData.run(
+          colabId,
+          e.data,
+          1,
+          ('inicio_min' in e) ? e.inicio_min : null,
+          ('inicio_max' in e) ? e.inicio_max : null,
+          ('fim_min' in e) ? e.fim_min : null,
+          ('fim_max' in e) ? e.fim_max : null,
+          ('turno_soft' in e) ? e.turno_soft : null,
+          e.forcar_folga,
+        )
+      }
+    })()
+    console.log('[SEED] 3 excecoes de horario por data (Lucas prova, Gabriel medico, Camila compromisso)')
+  }
+
+  // ── 11. Demandas Excecao por Data ─────────────────────────────────────
+  const demExcExistem = db.prepare('SELECT COUNT(*) as count FROM demandas_excecao_data').get() as { count: number }
+  if (demExcExistem.count === 0) {
+    const insertDemExc = db.prepare(`
+      INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+
+    db.transaction(() => {
+      // Domingo 08/03/2026: demanda mais alta que o padrao (evento especial)
+      insertDemExc.run(caixaId, '2026-03-08', '08:00', '09:00', 2, 1)
+      insertDemExc.run(caixaId, '2026-03-08', '09:00', '12:00', 4, 1)  // 4 ao inves de 3
+      insertDemExc.run(caixaId, '2026-03-08', '12:00', '13:00', 3, 1)  // 3 ao inves de 1
+
+      // Tiradentes 21/04/2026 (terca): feriado COM demanda explicita (feriado orientado a demanda)
+      insertDemExc.run(caixaId, '2026-04-21', '08:00', '10:00', 2, 1)
+      insertDemExc.run(caixaId, '2026-04-21', '10:00', '14:00', 3, 1)
+      insertDemExc.run(caixaId, '2026-04-21', '14:00', '18:00', 2, 1)
+    })()
+    console.log('[SEED] 6 demandas excecao por data (DOM 08/03 reforco + Tiradentes 21/04 com demanda)')
+  }
+
+  // ── 12. Excecoes (ferias/atestado/bloqueio) ───────────────────────────
+  const excecoesExistem = db.prepare('SELECT COUNT(*) as count FROM excecoes').get() as { count: number }
+  if (excecoesExistem.count === 0) {
+    const colabs = db.prepare('SELECT id, nome FROM colaboradores WHERE setor_id = ?').all(caixaId) as Array<{ id: number; nome: string }>
+    const colabByNome = new Map(colabs.map((c) => [c.nome, c.id]))
+
+    const insertExcecao = db.prepare(`
+      INSERT INTO excecoes (colaborador_id, data_inicio, data_fim, tipo, observacao)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+
+    const marcosId = colabByNome.get('Marcos')
+    if (marcosId) {
+      // Marcos: bloqueio semana 16-20/03/2026 (segunda a sexta — compromisso pessoal)
+      insertExcecao.run(marcosId, '2026-03-16', '2026-03-20', 'BLOQUEIO', 'Compromisso pessoal — indisponivel a semana toda')
+      console.log('[SEED] 1 excecao: Marcos BLOQUEIO 16-20/03/2026')
+    }
+  }
+
+  // ── 13. Feriados ──────────────────────────────────────────────────────
   seedFeriados()
 
   console.log('[SEED] Seed concluido')
+  console.log('[SEED] >>> Periodo sugerido para teste: 2026-03-02 a 2026-04-26 (8 semanas) <<<')
 }
 
-/**
- * Seed de feriados nacionais para o ano corrente e proximo.
- * Idempotente: so insere se tabela feriados estiver vazia.
- * 25/12 e 01/01: proibido_trabalhar=1, cct_autoriza=0 (CCT FecomercioSP)
- * Demais: proibido_trabalhar=0, cct_autoriza=1 (editaveis pelo RH)
- */
+// ============================================================================
+// Feriados nacionais (RFC §12.2)
+// ============================================================================
+
 function seedFeriados(): void {
   const db = getDb()
   const feriadosExistem = db.prepare('SELECT COUNT(*) as count FROM feriados').get() as { count: number }

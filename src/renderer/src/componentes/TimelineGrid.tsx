@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { Fragment, useState, useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Alocacao, Colaborador, Setor, Demanda, TipoContrato } from '@shared/index'
 import { Button } from '@/components/ui/button'
@@ -8,10 +8,9 @@ import { cn } from '@/lib/utils'
 import { CORES_CONTRATO, CORES_GENERO } from '@/lib/cores'
 import { toMinutes, formatarMinutos, iniciais, formatarData } from '@/lib/formatadores'
 
-const SLOT_SIZE = 30 // minutes per slot
+const SLOT_SIZE = 15 // minutes per slot
 const ROW_HEIGHT = 52 // px per collaborator row
 const DIAS_SEMANA_NOME = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
-const DIAS_SEMANA_CURTO = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab']
 
 interface TimelineGridProps {
   colaboradores: Colaborador[]
@@ -108,6 +107,50 @@ export function TimelineGrid({
     return { start: gridStart, end: gridEnd }
   }
 
+  // Helper: valid lunch window fully inside work shift
+  function getLunchWindow(alloc: Alocacao): { start: string; end: string } | null {
+    if (!alloc.hora_inicio || !alloc.hora_fim || !alloc.hora_almoco_inicio || !alloc.hora_almoco_fim) {
+      return null
+    }
+
+    const workStart = toMinutes(alloc.hora_inicio)
+    const workEnd = toMinutes(alloc.hora_fim)
+    const lunchStart = toMinutes(alloc.hora_almoco_inicio)
+    const lunchEnd = toMinutes(alloc.hora_almoco_fim)
+
+    if (workEnd <= workStart || lunchEnd <= lunchStart) return null
+    if (lunchStart < workStart || lunchEnd > workEnd) return null
+
+    return { start: alloc.hora_almoco_inicio, end: alloc.hora_almoco_fim }
+  }
+
+  function splitWorkSegments(alloc: Alocacao): Array<{ start: string; end: string }> {
+    if (!alloc.hora_inicio || !alloc.hora_fim) return []
+
+    const lunch = getLunchWindow(alloc)
+    if (!lunch) return [{ start: alloc.hora_inicio, end: alloc.hora_fim }]
+
+    return [
+      { start: alloc.hora_inicio, end: lunch.start },
+      { start: lunch.end, end: alloc.hora_fim },
+    ].filter((segment) => toMinutes(segment.end) > toMinutes(segment.start))
+  }
+
+  function isWorkingAtSlotStart(alloc: Alocacao, slotStartMin: number): boolean {
+    if (alloc.status !== 'TRABALHO' || !alloc.hora_inicio || !alloc.hora_fim) return false
+
+    const workStart = toMinutes(alloc.hora_inicio)
+    const workEnd = toMinutes(alloc.hora_fim)
+    if (!(workStart <= slotStartMin && workEnd > slotStartMin)) return false
+
+    const lunch = getLunchWindow(alloc)
+    if (!lunch) return true
+
+    const lunchStart = toMinutes(lunch.start)
+    const lunchEnd = toMinutes(lunch.end)
+    return !(lunchStart <= slotStartMin && lunchEnd > slotStartMin)
+  }
+
   // Helper: get bar color from contract type
   function getBarColor(tipoContratoId: number): { bar: string; text: string; border: string } {
     const contrato = contratoMap.get(tipoContratoId)
@@ -135,7 +178,6 @@ export function TimelineGrid({
 
   // Format current date display
   const currentDateObj = new Date(currentDate + 'T00:00:00')
-  const dayName = DIAS_SEMANA_CURTO[currentDateObj.getDay()]
   const dow = currentDateObj.getDay()
 
   // Coverage calculation per slot
@@ -153,10 +195,7 @@ export function TimelineGrid({
       for (const colab of sortedColaboradores) {
         const allocs = alocacaoMap.get(String(colab.id)) || []
         for (const alloc of allocs) {
-          if (alloc.status !== 'TRABALHO' || !alloc.hora_inicio || !alloc.hora_fim) continue
-          const workStart = toMinutes(alloc.hora_inicio)
-          const workEnd = toMinutes(alloc.hora_fim)
-          if (workStart <= slotStartMin && workEnd > slotStartMin) {
+          if (isWorkingAtSlotStart(alloc, slotStartMin)) {
             count++
             break
           }
@@ -191,10 +230,9 @@ export function TimelineGrid({
 
   // Hour boundary indices for vertical guides
   const hourBoundaries = useMemo(() => {
-    const openMin = toMinutes(setor.hora_abertura)
     const indices: number[] = []
     for (let i = 0; i < timeLabels.length; i++) {
-      indices.push(i * 2) // each hour = 2 slots
+      indices.push(i * 4) // each hour = 4 slots (15min each)
     }
     return indices
   }, [timeLabels, setor.hora_abertura])
@@ -255,7 +293,7 @@ export function TimelineGrid({
             <div
               key={label}
               className="border-b border-l bg-muted/50 px-1 py-2.5 text-center text-[11px] font-medium text-muted-foreground"
-              style={{ gridColumn: `${i * 2 + 2} / ${i * 2 + 4}` }}
+              style={{ gridColumn: `${i * 4 + 2} / ${i * 4 + 6}` }}
             >
               {label}
             </div>
@@ -326,50 +364,109 @@ export function TimelineGrid({
                   allocsToday
                     .filter((a) => a.status === 'TRABALHO' && a.hora_inicio && a.hora_fim)
                     .map((alloc, i) => {
-                      const pos = calcBarPosition(alloc.hora_inicio!, alloc.hora_fim!)
+                      const lunch = getLunchWindow(alloc)
+                      const workSegments = splitWorkSegments(alloc)
                       const isChanged = changedCells.has(`${colab.id}-${currentDate}`)
                       const isLoading =
                         loadingCell?.colaboradorId === colab.id &&
                         loadingCell?.data === currentDate
-                      const duration = toMinutes(alloc.hora_fim!) - toMinutes(alloc.hora_inicio!)
-                      const showLabel = duration >= 90 // only show text if bar is wide enough
+                      const totalShift = toMinutes(alloc.hora_fim!) - toMinutes(alloc.hora_inicio!)
+                      const lunchMinutes = lunch ? toMinutes(lunch.end) - toMinutes(lunch.start) : 0
+                      const lunchPos = lunch ? calcBarPosition(lunch.start, lunch.end) : null
+                      const paidDuration = alloc.minutos_trabalho ?? alloc.minutos ?? Math.max(0, totalShift - lunchMinutes)
+                      const segmentDurations = workSegments.map((segment) => toMinutes(segment.end) - toMinutes(segment.start))
+                      const longestSegmentIndex = segmentDurations.reduce(
+                        (maxIndex, value, index, arr) => (value > arr[maxIndex] ? index : maxIndex),
+                        0
+                      )
 
                       return (
-                        <Tooltip key={`work-${colab.id}-${i}`}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className={cn(
-                                'flex items-center justify-center rounded-md mx-0.5 my-2 text-[11px] font-medium cursor-default shadow-sm',
-                                colors.bar,
-                                colors.text,
-                                colors.border,
-                                'border',
-                                !readOnly &&
-                                  alloc.status !== 'INDISPONIVEL' &&
-                                  'cursor-pointer hover:opacity-90 hover:shadow-md transition-all',
-                                isLoading && 'opacity-60',
-                                isChanged && 'ring-2 ring-primary ring-offset-1',
-                                isViolatedRow && 'ring-2 ring-destructive'
-                              )}
-                              style={{ gridRow, gridColumn: `${pos.start} / ${pos.end}` }}
-                              onClick={() => {
-                                if (!readOnly && onCelulaClick) {
-                                  onCelulaClick(colab.id, currentDate, alloc.status)
-                                }
-                              }}
-                            >
-                              {showLabel ? `${alloc.hora_inicio} - ${alloc.hora_fim}` : ''}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="text-xs space-y-1">
-                            <p className="font-semibold">{colab.nome}</p>
-                            <p>{contrato?.nome ?? 'Contrato'}</p>
-                            <p>
-                              {alloc.hora_inicio} → {alloc.hora_fim}
-                            </p>
-                            {alloc.minutos && <p>Total: {formatarMinutos(alloc.minutos)}</p>}
-                          </TooltipContent>
-                        </Tooltip>
+                        <Fragment key={`alloc-${colab.id}-${i}`}>
+                          {workSegments.map((segment, segmentIndex) => {
+                            const pos = calcBarPosition(segment.start, segment.end)
+                            const segmentMinutes = toMinutes(segment.end) - toMinutes(segment.start)
+                            const showLabel = paidDuration >= 90 && segmentIndex === longestSegmentIndex && segmentMinutes >= 90
+
+                            return (
+                              <Tooltip key={`work-${colab.id}-${i}-${segmentIndex}`}>
+                                <TooltipTrigger asChild>
+                                  <div
+                                    className={cn(
+                                      'flex items-center justify-center rounded-md mx-0.5 my-2 text-[11px] font-medium cursor-default shadow-sm',
+                                      colors.bar,
+                                      colors.text,
+                                      colors.border,
+                                      'border',
+                                      !readOnly &&
+                                        alloc.status !== 'INDISPONIVEL' &&
+                                        'cursor-pointer hover:opacity-90 hover:shadow-md transition-all',
+                                      isLoading && 'opacity-60',
+                                      isChanged && 'ring-2 ring-primary ring-offset-1',
+                                      isViolatedRow && 'ring-2 ring-destructive'
+                                    )}
+                                    style={{ gridRow, gridColumn: `${pos.start} / ${pos.end}` }}
+                                    onClick={() => {
+                                      if (!readOnly && onCelulaClick) {
+                                        onCelulaClick(colab.id, currentDate, alloc.status)
+                                      }
+                                    }}
+                                  >
+                                    {showLabel ? `${segment.start} - ${segment.end}` : ''}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs space-y-1">
+                                  <p className="font-semibold">{colab.nome}</p>
+                                  <p>{contrato?.nome ?? 'Contrato'}</p>
+                                  <p>
+                                    {alloc.hora_inicio} → {alloc.hora_fim}
+                                  </p>
+                                  {lunch && (
+                                    <p>
+                                      Almoço: {lunch.start} → {lunch.end}
+                                    </p>
+                                  )}
+                                  {(alloc.minutos_trabalho ?? alloc.minutos) != null && (
+                                    <p>Total: {formatarMinutos(alloc.minutos_trabalho ?? alloc.minutos ?? 0)}</p>
+                                  )}
+                                </TooltipContent>
+                              </Tooltip>
+                            )
+                          })}
+
+                          {lunch && (
+                            <Tooltip key={`lunch-${colab.id}-${i}`}>
+                              <TooltipTrigger asChild>
+                                <div
+                                  className={cn(
+                                    'flex items-center justify-center rounded mx-0.5 my-2 text-[9px] font-semibold border border-dashed border-amber-300/80 text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40',
+                                    !readOnly &&
+                                      alloc.status !== 'INDISPONIVEL' &&
+                                      'cursor-pointer hover:opacity-90 transition-all',
+                                    isLoading && 'opacity-60',
+                                    isChanged && 'ring-2 ring-primary ring-offset-1',
+                                    isViolatedRow && 'ring-2 ring-destructive'
+                                  )}
+                                  style={{
+                                    gridRow,
+                                    gridColumn: `${lunchPos!.start} / ${lunchPos!.end}`,
+                                  }}
+                                  onClick={() => {
+                                    if (!readOnly && onCelulaClick) {
+                                      onCelulaClick(colab.id, currentDate, alloc.status)
+                                    }
+                                  }}
+                                >
+                                  ALM
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="text-xs space-y-1">
+                                <p className="font-semibold">{colab.nome}</p>
+                                <p>Almoço: {lunch.start} → {lunch.end}</p>
+                                <p>Pausa no fluxo</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </Fragment>
                       )
                     })}
 
@@ -493,6 +590,11 @@ export function TimelineGrid({
         <div className="flex items-center gap-1.5">
           <div className="h-3 w-5 rounded border border-dashed border-muted-foreground/20 bg-muted/40 dark:bg-muted/30" />
           Intervalo
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <div className="h-3 w-5 rounded border border-dashed border-amber-300/80 bg-amber-50/80 dark:bg-amber-950/40" />
+          ALM
         </div>
 
         <div className="flex items-center gap-1.5">
