@@ -6,6 +6,8 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "clean": "rm -rf out tmp .vite",
+    "clean:dev": "npm run clean && npm run dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "db:reset": "node scripts/db-reset.mjs",

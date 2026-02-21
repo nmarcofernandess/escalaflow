@@ -8,6 +8,7 @@ App desktop offline para gerar escalas de trabalho em supermercados, com motor d
 
 - Geracao automatica de escala otimizada por periodo (motor de 7 fases).
 - Validacao de 10 regras CLT nomeadas (6 HARD bloqueantes + 4 SOFT alertas).
+- Assistente IA Integrado (Gemini 2.5 Flash/Pro) contextual ao sistema.
 - Simulacao iterativa: click na grid alterna TRABALHO/FOLGA, sistema recalcula em tempo real.
 - Oficializacao com bloqueio de violacoes criticas.
 - Export HTML self-contained para impressao (A4 landscape).
@@ -26,8 +27,9 @@ App desktop offline para gerar escalas de trabalho em supermercados, com motor d
 | IPC | @egoist/tipc (type-safe) |
 | Database | SQLite via better-sqlite3 |
 | Motor | Python OR-Tools (`solver/solver_ortools.py`) via bridge TS |
+| IA | Integração nativa Google Gemini API (`generateContent`) |
 | Frontend | React 19 + Vite |
-| Estilo | Tailwind CSS + shadcn/ui (22 componentes) |
+| Estilo | Tailwind CSS + shadcn/ui (23 componentes) |
 | Estado | Zustand |
 | Formularios | Zod + react-hook-form + shadcn Form |
 | Notificacoes | sonner |
@@ -157,21 +159,24 @@ escalaflow/
 ├── src/
 │   ├── main/                          # Electron Main Process
 │   │   ├── index.ts                   # App lifecycle, window
-│   │   ├── tipc.ts                    # 27 IPC handlers
+│   │   ├── tipc.ts                    # 27+ IPC handlers
 │   │   ├── db/
 │   │   │   ├── database.ts            # better-sqlite3 connection
 │   │   │   ├── schema.ts             # DDL (CREATE TABLE)
 │   │   │   └── seed.ts               # Seed 4 contratos CLT
+│   │   ├── ia/
+│   │   │   ├── cliente.ts             # Cliente Gemini REST
+│   │   │   ├── tools.ts               # Ferramentas da IA (queries SQL)
+│   │   │   └── system-prompt.ts       # Persona e contexto
 │   │   └── motor/
 │   │       ├── solver-bridge.ts       # Bridge TS -> solver Python
 │   │       ├── validador.ts           # PolicyEngine (10 regras)
-│   │       ├── validacao-compartilhada.ts
-│   │       └── (sem motor TS legado)
+│   │       └── validacao-compartilhada.ts
 │   │
 │   ├── renderer/src/                  # React Frontend
 │   │   ├── paginas/                   # 10 paginas
-│   │   ├── componentes/               # 11 componentes custom
-│   │   ├── components/ui/             # 22 shadcn primitives
+│   │   ├── componentes/               # Componentes custom (incluindo IaChatPanel)
+│   │   ├── components/ui/             # shadcn primitives
 │   │   ├── lib/                       # cores.ts, formatadores.ts, utils.ts
 │   │   ├── hooks/                     # useApiData.ts
 │   │   ├── estado/                    # Zustand store
@@ -184,18 +189,19 @@ escalaflow/
 │   ├── solver_ortools.py
 │   └── constraints.py
 │
-├── specs/                             # Specs de cada orchestrate
+├── specs/                             # Specs de features isoladas
 │   ├── 003-electron-migration/
-│   ├── 004-finalize-v2/
-│   │   └── ITERACAO.md                # FONTE DE VERDADE (roadmap)
-│   ├── 005-motor-fundacao/
-│   ├── 006-front-blockers-ux/
-│   └── 007-polish-qualidade/
+│   ├── 004-finalize-v2/               # ROADMAP E FONTE DE VERDADE AQUI (.md)
+│   └── ...
 │
-├── docs/
-│   └── BUILD_V2_ESCALAFLOW.md         # Arquitetura completa
+├── docs/                              # Documentacao de Arquitetura e Produto
+│   ├── PRD-ia-e-configuracoes-v1.md   # Planning de expansão UX IA
+│   ├── BUILD_V2_ESCALAFLOW.md         # Arquitetura completa
+│   ├── COMO_FAZER_RELEASE.md          # CI/CD guias
+│   └── legacy/                        # Prompts e arquivos históricos
 │
-├── resources/                         # Icone do app
+├── .claude/                           # Arquivos e configs específicos da IA
+│   └── CLAUDE.md                      # Instruções de contexto para agentes Code
 ├── electron.vite.config.ts
 ├── electron-builder.yml
 ├── tailwind.config.js

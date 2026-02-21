@@ -18,6 +18,7 @@ O EscalaFlow é um app Electron de gestão de escalas com sidebar shadcn, motor 
 3. [SPEC-03: Remoção do Ícone IA da Sidebar](#spec-03)
 4. [SPEC-04: Sistema de Histórico de Chats da IA](#spec-04)
 5. [SPEC-05: Mapa de Capacidades da IA para RH](#spec-05)
+6. [SPEC-06: Atualização do Tour "Como Funciona"](#spec-06)
 
 ---
 
@@ -410,6 +411,25 @@ O motor **NUNCA** deve quebrar silenciosamente. Para cada cenário de falha:
 
 ---
 
+<a id="spec-06"></a>
+## SPEC-06: Atualização do Tour "Como Funciona"
+
+### Problema Atual
+O sistema possui um tour guiado (onboarding) interativo. Com a introdução do painel lateral fixo da IA (SPEC-01), a separação da página de Regras/Compliance (SPEC-02) e a remoção do ícone da barra lateral (SPEC-03), os steps do tour atual ficarão desatualizados ou apontarão para elementos que mudaram de lugar/não existem mais.
+
+### Ação Necessária
+1. Mapear os steps atuais do `TourProvider` (onde ele passa, quais IDs ele procura).
+2. Atualizar os textos explicativos para incluir a existência do Assistente IA (que agora fica sempre acessível via header).
+3. Atualizar os seletores do tour (ex: se ele manda clicar em "Configurações" para ver regras, agora ele deve referenciar "Regras e Compliance").
+4. Criar um step específico para apresentar o botão do Assistente IA no Header.
+
+### Entregáveis
+- Arquivo de configuração de steps do tour atualizado.
+- Componente `TourSetup` ou similar ajustado para os novos hooks/IDs de tela.
+- Teste end-to-end (manual) passando por todo o tour após todas as outras SPECs estarem em `main`.
+
+---
+
 ## PRIORIZAÇÃO SUGERIDA
 
 | Spec | Prioridade | Justificativa |
@@ -419,6 +439,7 @@ O motor **NUNCA** deve quebrar silenciosamente. Para cada cenário de falha:
 | SPEC-02 | 🟡 P1 | Organização necessária mas não bloqueia uso |
 | SPEC-04 | 🟡 P1 | Histórico é essencial para uso real da IA |
 | SPEC-05 | 🟠 P2 | Estratégico — define a capacidade do produto |
+| SPEC-06 | 🔵 P3 | Fechamento — Deve ser a ÚLTIMA coisa a fazer após testar a nova organização |
 
 ---
 
@@ -433,6 +454,9 @@ SPEC-02 (reorg configs) ────────► SPEC-04 (histórico chats)
                                     │
                                     ▼
                               SPEC-05 (capabilities map)
+                                    │
+                                    ▼
+                              SPEC-06 (atualiza tour)
 ```
 
 - SPEC-01 e SPEC-03 são independentes e podem ser feitos primeiro
