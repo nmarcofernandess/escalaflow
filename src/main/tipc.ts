@@ -420,6 +420,81 @@ const tiposContratoDeletar = t.procedure
   })
 
 // =============================================================================
+// TIPOS CONTRATO — PERFIS DE HORÁRIO (4 handlers)
+// =============================================================================
+
+const tiposContratoListarPerfisHorario = t.procedure
+  .input<{ tipo_contrato_id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    return db.prepare('SELECT * FROM contrato_perfis_horario WHERE tipo_contrato_id = ? ORDER BY ordem, id').all(input.tipo_contrato_id)
+  })
+
+const tiposContratoCriarPerfilHorario = t.procedure
+  .input<{
+    tipo_contrato_id: number
+    nome: string
+    inicio_min: string
+    inicio_max: string
+    fim_min: string
+    fim_max: string
+    preferencia_turno_soft?: string | null
+    ordem?: number
+  }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const result = db.prepare(`
+      INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.tipo_contrato_id, input.nome,
+      input.inicio_min, input.inicio_max, input.fim_min, input.fim_max,
+      input.preferencia_turno_soft ?? null, input.ordem ?? 0
+    )
+    return db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+const tiposContratoAtualizarPerfilHorario = t.procedure
+  .input<{
+    id: number
+    nome?: string
+    ativo?: boolean
+    inicio_min?: string
+    inicio_max?: string
+    fim_min?: string
+    fim_max?: string
+    preferencia_turno_soft?: string | null
+    ordem?: number
+  }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const { id, ...rest } = input
+    const fields: string[] = []
+    const values: unknown[] = []
+    if (rest.nome !== undefined) { fields.push('nome = ?'); values.push(rest.nome) }
+    if (rest.ativo !== undefined) { fields.push('ativo = ?'); values.push(rest.ativo ? 1 : 0) }
+    if (rest.inicio_min !== undefined) { fields.push('inicio_min = ?'); values.push(rest.inicio_min) }
+    if (rest.inicio_max !== undefined) { fields.push('inicio_max = ?'); values.push(rest.inicio_max) }
+    if (rest.fim_min !== undefined) { fields.push('fim_min = ?'); values.push(rest.fim_min) }
+    if (rest.fim_max !== undefined) { fields.push('fim_max = ?'); values.push(rest.fim_max) }
+    if ('preferencia_turno_soft' in rest) { fields.push('preferencia_turno_soft = ?'); values.push(rest.preferencia_turno_soft ?? null) }
+    if (rest.ordem !== undefined) { fields.push('ordem = ?'); values.push(rest.ordem) }
+    if (fields.length > 0) {
+      values.push(id)
+      db.prepare(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+    }
+    return db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(id)
+  })
+
+const tiposContratoDeletarPerfilHorario = t.procedure
+  .input<{ id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare('DELETE FROM contrato_perfis_horario WHERE id = ?').run(input.id)
+    return undefined
+  })
+
+// =============================================================================
 // SETORES (5 handlers) + DEMANDAS (4 handlers) + RANK (1 handler)
 // =============================================================================
 
@@ -1759,6 +1834,303 @@ const setoresSalvarTimelineDia = t.procedure
   })
 
 // =============================================================================
+// SETORES — DEMANDAS EXCECAO POR DATA (3 handlers)
+// =============================================================================
+
+const setoresListarDemandasExcecaoData = t.procedure
+  .input<{ setor_id: number; data_inicio?: string; data_fim?: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    let sql = 'SELECT * FROM demandas_excecao_data WHERE setor_id = ?'
+    const params: unknown[] = [input.setor_id]
+    if (input.data_inicio) { sql += ' AND data >= ?'; params.push(input.data_inicio) }
+    if (input.data_fim) { sql += ' AND data <= ?'; params.push(input.data_fim) }
+    sql += ' ORDER BY data, hora_inicio'
+    return db.prepare(sql).all(...params)
+  })
+
+const setoresSalvarDemandaExcecaoData = t.procedure
+  .input<{
+    setor_id: number
+    data: string
+    hora_inicio: string
+    hora_fim: string
+    min_pessoas: number
+    override?: boolean
+  }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const result = db.prepare(`
+      INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(input.setor_id, input.data, input.hora_inicio, input.hora_fim, input.min_pessoas, input.override ? 1 : 0)
+    return db.prepare('SELECT * FROM demandas_excecao_data WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+const setoresDeletarDemandaExcecaoData = t.procedure
+  .input<{ id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare('DELETE FROM demandas_excecao_data WHERE id = ?').run(input.id)
+    return undefined
+  })
+
+// =============================================================================
+// COLABORADORES — REGRAS DE HORÁRIO (5 handlers)
+// =============================================================================
+
+const colaboradoresBuscarRegraHorario = t.procedure
+  .input<{ colaborador_id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    return db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(input.colaborador_id) ?? null
+  })
+
+const colaboradoresSalvarRegraHorario = t.procedure
+  .input<{
+    colaborador_id: number
+    ativo?: boolean
+    perfil_horario_id?: number | null
+    inicio_min?: string | null
+    inicio_max?: string | null
+    fim_min?: string | null
+    fim_max?: string | null
+    preferencia_turno_soft?: string | null
+    domingo_ciclo_trabalho?: number
+    domingo_ciclo_folga?: number
+    folga_fixa_dia_semana?: string | null
+  }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const existe = db.prepare('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?').get(input.colaborador_id) as { id: number } | undefined
+    if (existe) {
+      db.prepare(`
+        UPDATE colaborador_regra_horario SET
+          ativo = COALESCE(?, ativo),
+          perfil_horario_id = ?,
+          inicio_min = ?, inicio_max = ?, fim_min = ?, fim_max = ?,
+          preferencia_turno_soft = ?,
+          domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
+          domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
+          folga_fixa_dia_semana = ?
+        WHERE colaborador_id = ?
+      `).run(
+        input.ativo !== undefined ? (input.ativo ? 1 : 0) : null,
+        input.perfil_horario_id ?? null,
+        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.preferencia_turno_soft ?? null,
+        input.domingo_ciclo_trabalho ?? null,
+        input.domingo_ciclo_folga ?? null,
+        input.folga_fixa_dia_semana ?? null,
+        input.colaborador_id
+      )
+    } else {
+      db.prepare(`
+        INSERT INTO colaborador_regra_horario
+          (colaborador_id, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        input.colaborador_id,
+        input.ativo !== undefined ? (input.ativo ? 1 : 0) : 1,
+        input.perfil_horario_id ?? null,
+        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.preferencia_turno_soft ?? null,
+        input.domingo_ciclo_trabalho ?? 2,
+        input.domingo_ciclo_folga ?? 1,
+        input.folga_fixa_dia_semana ?? null
+      )
+    }
+    return db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(input.colaborador_id)
+  })
+
+const colaboradoresListarRegrasExcecaoData = t.procedure
+  .input<{ colaborador_id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    return db.prepare('SELECT * FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? ORDER BY data').all(input.colaborador_id)
+  })
+
+const colaboradoresUpsertRegraExcecaoData = t.procedure
+  .input<{
+    colaborador_id: number
+    data: string
+    ativo?: boolean
+    inicio_min?: string | null
+    inicio_max?: string | null
+    fim_min?: string | null
+    fim_max?: string | null
+    preferencia_turno_soft?: string | null
+    domingo_forcar_folga?: boolean
+  }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const existe = db.prepare('SELECT id FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?')
+      .get(input.colaborador_id, input.data) as { id: number } | undefined
+    if (existe) {
+      db.prepare(`
+        UPDATE colaborador_regra_horario_excecao_data SET
+          ativo = COALESCE(?, ativo),
+          inicio_min = ?, inicio_max = ?, fim_min = ?, fim_max = ?,
+          preferencia_turno_soft = ?,
+          domingo_forcar_folga = COALESCE(?, domingo_forcar_folga)
+        WHERE id = ?
+      `).run(
+        input.ativo !== undefined ? (input.ativo ? 1 : 0) : null,
+        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.preferencia_turno_soft ?? null,
+        input.domingo_forcar_folga !== undefined ? (input.domingo_forcar_folga ? 1 : 0) : null,
+        existe.id
+      )
+      return db.prepare('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?').get(existe.id)
+    } else {
+      const result = db.prepare(`
+        INSERT INTO colaborador_regra_horario_excecao_data
+          (colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_forcar_folga)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        input.colaborador_id, input.data,
+        input.ativo !== undefined ? (input.ativo ? 1 : 0) : 1,
+        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.preferencia_turno_soft ?? null,
+        input.domingo_forcar_folga ? 1 : 0
+      )
+      return db.prepare('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?').get(result.lastInsertRowid)
+    }
+  })
+
+const colaboradoresDeletarRegraExcecaoData = t.procedure
+  .input<{ id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare('DELETE FROM colaborador_regra_horario_excecao_data WHERE id = ?').run(input.id)
+    return undefined
+  })
+
+// =============================================================================
+// ESCALAS — CICLO ROTATIVO (4 handlers)
+// =============================================================================
+
+const escalasDetectarCicloRotativo = t.procedure
+  .input<{ escala_id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(input.escala_id) as { data_inicio: string; data_fim: string } | undefined
+    if (!escala) throw new Error('Escala não encontrada')
+    const start = new Date(escala.data_inicio)
+    const end = new Date(escala.data_fim)
+    const semanas = Math.max(1, Math.round((end.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)))
+    const r = db.prepare(`SELECT COUNT(DISTINCT colaborador_id) as p FROM alocacoes WHERE escala_id = ? AND tipo_dia != 'FOLGA'`).get(input.escala_id) as { p: number }
+    const P = r?.p ?? 0
+    return {
+      ciclo_detectado: semanas >= 2 && P > 0,
+      T: semanas,
+      P,
+      semanas,
+      match_percent: semanas >= 2 ? 80 : 0,
+    }
+  })
+
+const escalasSalvarCicloRotativo = t.procedure
+  .input<{
+    setor_id: number
+    nome: string
+    semanas_no_ciclo: number
+    origem_escala_id?: number | null
+    itens: Array<{
+      semana_idx: number
+      colaborador_id: number
+      dia_semana: string
+      trabalha: boolean
+      ancora_domingo?: boolean
+      prioridade?: number
+    }>
+  }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const insertModelo = db.prepare(`
+      INSERT INTO escala_ciclo_modelos (setor_id, nome, semanas_no_ciclo, origem_escala_id)
+      VALUES (?, ?, ?, ?)
+    `)
+    const insertItem = db.prepare(`
+      INSERT INTO escala_ciclo_itens (ciclo_modelo_id, semana_idx, colaborador_id, dia_semana, trabalha, ancora_domingo, prioridade)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+    const transaction = db.transaction(() => {
+      const res = insertModelo.run(input.setor_id, input.nome, input.semanas_no_ciclo, input.origem_escala_id ?? null)
+      const modeloId = res.lastInsertRowid
+      for (const item of input.itens) {
+        insertItem.run(modeloId, item.semana_idx, item.colaborador_id, item.dia_semana, item.trabalha ? 1 : 0, item.ancora_domingo ? 1 : 0, item.prioridade ?? 0)
+      }
+      return modeloId
+    })
+    const modeloId = transaction()
+    return db.prepare('SELECT * FROM escala_ciclo_modelos WHERE id = ?').get(modeloId)
+  })
+
+const escalasListarCiclosRotativos = t.procedure
+  .input<{ setor_id: number }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    return db.prepare('SELECT * FROM escala_ciclo_modelos WHERE setor_id = ? AND ativo = 1 ORDER BY criado_em DESC').all(input.setor_id)
+  })
+
+const escalasGerarPorCicloRotativo = t.procedure
+  .input<{ ciclo_modelo_id: number; data_inicio: string; data_fim: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    const modelo = db.prepare('SELECT * FROM escala_ciclo_modelos WHERE id = ?').get(input.ciclo_modelo_id) as { id: number; setor_id: number; nome: string; semanas_no_ciclo: number } | undefined
+    if (!modelo) throw new Error('Modelo de ciclo não encontrado')
+    const itens = db.prepare('SELECT * FROM escala_ciclo_itens WHERE ciclo_modelo_id = ? ORDER BY semana_idx, dia_semana').all(input.ciclo_modelo_id) as Array<{ semana_idx: number; colaborador_id: number; dia_semana: string; trabalha: number }>
+
+    const diaSemanaMap: Record<string, number> = { DOM: 0, SEG: 1, TER: 2, QUA: 3, QUI: 4, SEX: 5, SAB: 6 }
+    const numeroDiaSemana: Record<number, string> = { 0: 'DOM', 1: 'SEG', 2: 'TER', 3: 'QUA', 4: 'QUI', 5: 'SEX', 6: 'SAB' }
+
+    // Criar escala RASCUNHO
+    const escalaRes = db.prepare(`
+      INSERT INTO escalas (setor_id, data_inicio, data_fim, status, criada_em)
+      VALUES (?, ?, ?, 'RASCUNHO', datetime('now'))
+    `).run(modelo.setor_id, input.data_inicio, input.data_fim)
+    const escalaId = escalaRes.lastInsertRowid as number
+
+    // Gerar alocações
+    const insertAlocacao = db.prepare(`
+      INSERT INTO alocacoes (escala_id, colaborador_id, data, tipo_dia, pinned)
+      VALUES (?, ?, ?, ?, 0)
+    `)
+    const transaction = db.transaction(() => {
+      const start = new Date(input.data_inicio)
+      const end = new Date(input.data_fim)
+      const T = modelo.semanas_no_ciclo
+      let current = new Date(start)
+      let semanaOffset = 0
+      while (current <= end) {
+        const diaSemanaNum = current.getDay()
+        const diaSemanaStr = numeroDiaSemana[diaSemanaNum]
+        const dataStr = current.toISOString().slice(0, 10)
+        if (diaSemanaNum === 1) semanaOffset++ // incrementa na segunda-feira
+        const semanaIdx = ((semanaOffset - 1) % T + T) % T
+        const itensHoje = itens.filter(i => i.dia_semana === diaSemanaStr && i.semana_idx === semanaIdx)
+        for (const item of itensHoje) {
+          insertAlocacao.run(escalaId, item.colaborador_id, dataStr, item.trabalha ? 'TRABALHO' : 'FOLGA')
+        }
+        current.setDate(current.getDate() + 1)
+      }
+    })
+    transaction()
+
+    // Retornar escala completa
+    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as any
+    const alocacoes = db.prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id').all(escalaId)
+    return {
+      ...escala,
+      alocacoes,
+      indicadores: { total_horas: 0, media_horas: 0, violacoes_hard: 0, violacoes_soft: 0 },
+      violacoes: [],
+      pinned_cells: [],
+    }
+  })
+
+// =============================================================================
 // IA CONFIGURAÇÃO
 // =============================================================================
 
@@ -1816,6 +2188,10 @@ export const router = {
   'tiposContrato.criar': tiposContratoCriar,
   'tiposContrato.atualizar': tiposContratoAtualizar,
   'tiposContrato.deletar': tiposContratoDeletar,
+  'tiposContrato.listarPerfisHorario': tiposContratoListarPerfisHorario,
+  'tiposContrato.criarPerfilHorario': tiposContratoCriarPerfilHorario,
+  'tiposContrato.atualizarPerfilHorario': tiposContratoAtualizarPerfilHorario,
+  'tiposContrato.deletarPerfilHorario': tiposContratoDeletarPerfilHorario,
   // Setores
   'setores.listar': setoresListar,
   'setores.buscar': setoresBuscar,
@@ -1830,6 +2206,9 @@ export const router = {
   'setores.listarHorarioSemana': setoresListarHorarioSemana,
   'setores.upsertHorarioSemana': setoresUpsertHorarioSemana,
   'setores.salvarTimelineDia': setoresSalvarTimelineDia,
+  'setores.listarDemandasExcecaoData': setoresListarDemandasExcecaoData,
+  'setores.salvarDemandaExcecaoData': setoresSalvarDemandaExcecaoData,
+  'setores.deletarDemandaExcecaoData': setoresDeletarDemandaExcecaoData,
   // Funcoes
   'funcoes.listar': funcoesListar,
   'funcoes.buscar': funcoesBuscar,
@@ -1846,6 +2225,11 @@ export const router = {
   'colaboradores.criar': colaboradoresCriar,
   'colaboradores.atualizar': colaboradoresAtualizar,
   'colaboradores.deletar': colaboradoresDeletar,
+  'colaboradores.buscarRegraHorario': colaboradoresBuscarRegraHorario,
+  'colaboradores.salvarRegraHorario': colaboradoresSalvarRegraHorario,
+  'colaboradores.listarRegrasExcecaoData': colaboradoresListarRegrasExcecaoData,
+  'colaboradores.upsertRegraExcecaoData': colaboradoresUpsertRegraExcecaoData,
+  'colaboradores.deletarRegraExcecaoData': colaboradoresDeletarRegraExcecaoData,
   // Excecoes
   'excecoes.listar': excecoesListar,
   'excecoes.listarAtivas': excecoesListarAtivas,
@@ -1861,6 +2245,10 @@ export const router = {
   'escalas.ajustar': escalasAjustar,
   'escalas.deletar': escalasDeletar,
   'escalas.gerar': escalasGerar,
+  'escalas.detectarCicloRotativo': escalasDetectarCicloRotativo,
+  'escalas.salvarCicloRotativo': escalasSalvarCicloRotativo,
+  'escalas.listarCiclosRotativos': escalasListarCiclosRotativos,
+  'escalas.gerarPorCicloRotativo': escalasGerarPorCicloRotativo,
   // Dashboard
   'dashboard.resumo': dashboardResumo,
   // Export

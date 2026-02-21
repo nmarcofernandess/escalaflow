@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
+import { useIaStore } from '@/store/iaStore'
 import { AppSidebar } from './componentes/AppSidebar'
 import { ErrorBoundary } from './componentes/ErrorBoundary'
 import { TourProvider } from './componentes/Tour'
@@ -23,6 +24,18 @@ export function App() {
   const [tourCompleted, setTourCompleted] = useState(() =>
     localStorage.getItem(TOUR_STORAGE_KEY) === 'true',
   )
+  const { toggleAberto } = useIaStore()
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'j' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        toggleAberto()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [toggleAberto])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -38,13 +51,13 @@ export function App() {
   }, [])
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh overflow-hidden">
       <TourProvider
         onComplete={handleTourComplete}
         isTourCompleted={tourCompleted}
       >
         <AppSidebar />
-        <SidebarInset>
+        <SidebarInset className="h-full overflow-hidden">
           <div id={TOUR_STEP_IDS.CONTENT_AREA} className="flex flex-1 flex-col overflow-hidden">
             <div className="flex flex-1 overflow-hidden">
               <main className="flex-1 min-w-0 overflow-auto">
