@@ -81,6 +81,28 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
 
   if (!escala) throw new Error(`Escala ${escalaId} não encontrada`)
 
+  // ── Ler regras efetivas (empresa merged com sistema) ───────────────────────
+  const rulesRows = (() => {
+    try {
+      const tableExists = (db.prepare(
+        "SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='regra_definicao'"
+      ).get() as { c: number }).c > 0
+      if (!tableExists) return []
+      return db.prepare(`
+        SELECT rd.codigo, COALESCE(re.status, rd.status_sistema) AS status_efetivo
+        FROM regra_definicao rd
+        LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
+      `).all() as Array<{ codigo: string; status_efetivo: string }>
+    } catch {
+      return []
+    }
+  })()
+  const rules: Record<string, string> = Object.fromEntries(rulesRows.map(r => [r.codigo, r.status_efetivo]))
+
+  const ruleIs = (codigo: string, defaultStatus = 'ON'): string => {
+    return rules[codigo] ?? defaultStatus
+  }
+
   const alocacoesDB = db
     .prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data')
     .all(escalaId) as Alocacao[]
@@ -340,23 +362,35 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
       .map(d => [d, mapaColab.get(d)] as [string, CelulaMotor | undefined])
       .filter(([, cel]) => cel !== undefined) as [string, CelulaMotor][]
 
-    allAntipatterns.push(...checkAP1_Clopening(colab, diasOrdered))
-    allAntipatterns.push(...checkAP7_WeekendStarvation(colab, semanas, resultado))
+    if (ruleIs('AP1') !== 'OFF') {
+      allAntipatterns.push(...checkAP1_Clopening(colab, diasOrdered))
+    }
+    if (ruleIs('AP7') !== 'OFF') {
+      allAntipatterns.push(...checkAP7_WeekendStarvation(colab, semanas, resultado))
+    }
   }
 
   // ── Tier 1: cross-colab ────────────────────────────────────────────────────
 
-  allAntipatterns.push(...checkAP4_WorkloadImbalance(colaboradores, resultado, dias))
-  allAntipatterns.push(...checkAP15_PeakDayClustering(dias, demandas, resultado, colaboradores))
+  if (ruleIs('AP4') !== 'OFF') {
+    allAntipatterns.push(...checkAP4_WorkloadImbalance(colaboradores, resultado, dias))
+  }
+  if (ruleIs('AP15') !== 'OFF') {
+    allAntipatterns.push(...checkAP15_PeakDayClustering(dias, demandas, resultado, colaboradores))
+  }
 
   // ── Tier 1: per-day APs (AP3 e AP16) ─────────────────────────────────────
 
   for (const data of dias) {
-    allAntipatterns.push(...checkAP3_LunchCollision(data, colaboradores, resultado))
+    if (ruleIs('AP3') !== 'OFF') {
+      allAntipatterns.push(...checkAP3_LunchCollision(data, colaboradores, resultado))
+    }
 
     const slotsNoDia = grid.filter(s => s.data === data)
-    for (const slot of slotsNoDia) {
-      allAntipatterns.push(...checkAP16_UnsupervisedJunior(data, slot, colaboradores, resultado))
+    if (ruleIs('AP16') !== 'OFF') {
+      for (const slot of slotsNoDia) {
+        allAntipatterns.push(...checkAP16_UnsupervisedJunior(data, slot, colaboradores, resultado))
+      }
     }
   }
 
@@ -368,22 +402,34 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
       .map(d => [d, mapaColab.get(d)] as [string, CelulaMotor | undefined])
       .filter(([, cel]) => cel !== undefined) as [string, CelulaMotor][]
 
-    allAntipatterns.push(...checkAP2_ScheduleInstability(colab, diasOrdered))
-    allAntipatterns.push(...checkAP5_IsolatedDayOff(colab, diasOrdered))
-    allAntipatterns.push(...checkAP8_MealTimeDeviation(colab, diasOrdered))
-    allAntipatterns.push(...checkAP9_CommuteToWorkRatio(colab, diasOrdered))
+    if (ruleIs('AP2') !== 'OFF') {
+      allAntipatterns.push(...checkAP2_ScheduleInstability(colab, diasOrdered))
+    }
+    if (ruleIs('AP5') !== 'OFF') {
+      allAntipatterns.push(...checkAP5_IsolatedDayOff(colab, diasOrdered))
+    }
+    if (ruleIs('AP8') !== 'OFF') {
+      allAntipatterns.push(...checkAP8_MealTimeDeviation(colab, diasOrdered))
+    }
+    if (ruleIs('AP9') !== 'OFF') {
+      allAntipatterns.push(...checkAP9_CommuteToWorkRatio(colab, diasOrdered))
+    }
   }
 
   // ── Tier 2: cross-colab ────────────────────────────────────────────────────
 
-  allAntipatterns.push(...checkAP6_ShiftInequity(colaboradores, resultado, dias))
+  if (ruleIs('AP6') !== 'OFF') {
+    allAntipatterns.push(...checkAP6_ShiftInequity(colaboradores, resultado, dias))
+  }
 
   // ── Tier 2: per-slot AP10 ─────────────────────────────────────────────────
 
   for (const data of dias) {
     const slotsNoDia = grid.filter(s => s.data === data)
-    for (const slot of slotsNoDia) {
-      allAntipatterns.push(...checkAP10_OverstaffingCost(data, slot, demandas, resultado, colaboradores))
+    if (ruleIs('AP10') !== 'OFF') {
+      for (const slot of slotsNoDia) {
+        allAntipatterns.push(...checkAP10_OverstaffingCost(data, slot, demandas, resultado, colaboradores))
+      }
     }
   }
 

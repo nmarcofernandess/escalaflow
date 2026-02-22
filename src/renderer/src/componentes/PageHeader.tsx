@@ -14,6 +14,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { useIaStore } from '@/store/iaStore'
+import { TOUR_STEP_IDS } from '@/lib/tour-constants'
 
 interface BreadcrumbEntry {
   label: string
@@ -148,6 +149,7 @@ export function PageHeader({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              id={TOUR_STEP_IDS.IA_TOGGLE}
               variant="ghost"
               size="icon"
               className="size-7"

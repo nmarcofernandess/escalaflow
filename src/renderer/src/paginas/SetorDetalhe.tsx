@@ -261,7 +261,6 @@ const setorSchema = z.object({
   icone: z.string().nullable(),
   hora_abertura: z.string().min(1, 'Hora de abertura e obrigatoria'),
   hora_fechamento: z.string().min(1, 'Hora de fechamento e obrigatoria'),
-  piso_operacional: z.coerce.number().int().min(1, 'Minimo 1 pessoa'),
 })
 
 type SetorFormInput = z.input<typeof setorSchema>
@@ -277,7 +276,7 @@ export function SetorDetalhe() {
   const [salvando, setSalvando] = useState(false)
   const setorForm = useForm<SetorFormInput, unknown, SetorFormData>({
     resolver: zodResolver(setorSchema),
-    defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '', piso_operacional: 1 },
+    defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '' },
   })
 
   // ─── Data loading ────────────────────────────────────────────────────
@@ -499,7 +498,6 @@ export function SetorDetalhe() {
         icone: setor.icone,
         hora_abertura: setor.hora_abertura,
         hora_fechamento: setor.hora_fechamento,
-        piso_operacional: setor.piso_operacional ?? 1,
       })
     }
   }, [setor, setorForm])
@@ -513,7 +511,6 @@ export function SetorDetalhe() {
         icone: data.icone ?? null,
         hora_abertura: data.hora_abertura,
         hora_fechamento: data.hora_fechamento,
-        piso_operacional: data.piso_operacional,
       })
       toast.success('Setor atualizado')
     } catch (err) {
@@ -737,27 +734,6 @@ export function SetorDetalhe() {
                   )}
                 />
               </div>
-              <FormField
-                control={setorForm.control}
-                name="piso_operacional"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Piso Operacional (pessoas)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={typeof field.value === 'number' ? field.value : ''}
-                        onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
-                        onBlur={field.onBlur}
-                        name={field.name}
-                        ref={field.ref}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </CardContent>
           </Card>
         </Form>

@@ -30,7 +30,6 @@ CREATE TABLE IF NOT EXISTS setores (
     icone TEXT,
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
-    piso_operacional INTEGER NOT NULL DEFAULT 1,
     ativo INTEGER NOT NULL DEFAULT 1
 );
 
@@ -232,6 +231,21 @@ CREATE TABLE IF NOT EXISTS escala_ciclo_itens (
 `
 
 // ============================================================================
+// DDL — Horários de Funcionamento da Empresa por Dia da Semana (v5)
+// ============================================================================
+
+const DDL_V5_EMPRESA_HORARIO = `
+CREATE TABLE IF NOT EXISTS empresa_horario_semana (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dia_semana TEXT NOT NULL CHECK (dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM')),
+    ativo INTEGER NOT NULL DEFAULT 1,
+    hora_abertura TEXT NOT NULL DEFAULT '08:00',
+    hora_fechamento TEXT NOT NULL DEFAULT '22:00',
+    UNIQUE(dia_semana)
+);
+`
+
+// ============================================================================
 // DDL — Configurações IA
 // ============================================================================
 
@@ -240,7 +254,7 @@ CREATE TABLE IF NOT EXISTS configuracao_ia (
   id INTEGER PRIMARY KEY DEFAULT 1,
   provider TEXT NOT NULL DEFAULT 'gemini',
   api_key TEXT NOT NULL DEFAULT '',
-  modelo TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
+  modelo TEXT NOT NULL DEFAULT 'gemini-3-flash-preview',
   ativo INTEGER NOT NULL DEFAULT 0,
   criado_em TEXT NOT NULL DEFAULT (datetime('now')),
   atualizado_em TEXT NOT NULL DEFAULT (datetime('now'))
@@ -285,6 +299,18 @@ function getColumnNames(table: string): Set<string> {
   const query = "PRAGMA table_info('" + table + "')"
   const cols = db.prepare(query).all() as { name: string }[]
   return new Set(cols.map((c) => c.name))
+}
+
+function dropColumnIfExists(table: string, column: string): void {
+  try {
+    const cols = getColumnNames(table)
+    if (cols.has(column)) {
+      const db = getDb()
+      db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`)
+    }
+  } catch {
+    // SQLite < 3.35 não suporta DROP COLUMN — ignora silenciosamente
+  }
 }
 
 function addColumnIfMissing(table: string, column: string, definition: string, cols?: Set<string>): void {
@@ -473,9 +499,8 @@ END
     WHERE regime_escala IS NULL OR regime_escala NOT IN('5X2', '6X1')
   `)
 
-  // --- v2.5: piso operacional no setor ---
-  const setorCols = getColumnNames('setores')
-  addColumnIfMissing('setores', 'piso_operacional', 'INTEGER NOT NULL DEFAULT 1', setorCols)
+  // --- v5: remover piso_operacional do setor (campo obsoleto) ---
+  dropColumnIfExists('setores', 'piso_operacional')
 
   // --- v2.3: indicadores escalas ---
   const escalaCols = getColumnNames('escalas')
@@ -532,7 +557,58 @@ END
   db.exec(`CREATE INDEX IF NOT EXISTS idx_colab_regra_excecao_colab_data ON colaborador_regra_horario_excecao_data(colaborador_id, data)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ciclo_modelo_setor_ativo ON escala_ciclo_modelos(setor_id, ativo)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ciclo_itens_modelo_semana ON escala_ciclo_itens(ciclo_modelo_id, semana_idx)`)
+
+  // ==========================================================================
+  // v5 — Horários de empresa por dia (fallback global)
+  // ==========================================================================
+  const horarioEmpresaCount = (
+    db.prepare('SELECT COUNT(*) as count FROM empresa_horario_semana').get() as { count: number }
+  ).count
+  if (horarioEmpresaCount === 0) {
+    const upsertHorario = db.prepare(`
+      INSERT OR IGNORE INTO empresa_horario_semana (dia_semana, ativo, hora_abertura, hora_fechamento)
+      VALUES (?, ?, ?, ?)
+    `)
+    const horariosDefault = [
+      ['SEG', 1, '08:00', '22:00'],
+      ['TER', 1, '08:00', '22:00'],
+      ['QUA', 1, '08:00', '22:00'],
+      ['QUI', 1, '08:00', '22:00'],
+      ['SEX', 1, '08:00', '22:00'],
+      ['SAB', 1, '08:00', '20:00'],
+      ['DOM', 1, '08:00', '14:00'],
+    ]
+    db.transaction(() => {
+      for (const [dia, ativo, abertura, fechamento] of horariosDefault) {
+        upsertHorario.run(dia, ativo, abertura, fechamento)
+      }
+    })()
+  }
 }
+
+// ============================================================================
+// DDL — Engine de Regras Configuráveis (v6)
+// ============================================================================
+
+const DDL_V6_REGRAS = `
+CREATE TABLE IF NOT EXISTS regra_definicao (
+    codigo TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    descricao TEXT,
+    categoria TEXT NOT NULL CHECK (categoria IN ('CLT','SOFT','ANTIPATTERN')),
+    status_sistema TEXT NOT NULL DEFAULT 'HARD'
+        CHECK (status_sistema IN ('HARD','SOFT','OFF','ON')),
+    editavel INTEGER NOT NULL DEFAULT 1,
+    aviso_dependencia TEXT,
+    ordem INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS regra_empresa (
+    codigo TEXT PRIMARY KEY REFERENCES regra_definicao(codigo),
+    status TEXT NOT NULL CHECK (status IN ('HARD','SOFT','OFF','ON')),
+    atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`
 
 // ============================================================================
 // Entry point
@@ -542,8 +618,10 @@ export function createTables(): void {
   const db = getDb()
   db.exec(DDL)
   db.exec(DDL_V3)
+  db.exec(DDL_V5_EMPRESA_HORARIO)
   db.exec(DDL_IA)
   db.exec(DDL_IA_HISTORICO)
+  db.exec(DDL_V6_REGRAS)
   migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v4 + IA + Histórico)')
+  console.log('[DB] Tabelas criadas com sucesso (v6 + Regras)')
 }

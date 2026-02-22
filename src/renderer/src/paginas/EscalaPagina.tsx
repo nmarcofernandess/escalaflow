@@ -17,7 +17,9 @@ import {
   Terminal,
   Repeat,
   Save,
+  Settings2,
 } from 'lucide-react'
+import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -143,8 +145,12 @@ export function EscalaPagina() {
   const [preflightWarningsOpen, setPreflightWarningsOpen] = useState(false)
   const [preflightWarningsText, setPreflightWarningsText] = useState<string[]>([])
   const preflightResolveRef = useRef<((proceed: boolean) => void) | null>(null)
-  const [solveMode, setSolveMode] = useState<'rapido' | 'otimizado'>('rapido')
-  const [nivelRigor, setNivelRigor] = useState<'ALTO' | 'MEDIO' | 'BAIXO'>('ALTO')
+  const [solverConfig, setSolverConfig] = useState<SolverSessionConfig>({
+    solveMode: 'rapido',
+    maxTimeSeconds: 30,
+    rulesOverride: {},
+  })
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   // Oficial tab state
   const [oficialEscala, setOficialEscala] = useState<EscalaCompletaV3 | null>(null)
@@ -265,8 +271,9 @@ export function EscalaPagina() {
         data_inicio: dataInicio,
         data_fim: dataFim,
         regimes_override: regimesOverride,
-        solveMode,
-        nivelRigor,
+        solveMode: solverConfig.solveMode,
+        maxTimeSeconds: solverConfig.maxTimeSeconds,
+        rulesOverride: solverConfig.rulesOverride,
       })
       setEscalaCompleta(result)
       toast.success('Escala gerada')
@@ -720,32 +727,15 @@ export function EscalaPagina() {
                   </AlertDialogContent>
                 </AlertDialog>
 
-                <div className="space-y-1">
-                  <Label className="text-xs">Motor de IA</Label>
-                  <Select value={solveMode} onValueChange={(v) => setSolveMode(v as 'rapido' | 'otimizado')} disabled={gerando || preflightLoading}>
-                    <SelectTrigger className="w-[150px]">
-                      <SelectValue placeholder="Modo de busca" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="rapido">Super Flash (1s-30s)</SelectItem>
-                      <SelectItem value="otimizado">Otimizada (Profunda)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Rigor CLT</Label>
-                  <Select value={nivelRigor} onValueChange={(v) => setNivelRigor(v as 'ALTO' | 'MEDIO' | 'BAIXO')} disabled={gerando || preflightLoading}>
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue placeholder="Rigor Leis" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALTO">Restrito (Padrão)</SelectItem>
-                      <SelectItem value="MEDIO">De boa (Flexível)</SelectItem>
-                      <SelectItem value="BAIXO">Relaxado (Livre)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setDrawerOpen(true)}
+                  disabled={gerando || preflightLoading}
+                  title="Configuracoes de geracao"
+                >
+                  <Settings2 className="size-4" />
+                </Button>
 
                 <Button onClick={handleGerar} disabled={gerando || preflightLoading}>
                   {gerando ? (
@@ -1289,6 +1279,13 @@ export function EscalaPagina() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SolverConfigDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        config={solverConfig}
+        onConfigChange={setSolverConfig}
+      />
     </div>
   )
 }
@@ -1387,32 +1384,59 @@ function SimulacaoResult({
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <IndicatorCard
           icon={TrendingUp}
-          value={<PontuacaoBadge pontuacao={indicators.pontuacao} />}
-          label="Pontuacao"
+          value={`${indicators.pontuacao}/100`}
+          label="Score"
+          colorClass={
+            indicators.pontuacao >= 70
+              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
+              : indicators.pontuacao >= 50
+              ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
+              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
+          }
         />
         <IndicatorCard
           icon={CheckCircle2}
           value={`${indicators.coberturaPercent}%`}
           label="Cobertura"
-          colorClass="bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400"
+          colorClass={
+            indicators.coberturaPercent >= 95
+              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
+              : indicators.coberturaPercent >= 80
+              ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
+              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
+          }
         />
         <IndicatorCard
-          icon={XCircle}
+          icon={indicators.violacoesHard === 0 ? CheckCircle2 : XCircle}
           value={indicators.violacoesHard}
-          label="Violacoes Hard"
-          colorClass="bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400"
+          label="Infrações CLT"
+          colorClass={
+            indicators.violacoesHard === 0
+              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
+              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
+          }
         />
         <IndicatorCard
-          icon={AlertTriangle}
+          icon={indicators.violacoesSoft === 0 ? CheckCircle2 : AlertTriangle}
           value={indicators.violacoesSoft}
-          label="Violacoes Soft"
-          colorClass="bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400"
+          label="Antipadrões"
+          colorClass={
+            indicators.violacoesSoft === 0
+              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
+              : 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
+          }
         />
         <IndicatorCard
           icon={Shield}
           value={`${indicators.equilibrio}%`}
-          label="Equilibrio"
-          colorClass="bg-primary/10 text-primary"
+          label="Equidade"
+          colorClass={
+            indicators.equilibrio >= 80
+              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
+              : indicators.equilibrio >= 50
+              ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
+              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
+          }
         />
       </div>
 

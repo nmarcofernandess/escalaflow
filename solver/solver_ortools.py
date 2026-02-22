@@ -31,13 +31,16 @@ from constraints import (
     add_consistencia_horario_soft,
     add_demand_soft,
     add_dias_trabalho,
+    add_dias_trabalho_soft_penalty,
     add_domingo_ciclo_soft,
     add_folga_fixa_5x2,
     add_h1_max_dias_consecutivos,
+    add_h1_soft_penalty,
     add_h2_interjornada,
     add_h4_max_jornada_diaria,
     add_h5_excecoes,
     add_human_blocks,
+    add_human_blocks_soft_penalty,
     add_h10_meta_semanal,
     add_h11_aprendiz_domingo,
     add_h12_aprendiz_feriado,
@@ -48,7 +51,7 @@ from constraints import (
     add_h17_h18_feriado_proibido,
     add_h19_folga_comp_domingo,
     add_min_diario,
-    add_piso_operacional,
+    add_min_diario_soft_penalty,
     add_surplus_soft,
     make_block_starts,
     make_works_day,
@@ -261,8 +264,6 @@ def build_model(data: dict) -> Tuple[
         grid_min=grid_min,
         demanda_excecao_data=data.get("demanda_excecao_data"),
     )
-    piso_operacional = int(data.get("piso_operacional", 1))
-
     min_daily_slots = 240 // grid_min
 
     work: SlotGrid = {}
@@ -389,21 +390,46 @@ def build_model(data: dict) -> Tuple[
     block_starts = make_block_starts(model, work, C, D, S)
 
     nivel_rigor = config.get("nivel_rigor", "ALTO")
+    rules = config.get("rules", {})
+
+    def rule_is(codigo: str, default: str = 'HARD') -> str:
+        """Retorna status da regra: HARD, SOFT, OFF, ON.
+        Se rules dict presente e nao vazio, usa ele. Caso contrario, inferir de nivel_rigor."""
+        if rules:
+            return rules.get(codigo, default)
+        # backward compat: inferir de nivel_rigor
+        if codigo == 'H1':
+            return 'HARD' if nivel_rigor in ['ALTO', 'MEDIO'] else 'OFF'
+        if codigo == 'H6':
+            return 'HARD' if nivel_rigor == 'ALTO' else 'OFF'
+        if codigo == 'DIAS_TRABALHO':
+            return 'HARD' if nivel_rigor in ['ALTO', 'MEDIO'] else 'OFF'
+        if codigo == 'MIN_DIARIO':
+            return 'HARD' if nivel_rigor == 'ALTO' else 'OFF'
+        if codigo.startswith('S_') or codigo.startswith('AP'):
+            return 'ON'
+        return default
+
+    obj_terms_list: list = []  # penalties das versoes SOFT das HARD rules
 
     # ---------------------------------------------------------------
     # HARD constraints (CLT Legal)
     # ---------------------------------------------------------------
     regras_dia = data.get("regras_colaborador_dia", [])
 
-    if nivel_rigor in ["ALTO", "MEDIO"]:
+    h1_status = rule_is('H1', 'HARD')
+    if h1_status == 'HARD':
         add_h1_max_dias_consecutivos(model, works_day, C, D)
+    elif h1_status == 'SOFT':
+        add_h1_soft_penalty(model, obj_terms_list, works_day, C, D)
 
     add_h2_interjornada(model, work, C, D, S, grid_min=grid_min)
     # v4: H3 removido como hard — substitudo por domingo_ciclo_soft abaixo
     add_h4_max_jornada_diaria(model, work, colabs, C, D, S, grid_min)
     add_h5_excecoes(model, work, colabs, days, C, S, excecoes)
 
-    if nivel_rigor == "ALTO":
+    h6_status = rule_is('H6', 'HARD')
+    if h6_status == 'HARD':
         add_human_blocks(
             model,
             work,
@@ -418,6 +444,23 @@ def build_model(data: dict) -> Tuple[
             threshold_slots=360 // grid_min,   # >6h -> almoco (scale for grid)
             min_work_slots=120 // grid_min,    # min 2h per block
             max_work_slots=360 // grid_min,    # max 6h continuous work
+        )
+    elif h6_status == 'SOFT':
+        add_human_blocks_soft_penalty(
+            model,
+            obj_terms_list,
+            work,
+            block_starts,
+            C,
+            D,
+            S,
+            base_h=base_h,
+            grid_min=grid_min,
+            min_gap_slots=min_lunch_slots,
+            max_gap_slots=max_gap_slots,
+            threshold_slots=360 // grid_min,
+            min_work_slots=120 // grid_min,
+            max_work_slots=360 // grid_min,
         )
 
     weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal(
@@ -460,23 +503,28 @@ def build_model(data: dict) -> Tuple[
     add_folga_fixa_5x2(model, works_day, colabs, days, C, D)
 
     # Product rules (with blocked_days awareness)
-    if nivel_rigor in ["ALTO", "MEDIO"]:
+    dt_status = rule_is('DIAS_TRABALHO', 'HARD')
+    if dt_status == 'HARD':
         add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days)
+    elif dt_status == 'SOFT':
+        add_dias_trabalho_soft_penalty(model, obj_terms_list, works_day, colabs, C, D, week_chunks, blocked_days)
 
-    if nivel_rigor == "ALTO":
+    md_status = rule_is('MIN_DIARIO', 'HARD')
+    if md_status == 'HARD':
         add_min_diario(model, work, works_day, C, D, S, min_slots=min_daily_slots)
-    add_piso_operacional(model, work, demand_by_slot, C, D, S, piso_operacional)
+    elif md_status == 'SOFT':
+        add_min_diario_soft_penalty(model, obj_terms_list, work, works_day, C, D, S, min_slots=min_daily_slots)
 
-    deficit = add_demand_soft(model, work, demand_by_slot, C, D, S)
-    surplus = add_surplus_soft(model, work, demand_by_slot, C, D, S)
-    ap1_excess = add_ap1_jornada_excessiva(model, work, C, D, S)
+    deficit = add_demand_soft(model, work, demand_by_slot, C, D, S) if rule_is('S_DEFICIT', 'ON') != 'OFF' else {}
+    surplus = add_surplus_soft(model, work, demand_by_slot, C, D, S) if rule_is('S_SURPLUS', 'ON') != 'OFF' else {}
+    ap1_excess = add_ap1_jornada_excessiva(model, work, C, D, S) if rule_is('S_AP1_EXCESS', 'ON') != 'OFF' else []
 
     # v4: Novos soft constraints
-    domingo_ciclo_penalties = add_domingo_ciclo_soft(model, works_day, colabs, C, sunday_indices)
+    domingo_ciclo_penalties = add_domingo_ciclo_soft(model, works_day, colabs, C, sunday_indices) if rule_is('S_DOMINGO_CICLO', 'ON') != 'OFF' else []
     turno_pref_penalties = add_colaborador_soft_preferences(
         model, work, works_day, regras_dia, colabs, days, C, D, S, base_h, grid_min
-    )
-    consistencia_penalties = add_consistencia_horario_soft(model, work, works_day, C, D, S, grid_min)
+    ) if rule_is('S_TURNO_PREF', 'ON') != 'OFF' else []
+    consistencia_penalties = add_consistencia_horario_soft(model, work, works_day, C, D, S, grid_min) if rule_is('S_CONSISTENCIA', 'ON') != 'OFF' else []
 
     max_total_minutes = D * S * grid_min
     max_weekly = model.new_int_var(0, max_total_minutes, "max_weekly")
@@ -503,6 +551,9 @@ def build_model(data: dict) -> Tuple[
     if ap1_excess:
         objective_terms.append(WEIGHTS["ap1_excess"] * sum(ap1_excess))
     objective_terms.append(WEIGHTS["spread"] * spread)
+
+    if obj_terms_list:
+        objective_terms.extend(obj_terms_list)
 
     model.minimize(sum(objective_terms))
 
@@ -545,6 +596,7 @@ def extract_solution(
     solve_time_ms: float,
     base_h: int,
     grid_min: int,
+    rules: dict = {},
 ) -> dict:
     status_name = {
         cp_model.OPTIMAL: "OPTIMAL",
@@ -562,6 +614,9 @@ def extract_solution(
                 "Verifique se as horas semanais dos contratos sao compativeis com o periodo",
                 "Tente um periodo menor ou menos restricoes de demanda",
             ]
+        # Diagnostico — ajuda a IA a entender o que aconteceu
+        regras_ativas = [k for k, v in rules.items() if v in ("HARD", "SOFT", "ON")]
+        regras_off = [k for k, v in rules.items() if v == "OFF"]
         return {
             "sucesso": False,
             "status": status_name,
@@ -571,6 +626,15 @@ def extract_solution(
                 "regra": "SOLVER",
                 "mensagem": f"Solver retornou {status_name}: impossivel satisfazer todas as restricoes simultaneamente",
                 "sugestoes": sugestoes,
+            },
+            "diagnostico": {
+                "status_cp_sat": status_name,
+                "solve_time_ms": round(solve_time_ms, 1),
+                "regras_ativas": regras_ativas,
+                "regras_off": regras_off,
+                "motivo_infeasible": f"Solver retornou {status_name}: impossivel satisfazer todas as restricoes simultaneamente",
+                "num_colaboradores": len(colabs),
+                "num_dias": len(days),
             },
         }
 
@@ -731,6 +795,18 @@ def extract_solution(
                 "override": bool(override_by_slot.get((d, s), False)),
             })
 
+    # Diagnostico para o path feliz
+    regras_ativas = [k for k, v in rules.items() if v in ("HARD", "SOFT", "ON")]
+    regras_off = [k for k, v in rules.items() if v == "OFF"]
+    diagnostico = {
+        "status_cp_sat": status_name,
+        "solve_time_ms": round(solve_time_ms, 1),
+        "regras_ativas": regras_ativas,
+        "regras_off": regras_off,
+        "num_colaboradores": len(colabs),
+        "num_dias": len(days),
+    }
+
     return {
         "sucesso": True,
         "status": status_name,
@@ -739,6 +815,7 @@ def extract_solution(
         "indicadores": indicadores,
         "decisoes": decisoes,
         "comparacao_demanda": comparacao_demanda,
+        "diagnostico": diagnostico,
     }
 
 
@@ -828,6 +905,7 @@ def solve(data: dict) -> dict:
         solve_time_ms,
         base_h,
         grid_min,
+        rules=config.get("rules", {}),
     )
 
     log(

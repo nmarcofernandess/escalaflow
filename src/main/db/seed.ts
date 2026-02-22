@@ -73,13 +73,13 @@ export function seedData(): void {
   const setoresExistem = db.prepare('SELECT COUNT(*) as count FROM setores').get() as { count: number }
   if (setoresExistem.count === 0) {
     const insertSetor = db.prepare(`
-      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, piso_operacional, ativo)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, ativo)
+      VALUES (?, ?, ?, ?, ?)
     `)
 
     const setores = [
-      ['Caixa', 'banknote', '08:00', '20:00', 1, 1],
-      ['Acougue', 'beef', '07:00', '19:30', 1, 1],
+      ['Caixa', 'banknote', '08:00', '20:00', 1],
+      ['Acougue', 'beef', '07:00', '19:30', 1],
     ] as const
 
     db.transaction(() => {
@@ -626,8 +626,99 @@ export function seedData(): void {
   // ── 13. Feriados ──────────────────────────────────────────────────────
   seedFeriados()
 
+  // ── 14. Regras do Motor (v6) ──────────────────────────────────────────
+  seedRegrasDefinicao()
+
+  // ── 15. Horários de Funcionamento da Empresa ───────────────────────────
+  const horarioEmpresaExiste = db.prepare('SELECT COUNT(*) as count FROM empresa_horario_semana').get() as { count: number }
+  if (horarioEmpresaExiste.count === 0) {
+    const insertHorario = db.prepare(`
+      INSERT OR IGNORE INTO empresa_horario_semana (dia_semana, ativo, hora_abertura, hora_fechamento)
+      VALUES (?, ?, ?, ?)
+    `)
+    const horariosEmpresa: [string, number, string, string][] = [
+      ['SEG', 1, '08:00', '22:00'],
+      ['TER', 1, '08:00', '22:00'],
+      ['QUA', 1, '08:00', '22:00'],
+      ['QUI', 1, '08:00', '22:00'],
+      ['SEX', 1, '08:00', '22:00'],
+      ['SAB', 1, '08:00', '20:00'],
+      ['DOM', 1, '08:00', '14:00'],
+    ]
+    db.transaction(() => {
+      for (const [dia, ativo, abertura, fechamento] of horariosEmpresa) {
+        insertHorario.run(dia, ativo, abertura, fechamento)
+      }
+    })()
+    console.log('[SEED] 7 horários de empresa criados (SEG-SEX 08-22h, SAB 08-20h, DOM 08-14h)')
+  }
+
   console.log('[SEED] Seed concluido')
   console.log('[SEED] >>> Periodo sugerido para teste: 2026-03-02 a 2026-04-26 (8 semanas) <<<')
+}
+
+// ============================================================================
+// Regras do Motor — Catálogo (v6 SPEC-02B)
+// ============================================================================
+
+function seedRegrasDefinicao(): void {
+  const db = getDb()
+  const count = (db.prepare('SELECT COUNT(*) as count FROM regra_definicao').get() as { count: number }).count
+  if (count > 0) return
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO regra_definicao (codigo, nome, descricao, categoria, status_sistema, editavel, aviso_dependencia, ordem)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  const regras: [string, string, string, string, string, number, string | null, number][] = [
+    // ── CLT ─────────────────────────────────────────────────────────────
+    ['H1', 'Máximo 6 dias consecutivos', 'Nenhum colaborador pode trabalhar mais de 6 dias seguidos sem folga (CLT Art. 67).', 'CLT', 'HARD', 1, 'Desligar pode afetar o controle da meta semanal de horas.', 1],
+    ['H2', 'Descanso mínimo de 11h entre jornadas', 'Intervalo mínimo obrigatório de 11 horas entre o fim de uma jornada e o início da próxima (CLT Art. 66).', 'CLT', 'HARD', 0, null, 2],
+    ['H4', 'Jornada máxima diária de 10h', 'Nenhuma jornada pode ultrapassar 10 horas por dia incluindo hora extra (CLT Art. 59).', 'CLT', 'HARD', 0, null, 3],
+    ['H5', 'Férias, atestados e bloqueios', 'Colaboradores em férias, atestado ou bloqueio cadastrado não recebem alocação de trabalho.', 'CLT', 'HARD', 0, null, 4],
+    ['H6', 'Human blocks — almoço e estrutura de jornada', 'Garante que cada jornada tenha intervalo de almoço e estrutura mínima de blocos (CLT Art. 71).', 'CLT', 'HARD', 1, 'Sem human blocks, o motor pode gerar jornadas sem intervalo de almoço.', 5],
+    ['H10', 'Meta semanal de horas', 'Cada colaborador deve atingir a meta semanal de horas conforme seu contrato (CLT Art. 58).', 'CLT', 'HARD', 1, 'Desligar H10 quebra todo o cálculo de horas semanais.', 6],
+    ['H11', 'Aprendiz — nunca domingo', 'Menor aprendiz não pode trabalhar aos domingos (CLT Art. 405).', 'CLT', 'HARD', 0, null, 7],
+    ['H12', 'Aprendiz — nunca feriado', 'Menor aprendiz não pode trabalhar em feriados (CLT Art. 405).', 'CLT', 'HARD', 0, null, 8],
+    ['H13', 'Aprendiz — nunca noturno (22h–5h)', 'Menor aprendiz não pode trabalhar no período noturno entre 22h e 5h (CLT Art. 404).', 'CLT', 'HARD', 0, null, 9],
+    ['H14', 'Aprendiz — nunca hora extra', 'Menor aprendiz não pode realizar horas extras (CLT Art. 432).', 'CLT', 'HARD', 0, null, 10],
+    ['H15', 'Estagiário — máx 6h/dia e 30h/sem', 'Estagiário tem jornada máxima de 6h/dia e 30h/semana (Lei 11.788/2008 Art. 10).', 'CLT', 'HARD', 0, null, 11],
+    ['H16', 'Estagiário — nunca hora extra', 'Estagiário não pode realizar horas extras.', 'CLT', 'HARD', 0, null, 12],
+    ['H17', 'Feriado proibido — 25/12 (Natal)', 'Trabalho proibido em 25 de dezembro conforme CCT FecomercioSP.', 'CLT', 'HARD', 0, null, 13],
+    ['H18', 'Feriado proibido — 01/01 (Ano Novo)', 'Trabalho proibido em 1º de janeiro conforme CCT FecomercioSP.', 'CLT', 'HARD', 0, null, 14],
+    ['DIAS_TRABALHO', 'Dias de trabalho por semana (5x2 / 6x1)', 'Cada colaborador deve trabalhar o número correto de dias conforme regime do contrato.', 'CLT', 'HARD', 1, 'Desligar pode gerar semanas com número incorreto de dias trabalhados.', 15],
+    ['MIN_DIARIO', 'Jornada mínima diária (4h)', 'Jornadas abaixo de 4h são microturenos sem valor econômico (CLT Art. 58-A §4).', 'CLT', 'HARD', 1, 'Desligar pode gerar microturnos inúteis de poucos minutos.', 16],
+
+    // ── SOFT ────────────────────────────────────────────────────────────
+    ['S_DEFICIT', 'Déficit de cobertura', 'Penaliza slots abaixo da demanda mínima planejada.', 'SOFT', 'ON', 1, null, 101],
+    ['S_SURPLUS', 'Excesso de cobertura', 'Penaliza slots com mais pessoas do que a demanda máxima.', 'SOFT', 'ON', 1, null, 102],
+    ['S_DOMINGO_CICLO', 'Rodízio justo de domingos', 'Distribui domingos de trabalho de forma equitativa entre a equipe.', 'SOFT', 'ON', 1, null, 103],
+    ['S_TURNO_PREF', 'Preferência de turno por colaborador', 'Tenta acomodar a preferência de turno (manhã/tarde) de cada colaborador.', 'SOFT', 'ON', 1, null, 104],
+    ['S_CONSISTENCIA', 'Consistência de horários entre dias', 'Penaliza variações bruscas de horário do mesmo colaborador ao longo da semana.', 'SOFT', 'ON', 1, null, 105],
+    ['S_SPREAD', 'Equilíbrio de carga entre a equipe', 'Distribui horas de trabalho de forma equilibrada entre os colaboradores.', 'SOFT', 'ON', 1, null, 106],
+    ['S_AP1_EXCESS', 'Penalidade por jornada acima de 8h', 'Penaliza jornadas que ultrapassam 8 horas mesmo dentro do limite legal de 10h.', 'SOFT', 'ON', 1, null, 107],
+
+    // ── ANTIPATTERN ─────────────────────────────────────────────────────
+    ['AP1', 'Clopening — fechar e abrir no dia seguinte', 'Colaborador fecha o estabelecimento e abre no dia seguinte (intervalo crítico).', 'ANTIPATTERN', 'ON', 1, null, 201],
+    ['AP2', 'Instabilidade de horários (ioiô)', 'Horários que variam drasticamente de um dia para o outro sem justificativa.', 'ANTIPATTERN', 'ON', 1, null, 202],
+    ['AP3', 'Almoço simultâneo de mais de 50% da equipe', 'Muitos colaboradores em almoço ao mesmo tempo deixa o setor descoberto.', 'ANTIPATTERN', 'ON', 1, null, 203],
+    ['AP4', 'Desequilíbrio de carga entre colaboradores', 'Distribuição injusta de horas — alguns trabalham muito mais do que outros.', 'ANTIPATTERN', 'ON', 1, null, 204],
+    ['AP5', 'Folga isolada — ilhada entre dias de trabalho', 'Folga única no meio de uma sequência longa de trabalho sem descanso real.', 'ANTIPATTERN', 'ON', 1, null, 205],
+    ['AP6', 'Inequidade de turnos (índice abaixo de 40%)', 'Colaboradores sempre escalados no mesmo turno sem rotação justa.', 'ANTIPATTERN', 'ON', 1, null, 206],
+    ['AP7', 'Fome de fim de semana (>5 sem folga sáb/dom)', 'Colaborador fica mais de 5 semanas sem folga em sábado ou domingo.', 'ANTIPATTERN', 'ON', 1, null, 207],
+    ['AP8', 'Almoço fora da janela ideal (11h30–14h30)', 'Almoço programado muito cedo ou muito tarde em relação à janela ideal.', 'ANTIPATTERN', 'ON', 1, null, 208],
+    ['AP9', 'Hora morta — microturno + gap + microturno', 'Jornada fragmentada com dois blocos pequenos e um gap no meio sem sentido operacional.', 'ANTIPATTERN', 'ON', 1, null, 209],
+    ['AP10', 'Overstaffing — 2+ pessoas quando meta é 1', 'Escala com excesso de pessoas em slots de baixa demanda.', 'ANTIPATTERN', 'ON', 1, null, 210],
+    ['AP15', 'Clustering de dias de pico na mesma equipe', 'Os dias de maior demanda concentram sempre os mesmos colaboradores.', 'ANTIPATTERN', 'ON', 1, null, 211],
+    ['AP16', 'Júnior sozinho em slot de alta demanda', 'Colaborador júnior (rank 0) escalonado sem apoio em horário de pico.', 'ANTIPATTERN', 'ON', 1, null, 212],
+  ]
+
+  db.transaction(() => {
+    for (const r of regras) insert.run(...r)
+  })()
+
+  console.log(`[SEED] ${regras.length} regras do motor criadas (16 CLT + 7 SOFT + 12 ANTIPATTERN)`)
 }
 
 // ============================================================================

@@ -5,8 +5,11 @@ export const TOUR_STEP_IDS = {
   NAV_COLABORADORES: 'tour-nav-colaboradores',
   NAV_CONTRATOS: 'tour-nav-contratos',
   NAV_ESCALAS: 'tour-nav-escalas',
+  NAV_FERIADOS: 'tour-nav-feriados',
+  NAV_REGRAS: 'tour-nav-regras',
   CONTENT_AREA: 'tour-content-area',
   FOOTER_MENU: 'tour-footer-menu',
+  IA_TOGGLE: 'tour-ia-toggle',
 } as const
 
 export const TOUR_NAVIGATE_EVENT = 'tour:navigate-page'

@@ -21,6 +21,8 @@ import type {
   SolverInputDemandaExcecaoData,
   PinnedCell,
   DiaSemana,
+  RuleConfig,
+  RuleStatus,
 } from '../../shared'
 
 const require = createRequire(import.meta.url)
@@ -34,6 +36,9 @@ export interface BuildSolverInputOptions {
   hintsEscalaId?: number
   solveMode?: SolveMode
   nivelRigor?: 'ALTO' | 'MEDIO' | 'BAIXO'
+  maxTimeSeconds?: number
+  /** Override in-memory de regras — sobrescreve empresa+sistema apenas para esta geração */
+  rulesOverride?: Record<string, string>
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +189,6 @@ export function buildSolverInput(
     id: number
     hora_abertura: string
     hora_fechamento: string
-    piso_operacional?: number
   } | undefined
   if (!setor) throw new Error(`Setor ${setorId} nao encontrado`)
 
@@ -430,7 +434,6 @@ export function buildSolverInput(
     setor_id: setorId,
     data_inicio: dataInicio,
     data_fim: dataFim,
-    piso_operacional: Math.max(1, Number(setor.piso_operacional ?? 1)),
     empresa: {
       tolerancia_semanal_min: emp?.tolerancia_semanal_min ?? 30,
       hora_abertura: setor.hora_abertura,
@@ -469,10 +472,46 @@ export function buildSolverInput(
       : undefined,
     config: {
       solve_mode: options.solveMode ?? 'rapido',
+      max_time_seconds: options.maxTimeSeconds ?? 30,
       num_workers: 8,
-      nivel_rigor: options.nivelRigor ?? 'ALTO',
+      nivel_rigor: options.nivelRigor ?? 'ALTO',  // backward compat quando rules ausente
+      rules: buildRulesConfig(db, options.rulesOverride),
     },
   }
+}
+
+/**
+ * Lê as regras do banco (empresa merged com sistema) e aplica rulesOverride.
+ * Retorna um Record<codigo, status> com o estado efetivo para esta geração.
+ */
+function buildRulesConfig(
+  db: ReturnType<typeof getDb>,
+  rulesOverride?: Record<string, string>,
+): RuleConfig {
+  // Verifica se a tabela existe (pode não existir em DBs muito antigos)
+  const tableExists = (db.prepare(
+    "SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='regra_definicao'"
+  ).get() as { c: number }).c > 0
+
+  if (!tableExists) return {}
+
+  const rows = db.prepare(`
+    SELECT rd.codigo, COALESCE(re.status, rd.status_sistema) AS status_efetivo
+    FROM regra_definicao rd
+    LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
+  `).all() as Array<{ codigo: string; status_efetivo: RuleStatus }>
+
+  if (rows.length === 0) return {}
+
+  const base: RuleConfig = Object.fromEntries(
+    rows.map((r) => [r.codigo, r.status_efetivo]),
+  )
+
+  // Merge: rulesOverride tem prioridade sobre empresa+sistema
+  const overrideCast = Object.fromEntries(
+    Object.entries(rulesOverride ?? {}).map(([k, v]) => [k, v as RuleStatus]),
+  )
+  return { ...base, ...overrideCast }
 }
 
 export function computeSolverScenarioHash(input: SolverInput): string {
@@ -480,7 +519,6 @@ export function computeSolverScenarioHash(input: SolverInput): string {
     setor_id: input.setor_id,
     data_inicio: input.data_inicio,
     data_fim: input.data_fim,
-    piso_operacional: input.piso_operacional ?? 1,
     empresa: {
       tolerancia_semanal_min: input.empresa.tolerancia_semanal_min,
       hora_abertura: input.empresa.hora_abertura,
@@ -536,6 +574,11 @@ export function computeSolverScenarioHash(input: SolverInput): string {
       .sort((a, b) => `${a.colaborador_id}|${a.data}`.localeCompare(`${b.colaborador_id}|${b.data}`)),
     demanda_excecao_data: [...(input.demanda_excecao_data ?? [])]
       .sort((a, b) => `${a.data}|${a.hora_inicio}`.localeCompare(`${b.data}|${b.hora_inicio}`)),
+    rules: input.config.rules
+      ? Object.fromEntries(
+          Object.entries(input.config.rules).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : {},
   }
 
   return createHash('sha256').update(JSON.stringify(norm)).digest('hex')
@@ -670,4 +713,88 @@ export function runSolver(
     child.stdin.write(inputJson)
     child.stdin.end()
   })
+}
+
+// ---------------------------------------------------------------------------
+// Persistência de resultado do solver no banco
+// Extrai a lógica inline do tipc.ts escalasGerar para reuso pelas tools da IA
+// ---------------------------------------------------------------------------
+
+/**
+ * Persiste o resultado de uma execução bem-sucedida do solver no banco de dados.
+ * Cria os registros em: escalas, alocacoes, escala_decisoes, escala_comparacao_demanda
+ * Retorna o id da escala criada.
+ */
+export function persistirSolverResult(
+  setorId: number,
+  dataInicio: string,
+  dataFim: string,
+  solverResult: SolverOutput,
+  inputHash?: string,
+  regimesOverride?: Array<{ colaborador_id: number; regime_escala: string }>,
+): number {
+  const db = getDb()
+  const ind = solverResult.indicadores!
+  const decisoes = solverResult.decisoes ?? []
+  const comparacao = solverResult.comparacao_demanda ?? []
+
+  const persist = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO escalas
+        (setor_id, data_inicio, data_fim, status, pontuacao,
+         cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json)
+      VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      setorId, dataInicio, dataFim,
+      ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
+      inputHash ?? null,
+      JSON.stringify({ regimes_override: regimesOverride ?? [] }),
+    )
+
+    const escalaId = result.lastInsertRowid
+
+    const insertAloc = db.prepare(`
+      INSERT INTO alocacoes
+        (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
+         minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
+         minutos_almoco, intervalo_15min, funcao_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const a of solverResult.alocacoes!) {
+      insertAloc.run(
+        escalaId, a.colaborador_id, a.data, a.status,
+        a.hora_inicio ?? null, a.hora_fim ?? null,
+        a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
+        a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
+        a.minutos_almoco ?? null,
+        a.intervalo_15min ? 1 : 0,
+        a.funcao_id ?? null,
+      )
+    }
+
+    const insertDecisao = db.prepare(`
+      INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    for (const d of decisoes) {
+      insertDecisao.run(escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
+    }
+
+    const insertComp = db.prepare(`
+      INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const c of comparacao) {
+      insertComp.run(
+        escalaId, c.data, c.hora_inicio, c.hora_fim,
+        c.planejado, c.executado, c.delta,
+        c.override ? 1 : 0,
+        c.justificativa ?? null,
+      )
+    }
+
+    return escalaId as number
+  })
+
+  return persist()
 }

@@ -17,6 +17,9 @@ import { ColaboradorDetalhe } from './paginas/ColaboradorDetalhe'
 import { ContratoLista } from './paginas/ContratoLista'
 import { EscalasHub } from './paginas/EscalasHub'
 import { EmpresaConfig } from './paginas/EmpresaConfig'
+import { FeriadosPagina } from './paginas/FeriadosPagina'
+import { ConfiguracoesPagina } from './paginas/ConfiguracoesPagina'
+import { RegrasPagina } from './paginas/RegrasPagina'
 import { NaoEncontrado } from './paginas/NaoEncontrado'
 
 export function App() {
@@ -72,6 +75,9 @@ export function App() {
                     <Route path="/colaboradores/:id" element={<ColaboradorDetalhe />} />
                     <Route path="/tipos-contrato" element={<ContratoLista />} />
                     <Route path="/empresa" element={<EmpresaConfig />} />
+                    <Route path="/feriados" element={<FeriadosPagina />} />
+                    <Route path="/configuracoes" element={<ConfiguracoesPagina />} />
+                    <Route path="/regras" element={<RegrasPagina />} />
                     <Route path="*" element={<NaoEncontrado />} />
                   </Routes>
                 </ErrorBoundary>

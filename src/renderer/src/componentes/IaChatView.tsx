@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot } from 'lucide-react'
+import { Bot, Settings } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
 import { useIaStore } from '@/store/iaStore'
 import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
@@ -11,7 +13,15 @@ export function IaChatView() {
   const { mensagens, carregando, setCarregando, conversa_ativa_id, adicionarMensagem } =
     useIaStore()
   const [texto, setTexto] = useState('')
+  const [configurado, setConfigurado] = useState<boolean | null>(null)
   const msgEndRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    window.electron.ipcRenderer.invoke('ia.configuracao.obter').then((config: any) => {
+      setConfigurado(!!(config?.ativo && config?.api_key))
+    })
+  }, [])
 
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -75,6 +85,24 @@ export function IaChatView() {
     } finally {
       setCarregando(false)
     }
+  }
+
+  if (configurado === false) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-6">
+        <Bot className="size-12 opacity-20 text-muted-foreground" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Assistente não configurado</p>
+          <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
+            Configure sua API Key do Google Gemini para usar o chat inteligente.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => navigate('/configuracoes')}>
+          <Settings className="mr-1.5 size-3.5" />
+          Abrir configurações
+        </Button>
+      </div>
+    )
   }
 
   return (

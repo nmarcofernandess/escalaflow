@@ -49,6 +49,33 @@ Pronto. O banco SQLite e criado automaticamente no primeiro `npm run dev` com se
 
 ---
 
+## 3.1) Configurar o Assistente IA (Gemini)
+
+O assistente usa a API do Google Gemini. Para ativar:
+
+### Passo a passo para obter a API Key
+
+1. Acesse [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Faca login com sua conta Google
+3. Clique em **"Create API Key"**
+4. Selecione um projeto Google Cloud (ou crie um novo)
+5. Copie a chave gerada (formato: `AIza...`)
+
+### Configurar no app
+
+1. Abra o EscalaFlow
+2. Va em **Configuracoes** (menu lateral inferior)
+3. Na secao **Assistente IA**:
+   - Ative o toggle **"Ativar Assistente"**
+   - Selecione o modelo (`Gemini 2.5 Flash` e o recomendado — rapido e eficiente)
+   - Cole a API Key no campo correspondente
+4. Clique em **"Salvar IA"**
+5. Clique em **"Testar"** para confirmar que esta funcionando
+
+> **Custo:** A API do Gemini tem um tier gratuito generoso (suficiente para uso interno do RH). Verifique limites em [aistudio.google.com](https://aistudio.google.com).
+
+---
+
 ## 4) Executar o sistema
 
 ```bash

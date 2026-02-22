@@ -1,7 +1,7 @@
 # PRD — EscalaFlow: IA, Configurações e Capacidades
-**Versão:** 3.1
+**Versão:** 3.2
 **Data:** 2026-02-21
-**Status:** APROVADO — Todas as decisões resolvidas. SPEC-01, SPEC-03 e SPEC-04 implementadas.
+**Status:** APROVADO — Todas as decisões resolvidas. SPEC-01, SPEC-02B, SPEC-03, SPEC-04 e SPEC-07 implementadas.
 
 ---
 
@@ -15,12 +15,12 @@ O EscalaFlow é um app Electron de gestão de escalas com sidebar shadcn, motor 
 
 1. [SPEC-01: Chat IA — Posicionamento Correto](#spec-01) — IMPLEMENTADO
 2. [SPEC-02A: Reorganização da Navegação](#spec-02a)
-3. [SPEC-02B: Sistema de Regras Configuráveis (Engine)](#spec-02b)
+3. [SPEC-02B: Sistema de Regras Configuráveis (Engine)](#spec-02b) — IMPLEMENTADO
 4. [SPEC-03: Remoção do Ícone IA da Sidebar](#spec-03) — IMPLEMENTADO
 5. [SPEC-04: Sistema de Histórico de Chats da IA](#spec-04) — IMPLEMENTADO
 6. [SPEC-05: Mapa de Capacidades da IA para RH](#spec-05)
 7. [SPEC-06: Atualização do Tour "Como Funciona"](#spec-06)
-8. [SPEC-07: Drawer de Configuração do Motor](#spec-07)
+8. [SPEC-07: Drawer de Configuração do Motor](#spec-07) — IMPLEMENTADO
 
 ---
 
@@ -104,9 +104,43 @@ A página de Empresa/Configurações (`/empresa`) está poluída com muitas seç
 ---
 
 <a id="spec-02b"></a>
-## SPEC-02B: Sistema de Regras Configuráveis (Engine)
+## SPEC-02B: Sistema de Regras Configuráveis (Engine) — IMPLEMENTADO ✅
 
-### Problema Atual
+### Implementação Concluída
+
+**Implementado em:** 2026-02-21
+
+| Entregável | Status | Notas |
+|-----------|--------|-------|
+| Tabelas `regra_definicao` + `regra_empresa` no schema | ✅ | `DDL_V6_REGRAS` em `schema.ts` |
+| Seed de 35 regras (CLT, SOFT, ANTIPATTERN) | ✅ | `seedRegrasDefinicao()` em `seed.ts` |
+| Types `RuleStatus`, `RuleDefinition`, `RuleConfig` | ✅ | `src/shared/types.ts` |
+| IPC handlers: `regras.listar`, `regras.atualizar`, `regras.resetarEmpresa` | ✅ | `tipc.ts` (77 → 80 handlers) |
+| Service `regras.ts` (renderer) | ✅ | `src/renderer/src/servicos/regras.ts` |
+| Bridge: `buildRulesConfig()` — merge DB + rulesOverride | ✅ | `solver-bridge.ts` |
+| Python: `rule_is()` helper + wrappers condicionais | ✅ | `solver/solver_ortools.py` |
+| Python: 4 funções SOFT penalty | ✅ | `solver/constraints.py` — h1_soft, human_blocks_soft, dias_trabalho_soft, min_diario_soft |
+| Validador TS: lê regras do DB, AP checkers condicionais | ✅ | `validador.ts` — try/catch defensivo |
+| `RegrasPagina.tsx`: 3 cards (CLT, Preferências, Antipadrões) | ✅ | Bulk action, lock icon, aviso_dependencia, auto-save |
+| Botão "Restaurar Padrões do Sistema" | ✅ | Chama `regrasService.resetarEmpresa()` |
+
+**Não implementado (fora de escopo desta sprint):**
+- Mover `corte_semanal` / `tolerancia_semanal_min` de `constants.ts` para contexto `/regras` — continua em `constants.ts` como constante de sistema.
+
+### Decisões Aplicadas
+
+| # | Decisão | Resolução |
+|---|---------|-----------|
+| 2B.1 | Regras SOFT — escopo | **POR EMPRESA (global)** — implementado. |
+| 2B.2 | Regras travadas | **H2, H4, H5, H11-H18** — lock icon + dropdown disabled. |
+| 2B.3 | Dois níveis de reset | **SIM** — "Restaurar Sistema" no `/regras`, "Restaurar Empresa" e "Restaurar Sistema" no Drawer. |
+| 2B.4 | Status por regra | **HARD / SOFT / OFF** para CLT. **ON / OFF** para AP/SOFT. |
+| 2B.5 | Cross-rule warnings | **SIM** — `aviso_dependencia` no seed, exibido na UI ao mudar status. |
+| 2B.6 | Versão SOFT de regras HARD | **Implementado:** H1, H6 (human_blocks), DIAS_TRABALHO, MIN_DIARIO. |
+
+---
+
+### Problema Original (Histórico)
 Todas as regras do motor estão hardcoded — no Python (solver/constraints.py), no TypeScript (validador.ts), e nas constantes (constants.ts). O único controle é o `nivel_rigor` (ALTO/MEDIO/BAIXO), que liga/desliga GRUPOS de regras de forma grosseira. O gestor de RH não tem visibilidade nem controle sobre regras individuais.
 
 ### Pesquisa: Estado Atual das Regras no Motor
@@ -548,9 +582,43 @@ O motor **NÃO deve sugerir fixes**. A IA também não. Motivos:
 ---
 
 <a id="spec-07"></a>
-## SPEC-07: Drawer de Configuração do Motor
+## SPEC-07: Drawer de Configuração do Motor — IMPLEMENTADO ✅
 
-### Problema Atual
+### Implementação Concluída
+
+**Implementado em:** 2026-02-21
+
+| Entregável | Status | Notas |
+|-----------|--------|-------|
+| Remover dropdowns "Rápido/Otimizado" e "Nível de Rigor" de `EscalaPagina` | ✅ | Estados `solveMode` e `nivelRigor` removidos |
+| Botão `Settings2` ao lado de "Gerar Escala" | ✅ | Abre Sheet à direita |
+| `SolverConfigDrawer.tsx` (NOVO) | ✅ | Sheet 420px — strategy, CLT, Preferências, Antipadrões |
+| RadioGroup strategy: Rápido / Tempo N segundos | ✅ | Default: Rápido |
+| Toggles de regras in-memory (rulesOverride) | ✅ | Começa vazio → bridge usa empresa+sistema |
+| Bulk actions por seção | ✅ | Dropdown "Aplicar todos" por categoria |
+| "Restaurar Padrões da Empresa" | ✅ | Preenche rulesOverride com estado empresa atual |
+| "Restaurar Padrões do Sistema" | ✅ | Preenche rulesOverride com `status_sistema` |
+| Bridge passa `rulesOverride` + `solveMode` + `maxTimeSeconds` | ✅ | `escalasService.gerar()` atualizado |
+| System prompt: instrução sobre `rules_override` | ✅ | `system-prompt.ts` seção 6 |
+| `SolverSessionConfig` interface exportada | ✅ | `solveMode`, `maxTimeSeconds`, `rulesOverride` |
+
+**Não implementado (decisão 7.5 — backlog):**
+- **Feedback Pós-Geração**: Métricas de aderência `[ 100% HARD | 80% SOFT ]` após geração. O backend retorna `violacoes[]`, mas não calcula nem exibe porcentagens de aderência. Requer: (1) validador computar `hard_count` / `hard_total` e `soft_count` / `soft_total`; (2) UI exibir badge de aderência no resultado. Adicionado ao backlog como **SPEC-07b**.
+
+### Decisões Aplicadas
+
+| # | Decisão | Resolução |
+|---|---------|-----------|
+| 7.1 | Modos de geração | **2 MODOS: Rápido + Tempo** (default 30s) — implementado. |
+| 7.2 | Persistência | **POR GERAÇÃO** — in-memory, não persiste entre gerações. |
+| 7.3 | Regras toggleáveis | **TODAS** — editáveis no drawer, travadas com lock icon. |
+| 7.4 | Config para Python | **Dict granular** — `{ solve_mode, max_time_seconds, rules: {...} }`. |
+| 7.5 | Feedback aderência | **NÃO IMPLEMENTADO** — backlog SPEC-07b. |
+| 7.6 | Dois resets | **SIM** — "Empresa" e "Sistema" funcionando. |
+
+---
+
+### Problema Original (Histórico)
 A Action Bar tem dropdowns hardcoded de speed/rigor que abstraem demais. RH não tem controle granular quando o motor falha.
 
 ### Ação Necessária
@@ -630,11 +698,11 @@ Com as mudanças de SPEC-01 a SPEC-07, os steps do tour ficarão desatualizados.
 
 | Sprint | Spec | Prioridade | Peso | Status |
 |--------|------|-----------|------|--------|
-| **S1** | SPEC-01 + SPEC-03 | P0 | Leve | CONCLUIDO |
-| **S2** | SPEC-02A | P1 | Leve — reorganizar sidebar/routing/cleanup | Pendente |
+| **S1** | SPEC-01 + SPEC-03 | P0 | Leve | **CONCLUIDO** |
+| **S2** | SPEC-02A | P1 | Leve — reorganizar sidebar/routing/cleanup | **CONCLUIDO** |
 | **S3** | SPEC-04 | P1 | Média — schema + IPC + Zustand + UI interna | **CONCLUIDO** |
-| **S4** | SPEC-02B | P1 | **PESADA** — engine de regras, schema, seed, IPC, UI /regras | Pendente |
-| **S5** | SPEC-07 | P2 | **PESADA** — Drawer + bridge refactor + Python refactor | Pendente |
+| **S4** | SPEC-02B | P1 | **PESADA** — engine de regras, schema, seed, IPC, UI /regras | **CONCLUIDO** |
+| **S5** | SPEC-07 | P2 | **PESADA** — Drawer + bridge refactor + Python refactor | **CONCLUIDO** (7.5 → backlog) |
 | **S6** | SPEC-05 | P2 | Média — tools, system prompt, validações IA | Pendente |
 | **S7** | SPEC-06 | P3 | Leve — tour update (ÚLTIMA) | Pendente |
 

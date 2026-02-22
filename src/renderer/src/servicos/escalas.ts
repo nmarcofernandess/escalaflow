@@ -7,6 +7,7 @@ import type {
   StatusEscala,
   RegimeEscala,
   ModeloCicloEscala,
+  RuleConfig,
 } from '@shared/index'
 
 export const escalasService = {
@@ -17,10 +18,19 @@ export const escalasService = {
       data_fim: string
       regimes_override?: Array<{ colaborador_id: number; regime_escala: RegimeEscala }>
       solveMode?: 'rapido' | 'otimizado'
-      nivelRigor?: 'ALTO' | 'MEDIO' | 'BAIXO'
+      maxTimeSeconds?: number
+      rulesOverride?: RuleConfig
     },
   ) =>
-    client['escalas.gerar']({ setor_id: setorId, ...data }) as Promise<EscalaCompletaV3>,
+    client['escalas.gerar']({
+      setor_id: setorId,
+      data_inicio: data.data_inicio,
+      data_fim: data.data_fim,
+      regimes_override: data.regimes_override,
+      solve_mode: data.solveMode,
+      max_time_seconds: data.maxTimeSeconds,
+      rules_override: data.rulesOverride,
+    }) as Promise<EscalaCompletaV3>,
 
   preflight: (
     setorId: number,

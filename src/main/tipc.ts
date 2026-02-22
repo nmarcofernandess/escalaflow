@@ -90,7 +90,6 @@ function enrichPreflightWithCapacityChecks(
   warnings: EscalaPreflightResult['warnings'],
 ): void {
   const days = listDays(input.data_inicio, input.data_fim)
-  const piso = Math.max(1, Number(input.piso_operacional ?? 1))
   const holidayForbidden = new Set(
     input.feriados.filter((f) => f.proibido_trabalhar).map((f) => f.data),
   )
@@ -131,7 +130,7 @@ function enrichPreflightWithCapacityChecks(
     }
 
     const peakDemand = dayDemand.reduce((acc, d) => Math.max(acc, d.min_pessoas), 0)
-    const requiredMin = Math.max(piso, peakDemand)
+    const requiredMin = peakDemand
     const availableCount = input.colaboradores.filter((c) => {
       if (label === 'DOM' && !c.trabalha_domingo) return false
       if (holidayForbidden.has(day)) return false
@@ -524,22 +523,19 @@ const setoresBuscar = t.procedure
   })
 
 const setoresCriar = t.procedure
-  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null; piso_operacional?: number }>()
+  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null }>()
   .action(async ({ input }) => {
     const db = getDb()
-    if (input.piso_operacional !== undefined && (!Number.isInteger(input.piso_operacional) || input.piso_operacional < 1)) {
-      throw new Error('piso_operacional deve ser inteiro >= 1')
-    }
     const result = db.prepare(`
-      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, piso_operacional)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento, input.piso_operacional ?? 1)
+      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento)
+      VALUES (?, ?, ?, ?)
+    `).run(input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento)
 
     return db.prepare('SELECT * FROM setores WHERE id = ?').get(result.lastInsertRowid)
   })
 
 const setoresAtualizar = t.procedure
-  .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; ativo?: boolean; piso_operacional?: number }>()
+  .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; ativo?: boolean }>()
   .action(async ({ input }) => {
     const db = getDb()
     const fields: string[] = []
@@ -550,13 +546,6 @@ const setoresAtualizar = t.procedure
     if (input.hora_abertura !== undefined) { fields.push('hora_abertura = ?'); values.push(input.hora_abertura) }
     if (input.hora_fechamento !== undefined) { fields.push('hora_fechamento = ?'); values.push(input.hora_fechamento) }
     if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo ? 1 : 0) }
-    if (input.piso_operacional !== undefined) {
-      if (!Number.isInteger(input.piso_operacional) || input.piso_operacional < 1) {
-        throw new Error('piso_operacional deve ser inteiro >= 1')
-      }
-      fields.push('piso_operacional = ?')
-      values.push(input.piso_operacional)
-    }
 
     if (fields.length > 0) {
       values.push(input.id)
@@ -1209,6 +1198,9 @@ const escalasGerar = t.procedure
     data_inicio: string
     data_fim: string
     regimes_override?: SimulacaoRegimeOverride[]
+    solve_mode?: 'rapido' | 'otimizado'
+    max_time_seconds?: number
+    rules_override?: Record<string, string>
   }>()
   .action(async ({ input }): Promise<EscalaCompletaV3> => {
     const db = getDb()
@@ -1231,9 +1223,12 @@ const escalasGerar = t.procedure
 
     sendLog('Montando modelo...')
 
-    // Build input e chamar solver Python
+    // Build input e chamar solver Python (agora com solveMode + rulesOverride)
     const solverInput = buildSolverInput(setorId, input.data_inicio, input.data_fim, undefined, {
       regimesOverride,
+      solveMode: input.solve_mode,
+      maxTimeSeconds: input.max_time_seconds,
+      rulesOverride: input.rules_override as Record<string, string> | undefined,
     })
     const inputHash = computeSolverScenarioHash(solverInput)
     const solverResult = await runSolver(solverInput, undefined, sendLog)
@@ -2279,6 +2274,80 @@ const iaConversasDeletarArquivadas = t.procedure.action(async () => {
 })
 
 // =============================================================================
+// EMPRESA HORÁRIO SEMANA (2 handlers) — v5
+// =============================================================================
+
+const empresaHorariosListar = t.procedure
+  .action(async () => {
+    const db = getDb()
+    return db.prepare(`
+      SELECT * FROM empresa_horario_semana
+      ORDER BY CASE dia_semana
+        WHEN 'SEG' THEN 1
+        WHEN 'TER' THEN 2
+        WHEN 'QUA' THEN 3
+        WHEN 'QUI' THEN 4
+        WHEN 'SEX' THEN 5
+        WHEN 'SAB' THEN 6
+        WHEN 'DOM' THEN 7
+      END
+    `).all()
+  })
+
+const empresaHorariosAtualizar = t.procedure
+  .input<{ dia_semana: string; ativo: boolean; hora_abertura: string; hora_fechamento: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare(`
+      UPDATE empresa_horario_semana
+      SET ativo = ?, hora_abertura = ?, hora_fechamento = ?
+      WHERE dia_semana = ?
+    `).run(input.ativo ? 1 : 0, input.hora_abertura, input.hora_fechamento, input.dia_semana)
+    return db.prepare('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?').get(input.dia_semana)
+  })
+
+// =============================================================================
+// REGRAS DO MOTOR — v6 SPEC-02B
+// =============================================================================
+
+const regrasListar = t.procedure.action(async () => {
+  const db = getDb()
+  return db.prepare(`
+    SELECT rd.codigo, rd.nome, rd.descricao, rd.categoria,
+           rd.status_sistema, rd.editavel, rd.aviso_dependencia, rd.ordem,
+           COALESCE(re.status, rd.status_sistema) as status_efetivo
+    FROM regra_definicao rd
+    LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
+    ORDER BY rd.ordem
+  `).all()
+})
+
+const regrasAtualizar = t.procedure
+  .input<{ codigo: string; status: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare(`
+      INSERT INTO regra_empresa (codigo, status, atualizado_em)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(codigo) DO UPDATE SET
+        status = excluded.status,
+        atualizado_em = excluded.atualizado_em
+    `).run(input.codigo, input.status)
+  })
+
+const regrasResetarEmpresa = t.procedure.action(async () => {
+  const db = getDb()
+  db.prepare('DELETE FROM regra_empresa').run()
+})
+
+const regrasResetarRegra = t.procedure
+  .input<{ codigo: string }>()
+  .action(async ({ input }) => {
+    const db = getDb()
+    db.prepare('DELETE FROM regra_empresa WHERE codigo = ?').run(input.codigo)
+  })
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -2286,6 +2355,8 @@ export const router = {
   // Empresa
   'empresa.buscar': empresaBuscar,
   'empresa.atualizar': empresaAtualizar,
+  'empresa.horarios.listar': empresaHorariosListar,
+  'empresa.horarios.atualizar': empresaHorariosAtualizar,
   // Tipos Contrato
   'tiposContrato.listar': tiposContratoListar,
   'tiposContrato.buscar': tiposContratoBuscar,
@@ -2360,6 +2431,11 @@ export const router = {
   'export.imprimirPDF': exportImprimirPDF,
   'export.salvarCSV': exportSalvarCSV,
   'export.batchHTML': exportBatchHTML,
+  // Regras do Motor
+  'regras.listar': regrasListar,
+  'regras.atualizar': regrasAtualizar,
+  'regras.resetarEmpresa': regrasResetarEmpresa,
+  'regras.resetarRegra': regrasResetarRegra,
   // IA
   'ia.configuracao.obter': iaConfiguracaoObter,
   'ia.configuracao.salvar': iaConfiguracaoSalvar,

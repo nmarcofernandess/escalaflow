@@ -370,29 +370,6 @@ def add_min_diario(
             model.add(day_total >= min_slots).only_enforce_if(works_day[c, d])
 
 
-def add_piso_operacional(
-    model: cp_model.CpModel,
-    work: SlotGrid,
-    demand_by_slot: DaySlotDemand,
-    C: int,
-    D: int,
-    S: int,
-    piso_operacional: int,
-) -> None:
-    """Hard floor per active slot.
-
-    Applies floor on slots that have planned demand in the period.
-    """
-    if piso_operacional <= 0:
-        return
-
-    for d in range(D):
-        for s in range(S):
-            if demand_by_slot.get((d, s), 0) <= 0:
-                continue
-            model.add(sum(work[c, d, s] for c in range(C)) >= piso_operacional)
-
-
 # ===================================================================
 # CAMADA 2 — SOFT: DEMAND DEFICIT (peso 10000)
 # ===================================================================
@@ -933,3 +910,100 @@ def add_surplus_soft(
             model.add(sv >= cov - target)
             surplus[d, s] = sv
     return surplus
+
+
+# ===================================================================
+# CAMADA 4 — SOFT PENALTY WRAPPERS (for configurable rules engine)
+# ===================================================================
+
+def add_h1_soft_penalty(
+    model: cp_model.CpModel,
+    obj_terms: list,
+    works_day: WorksDay,
+    C: int,
+    D: int,
+    weight: int = 5000,
+) -> None:
+    """H1 SOFT: penaliza cada dia alem do 6o consecutivo."""
+    for c in range(C):
+        for d in range(D - 6):
+            seq = [works_day[c, d + i] for i in range(7)]
+            excess = model.new_int_var(0, 1, f"h1_soft_{c}_{d}")
+            model.add(excess >= sum(seq) - 6)
+            model.add(excess <= 1)
+            obj_terms.append(weight * excess)
+
+
+def add_human_blocks_soft_penalty(
+    model: cp_model.CpModel,
+    obj_terms: list,
+    work: SlotGrid,
+    block_starts: BlockStarts,
+    C: int,
+    D: int,
+    S: int,
+    base_h: int = 8,
+    grid_min: int = 15,
+    min_gap_slots: int = 2,
+    max_gap_slots: int = 8,
+    threshold_slots: int = 24,
+    min_work_slots: int = 8,
+    max_work_slots: int = 24,
+    weight: int = 3000,
+) -> None:
+    """H6 SOFT: penaliza jornadas que ultrapassam threshold sem almoco."""
+    for c in range(C):
+        for d in range(D):
+            total_slots = model.new_int_var(0, S, f"h6soft_total_{c}_{d}")
+            model.add(total_slots == sum(work[c, d, s] for s in range(S)))
+            excess_work = model.new_int_var(0, S, f"h6soft_excess_{c}_{d}")
+            model.add(excess_work >= total_slots - threshold_slots)
+            model.add(excess_work >= 0)
+            obj_terms.append(weight * excess_work)
+
+
+def add_dias_trabalho_soft_penalty(
+    model: cp_model.CpModel,
+    obj_terms: list,
+    works_day: WorksDay,
+    colabs: list,
+    C: int,
+    D: int,
+    week_chunks: list,
+    blocked_days: dict,
+    weight: int = 4000,
+) -> None:
+    """DIAS_TRABALHO SOFT: penaliza desvio do numero esperado de dias/semana."""
+    for c in range(C):
+        dias_esperados = int(colabs[c].get("dias_trabalho", 5))
+        for chunk in week_chunks:
+            available = [d for d in chunk if d not in blocked_days.get(c, set())]
+            if not available:
+                continue
+            work_sum = sum(works_day[c, d] for d in available)
+            deviation = model.new_int_var(0, len(available), f"dt_soft_{c}_{chunk[0]}")
+            model.add(deviation >= work_sum - dias_esperados)
+            model.add(deviation >= dias_esperados - work_sum)
+            obj_terms.append(weight * deviation)
+
+
+def add_min_diario_soft_penalty(
+    model: cp_model.CpModel,
+    obj_terms: list,
+    work: SlotGrid,
+    works_day: WorksDay,
+    C: int,
+    D: int,
+    S: int,
+    min_slots: int = 16,
+    weight: int = 2000,
+) -> None:
+    """MIN_DIARIO SOFT: penaliza turnos abaixo do minimo diario."""
+    for c in range(C):
+        for d in range(D):
+            day_slots = model.new_int_var(0, S, f"md_soft_slots_{c}_{d}")
+            model.add(day_slots == sum(work[c, d, s] for s in range(S)))
+            deficit = model.new_int_var(0, min_slots, f"md_soft_def_{c}_{d}")
+            model.add(deficit >= min_slots * works_day[c, d] - day_slots)
+            model.add(deficit >= 0)
+            obj_terms.append(weight * deficit)

@@ -18,12 +18,13 @@ mac:
   category: public.app-category.business
   target:
     - dmg
-    - zip
   artifactName: '${productName}-${version}-${arch}.${ext}'
 win:
   icon: icon.ico
   target:
-    - nsis
+    - target: nsis
+      arch:
+        - x64
   artifactName: '${productName}-Setup-${version}.${ext}'
 linux:
   icon: icon.png

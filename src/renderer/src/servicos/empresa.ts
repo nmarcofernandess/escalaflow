@@ -1,5 +1,5 @@
 import { client } from './client'
-import type { Empresa } from '@shared/index'
+import type { Empresa, EmpresaHorarioSemana } from '@shared/index'
 
 type AtualizarEmpresaInput = Pick<
   Empresa,
@@ -15,4 +15,10 @@ export const empresaService = {
 
   atualizar: (data: AtualizarEmpresaInput) =>
     client['empresa.atualizar'](data) as Promise<Empresa>,
+
+  listarHorarios: () =>
+    client['empresa.horarios.listar']() as Promise<EmpresaHorarioSemana[]>,
+
+  atualizarHorario: (data: { dia_semana: string; ativo: boolean; hora_abertura: string; hora_fechamento: string }) =>
+    client['empresa.horarios.atualizar'](data) as Promise<EmpresaHorarioSemana>,
 }

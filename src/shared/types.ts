@@ -45,8 +45,15 @@ export interface Setor {
   icone: string | null
   hora_abertura: string
   hora_fechamento: string
-  piso_operacional: number
   ativo: boolean
+}
+
+export interface EmpresaHorarioSemana {
+  id: number
+  dia_semana: DiaSemana
+  ativo: boolean
+  hora_abertura: string
+  hora_fechamento: string
 }
 
 export interface Demanda {
@@ -544,11 +551,32 @@ export interface SolverInputDemandaExcecaoData {
   override: boolean
 }
 
+// ============================================================================
+// ENGINE DE REGRAS — v6
+// ============================================================================
+
+export type RuleStatus = 'HARD' | 'SOFT' | 'OFF' | 'ON'
+
+export interface RuleDefinition {
+  codigo: string
+  nome: string
+  descricao: string
+  categoria: 'CLT' | 'SOFT' | 'ANTIPATTERN'
+  status_sistema: RuleStatus
+  editavel: boolean
+  aviso_dependencia: string | null
+  ordem: number
+  /** Computed: regra_empresa.status ?? status_sistema */
+  status_efetivo: RuleStatus
+}
+
+/** Map de código → status aplicado para uma geração */
+export type RuleConfig = Record<string, RuleStatus>
+
 export interface SolverInput {
   setor_id: number
   data_inicio: string
   data_fim: string
-  piso_operacional?: number
   empresa: {
     tolerancia_semanal_min: number
     hora_abertura: string
@@ -571,7 +599,8 @@ export interface SolverInput {
     max_time_seconds?: number
     num_workers: number
     solve_mode?: 'rapido' | 'otimizado'
-    nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'
+    nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'  // backward compat
+    rules?: RuleConfig                           // v6: granular, substitui nivel_rigor quando presente
   }
 }
 
@@ -589,10 +618,21 @@ export interface SolverOutputAlocacao {
   funcao_id: number | null
 }
 
+export interface DiagnosticoSolver {
+  status_cp_sat: 'OPTIMAL' | 'FEASIBLE' | 'INFEASIBLE' | 'UNKNOWN'
+  solve_time_ms: number
+  regras_ativas: string[]
+  regras_off: string[]
+  motivo_infeasible?: string
+  num_colaboradores: number
+  num_dias: number
+}
+
 export interface SolverOutput {
   sucesso: boolean
   status: string
   solve_time_ms: number
+  diagnostico?: DiagnosticoSolver
   alocacoes?: SolverOutputAlocacao[]
   indicadores?: Indicadores
   decisoes?: DecisaoMotor[]

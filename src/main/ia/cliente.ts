@@ -34,13 +34,12 @@ async function _callGemini(
     currentMsg: string,
     historico: IaMensagem[]
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const modelo = config.modelo || 'gemini-2.5-flash'
+    const modelo = config.modelo || 'gemini-3-flash-preview'
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${config.api_key}`
 
     // Monta o histórico de conversa no formato Gemini
     // IMPORTANTE: Gemini aceita apenas roles "user" e "model"
-    // tool_result NÃO deve ser enviado como role separado aqui — filtramos
-    const contents = historico
+    const contents: Array<{ role: string; parts: any[] }> = historico
         .filter(h => h.papel === 'usuario' || h.papel === 'assistente')
         .map(h => ({
             role: h.papel === 'usuario' ? 'user' : 'model',
@@ -59,39 +58,55 @@ async function _callGemini(
         })),
     }]
 
-    // Chamada à API
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents,
-            tools,
-        }),
-    })
-
-    if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`Gemini ${modelo} retornou erro ${res.status}: ${text}`)
-    }
-
-    const data = await res.json()
-    const candidate = data.candidates?.[0]
-
-    if (!candidate?.content?.parts?.length) {
-        return { resposta: '(O modelo não retornou conteúdo)', acoes: [] }
-    }
-
-    // Processa a resposta — pode ter text e/ou functionCall
     const acoes: ToolCall[] = []
-    let textoResposta = ''
+    const MAX_TURNS = 10
 
-    for (const part of candidate.content.parts) {
-        if (part.text) {
-            textoResposta += part.text
+    // Loop multi-turn: Gemini pode chamar tools múltiplas vezes antes de responder em texto
+    for (let turn = 0; turn < MAX_TURNS; turn++) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+                contents,
+                tools,
+            }),
+        })
+
+        if (!res.ok) {
+            const text = await res.text()
+            throw new Error(`Gemini ${modelo} retornou erro ${res.status}: ${text}`)
         }
 
-        if (part.functionCall) {
+        const data = await res.json()
+        const candidate = data.candidates?.[0]
+
+        if (!candidate?.content?.parts?.length) {
+            return { resposta: '(O modelo não retornou conteúdo)', acoes }
+        }
+
+        // Adiciona a resposta do modelo ao histórico de contexto
+        contents.push({ role: 'model', parts: candidate.content.parts })
+
+        // Verifica se há functionCalls nesta resposta
+        const functionCallParts = candidate.content.parts.filter((p: any) => p.functionCall)
+
+        if (functionCallParts.length === 0) {
+            // Sem mais tool calls — extrai texto e retorna
+            const textoResposta = candidate.content.parts
+                .filter((p: any) => p.text)
+                .map((p: any) => p.text as string)
+                .join('')
+            return {
+                resposta: textoResposta || '(Resposta vazia do modelo)',
+                acoes,
+            }
+        }
+
+        // Executa todas as tools deste turno e coleta functionResponses
+        const functionResponseParts: any[] = []
+
+        for (const part of functionCallParts) {
             const fn = part.functionCall
             const toolRun: ToolCall = {
                 id: crypto.randomUUID(),
@@ -102,25 +117,37 @@ async function _callGemini(
             try {
                 const result = await executeTool(fn.name, fn.args)
                 toolRun.result = result
-                const resultStr = typeof result === 'object' ? JSON.stringify(result) : String(result)
-
-                // Se não teve texto, gera um resumo básico
-                if (!textoResposta) {
-                    textoResposta = `Consultei "${fn.name}" e encontrei: ${resultStr.substring(0, 500)}`
-                }
+                functionResponseParts.push({
+                    functionResponse: {
+                        name: fn.name,
+                        response: result,
+                    },
+                })
             } catch (err: any) {
                 toolRun.result = { erro: err.message }
-                textoResposta = `Tentei executar "${fn.name}" mas houve um erro: ${err.message}`
+                functionResponseParts.push({
+                    functionResponse: {
+                        name: fn.name,
+                        response: { erro: err.message },
+                    },
+                })
             }
 
             acoes.push(toolRun)
         }
+
+        // Envia os resultados das tools de volta ao Gemini como turno 'user'
+        // Isso permite que o modelo veja os resultados e continue raciocínando
+        contents.push({ role: 'user', parts: functionResponseParts })
     }
 
-    return {
-        resposta: textoResposta || '(Resposta vazia do modelo)',
-        acoes,
-    }
+    // Limite de turnos atingido — retorna o texto do último turno model
+    const lastModelTurn = [...contents].reverse().find(c => c.role === 'model')
+    const lastText = lastModelTurn?.parts
+        .filter((p: any) => p.text)
+        .map((p: any) => p.text as string)
+        .join('') ?? ''
+    return { resposta: lastText || '(Limite de turnos de ferramentas atingido)', acoes }
 }
 
 // =============================================================================

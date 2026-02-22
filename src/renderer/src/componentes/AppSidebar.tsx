@@ -8,6 +8,7 @@ import {
   CalendarDays,
   FileText,
   Settings,
+  ShieldCheck,
   ChevronsUpDown,
   Sun,
   Moon,
@@ -57,6 +58,8 @@ const mainNav = [
 
 const configNav = [
   { label: 'Tipos de Contrato', to: '/tipos-contrato', icon: FileText },
+  { label: 'Feriados', to: '/feriados', icon: CalendarDays },
+  { label: 'Regras', to: '/regras', icon: ShieldCheck },
 ]
 
 const temaOpcoes = [
@@ -153,7 +156,15 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {configNav.map((item) => (
-                <SidebarMenuItem key={item.label} id={item.to === '/tipos-contrato' ? TOUR_STEP_IDS.NAV_CONTRATOS : undefined}>
+                <SidebarMenuItem
+                  key={item.label}
+                  id={
+                    item.to === '/tipos-contrato' ? TOUR_STEP_IDS.NAV_CONTRATOS :
+                    item.to === '/feriados' ? TOUR_STEP_IDS.NAV_FERIADOS :
+                    item.to === '/regras' ? TOUR_STEP_IDS.NAV_REGRAS :
+                    undefined
+                  }
+                >
                   <SidebarMenuButton
                     asChild
                     isActive={pathname.startsWith(item.to)}
@@ -247,6 +258,12 @@ export function AppSidebar() {
                 </DropdownMenuSub>
                 <DropdownMenuItem asChild>
                   <Link to="/empresa">
+                    <Building2 className="size-4" />
+                    <span>Empresa</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/configuracoes">
                     <Settings className="size-4" />
                     <span>Configuracoes</span>
                   </Link>

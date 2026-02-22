@@ -69,7 +69,6 @@ const novoSetorSchema = z.object({
   icone: z.string().nullable(),
   hora_abertura: z.string().min(1, 'Hora de abertura e obrigatoria'),
   hora_fechamento: z.string().min(1, 'Hora de fechamento e obrigatoria'),
-  piso_operacional: z.coerce.number().int().min(1, 'Minimo 1 pessoa'),
 })
 
 type NovoSetorFormInput = z.input<typeof novoSetorSchema>
@@ -86,7 +85,7 @@ export function SetorLista() {
 
   const novoSetorForm = useForm<NovoSetorFormInput, unknown, NovoSetorData>({
     resolver: zodResolver(novoSetorSchema),
-    defaultValues: { nome: '', icone: null, hora_abertura: '08:00', hora_fechamento: '22:00', piso_operacional: 1 },
+    defaultValues: { nome: '', icone: null, hora_abertura: '08:00', hora_fechamento: '22:00' },
   })
 
   const { data: todosSetores, loading: loadingSetores, reload: reloadSetores } = useApiData<Setor[]>(
@@ -131,7 +130,6 @@ export function SetorLista() {
         icone: data.icone ?? null,
         hora_abertura: data.hora_abertura,
         hora_fechamento: data.hora_fechamento,
-        piso_operacional: data.piso_operacional,
       })
       toast.success('Setor criado')
       setShowNewDialog(false)
@@ -440,27 +438,6 @@ export function SetorLista() {
                   )}
                 />
               </div>
-              <FormField
-                control={novoSetorForm.control}
-                name="piso_operacional"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Piso Operacional (pessoas)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={typeof field.value === 'number' ? field.value : ''}
-                        onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
-                        onBlur={field.onBlur}
-                        name={field.name}
-                        ref={field.ref}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <DialogFooter>
                 <Button variant="outline" type="button" onClick={() => setShowNewDialog(false)}>
                   Cancelar
