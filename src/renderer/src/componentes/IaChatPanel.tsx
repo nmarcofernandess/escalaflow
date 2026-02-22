@@ -18,7 +18,7 @@ export function IaChatPanel() {
   if (!aberto) return null
 
   return (
-    <aside className="w-[380px] h-full shrink-0 overflow-hidden border-l bg-background flex flex-col">
+    <aside className="w-[380px] min-w-0 flex flex-col shrink-0 border-l bg-background overflow-hidden">
       <IaChatHeader />
       {tela === 'chat' ? <IaChatView /> : <IaHistoricoView />}
     </aside>

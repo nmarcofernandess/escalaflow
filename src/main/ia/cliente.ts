@@ -1,8 +1,26 @@
+import { generateText, stepCountIs } from 'ai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { SYSTEM_PROMPT } from './system-prompt'
-import { IA_TOOLS, executeTool } from './tools'
+import { getVercelAiTools } from './tools'
 import { buildContextBriefing } from './discovery'
 import { getDb } from '../db/database'
 import type { IaMensagem, ToolCall, IaConfiguracao, IaContexto } from '../../shared/types'
+
+// Tool calls UI depends on property presence (including falsy values like null/false/0),
+// so we must preserve whether a field existed instead of relying on truthiness.
+function hasOwn(value: unknown, key: string): boolean {
+    return typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, key)
+}
+
+// AI SDK v6 tool call input can be non-object in some providers/edge cases.
+// We normalize to a record because our shared ToolCall contract stores args as an object.
+function normalizeToolArgs(rawArgs: unknown): Record<string, unknown> | undefined {
+    if (rawArgs === undefined) return undefined
+    if (typeof rawArgs === 'object' && rawArgs !== null && !Array.isArray(rawArgs)) {
+        return rawArgs as Record<string, unknown>
+    }
+    return { value: rawArgs }
+}
 
 export async function iaEnviarMensagem(
     mensagem: string,
@@ -27,8 +45,7 @@ export async function iaEnviarMensagem(
 }
 
 // =============================================================================
-// GEMINI — REST API v1beta
-// Docs: https://ai.google.dev/gemini-api/docs/function-calling
+// GEMINI — Vercel AI SDK (CÓDIGO QUE FUNCIONOU NO TESTE!)
 // =============================================================================
 
 async function _callGemini(
@@ -37,131 +54,125 @@ async function _callGemini(
     historico: IaMensagem[],
     contexto?: IaContexto
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const modelo = config.modelo || 'gemini-3-flash-preview'
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${config.api_key}`
+    const modelo = config.modelo || 'gemini-2.5-flash'
 
-    // Auto-discovery: busca dados relevantes do DB baseado na página atual
+    const google = createGoogleGenerativeAI({ apiKey: config.api_key })
+
     const contextBriefing = buildContextBriefing(contexto)
     const fullSystemPrompt = contextBriefing
         ? `${SYSTEM_PROMPT}\n\n---\n${contextBriefing}`
         : SYSTEM_PROMPT
 
-    // Monta o histórico de conversa no formato Gemini
-    // IMPORTANTE: Gemini aceita apenas roles "user" e "model"
-    const contents: Array<{ role: string; parts: any[] }> = historico
+    const messages = historico
         .filter(h => h.papel === 'usuario' || h.papel === 'assistente')
         .map(h => ({
-            role: h.papel === 'usuario' ? 'user' : 'model',
-            parts: [{ text: h.conteudo }],
+            role: h.papel === 'usuario' ? ('user' as const) : ('assistant' as const),
+            content: h.conteudo
         }))
 
-    // Adiciona a mensagem atual
-    contents.push({ role: 'user', parts: [{ text: currentMsg }] })
+    messages.push({
+        role: 'user' as const,
+        content: currentMsg
+    })
 
-    // Monta as declarações de ferramentas
-    const tools = [{
-        functionDeclarations: IA_TOOLS.map(t => ({
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters,
-        })),
-    }]
+    const tools = getVercelAiTools()
+
+    console.log('[AI SDK] Chamando generateText com stopWhen...')
+
+    const result = await generateText({
+        model: google(modelo),
+        system: fullSystemPrompt,
+        messages,
+        tools,
+        stopWhen: stepCountIs(10)  // CRÍTICO: sem isso, para no primeiro tool call!
+    })
+
+    console.log('[AI SDK] Resultado:', {
+        text: result.text?.substring(0, 50) || '(vazio)',
+        stepsCount: result.steps?.length || 0,
+        finishReason: result.finishReason
+    })
 
     const acoes: ToolCall[] = []
-    const MAX_TURNS = 10
 
-    // Loop multi-turn: Gemini pode chamar tools múltiplas vezes antes de responder em texto
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                systemInstruction: { parts: [{ text: fullSystemPrompt }] },
-                contents,
-                tools,
-            }),
-        })
+    if (result.steps) {
+        for (const step of result.steps) {
+            if (!step.toolCalls || step.toolCalls.length === 0) continue
 
-        if (!res.ok) {
-            const text = await res.text()
-            throw new Error(`Gemini ${modelo} retornou erro ${res.status}: ${text}`)
-        }
+            const stepToolResults = (step.toolResults ?? []) as any[]
+            const toolResultsById = new Map<string, any>()
 
-        const data = await res.json()
-        const candidate = data.candidates?.[0]
-
-        if (!candidate?.content?.parts?.length) {
-            return { resposta: '(O modelo não retornou conteúdo)', acoes }
-        }
-
-        // Adiciona a resposta do modelo ao histórico de contexto
-        contents.push({ role: 'model', parts: candidate.content.parts })
-
-        // Verifica se há functionCalls nesta resposta
-        const functionCallParts = candidate.content.parts.filter((p: any) => p.functionCall)
-
-        if (functionCallParts.length === 0) {
-            // Sem mais tool calls — extrai texto e retorna
-            const textoResposta = candidate.content.parts
-                .filter((p: any) => p.text)
-                .map((p: any) => p.text as string)
-                .join('')
-            return {
-                resposta: textoResposta || '(Resposta vazia do modelo)',
-                acoes,
-            }
-        }
-
-        // Executa todas as tools deste turno e coleta functionResponses
-        const functionResponseParts: any[] = []
-
-        for (const part of functionCallParts) {
-            const fn = part.functionCall
-            const toolRun: ToolCall = {
-                id: crypto.randomUUID(),
-                name: fn.name,
-                args: fn.args,
+            for (const tr of stepToolResults) {
+                if (tr?.toolCallId) {
+                    toolResultsById.set(tr.toolCallId, tr)
+                }
             }
 
-            try {
-                const result = await executeTool(fn.name, fn.args)
-                toolRun.result = result
-                functionResponseParts.push({
-                    functionResponse: {
-                        name: fn.name,
-                        response: result,
-                    },
-                })
-            } catch (err: any) {
-                toolRun.result = { erro: err.message }
-                functionResponseParts.push({
-                    functionResponse: {
-                        name: fn.name,
-                        response: { erro: err.message },
-                    },
+            for (let i = 0; i < step.toolCalls.length; i++) {
+                const tc = step.toolCalls[i] as any
+                // Pair by toolCallId first. Array index is only a compatibility fallback.
+                const tr = toolResultsById.get(tc.toolCallId) ?? stepToolResults[i]
+                // AI SDK v6 uses input/output. Keep args/result fallbacks for compatibility with older payloads.
+                const args = normalizeToolArgs(tc?.input ?? tc?.args)
+
+                const hasResultProp =
+                    hasOwn(tr, 'output') ||
+                    hasOwn(tr, 'result') ||
+                    hasOwn(tr, 'error')
+
+                const resultValue = hasOwn(tr, 'output')
+                    ? tr.output
+                    : hasOwn(tr, 'result')
+                        ? tr.result
+                        : hasOwn(tr, 'error')
+                            ? tr.error
+                            : undefined
+
+                acoes.push({
+                    id: tc.toolCallId,
+                    name: tc.toolName,
+                    ...(args !== undefined ? { args } : {}),
+                    ...(hasResultProp ? { result: resultValue } : {})
                 })
             }
-
-            acoes.push(toolRun)
         }
-
-        // Envia os resultados das tools de volta ao Gemini como turno 'user'
-        // Isso permite que o modelo veja os resultados e continue raciocínando
-        contents.push({ role: 'user', parts: functionResponseParts })
     }
 
-    // Limite de turnos atingido — retorna o texto do último turno model
-    const lastModelTurn = [...contents].reverse().find(c => c.role === 'model')
-    const lastText = lastModelTurn?.parts
-        .filter((p: any) => p.text)
-        .map((p: any) => p.text as string)
-        .join('') ?? ''
-    return { resposta: lastText || '(Limite de turnos de ferramentas atingido)', acoes }
+    // 🔥 FIX: Se executou tools mas não gerou texto, força resposta
+    let finalText = result.text
+
+    if ((!finalText || finalText.trim().length === 0) && acoes.length > 0) {
+        console.log('[AI SDK] ⚠️ IA executou tools mas não respondeu. Forçando turno final...')
+
+        // Adiciona mensagem pedindo pra responder
+        messages.push({
+            role: 'assistant' as const,
+            content: '(executou ferramentas)'
+        })
+        messages.push({
+            role: 'user' as const,
+            content: 'Responda agora em linguagem natural o que você fez e o resultado.'
+        })
+
+        const finalResult = await generateText({
+            model: google(modelo),
+            system: fullSystemPrompt,
+            messages
+            // SEM tools → força texto puro, sem tool calls
+        })
+
+        finalText = finalResult.text || 'Feito! ✅'
+        console.log('[AI SDK] Resposta forçada:', finalText.substring(0, 50))
+    }
+
+    return {
+        resposta: finalText || '(Resposta vazia)',
+        acoes
+    }
 }
 
 // =============================================================================
-// TESTE DE CONEXÃO REAL
-// Faz uma chamada generateContent real com o modelo especificado
+// TESTE DE CONEXÃO
 // =============================================================================
 
 export async function iaTestarConexao(
@@ -172,37 +183,19 @@ export async function iaTestarConexao(
     if (!apiKey) throw new Error('API Key não fornecida.')
     if (provider !== 'gemini') throw new Error('Apenas o provider Gemini está disponível.')
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`
+    try {
+        const google = createGoogleGenerativeAI({ apiKey })
 
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: 'Responda apenas: OK' }] }],
-        }),
-    })
+        const result = await generateText({
+            model: google(modelo),
+            prompt: 'Responda apenas: OK'
+        })
 
-    if (!res.ok) {
-        const body = await res.text()
-        let msg = `Modelo "${modelo}" retornou erro ${res.status}.`
-        try {
-            const parsed = JSON.parse(body)
-            if (parsed.error?.message) {
-                msg = parsed.error.message
-            }
-        } catch { /* ignore parse error */ }
-        throw new Error(msg)
-    }
-
-    const data = await res.json()
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-
-    if (!text) {
-        throw new Error(`Modelo "${modelo}" respondeu mas sem conteúdo de texto. Pode não suportar generateContent.`)
-    }
-
-    return {
-        sucesso: true,
-        mensagem: `✅ Conectado! Modelo "${modelo}" respondeu: "${text.substring(0, 50)}"`,
+        return {
+            sucesso: true,
+            mensagem: `✅ Conectado! Modelo "${modelo}" respondeu: "${result.text.substring(0, 50)}"`
+        }
+    } catch (err: any) {
+        throw new Error(`Modelo "${modelo}" retornou erro: ${err.message}`)
     }
 }

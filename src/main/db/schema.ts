@@ -281,6 +281,7 @@ CREATE TABLE IF NOT EXISTS ia_mensagens (
   papel TEXT NOT NULL
     CHECK (papel IN ('usuario', 'assistente', 'tool_result')),
   conteudo TEXT NOT NULL,
+  tool_calls_json TEXT,  -- JSON array de ToolCall[] (serializado)
   timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -584,6 +585,11 @@ END
       }
     })()
   }
+
+  // ==========================================================================
+  // v7 — Tool Calls Visíveis (Transparência na UI)
+  // ==========================================================================
+  addColumnIfMissing('ia_mensagens', 'tool_calls_json', 'TEXT')
 }
 
 // ============================================================================

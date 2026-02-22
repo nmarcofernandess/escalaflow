@@ -1,153 +1,193 @@
 import { getDb } from '../db/database'
 import { buildSolverInput, runSolver, persistirSolverResult } from '../motor/solver-bridge'
+import { z } from 'zod'
+import { zodToJsonSchema } from 'zod-to-json-schema'
+
+// ==================== HELPER: Zod → JSON Schema (Type-Safe) ====================
+
+/**
+ * Converte schema Zod para JSON Schema compatível com Gemini API.
+ *
+ * NOTA: O `as any` é necessário por incompatibilidade de tipos entre
+ * zod@4.x e zod-to-json-schema@3.x. A conversão funciona perfeitamente
+ * em runtime, mas TypeScript não reconhece a compatibilidade.
+ *
+ * IMPORTANTE: Remove o campo `$schema` que zod-to-json-schema adiciona
+ * por padrão, pois Gemini API não aceita esse campo.
+ *
+ * Centralizar aqui permite:
+ * - Usar schemas Zod com type-safety total
+ * - Isolar o hack de tipo em UM lugar só
+ * - Facilitar migração futura se necessário
+ */
+function toJsonSchema<T extends z.ZodTypeAny>(schema: T): Record<string, any> {
+  const jsonSchema = zodToJsonSchema(schema as any)
+  // Remove $schema que Gemini API não aceita
+  delete jsonSchema.$schema
+  return jsonSchema
+}
+
+// ==================== ZOD SCHEMAS (Type-Safe) ====================
+
+// consultar
+const ConsultarSchema = z.object({
+  entidade: z.enum([
+    'colaboradores', 'setores', 'escalas', 'alocacoes', 'excecoes',
+    'demandas', 'tipos_contrato', 'empresa', 'feriados', 'funcoes',
+    'regra_definicao', 'regra_empresa'
+  ]),
+  filtros: z.record(z.string(), z.any()).optional()
+})
+
+// criar colaborador — validação específica para colaboradores
+const CriarColaboradorSchema = z.object({
+  nome: z.string().min(1),
+  setor_id: z.number().int().positive(),
+  tipo_contrato_id: z.number().int().positive().optional(),
+  sexo: z.enum(['M', 'F']).optional(),
+  data_nascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  tipo_trabalhador: z.string().optional(),
+  hora_inicio_min: z.string().optional(),
+  hora_fim_max: z.string().optional(),
+  ativo: z.number().int().min(0).max(1).optional()
+})
+
+// criar exceção — validação específica para exceções
+const CriarExcecaoSchema = z.object({
+  colaborador_id: z.number().int().positive(),
+  tipo: z.enum(['FERIAS', 'ATESTADO', 'BLOQUEIO']),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  motivo: z.string().optional(),
+  observacao: z.string().optional()
+})
+
+// criar — schema genérico
+const CriarSchema = z.object({
+  entidade: z.enum([
+    'colaboradores', 'excecoes', 'demandas', 'tipos_contrato',
+    'setores', 'feriados', 'funcoes'
+  ]),
+  dados: z.record(z.string(), z.any())
+})
+
+// atualizar
+const AtualizarSchema = z.object({
+  entidade: z.enum(['colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas']),
+  id: z.number().int().positive(),
+  dados: z.record(z.string(), z.any())
+})
+
+// deletar
+const DeletarSchema = z.object({
+  entidade: z.enum(['excecoes', 'demandas', 'feriados', 'funcoes']),
+  id: z.number().int().positive()
+})
+
+// editar_regra
+const EditarRegraSchema = z.object({
+  codigo: z.string(),
+  status: z.enum(['HARD', 'SOFT', 'OFF', 'ON'])
+})
+
+// gerar_escala
+const GerarEscalaSchema = z.object({
+  setor_id: z.number().int().positive(),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  rules_override: z.record(z.string(), z.string()).optional()
+})
+
+// ajustar_alocacao
+const AjustarAlocacaoSchema = z.object({
+  escala_id: z.number().int().positive(),
+  colaborador_id: z.number().int().positive(),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  status: z.enum(['TRABALHO', 'FOLGA', 'INDISPONIVEL'])
+})
+
+// oficializar_escala
+const OficializarEscalaSchema = z.object({
+  escala_id: z.number().int().positive()
+})
+
+// preflight
+const PreflightSchema = z.object({
+  setor_id: z.number().int().positive(),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+})
+
+// explicar_violacao
+const ExplicarViolacaoSchema = z.object({
+  codigo_regra: z.string()
+})
+
+// ==================== IA_TOOLS (Gemini API Format) ====================
 
 export const IA_TOOLS = [
     {
-        name: 'consultar',
-        description: 'Consulta dados do banco de dados. Use SEMPRE que precisar de informação. Nunca pergunte ao usuário — busque aqui. Exemplos: consultar("setores") para listar todos os setores, consultar("alocacoes", {"escala_id": 15}) para ver alocações de uma escala, consultar("colaboradores", {"setor_id": 3}) para colaboradores de um setor. Filtros de texto são case-insensitive.',
+        name: 'get_context',
+        description: '🚨 CRITICAL: ALWAYS call this FIRST before answering ANY question or calling other tools. Returns complete structured context with ALL setores (IDs + names), colaboradores (IDs + names + setor), and escalas. This is your discovery tool — it gives you the full map of the system so you NEVER need to ask the user for IDs or names. Call this, extract the IDs you need, then use other tools.',
         parameters: {
             type: 'object',
-            properties: {
-                entidade: {
-                    type: 'string',
-                    description: 'A tabela para consultar: colaboradores | setores | escalas | alocacoes | excecoes | demandas | tipos_contrato | empresa | feriados | funcoes | regra_definicao | regra_empresa'
-                },
-                filtros: {
-                    type: 'object',
-                    description: 'Filtros opcionais (ex: {"setor_id": 3, "ativo": 1}). Para resolver nomes, chame SEM filtros e procure na lista. Filtros de texto são case-insensitive.'
-                }
-            },
-            required: ['entidade']
+            properties: {}
         }
+    },
+    {
+        name: 'consultar',
+        description: 'Consulta dados do banco de dados. Use quando precisar de informação DETALHADA que não está no get_context. Nunca pergunte ao usuário — busque aqui. Exemplos: consultar("alocacoes", {"escala_id": 15}) para ver alocações de uma escala, consultar("excecoes", {"colaborador_id": 5}) para exceções de uma pessoa. Filtros de texto são case-insensitive.',
+        parameters: toJsonSchema(ConsultarSchema)
     },
     {
         name: 'criar',
         description: 'Cria um novo registro no sistema.',
-        parameters: {
-            type: 'object',
-            properties: {
-                entidade: {
-                    type: 'string',
-                    description: 'colaboradores | excecoes | demandas | tipos_contrato | setores | feriados | funcoes'
-                },
-                dados: { type: 'object', description: 'objeto JSON com os campos necessários para criar o registro' }
-            },
-            required: ['entidade', 'dados']
-        }
+        parameters: toJsonSchema(CriarSchema)
     },
     {
         name: 'atualizar',
         description: 'Atualiza um registro existente.',
-        parameters: {
-            type: 'object',
-            properties: {
-                entidade: {
-                    type: 'string',
-                    description: 'colaboradores | empresa | tipos_contrato | setores | demandas'
-                },
-                id: { type: 'number', description: 'ID do registro' },
-                dados: { type: 'object', description: 'objeto JSON com campos e valores para atualizar' }
-            },
-            required: ['entidade', 'id', 'dados']
-        }
+        parameters: toJsonSchema(AtualizarSchema)
     },
     {
         name: 'deletar',
         description: 'Remove um registro.',
-        parameters: {
-            type: 'object',
-            properties: {
-                entidade: {
-                    type: 'string',
-                    description: 'excecoes | demandas | feriados | funcoes'
-                },
-                id: { type: 'number', description: 'ID do registro' }
-            },
-            required: ['entidade', 'id']
-        }
+        parameters: toJsonSchema(DeletarSchema)
     },
     {
         name: 'editar_regra',
         description: 'Altera o status de uma regra do motor OR-Tools. Apenas regras marcadas como editavel=1 podem ser alteradas. Regras fixas por lei (H2, H4, H5, H11-H18) são imutáveis.',
-        parameters: {
-            type: 'object',
-            properties: {
-                codigo: { type: 'string', description: 'Código da regra (ex: H1, H6, AP3, S_DEFICIT)' },
-                status: { type: 'string', description: 'Novo status: HARD | SOFT | OFF | ON' }
-            },
-            required: ['codigo', 'status']
-        }
+        parameters: toJsonSchema(EditarRegraSchema)
     },
     {
         name: 'gerar_escala',
-        description: 'Roda o motor OR-Tools CP-SAT para gerar uma escala. Salva como RASCUNHO. Use o setor_id do auto-contexto. Exemplo: gerar_escala({"setor_id": 3, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}). Retorna escala_id, indicadores e diagnostico.',
-        parameters: {
-            type: 'object',
-            properties: {
-                setor_id: { type: 'number', description: 'ID do setor (pegue do auto-contexto ou da lista de setores)' },
-                data_inicio: { type: 'string', description: 'Data YYYY-MM-DD' },
-                data_fim: { type: 'string', description: 'Data YYYY-MM-DD' },
-                rules_override: {
-                    type: 'object',
-                    description: 'Override opcional de regras para este run (ex: {"H1": "SOFT", "AP3": "OFF"}). Não persiste no banco.'
-                }
-            },
-            required: ['setor_id', 'data_inicio', 'data_fim']
-        }
+        description: 'Roda o motor OR-Tools CP-SAT para gerar uma escala. Salva como RASCUNHO. IMPORTANTE: Chame get_context() PRIMEIRO para descobrir o setor_id pelo nome. Exemplo: get_context() → encontra setor "Caixa" com id=3 → gerar_escala({"setor_id": 3, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}). Retorna escala_id, indicadores e diagnostico.',
+        parameters: toJsonSchema(GerarEscalaSchema)
     },
     {
         name: 'ajustar_alocacao',
         description: 'Fixa uma alocação específica de uma pessoa em um dia. O motor respeita essa fixação ao regerar.',
-        parameters: {
-            type: 'object',
-            properties: {
-                escala_id: { type: 'number' },
-                colaborador_id: { type: 'number' },
-                data: { type: 'string', description: 'YYYY-MM-DD' },
-                status: { type: 'string', description: 'TRABALHO | FOLGA | INDISPONIVEL' }
-            },
-            required: ['escala_id', 'colaborador_id', 'data', 'status']
-        }
+        parameters: toJsonSchema(AjustarAlocacaoSchema)
     },
     {
         name: 'oficializar_escala',
         description: 'Trava a escala como OFICIAL. Só é possível quando violacoes_hard = 0.',
-        parameters: {
-            type: 'object',
-            properties: {
-                escala_id: { type: 'number' }
-            },
-            required: ['escala_id']
-        }
+        parameters: toJsonSchema(OficializarEscalaSchema)
     },
     {
         name: 'preflight',
-        description: 'Verifica viabilidade ANTES de gerar escala. Retorna blockers e warnings. Use o setor_id do auto-contexto. Exemplo: preflight({"setor_id": 3, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}).',
-        parameters: {
-            type: 'object',
-            properties: {
-                setor_id: { type: 'number' },
-                data_inicio: { type: 'string' },
-                data_fim: { type: 'string' }
-            },
-            required: ['setor_id', 'data_inicio', 'data_fim']
-        }
+        description: 'Verifica viabilidade ANTES de gerar escala. Retorna blockers e warnings. IMPORTANTE: Chame get_context() PRIMEIRO para descobrir o setor_id pelo nome. Exemplo: get_context() → encontra setor "Açougue" com id=5 → preflight({"setor_id": 5, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}).',
+        parameters: toJsonSchema(PreflightSchema)
     },
     {
         name: 'resumo_sistema',
-        description: 'Relatório gerencial rápido: total de setores, colaboradores, escalas por status. Use quando o usuário quer visão geral ou quando não tem auto-contexto suficiente.',
+        description: 'Relatório gerencial rápido: total de setores, colaboradores, escalas por status. DEPRECATED: use get_context() ao invés desta tool — ela retorna informação mais completa e estruturada.',
         parameters: { type: 'object', properties: {} }
     },
     {
         name: 'explicar_violacao',
         description: 'Explica uma regra CLT/CCT ou antipadrão pelo código (ex: H1, H2, H14, S_DEFICIT, AP3).',
-        parameters: {
-            type: 'object',
-            properties: {
-                codigo_regra: { type: 'string', description: 'Ex: H1, H2, H14, S_DEFICIT, AP3, S_DOMINGO_CICLO' }
-            },
-            required: ['codigo_regra']
-        }
+        parameters: toJsonSchema(ExplicarViolacaoSchema)
     }
 ]
 
@@ -156,6 +196,51 @@ const ENTIDADES_LEITURA_PERMITIDAS = new Set([
     'demandas', 'tipos_contrato', 'empresa', 'feriados', 'funcoes',
     'regra_definicao', 'regra_empresa',
 ])
+
+// Mapa de campos válidos por entidade (protege contra SQL injection e erros de campo inexistente)
+const CAMPOS_VALIDOS: Record<string, Set<string>> = {
+  colaboradores: new Set([
+    'id', 'nome', 'setor_id', 'tipo_contrato_id', 'sexo', 'ativo', 'rank',
+    'prefere_turno', 'evitar_dia_semana', 'horas_semanais', 'tipo_trabalhador',
+    'data_nascimento', 'hora_inicio_min', 'hora_fim_max'
+  ]),
+  setores: new Set([
+    'id', 'nome', 'icone', 'hora_abertura', 'hora_fechamento', 'ativo'
+  ]),
+  escalas: new Set([
+    'id', 'setor_id', 'data_inicio', 'data_fim', 'status', 'pontuacao',
+    'cobertura_percent', 'violacoes_hard', 'violacoes_soft'
+  ]),
+  alocacoes: new Set([
+    'id', 'escala_id', 'colaborador_id', 'data', 'status',
+    'hora_inicio', 'hora_fim', 'minutos'
+  ]),
+  excecoes: new Set([
+    'id', 'colaborador_id', 'data_inicio', 'data_fim', 'tipo', 'observacao', 'motivo'
+  ]),
+  demandas: new Set([
+    'id', 'setor_id', 'dia_semana', 'hora_inicio', 'hora_fim', 'min_pessoas'
+  ]),
+  tipos_contrato: new Set([
+    'id', 'nome', 'horas_semanais', 'regime_escala', 'dias_trabalho',
+    'trabalha_domingo', 'max_minutos_dia'
+  ]),
+  empresa: new Set([
+    'id', 'nome', 'cnpj', 'telefone', 'corte_semanal', 'tolerancia_semanal_min'
+  ]),
+  feriados: new Set([
+    'id', 'data', 'nome', 'tipo', 'proibido_trabalhar', 'cct_autoriza'
+  ]),
+  funcoes: new Set([
+    'id', 'setor_id', 'apelido', 'tipo_contrato_id', 'ativo', 'ordem'
+  ]),
+  regra_definicao: new Set([
+    'codigo', 'nome', 'descricao', 'tipo', 'editavel'
+  ]),
+  regra_empresa: new Set([
+    'codigo', 'status'
+  ]),
+}
 
 const ENTIDADES_CRIACAO_PERMITIDAS = new Set([
     'colaboradores', 'excecoes', 'demandas', 'tipos_contrato', 'setores', 'feriados', 'funcoes',
@@ -168,6 +253,23 @@ const ENTIDADES_ATUALIZACAO_PERMITIDAS = new Set([
 const ENTIDADES_DELECAO_PERMITIDAS = new Set([
     'excecoes', 'demandas', 'feriados', 'funcoes',
 ])
+
+// ==================== VALIDAÇÃO RUNTIME (Zod) ====================
+
+const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
+  get_context: null, // Sem parâmetros
+  consultar: ConsultarSchema,
+  criar: CriarSchema,
+  atualizar: AtualizarSchema,
+  deletar: DeletarSchema,
+  editar_regra: EditarRegraSchema,
+  gerar_escala: GerarEscalaSchema,
+  ajustar_alocacao: AjustarAlocacaoSchema,
+  oficializar_escala: OficializarEscalaSchema,
+  preflight: PreflightSchema,
+  resumo_sistema: null, // Sem parâmetros
+  explicar_violacao: ExplicarViolacaoSchema,
+}
 
 const DICIONARIO_VIOLACOES: Record<string, string> = {
     'H1': 'Máximo de dias consecutivos sem folga. Por padrão, limite de 6 dias (CLT Art. 67). Colaborador trabalhou mais dias seguidos do que o permitido pela regra H1.',
@@ -197,14 +299,211 @@ const DICIONARIO_VIOLACOES: Record<string, string> = {
     'MIN_DIARIO': 'Jornada diária abaixo do mínimo configurado para o tipo de contrato.',
 }
 
+// ==================== VERCEL AI SDK FORMAT ====================
+
+/**
+ * Converte tools pro formato Vercel AI SDK.
+ * Reutiliza schemas Zod + executeTool().
+ */
+export function getVercelAiTools() {
+    const tools: Record<string, any> = {}
+
+    for (const t of IA_TOOLS) {
+        const zodSchema = TOOL_SCHEMAS[t.name] || z.object({})
+
+        tools[t.name] = {
+            description: t.description,
+            parameters: zodSchema,
+            execute: async (args: Record<string, any>) => {
+                return await executeTool(t.name, args)
+            }
+        }
+    }
+
+    return tools
+}
+
 export async function executeTool(name: string, args: Record<string, any>): Promise<any> {
-    const db = getDb()
+    // Support mock DB for testing
+    const db = (global as any).mockDb || getDb()
+
+    // ==================== VALIDAÇÃO ZOD RUNTIME ====================
+    const schema = TOOL_SCHEMAS[name]
+    if (schema) {
+        const validation = schema.safeParse(args)
+        if (!validation.success) {
+            const errors = validation.error.issues.map((issue) => {
+                const path = issue.path.length > 0 ? issue.path.join('.') : 'root'
+                return `  • ${path}: ${issue.message}`
+            }).join('\n')
+            return {
+                erro: `❌ Validação falhou para tool '${name}':\n\n${errors}\n\n💡 Verifique os tipos e valores permitidos.`
+            }
+        }
+        // Se válido, usar validated data (garantido type-safe)
+        args = validation.data as Record<string, any>
+    }
+
+    // ==================== HANDLERS ====================
+
+    if (name === 'get_context') {
+        // DISCOVERY TOOL — retorna contexto completo estruturado
+        try {
+            // Setores com contagens
+            const setores = db.prepare(`
+                SELECT
+                    s.id,
+                    s.nome,
+                    s.hora_abertura,
+                    s.hora_fechamento,
+                    s.ativo,
+                    COUNT(DISTINCT c.id) as colaboradores_count,
+                    COUNT(DISTINCT e.id) as escalas_count
+                FROM setores s
+                LEFT JOIN colaboradores c ON c.setor_id = s.id AND c.ativo = 1
+                LEFT JOIN escalas e ON e.setor_id = s.id AND e.status IN ('RASCUNHO', 'OFICIAL')
+                WHERE s.ativo = 1
+                GROUP BY s.id
+                ORDER BY s.nome
+            `).all() as Array<{
+                id: number
+                nome: string
+                hora_abertura: string
+                hora_fechamento: string
+                ativo: number
+                colaboradores_count: number
+                escalas_count: number
+            }>
+
+            // Colaboradores ativos com setor e contrato
+            const colaboradores = db.prepare(`
+                SELECT
+                    c.id,
+                    c.nome,
+                    c.setor_id,
+                    s.nome as setor_nome,
+                    c.tipo_contrato_id,
+                    t.nome as contrato_nome,
+                    t.horas_semanais,
+                    c.tipo_trabalhador
+                FROM colaboradores c
+                JOIN setores s ON c.setor_id = s.id
+                JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
+                WHERE c.ativo = 1
+                ORDER BY s.nome, c.nome
+            `).all() as Array<{
+                id: number
+                nome: string
+                setor_id: number
+                setor_nome: string
+                tipo_contrato_id: number
+                contrato_nome: string
+                horas_semanais: number
+                tipo_trabalhador: string
+            }>
+
+            // Tipos de contrato disponíveis (Fase 2: Discovery explícito)
+            const tipos_contrato = db.prepare(`
+                SELECT
+                    id,
+                    nome,
+                    horas_semanais,
+                    regime_escala,
+                    dias_trabalho,
+                    trabalha_domingo,
+                    max_minutos_dia
+                FROM tipos_contrato
+                ORDER BY horas_semanais DESC
+            `).all() as Array<{
+                id: number
+                nome: string
+                horas_semanais: number
+                regime_escala: string
+                dias_trabalho: number
+                trabalha_domingo: number
+                max_minutos_dia: number
+            }>
+
+            // Escalas ativas (RASCUNHO ou OFICIAL)
+            const escalas = db.prepare(`
+                SELECT
+                    e.id,
+                    e.setor_id,
+                    s.nome as setor_nome,
+                    e.status,
+                    e.data_inicio,
+                    e.data_fim,
+                    e.pontuacao,
+                    e.cobertura_percent,
+                    e.violacoes_hard,
+                    e.violacoes_soft
+                FROM escalas e
+                JOIN setores s ON e.setor_id = s.id
+                WHERE e.status IN ('RASCUNHO', 'OFICIAL')
+                ORDER BY
+                    CASE e.status
+                        WHEN 'RASCUNHO' THEN 0
+                        WHEN 'OFICIAL' THEN 1
+                        ELSE 2
+                    END,
+                    e.id DESC
+            `).all() as Array<{
+                id: number
+                setor_id: number
+                setor_nome: string
+                status: string
+                data_inicio: string
+                data_fim: string
+                pontuacao: number
+                cobertura_percent: number
+                violacoes_hard: number
+                violacoes_soft: number
+            }>
+
+            // Resumo estatístico
+            const stats = {
+                setores_ativos: setores.length,
+                colaboradores_ativos: colaboradores.length,
+                escalas_rascunho: escalas.filter(e => e.status === 'RASCUNHO').length,
+                escalas_oficiais: escalas.filter(e => e.status === 'OFICIAL').length,
+            }
+
+            return {
+                version: '1.0',
+                timestamp: new Date().toISOString(),
+                stats,
+                setores,
+                colaboradores,
+                tipos_contrato,  // FASE 2: Discovery explícito
+                escalas,
+                instructions: 'Use this structured data to resolve names to IDs. NEVER ask the user for IDs - extract them from this context. Example: user says "Caixa" → find setor with nome="Caixa" → use its id in other tool calls. For tipo_contrato_id, find the contract in tipos_contrato array by name.',
+            }
+        } catch (e: any) {
+            return { erro: `Erro ao buscar contexto: ${e.message}` }
+        }
+    }
 
     if (name === 'consultar') {
         const { entidade, filtros } = args
 
         if (!ENTIDADES_LEITURA_PERMITIDAS.has(entidade)) {
             return { erro: `Entidade '${entidade}' não permitida. Use: ${[...ENTIDADES_LEITURA_PERMITIDAS].join(' | ')}` }
+        }
+
+        // VALIDAÇÃO DE CAMPOS (Fase 1: protege contra SQL injection e erros de campo inexistente)
+        if (filtros && Object.keys(filtros).length > 0) {
+            const camposValidos = CAMPOS_VALIDOS[entidade]
+            if (!camposValidos) {
+                return { erro: `Entidade '${entidade}' não tem mapa de campos válidos.` }
+            }
+
+            for (const campo of Object.keys(filtros)) {
+                if (!camposValidos.has(campo)) {
+                    return {
+                        erro: `❌ Campo inválido: "${campo}" não existe em ${entidade}.\n\n💡 Campos disponíveis: ${[...camposValidos].join(', ')}`
+                    }
+                }
+            }
         }
 
         let query = `SELECT * FROM ${entidade}`
@@ -230,7 +529,61 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { entidade, dados } = args
 
         if (!ENTIDADES_CRIACAO_PERMITIDAS.has(entidade)) {
-            return { erro: `Criação não permitida para '${entidade}'.` }
+            return { erro: `❌ Criação não permitida para '${entidade}'. Entidades permitidas: ${[...ENTIDADES_CRIACAO_PERMITIDAS].join(', ')}` }
+        }
+
+        // VALIDAÇÃO ESPECÍFICA + DEFAULTS INTELIGENTES
+        if (entidade === 'colaboradores') {
+            // Campos obrigatórios
+            if (!dados.nome || typeof dados.nome !== 'string') {
+                return { erro: '❌ Campo obrigatório: "nome" (string). Exemplo: { "nome": "João Silva", "setor_id": 1 }' }
+            }
+            if (!dados.setor_id || typeof dados.setor_id !== 'number') {
+                return { erro: '❌ Campo obrigatório: "setor_id" (number). Use get_context() para descobrir o ID do setor pelo nome.' }
+            }
+
+            // Validar setor existe
+            const setor = db.prepare('SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = 1').get(dados.setor_id) as any
+            if (!setor) {
+                return { erro: `❌ Setor ${dados.setor_id} não encontrado ou inativo. Use get_context() para ver setores disponíveis.` }
+            }
+
+            // Defaults inteligentes para campos opcionais
+            if (!dados.sexo) dados.sexo = 'M'
+            if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1  // CLT 44h (6x1) — mais comum
+            if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'regular'
+            if (!dados.data_nascimento) {
+                // Gera idade aleatória entre 25-40 anos
+                const idadeAleatoria = 25 + Math.floor(Math.random() * 15)
+                const nascimento = new Date()
+                nascimento.setFullYear(nascimento.getFullYear() - idadeAleatoria)
+                dados.data_nascimento = nascimento.toISOString().split('T')[0]
+            }
+            if (!dados.hora_inicio_min) dados.hora_inicio_min = setor.hora_abertura
+            if (!dados.hora_fim_max) dados.hora_fim_max = setor.hora_fechamento
+            if (!dados.ativo) dados.ativo = 1
+        }
+
+        if (entidade === 'excecoes') {
+            // Campos obrigatórios
+            if (!dados.colaborador_id) {
+                return { erro: '❌ Campo obrigatório: "colaborador_id" (number). Use get_context() para descobrir o ID pelo nome do colaborador.' }
+            }
+            if (!dados.tipo) {
+                return { erro: '❌ Campo obrigatório: "tipo" (string). Valores permitidos: FERIAS, ATESTADO, BLOQUEIO' }
+            }
+            if (!dados.data_inicio || !dados.data_fim) {
+                return { erro: '❌ Campos obrigatórios: "data_inicio" e "data_fim" (YYYY-MM-DD)' }
+            }
+
+            // Validar tipo
+            const tiposValidos = ['FERIAS', 'ATESTADO', 'BLOQUEIO']
+            if (!tiposValidos.includes(dados.tipo)) {
+                return { erro: `❌ Tipo inválido: "${dados.tipo}". Valores permitidos: ${tiposValidos.join(', ')}` }
+            }
+
+            // Default motivo
+            if (!dados.motivo) dados.motivo = dados.tipo
         }
 
         const keys = Object.keys(dados)
@@ -241,7 +594,19 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             const res = db.prepare(`INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`).run(...values)
             return { sucesso: true, id: res.lastInsertRowid }
         } catch (e: any) {
-            return { erro: e.message }
+            // Traduz erros SQL pra mensagens acionáveis
+            if (e.message?.includes('NOT NULL constraint')) {
+                const match = e.message.match(/NOT NULL constraint failed: \w+\.(\w+)/)
+                const campo = match?.[1] || 'desconhecido'
+                return { erro: `❌ Campo obrigatório faltando: "${campo}". Verifique a estrutura da entidade ${entidade}.` }
+            }
+            if (e.message?.includes('UNIQUE constraint')) {
+                return { erro: `❌ Registro duplicado: ${entidade} com esses valores únicos já existe.` }
+            }
+            if (e.message?.includes('FOREIGN KEY constraint')) {
+                return { erro: `❌ Referência inválida: um dos IDs fornecidos não existe no banco. Verifique setor_id, colaborador_id, etc.` }
+            }
+            return { erro: `❌ Erro ao criar ${entidade}: ${e.message}` }
         }
     }
 

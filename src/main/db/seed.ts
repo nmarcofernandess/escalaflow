@@ -653,6 +653,9 @@ export function seedData(): void {
     console.log('[SEED] 7 horários de empresa criados (SEG-SEX 08-22h, SAB 08-20h, DOM 08-14h)')
   }
 
+  // ── 16. Configuração IA (pré-configurada) ──────────────────────────────
+  seedConfiguracaoIA()
+
   console.log('[SEED] Seed concluido')
   console.log('[SEED] >>> Periodo sugerido para teste: 2026-03-02 a 2026-04-26 (8 semanas) <<<')
 }
@@ -804,4 +807,21 @@ function seedFeriados(): void {
 
   const total = db.prepare('SELECT COUNT(*) as count FROM feriados').get() as { count: number }
   console.log(`[SEED] ${total.count} feriados nacionais criados (${currentYear}-${currentYear + 1})`)
+}
+
+// ============================================================================
+// SEED — Configuração IA (pré-configurada com API Key)
+// ============================================================================
+
+function seedConfiguracaoIA(): void {
+  const db = getDb()
+  const iaConfigExiste = db.prepare('SELECT COUNT(*) as count FROM configuracao_ia').get() as { count: number }
+
+  if (iaConfigExiste.count === 0) {
+    db.prepare(`
+      INSERT INTO configuracao_ia (provider, api_key, modelo, ativo)
+      VALUES (?, ?, ?, ?)
+    `).run('gemini', 'AIzaSyCtrQcwKh_N0n3qFMUaYrfIdKozkp5iq-I', 'gemini-3-flash-preview', 1)
+    console.log('[SEED] Configuração IA criada (Gemini 2.5 Flash ativo)')
+  }
 }

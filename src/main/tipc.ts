@@ -2194,11 +2194,32 @@ const iaConversasObter = t.procedure
       .prepare(`SELECT * FROM ia_conversas WHERE id = ?`)
       .get(input.id) as import('@shared/index').IaConversa | undefined
     if (!conversa) throw new Error('Conversa não encontrada')
-    const mensagens = db
+
+    // FASE 4: Carregar tool_calls_json e deserializar
+    const mensagensRaw = db
       .prepare(
-        `SELECT id, conversa_id, papel, conteudo, timestamp FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC`,
+        `SELECT id, conversa_id, papel, conteudo, timestamp, tool_calls_json FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC`,
       )
-      .all(input.id) as import('@shared/index').IaMensagem[]
+      .all(input.id) as Array<{
+        id: string
+        conversa_id: string
+        papel: string
+        conteudo: string
+        timestamp: string
+        tool_calls_json: string | null
+      }>
+
+    const mensagens: import('@shared/index').IaMensagem[] = mensagensRaw.map((m) => ({
+      id: m.id,
+      conversa_id: m.conversa_id,
+      papel: m.papel as import('@shared/index').IaMensagem['papel'],
+      conteudo: m.conteudo,
+      timestamp: m.timestamp,
+      tool_calls: m.tool_calls_json
+        ? JSON.parse(m.tool_calls_json)
+        : undefined,
+    }))
+
     return { conversa, mensagens }
   })
 
@@ -2253,9 +2274,22 @@ const iaMensagensSalvar = t.procedure
   .action(async ({ input }) => {
     const db = getDb()
     const { conversa_id, mensagem } = input
+
+    // FASE 4: Serializar tool_calls se existir
+    const toolCallsJson = mensagem.tool_calls
+      ? JSON.stringify(mensagem.tool_calls)
+      : null
+
     db.prepare(
-      `INSERT OR IGNORE INTO ia_mensagens (id, conversa_id, papel, conteudo, timestamp) VALUES (?, ?, ?, ?, ?)`,
-    ).run(mensagem.id, conversa_id, mensagem.papel, mensagem.conteudo, mensagem.timestamp)
+      `INSERT OR IGNORE INTO ia_mensagens (id, conversa_id, papel, conteudo, timestamp, tool_calls_json) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      mensagem.id,
+      conversa_id,
+      mensagem.papel,
+      mensagem.conteudo,
+      mensagem.timestamp,
+      toolCallsJson
+    )
     db.prepare(
       `UPDATE ia_conversas SET atualizado_em = datetime('now') WHERE id = ?`,
     ).run(conversa_id)

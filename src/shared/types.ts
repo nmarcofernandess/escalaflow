@@ -659,8 +659,9 @@ export interface IaContexto {
 export interface ToolCall {
   id: string
   name: string
-  args: Record<string, any>
-  result?: any
+  // Optional because historical rows (and some fallback payloads) may contain only id/name.
+  args?: Record<string, unknown>
+  result?: unknown
 }
 
 export interface IaMensagem {

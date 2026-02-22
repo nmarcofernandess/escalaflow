@@ -98,8 +98,8 @@ export function ConfiguracoesPagina() {
     defaultValues: {
       provider: 'gemini',
       api_key: '',
-      modelo: 'gemini-2.5-flash',
-      ativo: false,
+      modelo: 'gemini-3-flash-preview',
+      ativo: true, // 🟢 Default ativado quando cadastra API key pela primeira vez
     },
   })
 
@@ -338,8 +338,14 @@ export function ConfiguracoesPagina() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="gemini-3-flash-preview">
+                              Gemini 3 Flash Preview (Mais Novo) 🚀
+                            </SelectItem>
                             <SelectItem value="gemini-2.5-flash">
-                              Gemini 2.5 Flash (Recomendado)
+                              Gemini 2.5 Flash (Estável)
+                            </SelectItem>
+                            <SelectItem value="gemini-2.0-flash-thinking-exp-1219">
+                              Gemini 2.0 Flash Thinking Exp
                             </SelectItem>
                             <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
                             <SelectItem value="gemini-2.5-flash-lite">

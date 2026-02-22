@@ -7,7 +7,23 @@ import { Button } from '@/components/ui/button'
 import { useIaStore } from '@/store/iaStore'
 import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
-import type { IaMensagem, IaContexto } from '@shared/index'
+import { IaToolCallsCollapsible } from './IaToolCallsCollapsible'
+import type { IaMensagem, IaContexto, ToolCall } from '@shared/index'
+
+// We intentionally keep tool output only in the in-memory UI message.
+// Persisted chat history stores a sanitized version without `result` to avoid giant JSON payloads in SQLite.
+function stripToolCallResult(call: ToolCall): ToolCall {
+  const sanitized: ToolCall = {
+    id: call.id,
+    name: call.name,
+  }
+
+  if (Object.prototype.hasOwnProperty.call(call, 'args')) {
+    sanitized.args = call.args
+  }
+
+  return sanitized
+}
 
 function useIaContexto(): IaContexto {
   const location = useLocation()
@@ -88,22 +104,27 @@ export function IaChatView() {
         historico: mensagens,
         contexto,
       })
-      await adicionarMensagem({
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
+      const toolCallsAoVivo = Array.isArray(resp?.acoes) ? (resp.acoes as ToolCall[]) : []
+      const timestamp = new Date().toISOString()
+      const mensagemId = crypto.randomUUID()
+
+      const mensagemAssistente: IaMensagem = {
+        id: mensagemId,
+        timestamp,
         papel: 'assistente',
         conteudo: resp.resposta,
-      })
-      if (resp.acoes?.length > 0) {
-        for (const acao of resp.acoes) {
-          await adicionarMensagem({
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            papel: 'tool_result',
-            conteudo: `🔧 ${acao.name}\n${JSON.stringify(acao.result, null, 2)}`,
-          })
-        }
+        tool_calls: toolCallsAoVivo.length > 0 ? toolCallsAoVivo : undefined,
       }
+
+      const mensagemPersistida: IaMensagem = {
+        ...mensagemAssistente,
+        // Keep args for debugging/history context, drop result to keep DB rows compact.
+        tool_calls: toolCallsAoVivo.length > 0
+          ? toolCallsAoVivo.map(stripToolCallResult)
+          : undefined,
+      }
+
+      await adicionarMensagem(mensagemAssistente, { mensagemPersistida })
     } catch (err: any) {
       await adicionarMensagem({
         id: crypto.randomUUID(),
@@ -136,8 +157,8 @@ export function IaChatView() {
 
   return (
     <>
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-3 p-4">
+      <ScrollArea className="flex-1 min-w-0">
+        <div className="flex min-w-0 max-w-full flex-col gap-3 p-4">
           {mensagens.length === 0 && (
             <div className="flex flex-col items-center justify-center text-center gap-3 text-muted-foreground py-16">
               <Bot className="size-12 opacity-20" />
@@ -150,9 +171,18 @@ export function IaChatView() {
             </div>
           )}
 
-          {mensagens.map((m) => (
-            <IaMensagemBubble key={m.id} msg={m} />
-          ))}
+          {mensagens
+            .filter((m) => m.papel !== 'tool_result')
+            .map((m) => (
+              <div key={m.id} className="min-w-0 max-w-full">
+                <IaMensagemBubble msg={m} />
+                {m.papel === 'assistente' && m.tool_calls && m.tool_calls.length > 0 && (
+                  <div className="mt-2 min-w-0 max-w-full">
+                    <IaToolCallsCollapsible toolCalls={m.tool_calls} />
+                  </div>
+                )}
+              </div>
+            ))}
 
           {carregando && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-2xl rounded-bl-sm bg-muted border text-muted-foreground text-sm max-w-[70%]">

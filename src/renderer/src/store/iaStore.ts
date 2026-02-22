@@ -37,7 +37,7 @@ interface IaStore {
   inicializar: () => Promise<void>
   novaConversa: () => Promise<void>
   carregarConversa: (id: string) => Promise<void>
-  adicionarMensagem: (msg: IaMensagem) => Promise<void>
+  adicionarMensagem: (msg: IaMensagem, options?: { mensagemPersistida?: IaMensagem }) => Promise<void>
   listarConversas: () => Promise<void>
   arquivarConversa: (id: string) => Promise<void>
   restaurarConversa: (id: string) => Promise<void>
@@ -129,7 +129,7 @@ export const useIaStore = create<IaStore>((set, get) => ({
     })
   },
 
-  adicionarMensagem: async (msg: IaMensagem) => {
+  adicionarMensagem: async (msg: IaMensagem, options?: { mensagemPersistida?: IaMensagem }) => {
     const { conversa_ativa_id, mensagens } = get()
     if (!conversa_ativa_id) return
 
@@ -141,7 +141,11 @@ export const useIaStore = create<IaStore>((set, get) => ({
     }
 
     set((state) => ({ mensagens: [...state.mensagens, msg] }))
-    await ipc.invoke('ia.mensagens.salvar', { conversa_id: conversa_ativa_id, mensagem: msg })
+    // Allows renderer flows to show richer data in-memory than what is persisted (ex.: tool outputs).
+    await ipc.invoke('ia.mensagens.salvar', {
+      conversa_id: conversa_ativa_id,
+      mensagem: options?.mensagemPersistida ?? msg,
+    })
   },
 
   listarConversas: async () => {

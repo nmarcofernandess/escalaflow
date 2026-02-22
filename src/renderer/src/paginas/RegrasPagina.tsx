@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, ShieldCheck, Lock, AlertTriangle, RotateCcw, Building2, Pencil, Plus, X } from 'lucide-react'
+import { Save, ShieldCheck, Lock, AlertTriangle, RotateCcw, Building2, Pencil, X } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -24,13 +24,6 @@ import {
   FormControl,
   FormMessage,
 } from '@/components/ui/form'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import { PageHeader } from '@/componentes/PageHeader'
 import { empresaService } from '@/servicos/empresa'
 import { regrasService } from '@/servicos/regras'
@@ -171,10 +164,6 @@ export function RegrasPagina() {
   const [salvandoRegra, setSalvandoRegra] = useState<string | null>(null)
   const [resetando, setResetando] = useState(false)
   const [deletandoRegra, setDeletandoRegra] = useState<string | null>(null)
-  const [dialogAddAberto, setDialogAddAberto] = useState(false)
-  const [addCodigo, setAddCodigo] = useState('')
-  const [addStatus, setAddStatus] = useState('')
-  const [salvandoAdd, setSalvandoAdd] = useState(false)
   const { data: empresa } = useApiData<Empresa>(() => empresaService.buscar(), [])
   const { data: regrasData, reload: reloadRegras } = useApiData<RuleDefinition[]>(
     () => regrasService.listar(),
@@ -269,40 +258,6 @@ export function RegrasPagina() {
       setDeletandoRegra(null)
     }
   }
-
-  const handleAbrirDialogAdd = () => {
-    setAddCodigo('')
-    setAddStatus('')
-    setDialogAddAberto(true)
-  }
-
-  const handleConfirmarAdd = async () => {
-    if (!addCodigo || !addStatus) return
-    setSalvandoAdd(true)
-    try {
-      await regrasService.atualizar(addCodigo, addStatus as RuleStatus)
-      await reloadRegras()
-      setDialogAddAberto(false)
-      toast.success('Customização adicionada')
-    } catch {
-      toast.error('Erro ao adicionar customização')
-    } finally {
-      setSalvandoAdd(false)
-    }
-  }
-
-  const regrasSelecionada = regrasData?.find((r) => r.codigo === addCodigo)
-  const addStatusOptions =
-    regrasSelecionada?.categoria === 'CLT'
-      ? [
-          { value: 'HARD', label: 'HARD' },
-          { value: 'SOFT', label: 'SOFT' },
-          { value: 'OFF', label: 'Desativado' },
-        ]
-      : [
-          { value: 'ON', label: 'Ativo' },
-          { value: 'OFF', label: 'Desativado' },
-        ]
 
   return (
     <div className="flex flex-1 flex-col">
@@ -466,157 +421,65 @@ export function RegrasPagina() {
             {/* Card: Customizações da Empresa */}
             {(() => {
               const customizadas = regrasData.filter((r) => r.status_efetivo !== r.status_sistema)
-              const editaveisNaoCustomizadas = regrasData.filter(
-                (r) => r.editavel && r.status_efetivo === r.status_sistema,
-              )
               return (
-                <>
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <CardTitle className="flex items-center gap-2 text-base">
-                            <Building2 className="size-4" />
-                            Customizacoes da Empresa
-                          </CardTitle>
-                          <CardDescription className="mt-1">
-                            Regras que sua empresa ajustou em relacao ao padrao do sistema. Clique
-                            no X para remover uma customizacao e voltar ao padrao.
-                          </CardDescription>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="shrink-0"
-                          onClick={handleAbrirDialogAdd}
-                          disabled={editaveisNaoCustomizadas.length === 0}
-                        >
-                          <Plus className="mr-1 size-3.5" />
-                          Adicionar
-                        </Button>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Building2 className="size-4" />
+                      Customizacoes da Empresa
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Regras que sua empresa ajustou em relacao ao padrao do sistema. Clique
+                      no X para remover uma customizacao e voltar ao padrao.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {customizadas.length === 0 ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-dashed px-4 py-5 text-muted-foreground">
+                        <ShieldCheck className="size-4 shrink-0" />
+                        <span className="text-sm">
+                          Nenhuma customizacao ativa — sua empresa esta usando os padroes do
+                          sistema.
+                        </span>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      {customizadas.length === 0 ? (
-                        <div className="flex items-center gap-3 rounded-lg border border-dashed px-4 py-5 text-muted-foreground">
-                          <ShieldCheck className="size-4 shrink-0" />
-                          <span className="text-sm">
-                            Nenhuma customizacao ativa — sua empresa esta usando os padroes do
-                            sistema.
-                          </span>
-                        </div>
-                      ) : (
-                        <ul className="space-y-2">
-                          {customizadas.map((r) => (
-                            <li
-                              key={r.codigo}
-                              className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Pencil className="size-3.5 text-muted-foreground shrink-0" />
-                                <span className="text-sm font-medium truncate">{r.nome}</span>
-                                <Badge variant="outline" className="text-xs font-mono shrink-0">
-                                  {r.codigo}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-xs text-muted-foreground line-through">
-                                  {r.status_sistema}
-                                </span>
-                                <span className="text-xs text-muted-foreground">→</span>
-                                <Badge variant="secondary" className="text-xs">
-                                  {r.status_efetivo}
-                                </Badge>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-6 text-muted-foreground hover:text-destructive"
-                                  disabled={deletandoRegra === r.codigo}
-                                  onClick={() => handleDeletarCustomizacao(r.codigo)}
-                                >
-                                  <X className="size-3.5" />
-                                </Button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Dialog: Adicionar Customização */}
-                  <Dialog open={dialogAddAberto} onOpenChange={setDialogAddAberto}>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle>Adicionar Customizacao</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 py-2">
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium">Regra</label>
-                          <Select
-                            value={addCodigo}
-                            onValueChange={(val) => {
-                              setAddCodigo(val)
-                              setAddStatus('')
-                            }}
+                    ) : (
+                      <ul className="space-y-2">
+                        {customizadas.map((r) => (
+                          <li
+                            key={r.codigo}
+                            className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3"
                           >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione uma regra..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {editaveisNaoCustomizadas.map((r) => (
-                                <SelectItem key={r.codigo} value={r.codigo}>
-                                  <span className="font-mono text-xs mr-2">{r.codigo}</span>
-                                  {r.nome}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {regrasSelecionada && (
-                          <div className="space-y-1.5">
-                            <label className="text-sm font-medium">Novo status</label>
-                            <Select value={addStatus} onValueChange={setAddStatus}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione o status..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {addStatusOptions.map((opt) => {
-                                  if (opt.value === regrasSelecionada.status_sistema) return null
-                                  return (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                      {opt.label}
-                                    </SelectItem>
-                                  )
-                                })}
-                              </SelectContent>
-                            </Select>
-                            {regrasSelecionada.descricao && (
-                              <p className="text-xs text-muted-foreground">
-                                {regrasSelecionada.descricao}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <DialogFooter>
-                        <Button
-                          variant="outline"
-                          onClick={() => setDialogAddAberto(false)}
-                          disabled={salvandoAdd}
-                        >
-                          Cancelar
-                        </Button>
-                        <Button
-                          onClick={handleConfirmarAdd}
-                          disabled={!addCodigo || !addStatus || salvandoAdd}
-                        >
-                          {salvandoAdd ? 'Salvando...' : 'Adicionar'}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Pencil className="size-3.5 text-muted-foreground shrink-0" />
+                              <span className="text-sm font-medium truncate">{r.nome}</span>
+                              <Badge variant="outline" className="text-xs font-mono shrink-0">
+                                {r.codigo}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-xs text-muted-foreground line-through">
+                                {r.status_sistema}
+                              </span>
+                              <span className="text-xs text-muted-foreground">→</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {r.status_efetivo}
+                              </Badge>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-6 text-muted-foreground hover:text-destructive"
+                                disabled={deletandoRegra === r.codigo}
+                                onClick={() => handleDeletarCustomizacao(r.codigo)}
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
               )
             })()}
           </>
