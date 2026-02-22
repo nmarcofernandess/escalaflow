@@ -1,11 +1,13 @@
 import { SYSTEM_PROMPT } from './system-prompt'
 import { IA_TOOLS, executeTool } from './tools'
+import { buildContextBriefing } from './discovery'
 import { getDb } from '../db/database'
-import type { IaMensagem, ToolCall, IaConfiguracao } from '../../shared/types'
+import type { IaMensagem, ToolCall, IaConfiguracao, IaContexto } from '../../shared/types'
 
 export async function iaEnviarMensagem(
     mensagem: string,
-    historico: IaMensagem[]
+    historico: IaMensagem[],
+    contexto?: IaContexto
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const db = getDb()
     const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get() as IaConfiguracao | undefined
@@ -18,7 +20,7 @@ export async function iaEnviarMensagem(
     }
 
     if (config.provider === 'gemini') {
-        return _callGemini(config, mensagem, historico)
+        return _callGemini(config, mensagem, historico, contexto)
     }
 
     throw new Error(`Provider "${config.provider}" não suportado. Apenas Gemini está implementado.`)
@@ -32,10 +34,17 @@ export async function iaEnviarMensagem(
 async function _callGemini(
     config: IaConfiguracao,
     currentMsg: string,
-    historico: IaMensagem[]
+    historico: IaMensagem[],
+    contexto?: IaContexto
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const modelo = config.modelo || 'gemini-3-flash-preview'
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${config.api_key}`
+
+    // Auto-discovery: busca dados relevantes do DB baseado na página atual
+    const contextBriefing = buildContextBriefing(contexto)
+    const fullSystemPrompt = contextBriefing
+        ? `${SYSTEM_PROMPT}\n\n---\n${contextBriefing}`
+        : SYSTEM_PROMPT
 
     // Monta o histórico de conversa no formato Gemini
     // IMPORTANTE: Gemini aceita apenas roles "user" e "model"
@@ -67,7 +76,7 @@ async function _callGemini(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+                systemInstruction: { parts: [{ text: fullSystemPrompt }] },
                 contents,
                 tools,
             }),

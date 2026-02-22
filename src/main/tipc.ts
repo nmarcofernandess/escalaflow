@@ -2014,7 +2014,7 @@ const escalasDetectarCicloRotativo = t.procedure
     const start = new Date(escala.data_inicio)
     const end = new Date(escala.data_fim)
     const semanas = Math.max(1, Math.round((end.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)))
-    const r = db.prepare(`SELECT COUNT(DISTINCT colaborador_id) as p FROM alocacoes WHERE escala_id = ? AND tipo_dia != 'FOLGA'`).get(input.escala_id) as { p: number }
+    const r = db.prepare(`SELECT COUNT(DISTINCT colaborador_id) as p FROM alocacoes WHERE escala_id = ? AND status != 'FOLGA'`).get(input.escala_id) as { p: number }
     const P = r?.p ?? 0
     return {
       ciclo_detectado: semanas >= 2 && P > 0,
@@ -2089,8 +2089,8 @@ const escalasGerarPorCicloRotativo = t.procedure
 
     // Gerar alocações
     const insertAlocacao = db.prepare(`
-      INSERT INTO alocacoes (escala_id, colaborador_id, data, tipo_dia, pinned)
-      VALUES (?, ?, ?, ?, 0)
+      INSERT INTO alocacoes (escala_id, colaborador_id, data, status)
+      VALUES (?, ?, ?, ?)
     `)
     const transaction = db.transaction(() => {
       const start = new Date(input.data_inicio)
@@ -2164,9 +2164,9 @@ const iaConfiguracaoTestar = t.procedure
   })
 
 const iaChatEnviar = t.procedure
-  .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[] }>()
+  .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[]; contexto?: import('@shared/index').IaContexto }>()
   .action(async ({ input }) => {
-    return await iaEnviarMensagem(input.mensagem, input.historico)
+    return await iaEnviarMensagem(input.mensagem, input.historico, input.contexto)
   })
 
 // =============================================================================

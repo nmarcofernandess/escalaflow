@@ -4,17 +4,17 @@ import { buildSolverInput, runSolver, persistirSolverResult } from '../motor/sol
 export const IA_TOOLS = [
     {
         name: 'consultar',
-        description: 'Consulta dados do banco. Use para buscar colaboradores, setores, escalas, alocacoes, excecoes, demandas, tipos_contrato, empresa, feriados, funcoes, regra_definicao, regra_empresa.',
+        description: 'Consulta dados do banco de dados. Use SEMPRE que precisar de informação. Nunca pergunte ao usuário — busque aqui. Exemplos: consultar("setores") para listar todos os setores, consultar("alocacoes", {"escala_id": 15}) para ver alocações de uma escala, consultar("colaboradores", {"setor_id": 3}) para colaboradores de um setor. Filtros de texto são case-insensitive.',
         parameters: {
             type: 'object',
             properties: {
                 entidade: {
                     type: 'string',
-                    description: 'colaboradores | setores | escalas | alocacoes | excecoes | demandas | tipos_contrato | empresa | feriados | funcoes | regra_definicao | regra_empresa'
+                    description: 'A tabela para consultar: colaboradores | setores | escalas | alocacoes | excecoes | demandas | tipos_contrato | empresa | feriados | funcoes | regra_definicao | regra_empresa'
                 },
                 filtros: {
                     type: 'object',
-                    description: 'filtros opcionais como objeto JSON (ex: { "setor_id": 2, "ativo": 1 })'
+                    description: 'Filtros opcionais (ex: {"setor_id": 3, "ativo": 1}). Para resolver nomes, chame SEM filtros e procure na lista. Filtros de texto são case-insensitive.'
                 }
             },
             required: ['entidade']
@@ -80,11 +80,11 @@ export const IA_TOOLS = [
     },
     {
         name: 'gerar_escala',
-        description: 'Roda o motor OR-Tools CP-SAT para gerar uma escala. O resultado é salvo automaticamente como RASCUNHO no banco. Retorna o escala_id, indicadores e diagnostico.',
+        description: 'Roda o motor OR-Tools CP-SAT para gerar uma escala. Salva como RASCUNHO. Use o setor_id do auto-contexto. Exemplo: gerar_escala({"setor_id": 3, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}). Retorna escala_id, indicadores e diagnostico.',
         parameters: {
             type: 'object',
             properties: {
-                setor_id: { type: 'number', description: 'ID do setor' },
+                setor_id: { type: 'number', description: 'ID do setor (pegue do auto-contexto ou da lista de setores)' },
                 data_inicio: { type: 'string', description: 'Data YYYY-MM-DD' },
                 data_fim: { type: 'string', description: 'Data YYYY-MM-DD' },
                 rules_override: {
@@ -122,7 +122,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'preflight',
-        description: 'Verifica a viabilidade de gerar uma escala para um setor e período. Retorna blockers (impeditivos) e warnings (avisos). Execute ANTES de gerar_escala.',
+        description: 'Verifica viabilidade ANTES de gerar escala. Retorna blockers e warnings. Use o setor_id do auto-contexto. Exemplo: preflight({"setor_id": 3, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}).',
         parameters: {
             type: 'object',
             properties: {
@@ -135,7 +135,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'resumo_sistema',
-        description: 'Retorna um relatório gerencial com total de setores, colaboradores e status das escalas.',
+        description: 'Relatório gerencial rápido: total de setores, colaboradores, escalas por status. Use quando o usuário quer visão geral ou quando não tem auto-contexto suficiente.',
         parameters: { type: 'object', properties: {} }
     },
     {
@@ -211,7 +211,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const params: unknown[] = []
 
         if (filtros && Object.keys(filtros).length > 0) {
-            query += ' WHERE ' + Object.keys(filtros).map((k: string) => `${k} = ?`).join(' AND ')
+            const conditions = Object.entries(filtros).map(([k, v]) => {
+                if (typeof v === 'string') return `${k} = ? COLLATE NOCASE`
+                return `${k} = ?`
+            })
+            query += ' WHERE ' + conditions.join(' AND ')
             params.push(...Object.values(filtros))
         }
 

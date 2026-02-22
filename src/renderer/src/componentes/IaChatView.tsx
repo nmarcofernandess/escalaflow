@@ -1,13 +1,40 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Bot, Settings } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { useIaStore } from '@/store/iaStore'
 import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
-import type { IaMensagem } from '@shared/index'
+import type { IaMensagem, IaContexto } from '@shared/index'
+
+function useIaContexto(): IaContexto {
+  const location = useLocation()
+  return useMemo(() => {
+    const path = location.pathname
+    const setorMatch = path.match(/^\/setores\/(\d+)/)
+    const colabMatch = path.match(/^\/colaboradores\/(\d+)/)
+    const setor_id = setorMatch ? Number(setorMatch[1]) : undefined
+    const colaborador_id = colabMatch ? Number(colabMatch[1]) : undefined
+
+    let pagina: IaContexto['pagina'] = 'outro'
+    if (path === '/') pagina = 'dashboard'
+    else if (path === '/setores') pagina = 'setor_lista'
+    else if (setorMatch && path.endsWith('/escala')) pagina = 'escala'
+    else if (setorMatch) pagina = 'setor_detalhe'
+    else if (path === '/escalas') pagina = 'escalas_hub'
+    else if (path === '/colaboradores') pagina = 'colaborador_lista'
+    else if (colabMatch) pagina = 'colaborador_detalhe'
+    else if (path === '/tipos-contrato') pagina = 'contratos'
+    else if (path === '/empresa') pagina = 'empresa'
+    else if (path === '/feriados') pagina = 'feriados'
+    else if (path === '/configuracoes') pagina = 'configuracoes'
+    else if (path === '/regras') pagina = 'regras'
+
+    return { rota: path, pagina, setor_id, colaborador_id }
+  }, [location.pathname])
+}
 
 export function IaChatView() {
   const { mensagens, carregando, setCarregando, conversa_ativa_id, adicionarMensagem } =
@@ -16,6 +43,7 @@ export function IaChatView() {
   const [configurado, setConfigurado] = useState<boolean | null>(null)
   const msgEndRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const contexto = useIaContexto()
 
   useEffect(() => {
     window.electron.ipcRenderer.invoke('ia.configuracao.obter').then((config: any) => {
@@ -58,6 +86,7 @@ export function IaChatView() {
       const resp = await window.electron.ipcRenderer.invoke('ia.chat.enviar', {
         mensagem: msg.conteudo,
         historico: mensagens,
+        contexto,
       })
       await adicionarMensagem({
         id: crypto.randomUUID(),
