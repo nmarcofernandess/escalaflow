@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { IaMensagem, IaConversa } from '@shared/index'
+import type { IaMensagem, IaConversa, ToolCall, IaStreamEvent } from '@shared/index'
 
 function gerarTitulo(conteudo: string): string {
   const truncado = conteudo.slice(0, 50).trim()
@@ -29,6 +29,18 @@ interface IaStore {
   conversas: IaConversa[]
   busca_titulo: string
   setBuscaTitulo: (b: string) => void
+
+  // Streaming (transient — nunca persistido)
+  stream_id_ativo: string | null
+  texto_parcial: string
+  tool_calls_parciais: ToolCall[]
+  tools_em_andamento: Record<string, { tool_name: string; args?: Record<string, unknown> }>
+
+  // Streaming actions
+  iniciarStream: (streamId: string) => void
+  processarStreamEvent: (event: IaStreamEvent) => void
+  finalizarStream: () => void
+  cancelarStream: () => void
 
   // Flag de inicialização (para não repetir ao reabrir)
   _inicializado: boolean
@@ -66,6 +78,88 @@ export const useIaStore = create<IaStore>((set, get) => ({
   conversas: [],
   busca_titulo: '',
   setBuscaTitulo: (busca_titulo) => set({ busca_titulo }),
+
+  // Streaming defaults
+  stream_id_ativo: null,
+  texto_parcial: '',
+  tool_calls_parciais: [],
+  tools_em_andamento: {},
+
+  iniciarStream: (streamId) => set({
+    stream_id_ativo: streamId,
+    texto_parcial: '',
+    tool_calls_parciais: [],
+    tools_em_andamento: {},
+    carregando: true,
+  }),
+
+  processarStreamEvent: (event) => {
+    const { stream_id_ativo } = get()
+    if (event.stream_id !== stream_id_ativo) return
+
+    switch (event.type) {
+      case 'text-delta':
+        set((s) => ({ texto_parcial: s.texto_parcial + event.delta }))
+        break
+
+      case 'tool-call-start':
+        set((s) => ({
+          tools_em_andamento: {
+            ...s.tools_em_andamento,
+            [event.tool_call_id]: { tool_name: event.tool_name, args: event.args },
+          },
+        }))
+        break
+
+      case 'tool-result': {
+        set((s) => {
+          const { [event.tool_call_id]: _removed, ...rest } = s.tools_em_andamento
+          return {
+            tools_em_andamento: rest,
+            tool_calls_parciais: [
+              ...s.tool_calls_parciais,
+              {
+                id: event.tool_call_id,
+                name: event.tool_name,
+                result: event.result,
+              },
+            ],
+          }
+        })
+        break
+      }
+
+      case 'follow-up-start':
+        // Reset text for follow-up — tools already captured
+        set({ texto_parcial: '' })
+        break
+
+      case 'step-finish':
+        // Informational — no state change needed
+        break
+
+      case 'finish':
+      case 'error':
+        // Handled by IaChatView's then/catch on the invoke
+        break
+    }
+  },
+
+  finalizarStream: () => set({
+    stream_id_ativo: null,
+    texto_parcial: '',
+    tool_calls_parciais: [],
+    tools_em_andamento: {},
+    carregando: false,
+  }),
+
+  cancelarStream: () => set({
+    stream_id_ativo: null,
+    texto_parcial: '',
+    tool_calls_parciais: [],
+    tools_em_andamento: {},
+    carregando: false,
+  }),
 
   _inicializado: false,
 

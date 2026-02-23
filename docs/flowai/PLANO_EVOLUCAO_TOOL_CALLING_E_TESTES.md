@@ -295,27 +295,37 @@ Melhor quando:
 
 Parar de depender de `consultar/criar/atualizar` para tudo.
 
+Revisao de estrategia (apos implementacao inicial):
+
+- **Nao** criar wrappers semanticos que so duplicam CRUD/read generico (ex.: `listar_setores`, `criar_excecao`) quando `consultar/criar` + raciocinio resolvem.
+- Priorizar apenas tools com **logica propria** (fuzzy search, agregacao/diagnostico, solver/validacao, IPC fora do whitelist generico, traducao de intent natural).
+
+Referencia de escopo:
+
+- O **MVP desta fase** e um subconjunto do catalogo completo em `docs/flowai/CATALOGO_TARGET_TOOLS_IA.md` (Onda 1 / P0).
+- O catalogo completo existe para evitar esquecer dominios do produto; a implementacao continua incremental.
+
 ### Entregas (MVP de semantica)
 
-#### Discovery
+#### Discovery (so quando genericas nao resolvem)
 
-- `buscar_colaborador`
-- `listar_setores`
-- `obter_escala_atual`
+- `buscar_colaborador` (nome fuzzy / ambiguidades)
 
-#### Acoes
+#### Acoes com logica propria
 
-- `criar_excecao`
-- `atualizar_janela_colaborador`
+- `ajustar_horario` (ajuste de horario manual de alocacao)
+- `salvar_regra_horario_colaborador`
+- `definir_janela_colaborador` (traducao de intent)
 
-#### Validacao/diagnostico
+#### Validacao/diagnostico com computacao/agregacao
 
+- `preflight_completo`
 - `diagnosticar_escala` (resumo com status + proximas acoes possiveis)
 
 ### Estrategia de migracao
 
 - manter `consultar/criar/atualizar` como escape hatch
-- atualizar prompt para preferir tools semanticas
+- atualizar prompt para preferir tools semanticas **apenas quando agregam logica propria**
 - adicionar `_meta.ids_usaveis_em` nas tools discovery
 
 ### Testes/evals obrigatorios
@@ -323,7 +333,7 @@ Parar de depender de `consultar/criar/atualizar` para tudo.
 - dataset de intents reais mapeando ferramenta esperada
 - scorer de "tool correta"
 - scorer de "args corretos"
-- scorer de "nao usou `consultar` quando havia tool semantica"
+- scorer de "nao usou tool wrapper desnecessaria quando `consultar/criar` resolviam"
 
 ## Fase 5 — Confiabilidade do runtime (sem hacks invisiveis)
 
@@ -645,4 +655,3 @@ Se a proxima iteracao for de execucao (nao so planejamento), a ordem mais inteli
 4. Comecar refatoracao de `consultar`
 
 Isso cria rede de seguranca antes de mexer no coracao do sistema.
-

@@ -8,18 +8,18 @@ Data de referencia: `2026-02-23`
 - SIM → nao cria tool semantica
 - NAO → cria (logica propria, tabela fora do whitelist, agregacao, filesystem, IPC especial)
 
-Cap maximo: **30 tools**. Hoje: **23**. Slots livres: **7**.
+Cap maximo: **30 tools**. Hoje: **28**. Slots livres: **2**.
 
 ---
 
-## As 23 tools atuais (todas justificadas)
+## As 28 tools atuais (todas justificadas)
 
-### Genericas (6) — cobrem CRUD de 14 entidades
+### Genericas (6) — cobrem leitura de 18 entidades + CRUD parcial
 
 | Tool | O que faz |
 |------|-----------|
 | `get_context` | Discovery completo (setores, colabs, escalas, contratos com JOINs) |
-| `consultar` | SELECT generico com enrichment de FKs (14 entidades no whitelist) |
+| `consultar` | SELECT generico com enrichment de FKs (18 entidades no whitelist) |
 | `criar` | INSERT generico com defaults inteligentes (7 entidades: colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes) |
 | `atualizar` | UPDATE generico (5 entidades: colaboradores, empresa, tipos_contrato, setores, demandas) |
 | `deletar` | DELETE generico (4 entidades: excecoes, demandas, feriados, funcoes) |
@@ -77,16 +77,33 @@ Cap maximo: **30 tools**. Hoje: **23**. Slots livres: **7**.
 | `resumir_horas_setor` | KPIs de horas/dias por colaborador num periodo | Query agregada com JOINs + calculos (nao e SELECT simples) |
 | `resetar_regras_empresa` | Volta todas as regras pro padrao (DELETE regra_empresa) | Safety check + contagem + operacao destructiva |
 
+### Perfis de horario por contrato (3) — NOVO
+
+| Tool | O que faz | Por que generica nao resolve |
+|------|-----------|------------------------------|
+| `listar_perfis_horario` | Lista perfis por tipo de contrato | Leitura guiada de tabela especializada + UX semantica por contrato |
+| `salvar_perfil_horario` | Cria/edita perfil com janelas e preferencia de turno | Tabela fora dos whitelists de escrita generica + validacao de payload |
+| `deletar_perfil_horario` | Remove perfil por ID | Tabela fora dos whitelists de delecao generica + guardrails de erro |
+
+### Configuracao operacional e alertas (2) — NOVO
+
+| Tool | O que faz | Por que generica nao resolve |
+|------|-----------|------------------------------|
+| `configurar_horario_funcionamento` | Configura horario por dia (empresa/setor) com heranca | Escreve em tabelas especializadas + regras de `nivel`/`usa_padrao` |
+| `obter_alertas` | Agrega alertas ativos (escalas desatualizadas, pendencias etc.) | Agregacao multi-entidade + heuristicas operacionais |
+
 ---
 
 ## Whitelists das genericas (referencia)
 
 ```
-LEITURA (consultar) — 14 entidades:
+LEITURA (consultar) — 18 entidades:
   colaboradores, setores, escalas, alocacoes, excecoes,
   demandas, tipos_contrato, empresa, feriados, funcoes,
   regra_definicao, regra_empresa,
-  demandas_excecao_data, colaborador_regra_horario_excecao_data
+  demandas_excecao_data, colaborador_regra_horario_excecao_data,
+  contrato_perfis_horario, empresa_horario_semana, setor_horario_semana,
+  escala_ciclo_modelos
 
 CRIACAO (criar / cadastrar_lote):
   colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes
@@ -100,7 +117,7 @@ DELECAO (deletar):
 
 ---
 
-## Cobertura do trabalho diario do RH (com as 23 atuais)
+## Cobertura do trabalho diario do RH (com as 28 atuais)
 
 | Operacao do dia a dia | Funciona? | Como |
 |---|---|---|
@@ -121,11 +138,14 @@ DELECAO (deletar):
 | Override pontual de horario | SIM | `upsert_regra_excecao_data` |
 | Resumo de horas por setor | SIM | `resumir_horas_setor` |
 | Resetar regras pro padrao | SIM | `resetar_regras_empresa` |
+| Gerir perfis de horario por contrato | SIM | `listar_perfis_horario` / `salvar_perfil_horario` / `deletar_perfil_horario` |
+| Ajustar horario de funcionamento (empresa/setor) | SIM | `configurar_horario_funcionamento` |
+| Ver alertas operacionais do sistema | SIM | `obter_alertas` |
 | Consultar excecoes por data | SIM | `consultar("demandas_excecao_data")` / `consultar("colaborador_regra_horario_excecao_data")` |
 | Exportar escala (PDF/HTML) | NAO | Operacao de UI — orientar usuario a clicar Exportar na pagina |
 | Ciclo rotativo | NAO | P3 — avancado |
 
-**Cobertura: ~93% do trabalho diario**
+**Cobertura: alta (trabalho diario de RH + configuracao operacional)**
 
 ---
 
@@ -152,8 +172,8 @@ DELECAO (deletar):
 ## Proporcao final
 
 ```
-ATUAL (23 tools):  93% do trabalho diario
-CAP   (30 tools):  sobra 7 slots pra futuro
+ATUAL (28 tools):  cobertura alta sem ultrapassar o teto
+CAP   (30 tools):  sobram 2 slots pra futuro (sem contar eventuais podas)
 ```
 
 ## Evals

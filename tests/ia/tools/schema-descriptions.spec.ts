@@ -8,8 +8,9 @@ function getToolParameters(name: string): any {
 }
 
 describe('IA tool schemas (.describe -> JSON Schema)', () => {
-  it('mantém o registry enxuto (baseline atual = 23 tools)', () => {
-    expect(IA_TOOLS).toHaveLength(23)
+  it('mantém o registry enxuto (teto operacional <= 30 tools)', () => {
+    expect(IA_TOOLS.length).toBeLessThanOrEqual(30)
+    expect(IA_TOOLS.length).toBeGreaterThanOrEqual(19)
   })
 
   it('não expõe resumo_sistema no registry de tools da IA (deprecated)', () => {

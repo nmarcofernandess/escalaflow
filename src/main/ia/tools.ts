@@ -1,5 +1,5 @@
 import { getDb } from '../db/database'
-import { buildSolverInput, runSolver, persistirSolverResult } from '../motor/solver-bridge'
+import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenarioHash } from '../motor/solver-bridge'
 import { validarEscalaV3 } from '../motor/validador'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
@@ -430,6 +430,46 @@ const ResetarRegrasEmpresaSchema = z.object({
   confirmar: z.literal(true).describe('Safety check: deve ser true para confirmar o reset de todas as regras.'),
 })
 
+// listar_perfis_horario
+const ListarPerfisHorarioSchema = z.object({
+  tipo_contrato_id: z.number().int().positive().describe('ID do tipo de contrato. Resolva via get_context() ou consultar("tipos_contrato").'),
+})
+
+// salvar_perfil_horario
+const SalvarPerfilHorarioSchema = z.object({
+  id: z.number().int().positive().optional().describe('ID do perfil para atualizar. Se omitido, cria um novo.'),
+  tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato (obrigatório para criação).'),
+  nome: z.string().min(1).optional().describe('Nome do perfil (ex: "MANHA_08_12", "TARDE_13_20"). Obrigatório para criação.'),
+  inicio_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário mínimo de entrada (HH:MM).'),
+  inicio_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário máximo de entrada (HH:MM).'),
+  fim_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário mínimo de saída (HH:MM).'),
+  fim_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário máximo de saída (HH:MM).'),
+  preferencia_turno_soft: z.enum(['MANHA', 'TARDE']).nullable().optional().describe('Preferência de turno (MANHA/TARDE) ou null.'),
+  ordem: z.number().int().min(0).optional().describe('Ordem de exibição.'),
+  ativo: z.boolean().optional().describe('Se false, desativa o perfil (soft delete).'),
+})
+
+// deletar_perfil_horario
+const DeletarPerfilHorarioSchema = z.object({
+  id: z.number().int().positive().describe('ID do perfil de horário a deletar.'),
+})
+
+// configurar_horario_funcionamento
+const ConfigurarHorarioFuncionamentoSchema = z.object({
+  nivel: z.enum(['empresa', 'setor']).describe('"empresa" para horário global, "setor" para override de setor específico.'),
+  setor_id: z.number().int().positive().optional().describe('ID do setor (obrigatório se nivel="setor").'),
+  dia_semana: DiaSemanaSchema.describe('Dia da semana (SEG, TER, QUA, QUI, SEX, SAB, DOM).'),
+  ativo: z.boolean().describe('Se o estabelecimento funciona neste dia.'),
+  hora_abertura: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário de abertura (HH:MM). Obrigatório se ativo=true.'),
+  hora_fechamento: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário de fechamento (HH:MM). Obrigatório se ativo=true.'),
+  usa_padrao: z.boolean().optional().describe('Só para setor: se true, herda horário da empresa neste dia.'),
+})
+
+// obter_alertas
+const ObterAlertasSchema = z.object({
+  setor_id: z.number().int().positive().optional().describe('Se informado, filtra alertas para este setor. Se omitido, retorna alertas de todos os setores.'),
+})
+
 // ==================== IA_TOOLS (Gemini API Format) ====================
 
 export const IA_TOOLS = [
@@ -458,17 +498,17 @@ export const IA_TOOLS = [
     },
     {
         name: 'criar',
-        description: 'Cria um novo registro no sistema.',
+        description: 'Cria registro em: colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes. Prefira tools semânticas quando existirem (ex: salvar_demanda_excecao_data). Exemplo: criar({"entidade": "excecoes", "dados": {"colaborador_id": 5, "tipo": "FERIAS", "data_inicio": "2026-03-10", "data_fim": "2026-03-24"}}).',
         parameters: toJsonSchema(CriarSchema)
     },
     {
         name: 'atualizar',
-        description: 'Atualiza um registro existente.',
+        description: 'Atualiza registro em: colaboradores, empresa, tipos_contrato, setores, demandas. Requer id do registro. Exemplo: atualizar({"entidade": "colaboradores", "id": 5, "dados": {"nome": "João Silva Atualizado"}}).',
         parameters: toJsonSchema(AtualizarSchema)
     },
     {
         name: 'deletar',
-        description: 'Remove um registro.',
+        description: 'Remove registro de: excecoes, demandas, feriados, funcoes. Requer id. Exemplo: deletar({"entidade": "excecoes", "id": 12}).',
         parameters: toJsonSchema(DeletarSchema)
     },
     {
@@ -550,6 +590,31 @@ export const IA_TOOLS = [
         name: 'resetar_regras_empresa',
         description: 'Volta TODAS as regras da empresa pro padrão original (deleta overrides em regra_empresa). Requer confirmar=true.',
         parameters: toJsonSchema(ResetarRegrasEmpresaSchema)
+    },
+    {
+        name: 'listar_perfis_horario',
+        description: 'Lista perfis de horário de um tipo de contrato (janelas de entrada/saída). Usado para ver perfis de estagiário, CLT etc.',
+        parameters: toJsonSchema(ListarPerfisHorarioSchema)
+    },
+    {
+        name: 'salvar_perfil_horario',
+        description: 'Cria ou atualiza um perfil de horário de contrato. Para criar: tipo_contrato_id + nome + janelas. Para atualizar: id + campos a mudar.',
+        parameters: toJsonSchema(SalvarPerfilHorarioSchema)
+    },
+    {
+        name: 'deletar_perfil_horario',
+        description: 'Remove um perfil de horário de contrato.',
+        parameters: toJsonSchema(DeletarPerfilHorarioSchema)
+    },
+    {
+        name: 'configurar_horario_funcionamento',
+        description: 'Configura horário de funcionamento por dia da semana, a nível de empresa (global) ou setor (override). Exemplo: "sábado fecha às 20h" ou "açougue não abre domingo".',
+        parameters: toJsonSchema(ConfigurarHorarioFuncionamentoSchema)
+    },
+    {
+        name: 'obter_alertas',
+        description: 'Retorna alertas ativos do sistema: setores sem escala, poucos colaboradores, escalas desatualizadas (dados mudaram desde geração), violações HARD pendentes. Use para dar contexto proativo ao usuário.',
+        parameters: toJsonSchema(ObterAlertasSchema)
     }
 ]
 
@@ -558,6 +623,8 @@ const ENTIDADES_LEITURA_PERMITIDAS = new Set([
     'demandas', 'tipos_contrato', 'empresa', 'feriados', 'funcoes',
     'regra_definicao', 'regra_empresa',
     'demandas_excecao_data', 'colaborador_regra_horario_excecao_data',
+    'contrato_perfis_horario', 'empresa_horario_semana', 'setor_horario_semana',
+    'escala_ciclo_modelos',
 ])
 
 // Mapa de campos válidos por entidade (protege contra SQL injection e erros de campo inexistente)
@@ -609,6 +676,19 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   colaborador_regra_horario_excecao_data: new Set([
     'id', 'colaborador_id', 'data', 'ativo', 'inicio_min', 'inicio_max',
     'fim_min', 'fim_max', 'preferencia_turno_soft', 'domingo_forcar_folga'
+  ]),
+  contrato_perfis_horario: new Set([
+    'id', 'tipo_contrato_id', 'nome', 'inicio_min', 'inicio_max',
+    'fim_min', 'fim_max', 'preferencia_turno_soft', 'ativo', 'ordem'
+  ]),
+  empresa_horario_semana: new Set([
+    'id', 'dia_semana', 'ativo', 'hora_abertura', 'hora_fechamento'
+  ]),
+  setor_horario_semana: new Set([
+    'id', 'setor_id', 'dia_semana', 'ativo', 'usa_padrao', 'hora_abertura', 'hora_fechamento'
+  ]),
+  escala_ciclo_modelos: new Set([
+    'id', 'setor_id', 'nome', 'semanas_no_ciclo', 'ativo', 'origem_escala_id'
   ]),
 }
 
@@ -772,6 +852,11 @@ const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   upsert_regra_excecao_data: UpsertRegraExcecaoDataSchema,
   resumir_horas_setor: ResumirHorasSetorSchema,
   resetar_regras_empresa: ResetarRegrasEmpresaSchema,
+  listar_perfis_horario: ListarPerfisHorarioSchema,
+  salvar_perfil_horario: SalvarPerfilHorarioSchema,
+  deletar_perfil_horario: DeletarPerfilHorarioSchema,
+  configurar_horario_funcionamento: ConfigurarHorarioFuncionamentoSchema,
+  obter_alertas: ObterAlertasSchema,
 }
 
 const DICIONARIO_VIOLACOES: Record<string, string> = {
@@ -1538,8 +1623,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
-            // Default motivo
-            if (!dados.motivo) dados.motivo = dados.tipo
+            // Default observacao (coluna real da tabela excecoes)
+            if (!dados.observacao) dados.observacao = dados.tipo
         }
 
         const keys = Object.keys(dados)
@@ -2315,7 +2400,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                         resultados.push({ indice: i, sucesso: false, erro: 'campos obrigatórios: colaborador_id, tipo, data_inicio, data_fim' })
                         continue
                     }
-                    if (!dados.motivo) dados.motivo = dados.tipo
+                    if (!dados.observacao) dados.observacao = dados.tipo
                 }
 
                 const keys = Object.keys(dados)
@@ -2925,6 +3010,227 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 meta: { tool_kind: 'action', action: 'reset-enterprise-rules' }
               }
             )
+        }
+    }
+
+    // ==================== listar_perfis_horario ====================
+    if (name === 'listar_perfis_horario') {
+        const { tipo_contrato_id } = args
+        if (!tipo_contrato_id) {
+            return toolError('LISTAR_PERFIS_PARAM', 'tipo_contrato_id é obrigatório.', {
+              correction: 'Informe o ID do tipo de contrato.',
+              meta: { tool_kind: 'discovery' }
+            })
+        }
+        try {
+            const contrato = db.prepare('SELECT id, nome FROM tipos_contrato WHERE id = ?').get(tipo_contrato_id) as { id: number; nome: string } | undefined
+            if (!contrato) {
+                return toolError('CONTRATO_NAO_ENCONTRADO', `Tipo de contrato ${tipo_contrato_id} não encontrado.`, {
+                  correction: 'Use get_context() ou consultar("tipos_contrato") para ver os IDs válidos.',
+                  meta: { tool_kind: 'discovery' }
+                })
+            }
+            const perfis = db.prepare('SELECT * FROM contrato_perfis_horario WHERE tipo_contrato_id = ? ORDER BY ordem, id').all(tipo_contrato_id)
+            return toolOk(
+              { contrato: { id: contrato.id, nome: contrato.nome }, perfis, total: (perfis as any[]).length },
+              { summary: `${(perfis as any[]).length} perfil(is) de horário para ${contrato.nome}.`, meta: { tool_kind: 'discovery' } }
+            )
+        } catch (e: any) {
+            return toolError('LISTAR_PERFIS_FALHOU', `Erro: ${e.message}`, { correction: 'Verifique se o tipo_contrato_id existe com consultar("tipos_contrato").', meta: { tool_kind: 'discovery' } })
+        }
+    }
+
+    // ==================== salvar_perfil_horario ====================
+    if (name === 'salvar_perfil_horario') {
+        const { id, tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem, ativo } = args
+        try {
+            if (id) {
+                // UPDATE
+                const existing = db.prepare('SELECT id FROM contrato_perfis_horario WHERE id = ?').get(id)
+                if (!existing) {
+                    return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+                }
+                const fields: string[] = []
+                const values: unknown[] = []
+                if (nome !== undefined) { fields.push('nome = ?'); values.push(nome) }
+                if (inicio_min !== undefined) { fields.push('inicio_min = ?'); values.push(inicio_min) }
+                if (inicio_max !== undefined) { fields.push('inicio_max = ?'); values.push(inicio_max) }
+                if (fim_min !== undefined) { fields.push('fim_min = ?'); values.push(fim_min) }
+                if (fim_max !== undefined) { fields.push('fim_max = ?'); values.push(fim_max) }
+                if (preferencia_turno_soft !== undefined) { fields.push('preferencia_turno_soft = ?'); values.push(preferencia_turno_soft) }
+                if (ordem !== undefined) { fields.push('ordem = ?'); values.push(ordem) }
+                if (ativo !== undefined) { fields.push('ativo = ?'); values.push(ativo ? 1 : 0) }
+                if (fields.length === 0) {
+                    return toolError('PERFIL_NADA_PARA_ATUALIZAR', 'Nenhum campo informado para atualizar.', { correction: 'Informe ao menos um campo: nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem ou ativo.', meta: { tool_kind: 'action' } })
+                }
+                values.push(id)
+                db.prepare(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+                const updated = db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(id)
+                return toolOk(
+                  { perfil: updated, operacao: 'atualizado' },
+                  { summary: `Perfil ${id} atualizado.`, meta: { tool_kind: 'action' } }
+                )
+            } else {
+                // CREATE
+                if (!tipo_contrato_id || !nome || !inicio_min || !inicio_max || !fim_min || !fim_max) {
+                    return toolError('PERFIL_CAMPOS_OBRIGATORIOS', 'Para criar: tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max são obrigatórios.', { correction: 'Inclua todos os campos obrigatórios. Horários no formato HH:MM (ex: "08:00").', meta: { tool_kind: 'action' } })
+                }
+                const result = db.prepare(`
+                  INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                `).run(tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft ?? null, ordem ?? 0)
+                const created = db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(result.lastInsertRowid)
+                return toolOk(
+                  { perfil: created, operacao: 'criado' },
+                  { summary: `Perfil "${nome}" criado para contrato ${tipo_contrato_id}.`, meta: { tool_kind: 'action' } }
+                )
+            }
+        } catch (e: any) {
+            return toolError('SALVAR_PERFIL_FALHOU', `Erro: ${e.message}`, { correction: 'Verifique se tipo_contrato_id existe e horários estão no formato HH:MM.', meta: { tool_kind: 'action' } })
+        }
+    }
+
+    // ==================== deletar_perfil_horario ====================
+    if (name === 'deletar_perfil_horario') {
+        const { id } = args
+        if (!id) {
+            return toolError('DELETAR_PERFIL_PARAM', 'id é obrigatório.', { correction: 'Informe o id do perfil. Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+        }
+        try {
+            const existing = db.prepare('SELECT id, nome FROM contrato_perfis_horario WHERE id = ?').get(id) as { id: number; nome: string } | undefined
+            if (!existing) {
+                return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+            }
+            db.prepare('DELETE FROM contrato_perfis_horario WHERE id = ?').run(id)
+            return toolOk(
+              { sucesso: true, perfil_removido: existing.nome },
+              { summary: `Perfil "${existing.nome}" removido.`, meta: { tool_kind: 'action' } }
+            )
+        } catch (e: any) {
+            return toolError('DELETAR_PERFIL_FALHOU', `Erro: ${e.message}`, { correction: 'Verifique se o id do perfil está correto.', meta: { tool_kind: 'action' } })
+        }
+    }
+
+    // ==================== configurar_horario_funcionamento ====================
+    if (name === 'configurar_horario_funcionamento') {
+        const { nivel, setor_id, dia_semana, ativo: diaAtivo, hora_abertura, hora_fechamento, usa_padrao } = args
+        if (!nivel || !dia_semana) {
+            return toolError('HORARIO_PARAM', 'nivel e dia_semana são obrigatórios.', { correction: 'nivel: "empresa" ou "setor". dia_semana: "SEG"|"TER"|"QUA"|"QUI"|"SEX"|"SAB"|"DOM".', meta: { tool_kind: 'action' } })
+        }
+        if (diaAtivo && (!hora_abertura || !hora_fechamento)) {
+            return toolError('HORARIO_PARAM', 'hora_abertura e hora_fechamento são obrigatórios quando ativo=true.', { correction: 'Informe hora_abertura e hora_fechamento no formato HH:MM (ex: "08:00", "22:00").', meta: { tool_kind: 'action' } })
+        }
+
+        try {
+            if (nivel === 'empresa') {
+                db.prepare(`
+                  UPDATE empresa_horario_semana
+                  SET ativo = ?, hora_abertura = ?, hora_fechamento = ?
+                  WHERE dia_semana = ?
+                `).run(diaAtivo ? 1 : 0, hora_abertura ?? '08:00', hora_fechamento ?? '22:00', dia_semana)
+                const result = db.prepare('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?').get(dia_semana)
+                return toolOk(
+                  { horario: result, nivel: 'empresa', operacao: 'atualizado' },
+                  { summary: `Horário da empresa para ${dia_semana}: ${diaAtivo ? `${hora_abertura}–${hora_fechamento}` : 'FECHADO'}.`, meta: { tool_kind: 'action' } }
+                )
+            } else {
+                // setor
+                if (!setor_id) {
+                    return toolError('HORARIO_SETOR_ID', 'setor_id é obrigatório quando nivel="setor".', { correction: 'Informe setor_id. Use consultar("setores") para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+                }
+                const setor = db.prepare('SELECT id, nome FROM setores WHERE id = ?').get(setor_id) as { id: number; nome: string } | undefined
+                if (!setor) {
+                    return toolError('SETOR_NAO_ENCONTRADO', `Setor ${setor_id} não encontrado.`, { correction: 'Use consultar("setores") para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+                }
+                db.prepare(`
+                  INSERT INTO setor_horario_semana (setor_id, dia_semana, ativo, usa_padrao, hora_abertura, hora_fechamento)
+                  VALUES (?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(setor_id, dia_semana) DO UPDATE SET
+                    ativo = excluded.ativo,
+                    usa_padrao = excluded.usa_padrao,
+                    hora_abertura = excluded.hora_abertura,
+                    hora_fechamento = excluded.hora_fechamento
+                `).run(setor_id, dia_semana, diaAtivo ? 1 : 0, usa_padrao ? 1 : 0, hora_abertura ?? '08:00', hora_fechamento ?? '22:00')
+                const result = db.prepare('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?').get(setor_id, dia_semana)
+                return toolOk(
+                  { horario: result, nivel: 'setor', setor_nome: setor.nome, operacao: 'upsert' },
+                  { summary: `Horário do ${setor.nome} para ${dia_semana}: ${diaAtivo ? (usa_padrao ? 'herda empresa' : `${hora_abertura}–${hora_fechamento}`) : 'FECHADO'}.`, meta: { tool_kind: 'action' } }
+                )
+            }
+        } catch (e: any) {
+            return toolError('CONFIGURAR_HORARIO_FALHOU', `Erro: ${e.message}`, { correction: 'Verifique nivel ("empresa"/"setor"), dia_semana e formato dos horários HH:MM.', meta: { tool_kind: 'action' } })
+        }
+    }
+
+    // ==================== obter_alertas ====================
+    if (name === 'obter_alertas') {
+        const { setor_id: filtroSetorId } = args
+        try {
+            const alertas: Array<{ tipo: string; severidade: string; setor_id?: number; setor_nome?: string; escala_id?: number; mensagem: string }> = []
+
+            // 1) Setores sem escala ou com poucos colaboradores
+            const setoresQ = filtroSetorId
+              ? db.prepare('SELECT id, nome FROM setores WHERE ativo = 1 AND id = ?').all(filtroSetorId) as Array<{ id: number; nome: string }>
+              : db.prepare('SELECT id, nome FROM setores WHERE ativo = 1').all() as Array<{ id: number; nome: string }>
+
+            for (const s of setoresQ) {
+                const colabCount = (db.prepare('SELECT COUNT(*) as c FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(s.id) as { c: number }).c
+                if (colabCount < 2) {
+                    alertas.push({ tipo: 'POUCOS_COLABORADORES', severidade: 'WARNING', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: apenas ${colabCount} colaborador(es) ativo(s).` })
+                }
+
+                const temEscala = db.prepare("SELECT COUNT(*) as c FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')").get(s.id) as { c: number }
+                if (temEscala.c === 0) {
+                    alertas.push({ tipo: 'SEM_ESCALA', severidade: 'INFO', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: nenhuma escala gerada.` })
+                }
+            }
+
+            // 2) Escalas RASCUNHO com violações HARD
+            const rascunhosHard = filtroSetorId
+              ? db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?").all(filtroSetorId) as any[]
+              : db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0").all() as any[]
+
+            for (const e of rascunhosHard) {
+                alertas.push({ tipo: 'VIOLACOES_HARD_PENDENTES', severidade: 'CRITICAL', setor_id: e.setor_id, setor_nome: e.setor_nome, escala_id: e.id, mensagem: `${e.setor_nome}: escala ${e.data_inicio}–${e.data_fim} tem ${e.violacoes_hard} violação(ões) HARD — não pode oficializar.` })
+            }
+
+            // 3) Escalas desatualizadas (input_hash diverge dos dados atuais)
+            const rascunhos = filtroSetorId
+              ? db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL AND e.setor_id = ?").all(filtroSetorId) as any[]
+              : db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL").all() as any[]
+
+            for (const e of rascunhos) {
+                try {
+                    const currentInput = buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
+                    const currentHash = computeSolverScenarioHash(currentInput)
+                    if (currentHash !== e.input_hash) {
+                        alertas.push({ tipo: 'ESCALA_DESATUALIZADA', severidade: 'WARNING', setor_id: e.setor_id, setor_nome: e.setor_nome, escala_id: e.id, mensagem: `${e.setor_nome}: escala ${e.data_inicio}–${e.data_fim} está desatualizada — dados mudaram desde a geração. Regere antes de oficializar.` })
+                    }
+                } catch { /* skip — build pode falhar se dados mudaram drasticamente */ }
+            }
+
+            // 4) Exceções prestes a expirar (próximos 7 dias)
+            const expirando = db.prepare(`
+              SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
+              FROM excecoes e
+              JOIN colaboradores c ON e.colaborador_id = c.id
+              JOIN setores s ON c.setor_id = s.id
+              WHERE c.ativo = 1 AND e.data_fim >= date('now') AND e.data_fim <= date('now', '+7 days')
+              ${filtroSetorId ? 'AND c.setor_id = ?' : ''}
+              ORDER BY e.data_fim
+              LIMIT 10
+            `).all(...(filtroSetorId ? [filtroSetorId] : [])) as any[]
+
+            for (const ex of expirando) {
+                alertas.push({ tipo: 'EXCECAO_EXPIRANDO', severidade: 'INFO', setor_id: ex.setor_id, setor_nome: ex.setor_nome, mensagem: `${ex.colab_nome} (${ex.setor_nome}): ${ex.tipo} termina em ${ex.data_fim}.` })
+            }
+
+            return toolOk(
+              { alertas, total: alertas.length },
+              { summary: alertas.length > 0 ? `${alertas.length} alerta(s) ativo(s).` : 'Nenhum alerta ativo.', meta: { tool_kind: 'discovery' } }
+            )
+        } catch (e: any) {
+            return toolError('OBTER_ALERTAS_FALHOU', `Erro: ${e.message}`, { correction: 'Tente sem setor_id para alertas gerais, ou verifique se o setor_id existe.', meta: { tool_kind: 'discovery' } })
         }
     }
 

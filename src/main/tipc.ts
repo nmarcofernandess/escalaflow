@@ -6,7 +6,7 @@ import { getDb } from './db/database'
 import { validarEscalaV3 } from './motor/validador'
 import { buildSolverInput, computeSolverScenarioHash, runSolver } from './motor/solver-bridge'
 import path from 'node:path'
-import { iaEnviarMensagem, iaTestarConexao } from './ia/cliente'
+import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
@@ -1177,6 +1177,7 @@ const escalasAjustar = t.procedure
       antipatterns: [],
       decisoes,
       comparacao_demanda: comparacao,
+      diagnostico: solverResult.diagnostico,
       timing: {
         fase0_ms: 0, fase1_ms: 0, fase2_ms: 0, fase3_ms: 0,
         fase4_ms: 0, fase5_ms: 0, fase6_ms: 0, fase7_ms: 0,
@@ -1316,6 +1317,7 @@ const escalasGerar = t.procedure
       antipatterns: [],
       decisoes,
       comparacao_demanda: comparacao,
+      diagnostico: solverResult.diagnostico,
       timing: {
         fase0_ms: 0, fase1_ms: 0, fase2_ms: 0, fase3_ms: 0,
         fase4_ms: 0, fase5_ms: 0, fase6_ms: 0, fase7_ms: 0,
@@ -2353,8 +2355,11 @@ const iaModelosCatalogo = t.procedure
   })
 
 const iaChatEnviar = t.procedure
-  .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[]; contexto?: import('@shared/index').IaContexto }>()
+  .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[]; contexto?: import('@shared/index').IaContexto; stream_id?: string }>()
   .action(async ({ input }) => {
+    if (input.stream_id) {
+      return await iaEnviarMensagemStream(input.mensagem, input.historico, input.stream_id, input.contexto)
+    }
     return await iaEnviarMensagem(input.mensagem, input.historico, input.contexto)
   })
 

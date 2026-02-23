@@ -77,6 +77,7 @@ import { funcoesService } from '@/servicos/funcoes'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
+import { RuleComplianceBadge } from '@/componentes/RuleComplianceBadge'
 import type {
   EscalaCompleta,
   EscalaCompletaV3,
@@ -1439,6 +1440,11 @@ function SimulacaoResult({
           }
         />
       </div>
+
+      {/* Rule Compliance Badge */}
+      {escalaCompleta.diagnostico && (
+        <RuleComplianceBadge diagnostico={escalaCompleta.diagnostico} />
+      )}
 
       {/* Grid */}
       <Card>

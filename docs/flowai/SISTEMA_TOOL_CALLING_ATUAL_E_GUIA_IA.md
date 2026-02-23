@@ -14,9 +14,19 @@ Data-base do diagnostico: `2026-02-23`.
 
 - O loop agencial existe e funciona (`generateText` + `stopWhen: stepCountIs(10)`).
 - O sistema atual mistura dois modelos de discovery ao mesmo tempo (prompt + `get_context()` obrigatorio).
-- As tools ainda retornam muita resposta crua (principalmente `consultar`), o que reduz autonomia real da IA.
-- O contrato da IA com o dominio existe, mas esta supercarregado no `SYSTEM_PROMPT` (423 linhas) e subespecificado nos schemas Zod (0 `.describe()`).
-- Nao existe stack formal de testes/evals/CI para proteger regressao de tool calling.
+- (Diagnostico historico) O `SYSTEM_PROMPT` estava supercarregado (423 linhas) e conflitando com o discovery injetado por `buildContextBriefing` (ja reescrito na Fase 3).
+- Testes/evals/observabilidade ja foram iniciados, mas eval batch e observabilidade ainda precisam calibracao e uso recorrente.
+
+## Atualizacao de execucao (apos o diagnostico inicial)
+
+- Fase 1 (fundacao de testes) implementada: `Vitest`, `RTL`, `Playwright` (placeholder), scripts e testes iniciais.
+- Fase 2 (contrato de tools) avancou fortemente:
+  - retorno padronizado (`status`, `summary`, `_meta`)
+  - `.describe()` aplicado em schemas criticos
+  - `consultar` refatorado para retorno rico + humanizacao
+  - demais tools padronizadas com compat legado preservada
+- `gerar_escala` passou a expor `solver_status` separado do `status` da tool.
+- `@ai-sdk/devtools` ja esta preparado no projeto e integrado no runtime em modo local/dev.
 
 ## 1) O que e o EscalaFlow (recorte necessario para testarmos IA)
 
@@ -111,7 +121,7 @@ Contagem atual: `13` tools (extraido de `src/main/ia/tools.ts`).
 | `ajustar_alocacao` | negocio | write | importante para fluxo de escala |
 | `oficializar_escala` | negocio | write | acao critica |
 | `preflight` | validacao | read/diag | excelente para layer de validacao |
-| `resumo_sistema` | discovery | read | redundante / marcada como deprecated |
+| `resumo_sistema` | discovery | read | removida do registry da IA (legado/deprecated) |
 | `explicar_violacao` | apoio de dominio | read | boa para UX e aprendizado |
 | `cadastrar_lote` | negocio | write | muito util, alta alavanca |
 
@@ -269,6 +279,12 @@ Isso funciona para humano lendo JSON, mas enfraquece previsibilidade do modelo.
 
 A resposta curta: manter o nucleo atual, mas reorganizar em camadas e adicionar tools semanticas para as intents frequentes.
 
+Observacao (estado atual):
+
+- Esta secao virou **resumo/taxonomia**.
+- O catalogo teorico completo (com double-check no doc canonico `COMO_O_SISTEMA_FUNCIONA.md`, prioridades P0-P3 e ondas) esta em `docs/flowai/CATALOGO_TARGET_TOOLS_IA.md`.
+- Nem todo handler IPC deve virar tool de IA (ex.: backup/restore e operacoes de alto risco ficam opcionais/guardadas).
+
 ## 7.1 Taxonomia recomendada (EscalaFlow)
 
 ### Camada A — Discovery (baratas, read-only)
@@ -421,4 +437,3 @@ Isso exige separar testes em 4 niveis:
 O plano faseado esta no arquivo:
 
 - `docs/flowai/PLANO_EVOLUCAO_TOOL_CALLING_E_TESTES.md`
-

@@ -1,4 +1,5 @@
 import { getDb } from '../db/database'
+import { buildSolverInput, computeSolverScenarioHash } from '../motor/solver-bridge'
 import type { IaContexto } from '../../shared/types'
 
 /**
@@ -25,6 +26,36 @@ export function buildContextBriefing(contexto?: IaContexto): string {
     sections.push(`- Colaboradores ativos: ${resumo.colaboradores}`)
     sections.push(`- Escalas RASCUNHO: ${resumo.rascunhos} | OFICIAL: ${resumo.oficiais}`)
 
+    // ─── Feriados próximos (30 dias) ───────────────────────────────
+    const feriadosProximos = db.prepare(`
+        SELECT data, nome, proibido_trabalhar
+        FROM feriados
+        WHERE data >= date('now') AND data <= date('now', '+30 days')
+        ORDER BY data
+    `).all() as Array<{ data: string; nome: string; proibido_trabalhar: number }>
+    if (feriadosProximos.length > 0) {
+        sections.push(`\n### Feriados nos próximos 30 dias`)
+        for (const f of feriadosProximos) {
+            const flag = f.proibido_trabalhar ? ' (PROIBIDO TRABALHAR)' : ''
+            sections.push(`- ${f.data}: ${f.nome}${flag}`)
+        }
+    }
+
+    // ─── Regras customizadas (empresa overrides ativos) ────────────
+    const regrasCustom = db.prepare(`
+        SELECT re.codigo, re.status, rd.nome, rd.status_sistema
+        FROM regra_empresa re
+        JOIN regra_definicao rd ON re.codigo = rd.codigo
+        WHERE re.status != rd.status_sistema
+        ORDER BY re.codigo
+    `).all() as Array<{ codigo: string; status: string; nome: string; status_sistema: string }>
+    if (regrasCustom.length > 0) {
+        sections.push(`\n### Regras com override da empresa`)
+        for (const r of regrasCustom) {
+            sections.push(`- **${r.codigo}** (${r.nome}): padrão ${r.status_sistema} → empresa ${r.status}`)
+        }
+    }
+
     // ─── Lista de setores (sempre — são poucos) ──────────────────────
     const setores = db.prepare('SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores WHERE ativo = 1 ORDER BY nome').all() as Array<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string; ativo: number }>
     if (setores.length > 0) {
@@ -46,6 +77,10 @@ export function buildContextBriefing(contexto?: IaContexto): string {
         const colabInfo = _infoColaborador(db, contexto.colaborador_id)
         if (colabInfo) sections.push(colabInfo)
     }
+
+    // ─── Alertas proativos (escalas desatualizadas, violações, exceções) ──
+    const alertaLines = _alertasProativos(db, contexto.setor_id)
+    if (alertaLines) sections.push(alertaLines)
 
     // ─── Dica de página ──────────────────────────────────────────────
     sections.push(_dicaPagina(contexto.pagina))
@@ -91,6 +126,24 @@ function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | nu
         }
     } else {
         lines.push(`\n⚠️ Setor sem colaboradores ativos.`)
+    }
+
+    // Exceções ativas do setor (férias/atestados que impactam escalas)
+    const excecoes = db.prepare(`
+        SELECT e.tipo, e.data_inicio, e.data_fim, c.nome as colab_nome
+        FROM excecoes e
+        JOIN colaboradores c ON e.colaborador_id = c.id
+        WHERE c.setor_id = ? AND c.ativo = 1
+          AND e.data_fim >= date('now')
+        ORDER BY e.data_inicio
+        LIMIT 10
+    `).all(setor_id) as Array<{ tipo: string; data_inicio: string; data_fim: string; colab_nome: string }>
+
+    if (excecoes.length > 0) {
+        lines.push(`\n#### Exceções ativas (férias/atestados):`)
+        for (const e of excecoes) {
+            lines.push(`- ${e.colab_nome}: ${e.tipo} ${e.data_inicio} a ${e.data_fim}`)
+        }
     }
 
     // Demandas
@@ -179,6 +232,53 @@ function _infoColaborador(db: ReturnType<typeof getDb>, colaborador_id: number):
     }
 
     return lines.join('\n')
+}
+
+function _alertasProativos(db: ReturnType<typeof getDb>, setor_id?: number): string | null {
+    const lines: string[] = []
+
+    // Escalas RASCUNHO com violações HARD (escopo: setor em foco ou todos)
+    const violQuery = setor_id
+        ? "SELECT e.id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?"
+        : "SELECT e.id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0"
+    const violacoes = (setor_id ? db.prepare(violQuery).all(setor_id) : db.prepare(violQuery).all()) as Array<{ id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>
+    for (const v of violacoes) {
+        lines.push(`- CRITICAL: ${v.setor_nome} escala ${v.data_inicio}–${v.data_fim} tem ${v.violacoes_hard} violação(ões) HARD`)
+    }
+
+    // Escalas desatualizadas (input_hash diverge)
+    const hashQuery = setor_id
+        ? "SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL AND e.setor_id = ?"
+        : "SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL"
+    const rascunhos = (setor_id ? db.prepare(hashQuery).all(setor_id) : db.prepare(hashQuery).all()) as Array<{ id: number; setor_id: number; setor_nome: string; input_hash: string; data_inicio: string; data_fim: string }>
+    for (const e of rascunhos) {
+        try {
+            const currentInput = buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
+            const currentHash = computeSolverScenarioHash(currentInput)
+            if (currentHash !== e.input_hash) {
+                lines.push(`- WARNING: ${e.setor_nome} escala ${e.data_inicio}–${e.data_fim} está DESATUALIZADA — dados mudaram desde a geração`)
+            }
+        } catch { /* skip — build pode falhar se dados mudaram drasticamente */ }
+    }
+
+    // Exceções expirando em 7 dias
+    const expQuery = setor_id
+        ? `SELECT e.tipo, e.data_fim, c.nome as colab_nome, s.nome as setor_nome
+           FROM excecoes e JOIN colaboradores c ON e.colaborador_id = c.id JOIN setores s ON c.setor_id = s.id
+           WHERE c.ativo = 1 AND e.data_fim >= date('now') AND e.data_fim <= date('now', '+7 days') AND c.setor_id = ?
+           ORDER BY e.data_fim LIMIT 5`
+        : `SELECT e.tipo, e.data_fim, c.nome as colab_nome, s.nome as setor_nome
+           FROM excecoes e JOIN colaboradores c ON e.colaborador_id = c.id JOIN setores s ON c.setor_id = s.id
+           WHERE c.ativo = 1 AND e.data_fim >= date('now') AND e.data_fim <= date('now', '+7 days')
+           ORDER BY e.data_fim LIMIT 5`
+    const expirando = (setor_id ? db.prepare(expQuery).all(setor_id) : db.prepare(expQuery).all()) as Array<{ tipo: string; data_fim: string; colab_nome: string; setor_nome: string }>
+    for (const ex of expirando) {
+        lines.push(`- INFO: ${ex.colab_nome} (${ex.setor_nome}) — ${ex.tipo} termina em ${ex.data_fim}`)
+    }
+
+    if (lines.length === 0) return null
+
+    return `\n### Alertas ativos\n${lines.join('\n')}`
 }
 
 function _dicaPagina(pagina: string): string {

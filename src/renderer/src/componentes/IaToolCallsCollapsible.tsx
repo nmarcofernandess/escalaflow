@@ -91,12 +91,21 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
               // Runtime compatibility: newer payloads use args/result, but older/raw payloads may expose input/output.
               const hasArgsProp = hasOwn(compatCall, 'args') || hasOwn(compatCall, 'input')
               const hasResultProp = hasOwn(compatCall, 'result') || hasOwn(compatCall, 'output')
-              const argsValue = hasArgsProp ? (compatCall.args ?? compatCall.input) : undefined
-              const resultValue = hasResultProp ? (compatCall.result ?? compatCall.output) : undefined
+              // Preserve explicit null/false/0 by checking property presence instead of nullish coalescing.
+              const argsValue = hasArgsProp
+                ? (hasOwn(compatCall, 'args') ? compatCall.args : compatCall.input)
+                : undefined
+              const resultValue = hasResultProp
+                ? (hasOwn(compatCall, 'result') ? compatCall.result : compatCall.output)
+                : undefined
               const hasError =
                 hasResultProp &&
                 isRecord(resultValue) &&
-                ('erro' in resultValue || 'error' in resultValue)
+                (
+                  'erro' in resultValue ||
+                  'error' in resultValue ||
+                  resultValue.status === 'error'
+                )
               const icon = TOOL_ICONS[call.name] || '🔧'
               const outputExpanded = expandedOutputs.has(call.id)
 

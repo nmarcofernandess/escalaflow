@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
-import { Bot, Settings } from 'lucide-react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import { Bot, Settings, Loader2 } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { useIaStore } from '@/store/iaStore'
 import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
 import { IaToolCallsCollapsible } from './IaToolCallsCollapsible'
-import type { IaMensagem, IaContexto, ToolCall } from '@shared/index'
+import type { IaMensagem, IaContexto, ToolCall, IaStreamEvent } from '@shared/index'
 
 // We intentionally keep tool output only in the in-memory UI message.
 // Persisted chat history stores a sanitized version without `result` to avoid giant JSON payloads in SQLite.
@@ -53,8 +55,11 @@ function useIaContexto(): IaContexto {
 }
 
 export function IaChatView() {
-  const { mensagens, carregando, setCarregando, conversa_ativa_id, adicionarMensagem } =
-    useIaStore()
+  const {
+    mensagens, carregando, conversa_ativa_id, adicionarMensagem,
+    texto_parcial, tool_calls_parciais, tools_em_andamento,
+    iniciarStream, processarStreamEvent, finalizarStream, cancelarStream,
+  } = useIaStore()
   const [texto, setTexto] = useState('')
   const [configurado, setConfigurado] = useState<boolean | null>(null)
   const [modeloAtivo, setModeloAtivo] = useState<string | null>(null)
@@ -86,6 +91,21 @@ export function IaChatView() {
     return () => window.removeEventListener('ia-config-changed', refreshConfig)
   }, [])
 
+  // Stream event listener
+  const processarStreamEventStable = useCallback(
+    (event: IaStreamEvent) => processarStreamEvent(event),
+    [processarStreamEvent]
+  )
+
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const event = args[0] as IaStreamEvent
+      if (event) processarStreamEventStable(event)
+    }
+    window.electron.ipcRenderer.on('ia:stream', handler)
+    return () => window.electron.ipcRenderer.removeAllListeners('ia:stream')
+  }, [processarStreamEventStable])
+
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -94,7 +114,7 @@ export function IaChatView() {
     if (viewport) {
       viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
     }
-  }, [mensagens, carregando])
+  }, [mensagens, carregando, texto_parcial])
 
   const enviar = async () => {
     if (!texto.trim() || carregando || !conversa_ativa_id) return
@@ -108,13 +128,16 @@ export function IaChatView() {
     }
     await adicionarMensagem(msg)
     setTexto('')
-    setCarregando(true)
+
+    const streamId = crypto.randomUUID()
+    iniciarStream(streamId)
 
     try {
       const resp = await window.electron.ipcRenderer.invoke('ia.chat.enviar', {
         mensagem: msg.conteudo,
         historico: mensagens,
         contexto,
+        stream_id: streamId,
       })
       const toolCallsAoVivo = Array.isArray(resp?.acoes) ? (resp.acoes as ToolCall[]) : []
       const timestamp = new Date().toISOString()
@@ -137,15 +160,15 @@ export function IaChatView() {
       }
 
       await adicionarMensagem(mensagemAssistente, { mensagemPersistida })
+      finalizarStream()
     } catch (err: any) {
       await adicionarMensagem({
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         papel: 'assistente',
-        conteudo: `❌ Erro: ${err.message}`,
+        conteudo: `Erro: ${err.message}`,
       })
-    } finally {
-      setCarregando(false)
+      cancelarStream()
     }
   }
 
@@ -167,6 +190,9 @@ export function IaChatView() {
     )
   }
 
+  const toolsEmAndamentoEntries = Object.entries(tools_em_andamento)
+  const hasStreamingContent = texto_parcial.length > 0 || toolsEmAndamentoEntries.length > 0 || tool_calls_parciais.length > 0
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
@@ -175,7 +201,7 @@ export function IaChatView() {
             <div className="flex flex-col items-center justify-center text-center gap-3 text-muted-foreground py-16">
               <Bot className="size-12 opacity-20" />
               <div>
-                <p className="text-sm font-medium">Olá! 👋</p>
+                <p className="text-sm font-medium">Olá!</p>
                 <p className="text-xs mt-1 max-w-[240px] leading-relaxed">
                   Posso gerar escalas, consultar dados, verificar conflitos e muito mais.
                 </p>
@@ -197,13 +223,48 @@ export function IaChatView() {
             ))}
 
           {carregando && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-2xl rounded-bl-sm bg-muted border text-muted-foreground text-sm max-w-[70%]">
-              <div className="flex gap-1">
-                <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:0ms]" />
-                <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:150ms]" />
-                <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:300ms]" />
-              </div>
-              Pensando...
+            <div className="min-w-0 max-w-full space-y-2">
+              {/* Tools em andamento — pills animadas */}
+              {toolsEmAndamentoEntries.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {toolsEmAndamentoEntries.map(([id, info]) => (
+                    <Badge key={id} variant="secondary" className="gap-1.5 text-xs animate-pulse">
+                      <Loader2 className="size-3 animate-spin" />
+                      {info.tool_name}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Tool calls já concluídas nesse stream */}
+              {tool_calls_parciais.length > 0 && (
+                <div className="min-w-0 max-w-full">
+                  <IaToolCallsCollapsible toolCalls={tool_calls_parciais} />
+                </div>
+              )}
+
+              {/* Texto parcial — bubble com cursor pulsante */}
+              {texto_parcial.length > 0 && (
+                <div className="px-3 py-2 rounded-2xl rounded-bl-sm bg-muted border text-sm max-w-[85%]">
+                  <div className="prose prose-sm dark:prose-invert max-w-none
+                    prose-p:my-1 prose-ul:my-1 prose-ol:my-1">
+                    <ReactMarkdown>{texto_parcial}</ReactMarkdown>
+                  </div>
+                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse rounded-sm align-text-bottom" />
+                </div>
+              )}
+
+              {/* Fallback — bouncing dots quando nenhum indicador está ativo */}
+              {!hasStreamingContent && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-2xl rounded-bl-sm bg-muted border text-muted-foreground text-sm max-w-[70%]">
+                  <div className="flex gap-1">
+                    <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:0ms]" />
+                    <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:150ms]" />
+                    <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:300ms]" />
+                  </div>
+                  Pensando...
+                </div>
+              )}
             </div>
           )}
           <div ref={msgEndRef} />

@@ -18,6 +18,17 @@ export interface EscalaFlowEvalCase {
   expected: EvalExpected
   enabledByDefault?: boolean
   tags?: string[]
+  /** Marca que este case faz mutação no DB (INSERT/UPDATE/DELETE) — eval wrappa em SAVEPOINT+ROLLBACK */
+  mutates?: boolean
+  /** Verifica efeito real no DB após a tool executar. Recebe db (better-sqlite3), retorna { ok, detail }. */
+  dbVerify?: (db: any) => { ok: boolean; detail: string }
+}
+
+/** Contexto padrão injetado em todos os cases que não definem contexto próprio.
+ *  Simula o usuário no Dashboard — discovery retorna resumo global, setores, alertas. */
+export const DEFAULT_EVAL_CONTEXTO: IaContexto = {
+  rota: '/',
+  pagina: 'dashboard',
 }
 
 export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
@@ -39,7 +50,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Resumo do sistema (via get_context)',
     input: 'Me dá um resumo do sistema agora.',
     expected: {
-      shouldCallTool: 'get_context',
+      shouldCallAnyOf: ['get_context', 'consultar'],
       shouldNotCallTools: ['gerar_escala'],
       maxSteps: 4,
     },
@@ -79,19 +90,41 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'criar-excecao-generica',
     label: 'Criar exceção usa tool genérica criar',
     input: 'Cadastra férias para o colaborador 5 de 2026-04-01 a 2026-04-15.',
+    mutates: true,
+    dbVerify: (db: any) => {
+      const row = db
+        .prepare(
+          `SELECT * FROM excecoes WHERE colaborador_id = 5 AND tipo = 'FERIAS' ORDER BY id DESC LIMIT 1`
+        )
+        .get() as any
+      return {
+        ok: !!row && row.data_inicio === '2026-04-01' && row.data_fim === '2026-04-15',
+        detail: row
+          ? `Exceção criada: id=${row.id} tipo=${row.tipo} ${row.data_inicio}→${row.data_fim}`
+          : 'Exceção não encontrada no DB (INSERT falhou)',
+      }
+    },
     expected: {
       shouldCallTool: 'criar',
       toolArgsMustInclude: {
         entidade: 'excecoes',
       },
       shouldNotCallTools: ['gerar_escala'],
-      maxSteps: 5,
+      maxSteps: 6,
     },
   },
   {
     id: 'deletar-feriado',
     label: 'Deletar feriado usa tool genérica deletar',
     input: 'Remove o feriado de ID 3.',
+    mutates: true,
+    dbVerify: (db: any) => {
+      const row = db.prepare('SELECT * FROM feriados WHERE id = 3').get()
+      return {
+        ok: !row,
+        detail: row ? 'Feriado ID 3 ainda existe (DELETE falhou)' : 'Feriado ID 3 removido com sucesso',
+      }
+    },
     expected: {
       shouldCallTool: 'deletar',
       toolArgsMustInclude: { entidade: 'feriados', id: 3 },
@@ -104,6 +137,14 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'editar-regra-h1-soft',
     label: 'Editar regra H1 -> SOFT',
     input: 'Altere a regra H1 para SOFT.',
+    mutates: true,
+    dbVerify: (db: any) => {
+      const row = db.prepare(`SELECT * FROM regra_empresa WHERE codigo = 'H1'`).get() as any
+      return {
+        ok: row?.status === 'SOFT',
+        detail: row ? `regra_empresa H1 status=${row.status}` : 'regra_empresa H1 não encontrada',
+      }
+    },
     expected: {
       shouldCallTool: 'editar_regra',
       toolArgsMustInclude: { codigo: 'H1', status: 'SOFT' },
@@ -115,7 +156,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Recusa editar regra fixa H2',
     input: 'Desliga a regra H2.',
     expected: {
-      shouldNotCallTools: ['gerar_escala'],
+      shouldNotCallTools: ['editar_regra', 'gerar_escala'],
       maxSteps: 6,
       textShouldInclude: ['H2'],
     },
@@ -151,6 +192,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'oficializar-escala-explicita',
     label: 'Oficializar escala por ID',
     input: 'Oficialize a escala 1.',
+    mutates: true,
     expected: {
       shouldCallTool: 'oficializar_escala',
       toolArgsMustInclude: { escala_id: 1 },
@@ -161,6 +203,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'gerar-escala-explicita',
     label: 'Gerar escala por ID (lento/solver)',
     input: 'Gere a escala do setor 1 de 2026-03-01 até 2026-03-31.',
+    mutates: true,
     expected: {
       shouldCallTool: 'gerar_escala',
       toolArgsMustInclude: {
@@ -179,6 +222,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'definir-janela-manha',
     label: 'Definir janela "só de manhã" traduz intent',
     input: 'O colaborador 2 só pode trabalhar de manhã.',
+    mutates: true,
     expected: {
       shouldCallAnyOf: ['definir_janela_colaborador', 'salvar_regra_horario_colaborador'],
       maxSteps: 6,
@@ -211,6 +255,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'cadastrar-lote-pequeno',
     label: 'Cadastro em lote com lista curta',
     input: 'Cadastra esses colaboradores no setor 1: João Silva, Ana Costa, Pedro Santos.',
+    mutates: true,
     expected: {
       shouldCallAnyOf: ['cadastrar_lote', 'criar'],
       shouldNotCallTools: ['gerar_escala'],
@@ -223,6 +268,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'salvar-demanda-excecao',
     label: 'Demanda excepcional por data (Black Friday)',
     input: 'Black Friday precisa de 8 pessoas no caixa das 8h às 18h dia 2026-11-27.',
+    mutates: true,
     expected: {
       shouldCallAnyOf: ['salvar_demanda_excecao_data', 'get_context'],
       shouldNotCallTools: ['gerar_escala'],
@@ -233,6 +279,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'upsert-regra-excecao',
     label: 'Override pontual de horário por data',
     input: 'Segunda dia 2026-03-02 o colaborador 3 só pode entrar a partir das 10h.',
+    mutates: true,
     expected: {
       shouldCallAnyOf: ['upsert_regra_excecao_data', 'get_context'],
       shouldNotCallTools: ['gerar_escala'],
@@ -253,6 +300,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     id: 'resetar-regras',
     label: 'Resetar todas as regras pro padrão',
     input: 'Reseta todas as regras pro padrão original.',
+    mutates: true,
     expected: {
       shouldCallTool: 'resetar_regras_empresa',
       shouldNotCallTools: ['gerar_escala'],

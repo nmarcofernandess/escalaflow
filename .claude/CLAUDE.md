@@ -12,6 +12,7 @@ Instruções para Claude Code ao trabalhar neste repositório.
 - **Motor Python (OR-Tools CP-SAT)** — o coração do sistema, via bridge TS → Python
 - **Electron 34** — shell desktop, IPC type-safe com @egoist/tipc
 - **20 regras CLT/CCT** aplicadas automaticamente ao gerar escalas
+- **IA integrada** — Chat RH com 28 tools (Vercel AI SDK + Gemini)
 
 ---
 
@@ -33,11 +34,17 @@ escalaflow/
 ├── src/
 │   ├── main/                    # Electron Main Process (Node.js)
 │   │   ├── index.ts             # bootstrap, BrowserWindow, auto-updater, ipcMain
-│   │   ├── tipc.ts              # ~67 IPC handlers type-safe (@egoist/tipc)
+│   │   ├── tipc.ts              # ~80+ IPC handlers type-safe (@egoist/tipc)
 │   │   ├── db/
 │   │   │   ├── database.ts      # conexão better-sqlite3
 │   │   │   ├── schema.ts        # DDL (CREATE TABLE IF NOT EXISTS)
-│   │   │   └── seed.ts          # seed: 4 contratos CLT + dados iniciais
+│   │   │   ├── seed.ts          # seed: contratos CLT, feriados, regras motor
+│   │   │   └── seed-local.ts    # seed dev: empresa, setores, colaboradores (gitignored)
+│   │   ├── ia/
+│   │   │   ├── system-prompt.ts # System prompt (370 linhas, 8 seções domínio RH/CLT)
+│   │   │   ├── tools.ts         # 28 IA tools (Zod schemas + handlers)
+│   │   │   ├── discovery.ts     # Auto-contexto por request (alertas, feriados, regras)
+│   │   │   └── cliente.ts       # Vercel AI SDK v6, multi-turn, DevTools
 │   │   └── motor/
 │   │       ├── solver-bridge.ts  # spawn Python, stdin/stdout JSON
 │   │       └── validador.ts      # PolicyEngine (revalida após ajuste manual)
@@ -66,10 +73,19 @@ escalaflow/
 │
 ├── solver-bin/                  # Binário compilado (PyInstaller) — incluído no app
 │
+├── tests/
+│   ├── ia/
+│   │   ├── tools/               # Unit tests das 28 IA tools (vitest)
+│   │   ├── evals/               # Evals de tool calling (scoring automático)
+│   │   └── live/                # Smoke tests com API real + CLI interativo
+│   ├── e2e/                     # Playwright E2E tests
+│   └── renderer/                # Component tests
+│
 ├── docs/                        # Documentação técnica
 │   ├── COMO_FAZER_RELEASE.md    # Guia de release e auto-update
 │   ├── MOTOR_V3_RFC.md          # RFC canônico do motor (20 HARD, SOFT, explicabilidade)
-│   └── BUILD_V2_ESCALAFLOW.md   # Arquitetura v2 (referência histórica)
+│   ├── BUILD_V2_ESCALAFLOW.md   # Arquitetura v2 (referência histórica)
+│   └── flowai/                  # Docs do sistema de IA (tools, prompts, evals)
 │
 ├── specs/                       # Specs e logs de implementação por feature
 ├── electron-builder.yml         # Config de build e publish (GitHub Releases)
@@ -88,6 +104,7 @@ escalaflow/
 | IPC | @egoist/tipc | 0.3 |
 | Database | better-sqlite3 | 11 |
 | Motor | Python OR-Tools CP-SAT | via bridge |
+| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 28 tools |
 | Frontend | React | 19 |
 | Estilo | Tailwind CSS + shadcn/ui | 3 / 24 components |
 | Estado | Zustand | 5 |
@@ -154,12 +171,60 @@ npm run solver:test   # smoke test no DB real
 
 ---
 
+## Sistema de IA (Chat RH)
+
+### Arquitetura
+
+```
+renderer → IPC (ia.chat) → cliente.ts → Vercel AI SDK generateText()
+                                        ↕ tools loop (max 10 steps)
+                                        → system-prompt.ts (370 linhas, 8 seções CLT/RH)
+                                        → discovery.ts (auto-contexto por request)
+                                        → tools.ts (28 tools, Zod schemas + handlers)
+```
+
+### Arquivos Chave
+
+| Arquivo | Papel |
+|---------|-------|
+| `src/main/ia/system-prompt.ts` | System prompt — 8 seções: identidade, CLT/CCT, motor, entidades, tools, schema, workflows, conduta |
+| `src/main/ia/tools.ts` | 28 tools com Zod schemas, runtime validation, enrichment, 3-status pattern |
+| `src/main/ia/discovery.ts` | Auto-contexto: feriados, regras custom, exceções, alertas proativos, dica de página |
+| `src/main/ia/cliente.ts` | Orquestrador: Vercel AI SDK v6, multi-turn, follow-up silencioso, DevTools |
+
+### Padrões de Tool Calling
+
+| Pattern | Implementação |
+|---------|---------------|
+| Response 3-status | `toolOk()`, `toolError()`, `toolTruncated()` — helpers centralizados |
+| Zod .describe() | Todos os 28 schemas com .describe() em cada campo |
+| Runtime validation | `safeParse` + mensagem de correção se falha |
+| FK enrichment | `enrichConsultarRows()` — traduz setor_id→setor_nome, etc |
+| Navigation metadata | `_meta.ids_usaveis_em`, `_meta.next_tools_hint` |
+| Error correction | `toolError()` sempre com `correction` (instrução de fix pro LLM) |
+| Discovery layering | get_context() → consultar() → tools semânticas |
+| Truncation | CONSULTAR_MODEL_ROW_LIMIT = 50 com status 'truncated' |
+| SQL error translation | NOT NULL / UNIQUE / FK → mensagens acionáveis |
+
+### Tools (28)
+
+**Discovery:** get_context, consultar, buscar_colaborador, obter_regra_horario_colaborador, listar_perfis_horario, obter_alertas
+**CRUD genérico:** criar, atualizar, deletar, cadastrar_lote
+**Escalas:** gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala
+**Validação:** preflight, preflight_completo, diagnosticar_escala, explicar_violacao
+**Regras:** editar_regra, salvar_regra_horario_colaborador, definir_janela_colaborador, upsert_regra_excecao_data, resetar_regras_empresa
+**Config:** configurar_horario_funcionamento, salvar_perfil_horario, deletar_perfil_horario
+**KPI:** resumir_horas_setor
+**Demanda:** salvar_demanda_excecao_data
+
+---
+
 ## Banco de Dados
 
 - **Arquivo:** `data/escalaflow.db` (SQLite, criado automaticamente)
 - **Schema:** `src/main/db/schema.ts`
 - **Seed:** `src/main/db/seed.ts` (roda na primeira inicialização se banco vazio)
-- **Reset:** delete `data/escalaflow.db` e reinicie o app
+- **Reset:** `npm run db:reset` (ou delete `data/escalaflow.db` e reinicie o app)
 
 ### Entidades
 
@@ -175,6 +240,17 @@ npm run solver:test   # smoke test no DB real
 | Alocacao | `alocacoes` | Um dia de trabalho/folga de uma pessoa |
 | Funcao | `funcoes` | Postos de trabalho (com cor_hex) |
 | Feriado | `feriados` | Feriados com flag `proibido_trabalhar` (CCT) |
+
+### Seeds
+
+| Arquivo | Conteúdo | Git? |
+|---------|----------|------|
+| `src/main/db/seed.ts` | Contratos CLT, feriados nacionais, perfis horário, 35 regras motor | Tracked |
+| `src/main/db/seed-local.ts` | Empresa exemplo, 2 setores, 13 colaboradores, horários, demandas, API keys | Gitignored |
+
+- `seed.ts` roda na primeira inicialização (banco vazio)
+- `seed-local.ts` opcional — dados de teste completos para dev. Período sugerido: 2026-03-02 a 2026-04-26
+- **Reset completo:** `npm run db:reset` (ou delete `data/escalaflow.db` + reiniciar)
 
 ### Padrões no schema
 
@@ -239,14 +315,35 @@ GH_TOKEN=$(gh auth token) npm run release:mac
 ## Comandos de Referência
 
 ```bash
+# Desenvolvimento
 npm run dev              # dev com hot reload
 npm run build            # build de produção
-npm run typecheck        # TS check (SEMPRE rodar antes de commit)
-npm run solver:test      # testa motor Python no DB real
+npm run clean            # rm -rf out tmp .vite
+npm run clean:dev        # clean + dev
+
+# Verificação
+npm run typecheck        # TS check node + web (SEMPRE rodar antes de commit)
+npm run test             # vitest run (unit tests)
+npm run test:watch       # vitest em modo watch
+npm run test:coverage    # vitest com cobertura
+npm run test:e2e         # Playwright E2E tests
+
+# IA
+npm run test:ia:eval     # Roda evals das tools IA
+npm run test:ia:live     # Smoke test IA com API real
+npm run ia:chat          # CLI interativo para testar IA
+
+# Motor
+npm run solver:test      # smoke test motor Python no DB real
 npm run solver:build     # compila binário Python (PyInstaller)
-npm run dist:mac         # gera .dmg localmente (sem publicar)
-npm run dist:win         # gera .exe localmente (sem publicar)
-npm run release:mac      # build + upload para GitHub Releases (Mac)
+
+# Banco
+npm run db:reset         # deleta e recria banco
+
+# Distribuição
+npm run dist:mac         # gera .dmg (sem publicar)
+npm run dist:win         # gera .exe (sem publicar)
+npm run release:mac      # build + upload GitHub Releases (Mac)
 ```
 
 ---
@@ -344,3 +441,5 @@ msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })  // ← PROIBIDO
 - [ ] Nenhum `console.log` de debug esquecido no código
 - [ ] Componentes shadcn verificados antes de criar div soup
 - [ ] Layout chain intacto (ver "Layout Contract") — sem `overflow-y-auto` em páginas, sem `scrollIntoView`
+- [ ] Novas tools IA: schema Zod + handler + entry no IA_TOOLS + TOOL_SCHEMAS
+- [ ] TOOL_SCHEMAS sincronizado com IA_TOOLS (28 entries)

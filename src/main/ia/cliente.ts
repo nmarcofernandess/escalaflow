@@ -1,11 +1,67 @@
-import { generateText, stepCountIs } from 'ai'
+import { generateText, streamText, stepCountIs, wrapLanguageModel } from 'ai'
+import type { ModelMessage } from '@ai-sdk/provider-utils'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { SYSTEM_PROMPT } from './system-prompt'
 import { getVercelAiTools } from './tools'
 import { buildContextBriefing } from './discovery'
 import { getDb } from '../db/database'
-import type { IaMensagem, ToolCall, IaConfiguracao, IaContexto } from '../../shared/types'
+import type { IaMensagem, ToolCall, IaConfiguracao, IaContexto, IaStreamEvent } from '../../shared/types'
+
+import { createRequire } from 'node:module'
+const _require = createRequire(import.meta.url)
+const { BrowserWindow: _BW } = _require('electron') as typeof import('electron')
+
+function broadcastToRenderer(channel: string, data: unknown): void {
+  for (const win of _BW.getAllWindows()) {
+    win.webContents.send(channel, data)
+  }
+}
+
+function emitStream(event: IaStreamEvent): void {
+  broadcastToRenderer('ia:stream', event)
+}
+
+let _devToolsModeResolved = false
+let _devToolsEnabled = false
+let _devToolsMiddlewareFactory: null | (() => any) = null
+
+const TOOL_RESULT_MAX_CHARS = 400
+const TOOL_RESULT_LEGACY_MAX_CHARS = 320
+
+function shouldEnableAiDevTools() {
+    const explicit = process.env.ESCALAFLOW_AI_DEVTOOLS?.trim()
+    if (explicit === '0' || explicit?.toLowerCase() === 'false') return false
+    if (explicit === '1' || explicit?.toLowerCase() === 'true') return true
+    return process.env.NODE_ENV !== 'production'
+}
+
+async function maybeWrapModelWithDevTools(model: any) {
+    if (!shouldEnableAiDevTools()) return model
+
+    if (!_devToolsModeResolved) {
+        _devToolsModeResolved = true
+        try {
+            const mod = await import('@ai-sdk/devtools')
+            if (typeof mod.devToolsMiddleware === 'function') {
+                _devToolsMiddlewareFactory = mod.devToolsMiddleware
+                _devToolsEnabled = true
+                console.log('[AI SDK] DevTools middleware ativo (local). Rode `npx @ai-sdk/devtools` e abra http://localhost:4983')
+            } else {
+                console.warn('[AI SDK] @ai-sdk/devtools carregado, mas devToolsMiddleware não foi encontrado. Seguiremos sem viewer.')
+            }
+        } catch (err: any) {
+            console.warn('[AI SDK] DevTools indisponível; seguindo sem middleware.', err?.message ?? err)
+        }
+    }
+
+    if (!_devToolsEnabled || !_devToolsMiddlewareFactory) return model
+
+    return wrapLanguageModel({
+        model,
+        middleware: _devToolsMiddlewareFactory(),
+    })
+}
 
 // Tool calls UI depends on property presence (including falsy values like null/false/0),
 // so we must preserve whether a field existed instead of relying on truthiness.
@@ -23,19 +79,86 @@ function normalizeToolArgs(rawArgs: unknown): Record<string, unknown> | undefine
     return { value: rawArgs }
 }
 
-function buildChatMessages(historico: IaMensagem[], currentMsg: string) {
-    const messages = historico
-        .filter(h => h.papel === 'usuario' || h.papel === 'assistente')
-        .map(h => ({
-            role: h.papel === 'usuario' ? ('user' as const) : ('assistant' as const),
-            content: h.conteudo
-        }))
+function truncateText(text: string, maxChars: number): string {
+    if (text.length <= maxChars) return text
+    return `${text.slice(0, Math.max(0, maxChars - 1))}…`
+}
 
-    messages.push({
-        role: 'user' as const,
-        content: currentMsg
-    })
+function safeCompactJson(value: unknown, maxChars: number): string {
+    try {
+        const raw = typeof value === 'string' ? value : JSON.stringify(value)
+        return truncateText(raw, maxChars)
+    } catch {
+        return truncateText(String(value), maxChars)
+    }
+}
 
+function toolResultToText(result: unknown): string {
+    if (result === undefined) return 'resultado_nao_persistido'
+    if (result === null) return 'null'
+    return safeCompactJson(result, TOOL_RESULT_MAX_CHARS)
+}
+
+function buildLegacyToolResultHistoryContent(msg: IaMensagem): string {
+    const compact = truncateText(msg.conteudo ?? '', TOOL_RESULT_LEGACY_MAX_CHARS)
+    return `[TOOL_RESULT_LEGADO]\n${compact}`
+}
+
+function buildChatMessages(historico: IaMensagem[], currentMsg: string): ModelMessage[] {
+    const messages: ModelMessage[] = []
+
+    for (const h of historico) {
+        if (h.papel === 'usuario') {
+            messages.push({ role: 'user', content: h.conteudo })
+            continue
+        }
+
+        if (h.papel === 'assistente') {
+            const toolCalls = h.tool_calls
+            if (toolCalls && toolCalls.length > 0) {
+                // Structured assistant message with tool-call parts
+                const contentParts: Array<{ type: 'text'; text: string } | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }> = []
+                if (h.conteudo?.trim()) {
+                    contentParts.push({ type: 'text', text: h.conteudo })
+                }
+                for (const tc of toolCalls) {
+                    contentParts.push({
+                        type: 'tool-call',
+                        toolCallId: tc.id,
+                        toolName: tc.name,
+                        input: tc.args ?? {},
+                    })
+                }
+                messages.push({ role: 'assistant', content: contentParts })
+
+                // Paired tool message with tool-result parts
+                const resultParts: Array<{ type: 'tool-result'; toolCallId: string; toolName: string; output: { type: 'text'; value: string } }> = []
+                for (const tc of toolCalls) {
+                    resultParts.push({
+                        type: 'tool-result',
+                        toolCallId: tc.id,
+                        toolName: tc.name,
+                        output: { type: 'text', value: toolResultToText(tc.result) },
+                    })
+                }
+                messages.push({ role: 'tool', content: resultParts })
+            } else {
+                // Plain text assistant message
+                messages.push({ role: 'assistant', content: h.conteudo ?? '' })
+            }
+            continue
+        }
+
+        if (h.papel === 'tool_result') {
+            // Legacy tool_result rows from before structured messages — keep as assistant text
+            messages.push({
+                role: 'assistant',
+                content: buildLegacyToolResultHistoryContent(h),
+            })
+        }
+    }
+
+    messages.push({ role: 'user', content: currentMsg })
     return messages
 }
 
@@ -94,6 +217,15 @@ function extractToolCallsFromSteps(steps: any[] | undefined): ToolCall[] {
     return acoes
 }
 
+// Test hooks for unit tests of mapper/history behavior.
+// Keeping these internal helpers accessible avoids mocking the whole provider stack.
+export const __iaClienteTestables = {
+    normalizeToolArgs,
+    buildChatMessages,
+    extractToolCallsFromSteps,
+    buildFullSystemPrompt,
+}
+
 async function _callWithVercelAiSdkTools(
     providerLabel: 'gemini' | 'openrouter',
     config: IaConfiguracao,
@@ -107,56 +239,185 @@ async function _callWithVercelAiSdkTools(
     const fullSystemPrompt = buildFullSystemPrompt(contexto)
     const messages = buildChatMessages(historico, currentMsg)
     const tools = getVercelAiTools()
-
-    console.log(`[AI SDK:${providerLabel}] Chamando generateText com stopWhen...`)
+    const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
     const result = await generateText({
-        model: createModel(modelo),
+        model,
         system: fullSystemPrompt,
         messages,
         tools,
-        stopWhen: stepCountIs(10)  // CRÍTICO: sem isso, para no primeiro tool call!
-    })
-
-    console.log(`[AI SDK:${providerLabel}] Resultado:`, {
-        text: result.text?.substring(0, 50) || '(vazio)',
-        stepsCount: result.steps?.length || 0,
-        finishReason: result.finishReason
+        stopWhen: stepCountIs(10),
+        onStepFinish({ text, toolCalls, finishReason, usage }) {
+            console.log(`[AI SDK:${providerLabel}] Step:`, {
+                finishReason,
+                hasText: !!text,
+                toolCalls: toolCalls?.length ?? 0,
+                tokens: usage?.totalTokens,
+            })
+        },
     })
 
     const acoes = extractToolCallsFromSteps(result.steps as any[] | undefined)
 
-    // 🔥 FIX: Se executou tools mas não gerou texto, força resposta
+    // If model ran tools but produced no final text, do a clean follow-up
+    // using the structured response messages (preserves real tool results).
     let finalText = result.text
 
     if ((!finalText || finalText.trim().length === 0) && acoes.length > 0) {
-        console.log(`[AI SDK:${providerLabel}] ⚠️ IA executou tools mas não respondeu. Forçando turno final...`)
+        console.log(`[AI SDK:${providerLabel}] Executou tools sem texto final. Follow-up com response.messages...`)
 
-        // Adiciona mensagem pedindo pra responder
-        messages.push({
-            role: 'assistant' as const,
-            content: '(executou ferramentas)'
-        })
-        messages.push({
-            role: 'user' as const,
-            content: 'Responda agora em linguagem natural o que você fez e o resultado.'
-        })
+        const followUpMessages: ModelMessage[] = [
+            ...result.response.messages,
+            { role: 'user', content: 'Com base nos resultados das ferramentas, responda ao usuario.' },
+        ]
 
         const finalResult = await generateText({
-            model: createModel(modelo),
+            model,
             system: fullSystemPrompt,
-            messages
-            // SEM tools → força texto puro, sem tool calls
+            messages: followUpMessages,
         })
 
-        finalText = finalResult.text || 'Feito! ✅'
-        console.log(`[AI SDK:${providerLabel}] Resposta forçada:`, finalText.substring(0, 50))
+        finalText = finalResult.text || 'Feito!'
+        console.log(`[AI SDK:${providerLabel}] Follow-up:`, finalText.substring(0, 80))
     }
 
     return {
         resposta: finalText || '(Resposta vazia)',
-        acoes
+        acoes,
     }
+}
+
+async function _callWithVercelAiSdkToolsStreaming(
+    providerLabel: 'gemini' | 'openrouter',
+    config: IaConfiguracao,
+    currentMsg: string,
+    historico: IaMensagem[],
+    streamId: string,
+    contexto: IaContexto | undefined,
+    createModel: (modelo: string) => any,
+): Promise<{ resposta: string; acoes: ToolCall[] }> {
+    const modelo = config.modelo || (providerLabel === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash')
+
+    const fullSystemPrompt = buildFullSystemPrompt(contexto)
+    const messages = buildChatMessages(historico, currentMsg)
+    const tools = getVercelAiTools()
+    const model = await maybeWrapModelWithDevTools(createModel(modelo))
+
+    let stepIndex = 0
+
+    try {
+        const result = streamText({
+            model,
+            system: fullSystemPrompt,
+            messages,
+            tools,
+            stopWhen: stepCountIs(10),
+            onStepFinish({ text, toolCalls, finishReason, usage }) {
+                console.log(`[AI SDK:${providerLabel}:stream] Step ${stepIndex}:`, {
+                    finishReason,
+                    hasText: !!text,
+                    toolCalls: toolCalls?.length ?? 0,
+                    tokens: usage?.totalTokens,
+                })
+                emitStream({ type: 'step-finish', stream_id: streamId, step_index: stepIndex })
+                stepIndex++
+            },
+        })
+
+        for await (const part of result.fullStream) {
+            if (part.type === 'text-delta') {
+                emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
+            } else if (part.type === 'tool-call') {
+                emitStream({
+                    type: 'tool-call-start',
+                    stream_id: streamId,
+                    tool_call_id: part.toolCallId,
+                    tool_name: part.toolName,
+                    args: normalizeToolArgs(part.input) ?? {},
+                })
+            } else if (part.type === 'tool-result') {
+                emitStream({
+                    type: 'tool-result',
+                    stream_id: streamId,
+                    tool_call_id: part.toolCallId,
+                    tool_name: part.toolName,
+                    result: part.output,
+                })
+            }
+        }
+
+        const finalText = await result.text
+        const steps = await result.steps
+        const acoes = extractToolCallsFromSteps(steps as any[] | undefined)
+
+        // Follow-up: if tools ran but no final text, do a streaming follow-up
+        if ((!finalText || finalText.trim().length === 0) && acoes.length > 0) {
+            console.log(`[AI SDK:${providerLabel}:stream] Tools sem texto final. Follow-up streaming...`)
+            emitStream({ type: 'follow-up-start', stream_id: streamId })
+
+            const responseMessages = await result.response
+            const followUpMessages: ModelMessage[] = [
+                ...responseMessages.messages,
+                { role: 'user', content: 'Com base nos resultados das ferramentas, responda ao usuario.' },
+            ]
+
+            const followUp = streamText({
+                model,
+                system: fullSystemPrompt,
+                messages: followUpMessages,
+            })
+
+            for await (const part of followUp.fullStream) {
+                if (part.type === 'text-delta') {
+                    emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
+                }
+            }
+
+            const followUpText = await followUp.text
+            const resposta = followUpText || 'Feito!'
+
+            emitStream({ type: 'finish', stream_id: streamId, resposta, acoes })
+            return { resposta, acoes }
+        }
+
+        const resposta = finalText || '(Resposta vazia)'
+        emitStream({ type: 'finish', stream_id: streamId, resposta, acoes })
+        return { resposta, acoes }
+    } catch (err: any) {
+        console.error(`[AI SDK:${providerLabel}:stream] Erro:`, err.message)
+        emitStream({ type: 'error', stream_id: streamId, message: err.message })
+        throw err
+    }
+}
+
+export async function iaEnviarMensagemStream(
+    mensagem: string,
+    historico: IaMensagem[],
+    streamId: string,
+    contexto?: IaContexto
+): Promise<{ resposta: string; acoes: ToolCall[] }> {
+    const db = getDb()
+    const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get() as IaConfiguracao | undefined
+
+    if (!config) {
+        throw new Error('Assistente IA não configurado.')
+    }
+
+    const apiKey = resolveProviderApiKey(config)
+
+    if (config.provider === 'gemini') {
+        if (!apiKey) throw new Error('API Key do Gemini não configurada.')
+        const google = createGoogleGenerativeAI({ apiKey })
+        return _callWithVercelAiSdkToolsStreaming('gemini', { ...config, api_key: apiKey }, mensagem, historico, streamId, contexto, (modelo) => google(modelo))
+    }
+
+    if (config.provider === 'openrouter') {
+        if (!apiKey) throw new Error('Token do OpenRouter não configurado.')
+        const openrouter = createOpenRouter({ apiKey })
+        return _callWithVercelAiSdkToolsStreaming('openrouter', { ...config, api_key: apiKey }, mensagem, historico, streamId, contexto, (modelo) => openrouter(modelo))
+    }
+
+    throw new Error(`Provider "${config.provider}" não suportado.`)
 }
 
 function resolveProviderApiKey(config: IaConfiguracao): string | undefined {

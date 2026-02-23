@@ -354,6 +354,7 @@ export interface EscalaCompletaV3 {
   antipatterns: AntipatternViolacao[]
   decisoes: DecisaoMotor[]
   comparacao_demanda: SlotComparacao[]
+  diagnostico?: DiagnosticoSolver
   timing?: {
     fase0_ms: number
     fase1_ms: number
@@ -696,6 +697,15 @@ export interface IaConversa {
 export interface IaMensagemDB extends IaMensagem {
   conversa_id: string
 }
+
+export type IaStreamEvent =
+  | { type: 'text-delta'; stream_id: string; delta: string }
+  | { type: 'tool-call-start'; stream_id: string; tool_call_id: string; tool_name: string; args: Record<string, unknown> }
+  | { type: 'tool-result'; stream_id: string; tool_call_id: string; tool_name: string; result: unknown }
+  | { type: 'step-finish'; stream_id: string; step_index: number }
+  | { type: 'follow-up-start'; stream_id: string }
+  | { type: 'finish'; stream_id: string; resposta: string; acoes: ToolCall[] }
+  | { type: 'error'; stream_id: string; message: string }
 
 // ============================================================================
 // CATÁLOGO DE MODELOS IA
