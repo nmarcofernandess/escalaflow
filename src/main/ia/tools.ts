@@ -1,5 +1,6 @@
 import { getDb } from '../db/database'
 import { buildSolverInput, runSolver, persistirSolverResult } from '../motor/solver-bridge'
+import { validarEscalaV3 } from '../motor/validador'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 
@@ -21,10 +22,217 @@ import { zodToJsonSchema } from 'zod-to-json-schema'
  * - Facilitar migração futura se necessário
  */
 function toJsonSchema<T extends z.ZodTypeAny>(schema: T): Record<string, any> {
-  const jsonSchema = zodToJsonSchema(schema as any)
+  // Zod v4 has native JSON Schema generation. Prefer it because zod-to-json-schema
+  // can degrade to "{}" with some zod v4 schemas depending on runtime compatibility.
+  const nativeToJsonSchema = (z as any).toJSONSchema
+  const jsonSchema = typeof nativeToJsonSchema === 'function'
+    ? nativeToJsonSchema(schema)
+    : zodToJsonSchema(schema as any)
   // Remove $schema que Gemini API não aceita
   delete jsonSchema.$schema
   return jsonSchema
+}
+
+type ToolMeta = Record<string, unknown>
+
+function toolOk<T extends Record<string, any>>(
+  payload: T,
+  options?: { summary?: string; meta?: ToolMeta }
+) {
+  return {
+    status: 'ok' as const,
+    ...(options?.summary ? { summary: options.summary } : {}),
+    ...payload,
+    ...(options?.meta ? { _meta: options.meta } : {}),
+  }
+}
+
+function toolError(
+  code: string,
+  message: string,
+  options?: { correction?: string; meta?: ToolMeta; details?: Record<string, unknown> }
+) {
+  return {
+    status: 'error' as const,
+    code,
+    message,
+    // Compat com UI/fluxos legados que procuram "erro"
+    erro: message,
+    ...(options?.correction ? { correction: options.correction } : {}),
+    ...(options?.details ?? {}),
+    ...(options?.meta ? { _meta: options.meta } : {}),
+  }
+}
+
+function toolTruncated<T extends Record<string, any>>(
+  payload: T,
+  options?: { summary?: string; meta?: ToolMeta }
+) {
+  return {
+    status: 'truncated' as const,
+    ...(options?.summary ? { summary: options.summary } : {}),
+    ...payload,
+    ...(options?.meta ? { _meta: options.meta } : {}),
+  }
+}
+
+const HORA_HHMM_REGEX = /^\d{2}:\d{2}$/
+const DiaSemanaSchema = z.enum(['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM'])
+const RegimeOverrideSchema = z.object({
+  colaborador_id: z.number().int().positive().describe('ID do colaborador para override de regime.'),
+  regime_escala: z.enum(['5X2', '6X1']).describe('Regime temporário de simulação para preflight/geração.')
+})
+
+function normalizeRegimesOverrideForTool(overrides?: Array<{ colaborador_id: number; regime_escala: '5X2' | '6X1' }>) {
+  const map = new Map<number, '5X2' | '6X1'>()
+  for (const o of overrides ?? []) {
+    if (!Number.isInteger(o.colaborador_id) || o.colaborador_id <= 0) continue
+    if (o.regime_escala !== '5X2' && o.regime_escala !== '6X1') continue
+    map.set(o.colaborador_id, o.regime_escala)
+  }
+  return [...map.entries()]
+    .map(([colaborador_id, regime_escala]) => ({ colaborador_id, regime_escala }))
+    .sort((a, b) => a.colaborador_id - b.colaborador_id)
+}
+
+function listDaysForTool(dataInicio: string, dataFim: string): string[] {
+  const out: string[] = []
+  const start = new Date(`${dataInicio}T00:00:00`)
+  const end = new Date(`${dataFim}T00:00:00`)
+  const d = new Date(start.getTime())
+  while (d <= end) {
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+    d.setDate(d.getDate() + 1)
+  }
+  return out
+}
+
+function dayLabelForTool(isoDate: string): 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM' {
+  const d = new Date(`${isoDate}T00:00:00`)
+  const week = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'] as const
+  return week[d.getDay()]
+}
+
+function minutesBetweenTimes(h1: string, h2: string): number {
+  const [aH, aM] = h1.split(':').map(Number)
+  const [bH, bM] = h2.split(':').map(Number)
+  return Math.max(0, (bH * 60 + bM) - (aH * 60 + aM))
+}
+
+function enrichPreflightWithCapacityChecksForTool(
+  solverInput: any,
+  blockers: Array<{ codigo: string; severidade: 'BLOCKER' | 'WARNING'; mensagem: string; detalhe?: string }>,
+  warnings: Array<{ codigo: string; severidade: 'BLOCKER' | 'WARNING'; mensagem: string; detalhe?: string }>
+) {
+  const days = listDaysForTool(solverInput.data_inicio, solverInput.data_fim)
+  const holidayForbidden = new Set((solverInput.feriados ?? []).filter((f: any) => f.proibido_trabalhar).map((f: any) => f.data))
+
+  for (const day of days) {
+    const label = dayLabelForTool(day)
+    const dayDemand = (solverInput.demanda ?? [])
+      .filter((d: any) => d.dia_semana === null || d.dia_semana === label)
+      .filter((d: any) => (d.min_pessoas ?? 0) > 0)
+
+    if (dayDemand.length === 0) continue
+
+    if (label === 'DOM' && (solverInput.colaboradores ?? []).every((c: any) => !c.trabalha_domingo)) {
+      blockers.push({
+        codigo: 'DOMINGO_SEM_COLABORADORES',
+        severidade: 'BLOCKER',
+        mensagem: `Há demanda no domingo (${day}), mas nenhum colaborador aceita domingo.`,
+        detalhe: 'Ative domingo para alguém ou ajuste a demanda.',
+      })
+      break
+    }
+
+    if (holidayForbidden.has(day)) {
+      blockers.push({
+        codigo: 'DEMANDA_EM_FERIADO_PROIBIDO',
+        severidade: 'BLOCKER',
+        mensagem: `Há demanda no feriado proibido ${day}.`,
+        detalhe: 'Ajuste a demanda do dia ou a política de feriado.',
+      })
+      break
+    }
+
+    const peakDemand = dayDemand.reduce((acc: number, d: any) => Math.max(acc, d.min_pessoas ?? 0), 0)
+    const availableCount = (solverInput.colaboradores ?? []).filter((c: any) => {
+      if (label === 'DOM' && !c.trabalha_domingo) return false
+      if (holidayForbidden.has(day)) return false
+      return !(solverInput.excecoes ?? []).some((e: any) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
+    }).length
+
+    if (availableCount < peakDemand) {
+      blockers.push({
+        codigo: 'CAPACIDADE_COLETIVA_INSUFICIENTE',
+        severidade: 'BLOCKER',
+        mensagem: `Capacidade insuficiente em ${day}: demanda pico ${peakDemand}, disponíveis ${availableCount}.`,
+        detalhe: 'Ajuste demanda, exceções, domingos/feriados ou quadro de colaboradores.',
+      })
+      break
+    }
+  }
+
+  const empresa = solverInput.empresa
+  if (!empresa || !(solverInput.colaboradores?.length)) return
+
+  for (const c of solverInput.colaboradores as any[]) {
+    const horasSemanaisMinutos = (c.horas_semanais ?? 0) * 60
+    const toleranciaMinutos = empresa.tolerancia_semanal_min ?? 0
+    const limiteInferiorSemanal = Math.max(0, horasSemanaisMinutos - toleranciaMinutos)
+
+    let maxJanelaDoColaborador = c.max_minutos_dia ?? 0
+    const regras = (solverInput.regras_colaborador_dia ?? []).filter((r: any) => r.colaborador_id === c.id)
+    const regraTipica = regras.find((r: any) => r.inicio_min || r.fim_max)
+
+    if (regraTipica) {
+      const startToUse = regraTipica.inicio_min || empresa.hora_abertura
+      const endToUse = regraTipica.fim_max || empresa.hora_fechamento
+      const possibleMinutes = minutesBetweenTimes(startToUse, endToUse)
+      if (possibleMinutes > 0) {
+        maxJanelaDoColaborador = Math.min(possibleMinutes, c.max_minutos_dia ?? possibleMinutes)
+      }
+    }
+
+    let capacidadeDiaria = maxJanelaDoColaborador
+    const diasTrabalho = c.dias_trabalho ?? 1
+    const metaDiariaMedia = diasTrabalho > 0 ? horasSemanaisMinutos / diasTrabalho : horasSemanaisMinutos
+    if (metaDiariaMedia > 360) {
+      capacidadeDiaria -= empresa.min_intervalo_almoco_min ?? 60
+    }
+
+    const capacidadeMaxSemanal = capacidadeDiaria * diasTrabalho
+    if (capacidadeMaxSemanal < limiteInferiorSemanal) {
+      blockers.push({
+        codigo: 'CAPACIDADE_INDIVIDUAL_INSUFICIENTE',
+        severidade: 'BLOCKER',
+        mensagem: `A janela de disponibilidade de ${c.nome} torna a carga horária incompatível.`,
+        detalhe: `Capacidade máxima ~${Math.round(capacidadeMaxSemanal / 60)}h. Contrato exige mínimo ~${Math.round(limiteInferiorSemanal / 60)}h.`,
+      })
+    }
+  }
+
+  if (warnings.length === 0 && blockers.length === 0) {
+    warnings.push({
+      codigo: 'PREFLIGHT_COMPLETO_SEM_BLOCKERS',
+      severidade: 'WARNING',
+      mensagem: 'Pré-flight completo executado sem blockers adicionais.',
+      detalhe: 'Capacidade básica e restrições gerais parecem consistentes para o período.',
+    })
+  }
+}
+
+function summarizeViolacoesTop(items: Array<{ codigo?: string }> | undefined, limit = 5) {
+  const counts = new Map<string, number>()
+  for (const item of items ?? []) {
+    const code = item?.codigo
+    if (!code) continue
+    counts.set(code, (counts.get(code) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([codigo, count]) => ({ codigo, count }))
 }
 
 // ==================== ZOD SCHEMAS (Type-Safe) ====================
@@ -34,32 +242,64 @@ const ConsultarSchema = z.object({
   entidade: z.enum([
     'colaboradores', 'setores', 'escalas', 'alocacoes', 'excecoes',
     'demandas', 'tipos_contrato', 'empresa', 'feriados', 'funcoes',
-    'regra_definicao', 'regra_empresa'
-  ]),
-  filtros: z.record(z.string(), z.any()).optional()
+    'regra_definicao', 'regra_empresa',
+    'demandas_excecao_data', 'colaborador_regra_horario_excecao_data'
+  ]).describe('Entidade do banco a consultar. Use os nomes exatamente como no enum (ex: "colaboradores", "setores", "escalas").'),
+  filtros: z.record(z.string(), z.any()).optional().describe('Filtros por igualdade (campo -> valor). Use apenas campos válidos da entidade; strings são comparadas sem diferenciar maiúsculas/minúsculas.')
+})
+
+// buscar_colaborador (semântica)
+const BuscarColaboradorSchema = z.object({
+  id: z.number().int().positive().optional().describe('ID do colaborador. Se informado, a busca é direta por ID.'),
+  nome: z.string().min(2).optional().describe('Nome do colaborador para busca por texto (case-insensitive).'),
+  setor_id: z.number().int().positive().optional().describe('Opcional: restringe a busca a um setor específico.'),
+  ativo_apenas: z.boolean().optional().describe('Se true, considera apenas colaboradores ativos. Padrão: true.'),
+  modo: z.enum(['AUTO', 'EXATO', 'PARCIAL']).optional().describe('AUTO tenta EXATO primeiro e cai para PARCIAL se necessário.'),
+}).refine((v) => v.id !== undefined || (typeof v.nome === 'string' && v.nome.trim().length >= 2), {
+  message: 'Informe `id` ou `nome` para buscar colaborador.',
+})
+
+// regras de horário por colaborador (semântica)
+const ObterRegraHorarioColaboradorSchema = z.object({
+  colaborador_id: z.number().int().positive().describe('ID do colaborador. Resolva via buscar_colaborador.')
+})
+
+const SalvarRegraHorarioColaboradorSchema = z.object({
+  colaborador_id: z.number().int().positive().describe('ID do colaborador que receberá a regra.'),
+  ativo: z.boolean().optional().describe('Se a regra individual fica ativa. Padrão do backend: true ao criar.'),
+  perfil_horario_id: z.number().int().positive().nullable().optional().describe('ID de perfil de horário do contrato (ou null para remover vínculo).'),
+  inicio_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início mínimo permitido (HH:MM).'),
+  inicio_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início máximo permitido (HH:MM).'),
+  fim_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim mínimo permitido (HH:MM).'),
+  fim_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim máximo permitido (HH:MM).'),
+  preferencia_turno_soft: z.string().nullable().optional().describe('Preferência soft de turno (ex: MANHA/TARDE/NOITE, conforme convenção local).'),
+  domingo_ciclo_trabalho: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de trabalho no ciclo.'),
+  domingo_ciclo_folga: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de folga no ciclo.'),
+  folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover.'),
+})
+
+const DefinirJanelaColaboradorSchema = z.object({
+  colaborador_id: z.number().int().positive().describe('ID do colaborador.'),
+  inicio_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode iniciar (HH:MM).'),
+  inicio_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode iniciar (HH:MM).'),
+  fim_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode sair (HH:MM).'),
+  fim_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode sair (HH:MM).'),
+  ativo: z.boolean().optional().describe('Ativa a regra ao salvar. Padrão: true.'),
+}).refine((v) => v.inicio_min || v.inicio_max || v.fim_min || v.fim_max, {
+  message: 'Informe pelo menos um limite de janela (inicio_min/inicio_max/fim_min/fim_max).',
 })
 
 // criar colaborador — validação específica para colaboradores
 const CriarColaboradorSchema = z.object({
-  nome: z.string().min(1),
-  setor_id: z.number().int().positive(),
-  tipo_contrato_id: z.number().int().positive().optional(),
-  sexo: z.enum(['M', 'F']).optional(),
-  data_nascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  tipo_trabalhador: z.string().optional(),
-  hora_inicio_min: z.string().optional(),
-  hora_fim_max: z.string().optional(),
-  ativo: z.number().int().min(0).max(1).optional()
-})
-
-// criar exceção — validação específica para exceções
-const CriarExcecaoSchema = z.object({
-  colaborador_id: z.number().int().positive(),
-  tipo: z.enum(['FERIAS', 'ATESTADO', 'BLOQUEIO']),
-  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  motivo: z.string().optional(),
-  observacao: z.string().optional()
+  nome: z.string().min(1).describe('Nome completo do colaborador.'),
+  setor_id: z.number().int().positive().describe('ID do setor. Extraia do get_context() pelo nome do setor.'),
+  tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato. Extraia de get_context().tipos_contrato pelo nome (ex: CLT 44h).'),
+  sexo: z.enum(['M', 'F']).optional().describe('Sexo do colaborador: "M" ou "F".'),
+  data_nascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Data de nascimento no formato YYYY-MM-DD.'),
+  tipo_trabalhador: z.string().optional().describe('Tipo de trabalhador (ex: regular, aprendiz, estagiario).'),
+  hora_inicio_min: z.string().optional().describe('Horário mínimo de início permitido (HH:MM).'),
+  hora_fim_max: z.string().optional().describe('Horário máximo de término permitido (HH:MM).'),
+  ativo: z.number().int().min(0).max(1).optional().describe('1 = ativo, 0 = inativo.')
 })
 
 // criar — schema genérico
@@ -67,60 +307,82 @@ const CriarSchema = z.object({
   entidade: z.enum([
     'colaboradores', 'excecoes', 'demandas', 'tipos_contrato',
     'setores', 'feriados', 'funcoes'
-  ]),
-  dados: z.record(z.string(), z.any())
+  ]).describe('Entidade para criação. Prefira tools semânticas quando existirem; use esta como fallback.'),
+  dados: z.record(z.string(), z.any()).describe('Objeto com campos da entidade escolhida. IDs devem ser resolvidos via get_context().')
 })
 
 // atualizar
 const AtualizarSchema = z.object({
-  entidade: z.enum(['colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas']),
-  id: z.number().int().positive(),
-  dados: z.record(z.string(), z.any())
+  entidade: z.enum(['colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas']).describe('Entidade a atualizar.'),
+  id: z.number().int().positive().describe('ID do registro a atualizar. Resolva via get_context() ou consulta prévia.'),
+  dados: z.record(z.string(), z.any()).describe('Campos a atualizar (parcial).')
 })
 
 // deletar
 const DeletarSchema = z.object({
-  entidade: z.enum(['excecoes', 'demandas', 'feriados', 'funcoes']),
-  id: z.number().int().positive()
+  entidade: z.enum(['excecoes', 'demandas', 'feriados', 'funcoes']).describe('Entidade permitida para deleção.'),
+  id: z.number().int().positive().describe('ID do registro a deletar.')
 })
 
 // editar_regra
 const EditarRegraSchema = z.object({
-  codigo: z.string(),
-  status: z.enum(['HARD', 'SOFT', 'OFF', 'ON'])
+  codigo: z.string().describe('Código da regra (ex: H1, H6, S_DEFICIT, AP3).'),
+  status: z.enum(['HARD', 'SOFT', 'OFF', 'ON']).describe('Novo status da regra. HARD/SOFT para regras parametrizáveis, OFF/ON para toggles.')
 })
 
 // gerar_escala
 const GerarEscalaSchema = z.object({
-  setor_id: z.number().int().positive(),
-  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  rules_override: z.record(z.string(), z.string()).optional()
+  setor_id: z.number().int().positive().describe('ID do setor. Extraia do get_context() a partir do nome citado pelo usuário.'),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial da escala no formato YYYY-MM-DD.'),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final da escala no formato YYYY-MM-DD.'),
+  rules_override: z.record(z.string(), z.string()).optional().describe('Overrides opcionais de regras (codigo -> status), ex: {"H1":"SOFT"}')
 })
 
 // ajustar_alocacao
 const AjustarAlocacaoSchema = z.object({
-  escala_id: z.number().int().positive(),
-  colaborador_id: z.number().int().positive(),
-  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  status: z.enum(['TRABALHO', 'FOLGA', 'INDISPONIVEL'])
+  escala_id: z.number().int().positive().describe('ID da escala (RASCUNHO/OFICIAL) que será ajustada.'),
+  colaborador_id: z.number().int().positive().describe('ID do colaborador a ajustar na célula.'),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data da célula a ajustar no formato YYYY-MM-DD.'),
+  status: z.enum(['TRABALHO', 'FOLGA', 'INDISPONIVEL']).describe('Novo status da alocação: TRABALHO, FOLGA ou INDISPONIVEL.')
+})
+
+// ajustar_horario (semântica)
+const AjustarHorarioSchema = z.object({
+  escala_id: z.number().int().positive().describe('ID da escala que será ajustada.'),
+  colaborador_id: z.number().int().positive().describe('ID do colaborador na alocação alvo.'),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data da célula no formato YYYY-MM-DD.'),
+  hora_inicio: z.string().regex(HORA_HHMM_REGEX).describe('Horário de início (HH:MM).'),
+  hora_fim: z.string().regex(HORA_HHMM_REGEX).describe('Horário de fim (HH:MM).'),
+  status: z.enum(['TRABALHO', 'FOLGA', 'INDISPONIVEL']).optional().describe('Status da célula após ajuste. Padrão: TRABALHO.'),
 })
 
 // oficializar_escala
 const OficializarEscalaSchema = z.object({
-  escala_id: z.number().int().positive()
+  escala_id: z.number().int().positive().describe('ID da escala a oficializar. Só funciona se violacoes_hard = 0.')
 })
 
 // preflight
 const PreflightSchema = z.object({
-  setor_id: z.number().int().positive(),
-  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  setor_id: z.number().int().positive().describe('ID do setor para validar viabilidade. Resolva via get_context() pelo nome do setor.'),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial do período no formato YYYY-MM-DD.'),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final do período no formato YYYY-MM-DD.')
+})
+
+const PreflightCompletoSchema = z.object({
+  setor_id: z.number().int().positive().describe('ID do setor para validação completa.'),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial do período (YYYY-MM-DD).'),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final do período (YYYY-MM-DD).'),
+  regimes_override: z.array(RegimeOverrideSchema).optional().describe('Overrides opcionais de regime por colaborador para simulação do preflight completo.')
+})
+
+const DiagnosticarEscalaSchema = z.object({
+  escala_id: z.number().int().positive().describe('ID da escala (normalmente obtido via get_context/consultar).'),
+  incluir_amostras: z.boolean().optional().describe('Se true, inclui amostras de violações/antipadrões no retorno. Padrão: true.')
 })
 
 // explicar_violacao
 const ExplicarViolacaoSchema = z.object({
-  codigo_regra: z.string()
+  codigo_regra: z.string().describe('Código da regra/violação para explicar (ex: H1, H14, S_DEFICIT, AP3).')
 })
 
 // cadastrar_lote
@@ -128,8 +390,44 @@ const CadastrarLoteSchema = z.object({
   entidade: z.enum([
     'colaboradores', 'excecoes', 'demandas', 'tipos_contrato',
     'setores', 'feriados', 'funcoes'
-  ]),
-  registros: z.array(z.record(z.string(), z.any())).min(1).max(200)
+  ]).describe('Entidade para inserção em lote. Use quando o usuário enviar planilha/CSV/lista.'),
+  registros: z.array(z.record(z.string(), z.any())).min(1).max(200).describe('Lista de registros para inserir (mínimo 1, máximo 200).')
+})
+
+// salvar_demanda_excecao_data
+const SalvarDemandaExcecaoDataSchema = z.object({
+  setor_id: z.number().int().positive().describe('ID do setor. Resolva via get_context() pelo nome.'),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data da demanda excepcional (YYYY-MM-DD). Ex: Black Friday, evento especial.'),
+  hora_inicio: z.string().regex(HORA_HHMM_REGEX).describe('Início da faixa horária (HH:MM).'),
+  hora_fim: z.string().regex(HORA_HHMM_REGEX).describe('Fim da faixa horária (HH:MM).'),
+  min_pessoas: z.number().int().min(0).describe('Número mínimo de pessoas necessárias nesta faixa.'),
+  override: z.boolean().optional().describe('Se true, substitui demanda regular do dia. Padrão: false.'),
+})
+
+// upsert_regra_excecao_data
+const UpsertRegraExcecaoDataSchema = z.object({
+  colaborador_id: z.number().int().positive().describe('ID do colaborador. Resolva via buscar_colaborador ou get_context().'),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data do override pontual (YYYY-MM-DD).'),
+  ativo: z.boolean().optional().describe('Se a exceção fica ativa. Padrão: true.'),
+  inicio_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início mínimo permitido neste dia (HH:MM) ou null.'),
+  inicio_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início máximo permitido neste dia (HH:MM) ou null.'),
+  fim_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim mínimo permitido neste dia (HH:MM) ou null.'),
+  fim_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim máximo permitido neste dia (HH:MM) ou null.'),
+  preferencia_turno_soft: z.enum(['MANHA', 'TARDE']).nullable().optional().describe('Preferência de turno para este dia (MANHA/TARDE) ou null.'),
+  domingo_forcar_folga: z.boolean().optional().describe('Se true, força folga neste dia. Padrão: false.'),
+})
+
+// resumir_horas_setor
+const ResumirHorasSetorSchema = z.object({
+  setor_id: z.number().int().positive().describe('ID do setor. Resolva via get_context().'),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Início do período (YYYY-MM-DD).'),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fim do período (YYYY-MM-DD).'),
+  escala_id: z.number().int().positive().optional().describe('Opcional: restringe a uma escala específica.'),
+})
+
+// resetar_regras_empresa
+const ResetarRegrasEmpresaSchema = z.object({
+  confirmar: z.literal(true).describe('Safety check: deve ser true para confirmar o reset de todas as regras.'),
 })
 
 // ==================== IA_TOOLS (Gemini API Format) ====================
@@ -142,6 +440,16 @@ export const IA_TOOLS = [
             type: 'object',
             properties: {}
         }
+    },
+    {
+        name: 'buscar_colaborador',
+        description: 'Resolve colaborador por ID ou nome (case-insensitive) e retorna dados úteis + setor/contrato. Prefira esta tool antes de consultar("colaboradores").',
+        parameters: toJsonSchema(BuscarColaboradorSchema)
+    },
+    {
+        name: 'obter_regra_horario_colaborador',
+        description: 'Lê a regra individual de horário de um colaborador (janela, ciclo de domingo, folga fixa, etc). Use para confirmar estado antes de alterar.',
+        parameters: toJsonSchema(ObterRegraHorarioColaboradorSchema)
     },
     {
         name: 'consultar',
@@ -179,8 +487,13 @@ export const IA_TOOLS = [
         parameters: toJsonSchema(AjustarAlocacaoSchema)
     },
     {
+        name: 'ajustar_horario',
+        description: 'Ajusta horário de uma alocação existente (hora_inicio/hora_fim) e opcionalmente status. Use para correções manuais de escala sem usar SQL.',
+        parameters: toJsonSchema(AjustarHorarioSchema)
+    },
+    {
         name: 'oficializar_escala',
-        description: 'Trava a escala como OFICIAL. Só é possível quando violacoes_hard = 0.',
+        description: 'Trava a escala como OFICIAL. Só é possível quando violacoes_hard = 0. Se o usuário já informou `escala_id` e pediu para oficializar, chame esta tool diretamente (ela já valida e recusa se houver violação HARD).',
         parameters: toJsonSchema(OficializarEscalaSchema)
     },
     {
@@ -189,9 +502,14 @@ export const IA_TOOLS = [
         parameters: toJsonSchema(PreflightSchema)
     },
     {
-        name: 'resumo_sistema',
-        description: 'Relatório gerencial rápido: total de setores, colaboradores, escalas por status. DEPRECATED: use get_context() ao invés desta tool — ela retorna informação mais completa e estruturada.',
-        parameters: { type: 'object', properties: {} }
+        name: 'preflight_completo',
+        description: 'Pré-flight ampliado (inclui checks de capacidade via buildSolverInput) para aproximar a visão da UI e reduzir falsos positivos de viabilidade.',
+        parameters: toJsonSchema(PreflightCompletoSchema)
+    },
+    {
+        name: 'diagnosticar_escala',
+        description: 'Revalida e resume uma escala existente (indicadores, top violações/antipadrões e próximas ações possíveis). Use quando o usuário pedir diagnóstico/análise/explicação. Não use como passo obrigatório antes de `oficializar_escala` quando o usuário já deu um `escala_id` explícito.',
+        parameters: toJsonSchema(DiagnosticarEscalaSchema)
     },
     {
         name: 'explicar_violacao',
@@ -202,6 +520,36 @@ export const IA_TOOLS = [
         name: 'cadastrar_lote',
         description: 'Cadastra MÚLTIPLOS registros de uma vez (batch INSERT). Use quando o usuário cola uma lista, planilha ou CSV com vários itens. Muito mais eficiente que chamar "criar" várias vezes. Aceita até 200 registros por chamada. Cada registro segue as mesmas regras e defaults da tool "criar" (ex: colaboradores recebem defaults inteligentes de sexo, contrato, etc). Retorna resumo com total criado e eventuais erros individuais.',
         parameters: toJsonSchema(CadastrarLoteSchema)
+    },
+    {
+        name: 'salvar_regra_horario_colaborador',
+        description: 'Cria/atualiza a regra individual de horário de um colaborador (janela, ciclo de domingo, folga fixa, preferências).',
+        parameters: toJsonSchema(SalvarRegraHorarioColaboradorSchema)
+    },
+    {
+        name: 'definir_janela_colaborador',
+        description: 'Wrapper semântico para definir limites de horário de um colaborador (ex.: "só pode de manhã"). Usa salvar_regra_horario_colaborador por baixo.',
+        parameters: toJsonSchema(DefinirJanelaColaboradorSchema)
+    },
+    {
+        name: 'salvar_demanda_excecao_data',
+        description: 'Cria demanda excepcional por data (ex: Black Friday precisa de 8 pessoas). Insere na tabela demandas_excecao_data.',
+        parameters: toJsonSchema(SalvarDemandaExcecaoDataSchema)
+    },
+    {
+        name: 'upsert_regra_excecao_data',
+        description: 'Override pontual de horário por colaborador/data (ex: "segunda o João entra às 10h"). Upsert em colaborador_regra_horario_excecao_data.',
+        parameters: toJsonSchema(UpsertRegraExcecaoDataSchema)
+    },
+    {
+        name: 'resumir_horas_setor',
+        description: 'KPIs de horas e dias trabalhados por colaborador num período. Agrega alocações por pessoa com totais e médias.',
+        parameters: toJsonSchema(ResumirHorasSetorSchema)
+    },
+    {
+        name: 'resetar_regras_empresa',
+        description: 'Volta TODAS as regras da empresa pro padrão original (deleta overrides em regra_empresa). Requer confirmar=true.',
+        parameters: toJsonSchema(ResetarRegrasEmpresaSchema)
     }
 ]
 
@@ -209,6 +557,7 @@ const ENTIDADES_LEITURA_PERMITIDAS = new Set([
     'colaboradores', 'setores', 'escalas', 'alocacoes', 'excecoes',
     'demandas', 'tipos_contrato', 'empresa', 'feriados', 'funcoes',
     'regra_definicao', 'regra_empresa',
+    'demandas_excecao_data', 'colaborador_regra_horario_excecao_data',
 ])
 
 // Mapa de campos válidos por entidade (protege contra SQL injection e erros de campo inexistente)
@@ -254,6 +603,13 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   regra_empresa: new Set([
     'codigo', 'status'
   ]),
+  demandas_excecao_data: new Set([
+    'id', 'setor_id', 'data', 'hora_inicio', 'hora_fim', 'min_pessoas', 'override'
+  ]),
+  colaborador_regra_horario_excecao_data: new Set([
+    'id', 'colaborador_id', 'data', 'ativo', 'inicio_min', 'inicio_max',
+    'fim_min', 'fim_max', 'preferencia_turno_soft', 'domingo_forcar_folga'
+  ]),
 }
 
 const ENTIDADES_CRIACAO_PERMITIDAS = new Set([
@@ -268,10 +624,134 @@ const ENTIDADES_DELECAO_PERMITIDAS = new Set([
     'excecoes', 'demandas', 'feriados', 'funcoes',
 ])
 
+const CONSULTAR_MODEL_ROW_LIMIT = 50
+
+function getConsultarRelatedTools(entidade: string): string[] {
+  const mapa: Record<string, string[]> = {
+    colaboradores: ['atualizar', 'ajustar_alocacao', 'cadastrar_lote'],
+    setores: ['preflight', 'gerar_escala', 'consultar'],
+    escalas: ['ajustar_alocacao', 'oficializar_escala', 'consultar'],
+    alocacoes: ['ajustar_alocacao', 'consultar'],
+    excecoes: ['criar', 'deletar', 'consultar'],
+    demandas: ['criar', 'atualizar', 'consultar'],
+    tipos_contrato: ['criar', 'atualizar', 'consultar'],
+    regra_definicao: ['editar_regra', 'consultar'],
+    regra_empresa: ['editar_regra', 'consultar'],
+    demandas_excecao_data: ['salvar_demanda_excecao_data', 'consultar'],
+    colaborador_regra_horario_excecao_data: ['upsert_regra_excecao_data', 'consultar'],
+  }
+  return mapa[entidade] ?? ['consultar']
+}
+
+function enrichConsultarRows(db: any, entidade: string, rows: Array<Record<string, any>>) {
+  const setorNomeCache = new Map<number, string | undefined>()
+  const contratoNomeCache = new Map<number, string | undefined>()
+  const colaboradorNomeCache = new Map<number, string | undefined>()
+  const regraNomeCache = new Map<string, string | undefined>()
+
+  const getSetorNome = (id: unknown): string | undefined => {
+    if (typeof id !== 'number') return undefined
+    if (!setorNomeCache.has(id)) {
+      const row = db.prepare('SELECT id, nome FROM setores WHERE id = ?').get(id) as { nome?: string } | undefined
+      setorNomeCache.set(id, row?.nome)
+    }
+    return setorNomeCache.get(id)
+  }
+
+  const getContratoNome = (id: unknown): string | undefined => {
+    if (typeof id !== 'number') return undefined
+    if (!contratoNomeCache.has(id)) {
+      const row = db.prepare('SELECT id, nome FROM tipos_contrato WHERE id = ?').get(id) as { nome?: string } | undefined
+      contratoNomeCache.set(id, row?.nome)
+    }
+    return contratoNomeCache.get(id)
+  }
+
+  const getColaboradorNome = (id: unknown): string | undefined => {
+    if (typeof id !== 'number') return undefined
+    if (!colaboradorNomeCache.has(id)) {
+      const row = db.prepare('SELECT id, nome FROM colaboradores WHERE id = ?').get(id) as { nome?: string } | undefined
+      colaboradorNomeCache.set(id, row?.nome)
+    }
+    return colaboradorNomeCache.get(id)
+  }
+
+  const getRegraNome = (codigo: unknown): string | undefined => {
+    if (typeof codigo !== 'string') return undefined
+    if (!regraNomeCache.has(codigo)) {
+      const row = db.prepare('SELECT codigo, nome FROM regra_definicao WHERE codigo = ?').get(codigo) as { nome?: string } | undefined
+      regraNomeCache.set(codigo, row?.nome)
+    }
+    return regraNomeCache.get(codigo)
+  }
+
+  return rows.map((row) => {
+    const enriched = { ...row }
+
+    if (entidade === 'colaboradores') {
+      const setorNome = getSetorNome(row.setor_id)
+      const contratoNome = getContratoNome(row.tipo_contrato_id)
+      if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
+      if (contratoNome && !('tipo_contrato_nome' in enriched)) enriched.tipo_contrato_nome = contratoNome
+      return enriched
+    }
+
+    if (entidade === 'escalas') {
+      const setorNome = getSetorNome(row.setor_id)
+      if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
+      return enriched
+    }
+
+    if (entidade === 'alocacoes') {
+      const colaboradorNome = getColaboradorNome(row.colaborador_id)
+      if (colaboradorNome && !('colaborador_nome' in enriched)) enriched.colaborador_nome = colaboradorNome
+      return enriched
+    }
+
+    if (entidade === 'excecoes') {
+      const colaboradorNome = getColaboradorNome(row.colaborador_id)
+      if (colaboradorNome && !('colaborador_nome' in enriched)) enriched.colaborador_nome = colaboradorNome
+      return enriched
+    }
+
+    if (entidade === 'demandas' || entidade === 'funcoes') {
+      const setorNome = getSetorNome(row.setor_id)
+      if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
+      if ('tipo_contrato_id' in enriched) {
+        const contratoNome = getContratoNome(row.tipo_contrato_id)
+        if (contratoNome && !('tipo_contrato_nome' in enriched)) enriched.tipo_contrato_nome = contratoNome
+      }
+      return enriched
+    }
+
+    if (entidade === 'regra_empresa') {
+      const regraNome = getRegraNome(row.codigo)
+      if (regraNome && !('regra_nome' in enriched)) enriched.regra_nome = regraNome
+      return enriched
+    }
+
+    if (entidade === 'demandas_excecao_data') {
+      const setorNome = getSetorNome(row.setor_id)
+      if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
+      return enriched
+    }
+
+    if (entidade === 'colaborador_regra_horario_excecao_data') {
+      const colaboradorNome = getColaboradorNome(row.colaborador_id)
+      if (colaboradorNome && !('colaborador_nome' in enriched)) enriched.colaborador_nome = colaboradorNome
+      return enriched
+    }
+
+    return enriched
+  })
+}
+
 // ==================== VALIDAÇÃO RUNTIME (Zod) ====================
 
 const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   get_context: null, // Sem parâmetros
+  buscar_colaborador: BuscarColaboradorSchema,
+  obter_regra_horario_colaborador: ObterRegraHorarioColaboradorSchema,
   consultar: ConsultarSchema,
   criar: CriarSchema,
   atualizar: AtualizarSchema,
@@ -279,11 +759,19 @@ const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   editar_regra: EditarRegraSchema,
   gerar_escala: GerarEscalaSchema,
   ajustar_alocacao: AjustarAlocacaoSchema,
+  ajustar_horario: AjustarHorarioSchema,
   oficializar_escala: OficializarEscalaSchema,
   preflight: PreflightSchema,
-  resumo_sistema: null, // Sem parâmetros
+  preflight_completo: PreflightCompletoSchema,
+  diagnosticar_escala: DiagnosticarEscalaSchema,
   explicar_violacao: ExplicarViolacaoSchema,
   cadastrar_lote: CadastrarLoteSchema,
+  salvar_regra_horario_colaborador: SalvarRegraHorarioColaboradorSchema,
+  definir_janela_colaborador: DefinirJanelaColaboradorSchema,
+  salvar_demanda_excecao_data: SalvarDemandaExcecaoDataSchema,
+  upsert_regra_excecao_data: UpsertRegraExcecaoDataSchema,
+  resumir_horas_setor: ResumirHorasSetorSchema,
+  resetar_regras_empresa: ResetarRegrasEmpresaSchema,
 }
 
 const DICIONARIO_VIOLACOES: Record<string, string> = {
@@ -351,9 +839,14 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 const path = issue.path.length > 0 ? issue.path.join('.') : 'root'
                 return `  • ${path}: ${issue.message}`
             }).join('\n')
-            return {
-                erro: `❌ Validação falhou para tool '${name}':\n\n${errors}\n\n💡 Verifique os tipos e valores permitidos.`
-            }
+            return toolError(
+              'INVALID_TOOL_ARGUMENTS',
+              `❌ Validação falhou para tool '${name}':\n\n${errors}\n\n💡 Verifique os tipos e valores permitidos.`,
+              {
+                correction: 'Corrija os argumentos com base no schema da tool e tente novamente.',
+                meta: { tool_name: name, stage: 'schema-validation' }
+              }
+            )
         }
         // Se válido, usar validated data (garantido type-safe)
         args = validation.data as Record<string, any>
@@ -482,19 +975,355 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 escalas_rascunho: escalas.filter(e => e.status === 'RASCUNHO').length,
                 escalas_oficiais: escalas.filter(e => e.status === 'OFICIAL').length,
             }
-
-            return {
+            const timestamp = new Date().toISOString()
+            return toolOk({
                 version: '1.0',
-                timestamp: new Date().toISOString(),
+                timestamp,
                 stats,
                 setores,
                 colaboradores,
                 tipos_contrato,  // FASE 2: Discovery explícito
                 escalas,
+                // Compat/transição: ainda útil enquanto o prompt continua orientado ao get_context.
                 instructions: 'Use this structured data to resolve names to IDs. NEVER ask the user for IDs - extract them from this context. Example: user says "Caixa" → find setor with nome="Caixa" → use its id in other tool calls. For tipo_contrato_id, find the contract in tipos_contrato array by name.',
-            }
+            }, {
+                summary: `Contexto carregado com ${stats.setores_ativos} setor(es), ${stats.colaboradores_ativos} colaborador(es) ativo(s) e ${escalas.length} escala(s) ativa(s).`,
+                meta: {
+                  tool_kind: 'discovery',
+                  next_tools_hint: ['consultar', 'preflight', 'gerar_escala', 'atualizar', 'criar', 'cadastrar_lote'],
+                  ids_resolvable: ['setores.id', 'colaboradores.id', 'tipos_contrato.id', 'escalas.id'],
+                  refreshed_at: timestamp,
+                }
+            })
         } catch (e: any) {
-            return { erro: `Erro ao buscar contexto: ${e.message}` }
+            return toolError(
+              'GET_CONTEXT_FAILED',
+              `Erro ao buscar contexto: ${e.message}`,
+              {
+                correction: 'Verifique o banco local e tente novamente. Se o problema persistir, use uma tool mais específica para diagnosticar.',
+                meta: { tool_kind: 'discovery' }
+              }
+            )
+        }
+    }
+
+    if (name === 'buscar_colaborador') {
+        try {
+            const ativoApenas = args.ativo_apenas !== false
+            const modo = (args.modo ?? 'AUTO') as 'AUTO' | 'EXATO' | 'PARCIAL'
+            const setorId = typeof args.setor_id === 'number' ? args.setor_id : undefined
+
+            const selectBase = `
+              SELECT
+                c.*,
+                s.nome as setor_nome,
+                t.nome as tipo_contrato_nome
+              FROM colaboradores c
+              LEFT JOIN setores s ON s.id = c.setor_id
+              LEFT JOIN tipos_contrato t ON t.id = c.tipo_contrato_id
+            `
+
+            const runSearch = (whereParts: string[], params: unknown[]) => {
+              let sql = selectBase
+              if (whereParts.length > 0) sql += ' WHERE ' + whereParts.join(' AND ')
+              sql += ' ORDER BY c.ativo DESC, c.nome'
+              return db.prepare(sql).all(...params) as Array<Record<string, any>>
+            }
+
+            if (typeof args.id === 'number') {
+              const whereParts = ['c.id = ?']
+              const params: unknown[] = [args.id]
+              if (ativoApenas) whereParts.push('c.ativo = 1')
+              const rows = runSearch(whereParts, params)
+              if (rows.length === 0) {
+                return toolError(
+                  'BUSCAR_COLABORADOR_NAO_ENCONTRADO',
+                  `Colaborador ${args.id} não encontrado${ativoApenas ? ' (ativo)' : ''}.`,
+                  {
+                    correction: 'Use get_context()/buscar_colaborador por nome para resolver um ID válido.',
+                    meta: { tool_kind: 'discovery', entidade: 'colaboradores', lookup: 'id', id: args.id }
+                  }
+                )
+              }
+
+              const colaborador = rows[0]
+              return toolOk(
+                { colaborador, encontrado_por: 'id' },
+                {
+                  summary: `Colaborador encontrado: ${colaborador.nome} (id ${colaborador.id}).`,
+                  meta: {
+                    tool_kind: 'discovery',
+                    entidade: 'colaboradores',
+                    resolution: 'single',
+                    ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador'],
+                  }
+                }
+              )
+            }
+
+            const nomeBusca = String(args.nome ?? '').trim()
+            const baseWhere: string[] = []
+            const baseParams: unknown[] = []
+            if (setorId !== undefined) {
+              baseWhere.push('c.setor_id = ?')
+              baseParams.push(setorId)
+            }
+            if (ativoApenas) {
+              baseWhere.push('c.ativo = 1')
+            }
+
+            let rows: Array<Record<string, any>> = []
+            let encontradoPor: 'nome_exato' | 'nome_parcial' | 'nome_auto' = 'nome_auto'
+
+            if (modo === 'EXATO' || modo === 'AUTO') {
+              rows = runSearch(
+                [...baseWhere, 'c.nome = ? COLLATE NOCASE'],
+                [...baseParams, nomeBusca],
+              )
+              if (rows.length > 0) {
+                encontradoPor = 'nome_exato'
+              }
+            }
+
+            if (rows.length === 0 && (modo === 'PARCIAL' || modo === 'AUTO')) {
+              rows = runSearch(
+                [...baseWhere, 'c.nome LIKE ? COLLATE NOCASE'],
+                [...baseParams, `%${nomeBusca}%`],
+              )
+              encontradoPor = 'nome_parcial'
+            }
+
+            if (rows.length === 0) {
+              return toolError(
+                'BUSCAR_COLABORADOR_NAO_ENCONTRADO',
+                `Nenhum colaborador encontrado para "${nomeBusca}".`,
+                {
+                  correction: 'Tente outro nome (ou parte do nome) e, se possível, restrinja por setor_id.',
+                  meta: {
+                    tool_kind: 'discovery',
+                    entidade: 'colaboradores',
+                    lookup: 'nome',
+                    nome: nomeBusca,
+                    setor_id: setorId,
+                    ativo_apenas: ativoApenas,
+                    modo,
+                  }
+                }
+              )
+            }
+
+            const modelRows = rows.slice(0, 10)
+            if (rows.length > 1) {
+              const payload = {
+                ambiguous: true,
+                total: rows.length,
+                candidatos: modelRows,
+                encontrado_por: encontradoPor,
+              }
+
+              if (rows.length > 10) {
+                return toolTruncated(payload, {
+                  summary: `Busca de colaborador retornou ${rows.length} candidatos para "${nomeBusca}". Exibindo os primeiros 10.`,
+                  meta: {
+                    tool_kind: 'discovery',
+                    entidade: 'colaboradores',
+                    resolution: 'ambiguous',
+                    nome: nomeBusca,
+                    retornados: 10,
+                    total: rows.length,
+                    ids_usaveis_em: ['buscar_colaborador', 'consultar'],
+                  }
+                })
+              }
+
+              return toolOk(payload, {
+                summary: `Busca de colaborador retornou ${rows.length} candidatos para "${nomeBusca}". Refine o nome ou use o ID.`,
+                meta: {
+                  tool_kind: 'discovery',
+                  entidade: 'colaboradores',
+                  resolution: 'ambiguous',
+                  nome: nomeBusca,
+                  ids_usaveis_em: ['buscar_colaborador', 'consultar'],
+                }
+              })
+            }
+
+            const colaborador = rows[0]
+            return toolOk(
+              { colaborador, encontrado_por: encontradoPor },
+              {
+                summary: `Colaborador encontrado: ${colaborador.nome} (id ${colaborador.id}).`,
+                meta: {
+                  tool_kind: 'discovery',
+                  entidade: 'colaboradores',
+                  resolution: 'single',
+                  nome_busca: nomeBusca,
+                    ids_usaveis_em: ['criar', 'ajustar_alocacao', 'atualizar', 'consultar', 'salvar_regra_horario_colaborador'],
+                }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'BUSCAR_COLABORADOR_FALHOU',
+              `Erro ao buscar colaborador: ${e.message}`,
+              {
+                correction: 'Tente novamente com ID ou um nome mais específico.',
+                meta: { tool_kind: 'discovery', entidade: 'colaboradores' }
+              }
+            )
+        }
+    }
+
+    if (name === 'obter_regra_horario_colaborador') {
+        try {
+            const { colaborador_id } = args
+            const colaborador = db.prepare(`
+              SELECT c.id, c.nome, c.ativo, c.setor_id, s.nome as setor_nome
+              FROM colaboradores c
+              LEFT JOIN setores s ON s.id = c.setor_id
+              WHERE c.id = ?
+            `).get(colaborador_id) as {
+              id: number
+              nome: string
+              ativo: number
+              setor_id: number
+              setor_nome?: string
+            } | undefined
+
+            if (!colaborador) {
+              return toolError(
+                'OBTER_REGRA_HORARIO_COLABORADOR_NAO_ENCONTRADO',
+                `Colaborador ${colaborador_id} não encontrado.`,
+                {
+                  correction: 'Use buscar_colaborador para resolver um colaborador_id válido.',
+                  meta: { tool_kind: 'discovery', entidade: 'colaborador_regra_horario', colaborador_id }
+                }
+              )
+            }
+
+            const regra = db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(colaborador_id) as Record<string, any> | null
+
+            return toolOk(
+              {
+                colaborador,
+                regra,
+                configurada: Boolean(regra),
+              },
+              {
+                summary: regra
+                  ? `Regra de horário encontrada para ${colaborador.nome} (id ${colaborador.id}).`
+                  : `${colaborador.nome} (id ${colaborador.id}) não possui regra individual de horário cadastrada.`,
+                meta: {
+                  tool_kind: 'discovery',
+                  entidade: 'colaborador_regra_horario',
+                  colaborador_id,
+                  configurada: Boolean(regra),
+                  ids_usaveis_em: ['salvar_regra_horario_colaborador', 'definir_janela_colaborador'],
+                }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'OBTER_REGRA_HORARIO_COLABORADOR_FALHOU',
+              `Erro ao buscar regra de horário do colaborador: ${e.message}`,
+              {
+                correction: 'Tente novamente. Se persistir, confirme o colaborador_id com buscar_colaborador.',
+                meta: { tool_kind: 'discovery', entidade: 'colaborador_regra_horario' }
+              }
+            )
+        }
+    }
+
+    if (name === 'diagnosticar_escala') {
+        try {
+            const { escala_id } = args
+            const incluirAmostras = args.incluir_amostras !== false
+
+            const escala = db.prepare(`
+              SELECT e.*, s.nome as setor_nome
+              FROM escalas e
+              LEFT JOIN setores s ON s.id = e.setor_id
+              WHERE e.id = ?
+            `).get(escala_id) as (Record<string, any> & { setor_nome?: string }) | undefined
+
+            if (!escala) {
+              return toolError(
+                'DIAGNOSTICAR_ESCALA_NAO_ENCONTRADA',
+                `Escala ${escala_id} não encontrada.`,
+                {
+                  correction: 'Use get_context ou consultar("escalas") para localizar uma escala válida.',
+                  meta: { tool_kind: 'diagnostic', entidade: 'escalas', escala_id }
+                }
+              )
+            }
+
+            const validacao = validarEscalaV3(escala_id, db as any)
+            const indicadores = validacao.indicadores ?? {}
+            const violacoes = Array.isArray((validacao as any).violacoes) ? (validacao as any).violacoes : []
+            const antipatterns = Array.isArray((validacao as any).antipatterns) ? (validacao as any).antipatterns : []
+
+            const topViolacoes = summarizeViolacoesTop(violacoes, 5)
+            const topAntipatterns = summarizeViolacoesTop(antipatterns as any, 5)
+            const hard = Number((indicadores as any).violacoes_hard ?? 0)
+            const soft = Number((indicadores as any).violacoes_soft ?? 0)
+            const podeOficializar = escala.status === 'RASCUNHO' && hard === 0
+
+            const proximas_acoes_possiveis = [
+              ...(hard > 0 ? ['explicar_violacao', 'ajustar_horario', 'ajustar_alocacao'] : []),
+              ...(podeOficializar ? ['oficializar_escala'] : []),
+              ...(escala.status === 'RASCUNHO' ? ['consultar'] : []),
+            ]
+
+            const payload: Record<string, any> = {
+              escala: {
+                id: escala.id,
+                setor_id: escala.setor_id,
+                setor_nome: escala.setor_nome,
+                status: escala.status,
+                data_inicio: escala.data_inicio,
+                data_fim: escala.data_fim,
+              },
+              indicadores,
+              diagnostico: {
+                violacoes_hard: hard,
+                violacoes_soft: soft,
+                total_violacoes: violacoes.length,
+                total_antipatterns: antipatterns.length,
+                pode_oficializar: podeOficializar,
+                top_violacoes: topViolacoes,
+                top_antipatterns: topAntipatterns,
+                proximas_acoes_possiveis,
+              },
+            }
+
+            if (incluirAmostras) {
+              payload.amostras = {
+                violacoes: violacoes.slice(0, 5),
+                antipatterns: antipatterns.slice(0, 5),
+              }
+            }
+
+            return toolOk(payload, {
+              summary: hard > 0
+                ? `Diagnóstico da escala ${escala_id}: ${hard} violação(ões) HARD e ${soft} SOFT.`
+                : `Diagnóstico da escala ${escala_id}: sem violações HARD${soft > 0 ? `, com ${soft} SOFT` : ''}.`,
+              meta: {
+                tool_kind: 'diagnostic',
+                entidade: 'escalas',
+                escala_id,
+                pode_oficializar: podeOficializar,
+                next_tools_hint: proximas_acoes_possiveis,
+              }
+            })
+        } catch (e: any) {
+            return toolError(
+              'DIAGNOSTICAR_ESCALA_FALHOU',
+              `Erro ao diagnosticar escala: ${e.message}`,
+              {
+                correction: 'Confirme o escala_id e tente novamente. Se necessário, recarregue contexto/escala.',
+                meta: { tool_kind: 'diagnostic', entidade: 'escalas' }
+              }
+            )
         }
     }
 
@@ -502,21 +1331,40 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { entidade, filtros } = args
 
         if (!ENTIDADES_LEITURA_PERMITIDAS.has(entidade)) {
-            return { erro: `Entidade '${entidade}' não permitida. Use: ${[...ENTIDADES_LEITURA_PERMITIDAS].join(' | ')}` }
+            return toolError(
+              'CONSULTAR_ENTIDADE_INVALIDA',
+              `Entidade '${entidade}' não permitida. Use: ${[...ENTIDADES_LEITURA_PERMITIDAS].join(' | ')}`,
+              {
+                correction: 'Escolha uma entidade do enum permitido para a tool consultar.',
+                meta: { entidade_solicitada: entidade, entidades_permitidas: [...ENTIDADES_LEITURA_PERMITIDAS] }
+              }
+            )
         }
 
         // VALIDAÇÃO DE CAMPOS (Fase 1: protege contra SQL injection e erros de campo inexistente)
         if (filtros && Object.keys(filtros).length > 0) {
             const camposValidos = CAMPOS_VALIDOS[entidade]
             if (!camposValidos) {
-                return { erro: `Entidade '${entidade}' não tem mapa de campos válidos.` }
+                return toolError(
+                  'CONSULTAR_MAPA_CAMPOS_AUSENTE',
+                  `Entidade '${entidade}' não tem mapa de campos válidos.`,
+                  {
+                    correction: 'Use outra entidade suportada ou corrija o mapeamento de campos válidos no backend.',
+                    meta: { entidade }
+                  }
+                )
             }
 
             for (const campo of Object.keys(filtros)) {
                 if (!camposValidos.has(campo)) {
-                    return {
-                        erro: `❌ Campo inválido: "${campo}" não existe em ${entidade}.\n\n💡 Campos disponíveis: ${[...camposValidos].join(', ')}`
-                    }
+                    return toolError(
+                      'CONSULTAR_CAMPO_INVALIDO',
+                      `❌ Campo inválido: "${campo}" não existe em ${entidade}.\n\n💡 Campos disponíveis: ${[...camposValidos].join(', ')}`,
+                      {
+                        correction: `Use apenas campos válidos de ${entidade}.`,
+                        meta: { entidade, campo_invalido: campo, campos_validos: [...camposValidos] }
+                      }
+                    )
                 }
             }
         }
@@ -534,9 +1382,61 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
-            return db.prepare(query).all(...params)
+            const rows = db.prepare(query).all(...params) as Array<Record<string, any>>
+            const total = rows.length
+            const truncated = total > CONSULTAR_MODEL_ROW_LIMIT
+            const slicedRows = truncated ? rows.slice(0, CONSULTAR_MODEL_ROW_LIMIT) : rows
+            const dados = enrichConsultarRows(db, entidade, slicedRows)
+            const commonMeta = {
+              tool_kind: 'discovery',
+              entidade,
+              filtros_aplicados: filtros ?? {},
+              ids_usaveis_em: getConsultarRelatedTools(entidade),
+              campos_validos: [...(CAMPOS_VALIDOS[entidade] ?? [])],
+              total,
+              retornados: dados.length,
+            }
+
+            if (truncated) {
+              return toolTruncated(
+                {
+                  entidade,
+                  total,
+                  retornados: dados.length,
+                  dados,
+                },
+                {
+                  summary: `Consulta em ${entidade} retornou ${total} registro(s); exibindo os primeiros ${dados.length}.`,
+                  meta: {
+                    ...commonMeta,
+                    suggested_next_step: 'Refine os filtros para reduzir o volume antes de decidir a próxima ação.',
+                  }
+                }
+              )
+            }
+
+            return toolOk(
+              {
+                entidade,
+                total,
+                dados,
+              },
+              {
+                summary: total === 0
+                  ? `Nenhum registro encontrado em ${entidade} com os filtros informados.`
+                  : `Consulta em ${entidade} retornou ${total} registro(s).`,
+                meta: commonMeta
+              }
+            )
         } catch (e: any) {
-            return { erro: e.message }
+            return toolError(
+              'CONSULTAR_EXECUCAO_FALHOU',
+              e.message,
+              {
+                correction: 'Revise entidade/filtros e tente novamente. Se necessário, simplifique a consulta.',
+                meta: { entidade, filtros_aplicados: filtros ?? {} }
+              }
+            )
         }
     }
 
@@ -544,23 +1444,45 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { entidade, dados } = args
 
         if (!ENTIDADES_CRIACAO_PERMITIDAS.has(entidade)) {
-            return { erro: `❌ Criação não permitida para '${entidade}'. Entidades permitidas: ${[...ENTIDADES_CRIACAO_PERMITIDAS].join(', ')}` }
+            return toolError(
+              'CRIAR_ENTIDADE_NAO_PERMITIDA',
+              `❌ Criação não permitida para '${entidade}'. Entidades permitidas: ${[...ENTIDADES_CRIACAO_PERMITIDAS].join(', ')}`,
+              {
+                correction: 'Escolha uma entidade permitida para criação ou use outra tool específica.',
+                meta: { entidade_solicitada: entidade, entidades_permitidas: [...ENTIDADES_CRIACAO_PERMITIDAS] }
+              }
+            )
         }
 
         // VALIDAÇÃO ESPECÍFICA + DEFAULTS INTELIGENTES
         if (entidade === 'colaboradores') {
             // Campos obrigatórios
             if (!dados.nome || typeof dados.nome !== 'string') {
-                return { erro: '❌ Campo obrigatório: "nome" (string). Exemplo: { "nome": "João Silva", "setor_id": 1 }' }
+                return toolError(
+                  'CRIAR_COLABORADOR_NOME_OBRIGATORIO',
+                  '❌ Campo obrigatório: "nome" (string). Exemplo: { "nome": "João Silva", "setor_id": 1 }',
+                  { correction: 'Informe o nome do colaborador em `dados.nome`.' }
+                )
             }
             if (!dados.setor_id || typeof dados.setor_id !== 'number') {
-                return { erro: '❌ Campo obrigatório: "setor_id" (number). Use get_context() para descobrir o ID do setor pelo nome.' }
+                return toolError(
+                  'CRIAR_COLABORADOR_SETOR_ID_OBRIGATORIO',
+                  '❌ Campo obrigatório: "setor_id" (number). Use get_context() para descobrir o ID do setor pelo nome.',
+                  { correction: 'Resolva o setor via get_context() e envie `dados.setor_id`.' }
+                )
             }
 
             // Validar setor existe
             const setor = db.prepare('SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = 1').get(dados.setor_id) as any
             if (!setor) {
-                return { erro: `❌ Setor ${dados.setor_id} não encontrado ou inativo. Use get_context() para ver setores disponíveis.` }
+                return toolError(
+                  'CRIAR_COLABORADOR_SETOR_INVALIDO',
+                  `❌ Setor ${dados.setor_id} não encontrado ou inativo. Use get_context() para ver setores disponíveis.`,
+                  {
+                    correction: 'Escolha um setor ativo válido usando get_context().',
+                    meta: { setor_id: dados.setor_id }
+                  }
+                )
             }
 
             // Defaults inteligentes para campos opcionais
@@ -582,19 +1504,38 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         if (entidade === 'excecoes') {
             // Campos obrigatórios
             if (!dados.colaborador_id) {
-                return { erro: '❌ Campo obrigatório: "colaborador_id" (number). Use get_context() para descobrir o ID pelo nome do colaborador.' }
+                return toolError(
+                  'CRIAR_EXCECAO_COLABORADOR_ID_OBRIGATORIO',
+                  '❌ Campo obrigatório: "colaborador_id" (number). Use get_context() para descobrir o ID pelo nome do colaborador.',
+                  { correction: 'Resolva o colaborador via get_context() e envie `dados.colaborador_id`.' }
+                )
             }
             if (!dados.tipo) {
-                return { erro: '❌ Campo obrigatório: "tipo" (string). Valores permitidos: FERIAS, ATESTADO, BLOQUEIO' }
+                return toolError(
+                  'CRIAR_EXCECAO_TIPO_OBRIGATORIO',
+                  '❌ Campo obrigatório: "tipo" (string). Valores permitidos: FERIAS, ATESTADO, BLOQUEIO',
+                  { correction: 'Informe `dados.tipo` com um valor permitido.' }
+                )
             }
             if (!dados.data_inicio || !dados.data_fim) {
-                return { erro: '❌ Campos obrigatórios: "data_inicio" e "data_fim" (YYYY-MM-DD)' }
+                return toolError(
+                  'CRIAR_EXCECAO_PERIODO_OBRIGATORIO',
+                  '❌ Campos obrigatórios: "data_inicio" e "data_fim" (YYYY-MM-DD)',
+                  { correction: 'Informe `dados.data_inicio` e `dados.data_fim` no formato YYYY-MM-DD.' }
+                )
             }
 
             // Validar tipo
             const tiposValidos = ['FERIAS', 'ATESTADO', 'BLOQUEIO']
             if (!tiposValidos.includes(dados.tipo)) {
-                return { erro: `❌ Tipo inválido: "${dados.tipo}". Valores permitidos: ${tiposValidos.join(', ')}` }
+                return toolError(
+                  'CRIAR_EXCECAO_TIPO_INVALIDO',
+                  `❌ Tipo inválido: "${dados.tipo}". Valores permitidos: ${tiposValidos.join(', ')}`,
+                  {
+                    correction: 'Use um dos valores permitidos para `dados.tipo`.',
+                    meta: { tipo_informado: dados.tipo, tipos_validos: tiposValidos }
+                  }
+                )
             }
 
             // Default motivo
@@ -607,21 +1548,64 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         try {
             const res = db.prepare(`INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`).run(...values)
-            return { sucesso: true, id: res.lastInsertRowid }
+            return toolOk(
+              {
+                sucesso: true,
+                id: res.lastInsertRowid,
+                entidade,
+              },
+              {
+                summary: `Registro criado em ${entidade} com sucesso (id: ${String(res.lastInsertRowid)}).`,
+                meta: {
+                  tool_kind: 'action',
+                  action: 'create',
+                  entidade,
+                  ids_usaveis_em: ['consultar', 'atualizar'],
+                }
+              }
+            )
         } catch (e: any) {
             // Traduz erros SQL pra mensagens acionáveis
             if (e.message?.includes('NOT NULL constraint')) {
                 const match = e.message.match(/NOT NULL constraint failed: \w+\.(\w+)/)
                 const campo = match?.[1] || 'desconhecido'
-                return { erro: `❌ Campo obrigatório faltando: "${campo}". Verifique a estrutura da entidade ${entidade}.` }
+                return toolError(
+                  'CRIAR_NOT_NULL',
+                  `❌ Campo obrigatório faltando: "${campo}". Verifique a estrutura da entidade ${entidade}.`,
+                  {
+                    correction: `Preencha o campo obrigatório "${campo}" em \`dados\` e tente novamente.`,
+                    meta: { entidade, campo }
+                  }
+                )
             }
             if (e.message?.includes('UNIQUE constraint')) {
-                return { erro: `❌ Registro duplicado: ${entidade} com esses valores únicos já existe.` }
+                return toolError(
+                  'CRIAR_UNIQUE_CONSTRAINT',
+                  `❌ Registro duplicado: ${entidade} com esses valores únicos já existe.`,
+                  {
+                    correction: 'Revise os campos únicos (nome/código/etc.) e tente outro valor.',
+                    meta: { entidade }
+                  }
+                )
             }
             if (e.message?.includes('FOREIGN KEY constraint')) {
-                return { erro: `❌ Referência inválida: um dos IDs fornecidos não existe no banco. Verifique setor_id, colaborador_id, etc.` }
+                return toolError(
+                  'CRIAR_FOREIGN_KEY',
+                  '❌ Referência inválida: um dos IDs fornecidos não existe no banco. Verifique setor_id, colaborador_id, etc.',
+                  {
+                    correction: 'Resolva novamente os IDs via get_context() antes de criar.',
+                    meta: { entidade }
+                  }
+                )
             }
-            return { erro: `❌ Erro ao criar ${entidade}: ${e.message}` }
+            return toolError(
+              'CRIAR_FALHOU',
+              `❌ Erro ao criar ${entidade}: ${e.message}`,
+              {
+                correction: 'Revise os campos enviados e tente novamente.',
+                meta: { entidade }
+              }
+            )
         }
     }
 
@@ -629,17 +1613,48 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { entidade, id, dados } = args
 
         if (!ENTIDADES_ATUALIZACAO_PERMITIDAS.has(entidade)) {
-            return { erro: `Atualização não permitida para '${entidade}'. Para alterar regras, use a tool editar_regra.` }
+            return toolError(
+              'ATUALIZAR_ENTIDADE_NAO_PERMITIDA',
+              `Atualização não permitida para '${entidade}'. Para alterar regras, use a tool editar_regra.`,
+              {
+                correction: 'Use uma entidade permitida ou a tool específica correta.',
+                meta: { entidade_solicitada: entidade, entidades_permitidas: [...ENTIDADES_ATUALIZACAO_PERMITIDAS] }
+              }
+            )
         }
 
         const sets = Object.keys(dados).map((k: string) => `${k} = ?`).join(', ')
         const values = [...Object.values(dados), id]
 
         try {
-            db.prepare(`UPDATE ${entidade} SET ${sets} WHERE id = ?`).run(...values)
-            return { sucesso: true }
+            const res = db.prepare(`UPDATE ${entidade} SET ${sets} WHERE id = ?`).run(...values)
+            return toolOk(
+              {
+                sucesso: true,
+                entidade,
+                id,
+                changes: typeof res?.changes === 'number' ? res.changes : undefined,
+              },
+              {
+                summary: `Registro ${id} de ${entidade} atualizado com sucesso.`,
+                meta: {
+                  tool_kind: 'action',
+                  action: 'update',
+                  entidade,
+                  id,
+                  campos_atualizados: Object.keys(dados),
+                }
+              }
+            )
         } catch (e: any) {
-            return { erro: e.message }
+            return toolError(
+              'ATUALIZAR_FALHOU',
+              e.message,
+              {
+                correction: 'Revise o ID e os campos enviados em `dados`.',
+                meta: { entidade, id, campos_atualizados: Object.keys(dados) }
+              }
+            )
         }
     }
 
@@ -647,14 +1662,52 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { entidade, id } = args
 
         if (!ENTIDADES_DELECAO_PERMITIDAS.has(entidade)) {
-            return { erro: `Deleção não permitida para '${entidade}'.` }
+            return toolError(
+              'DELETAR_ENTIDADE_NAO_PERMITIDA',
+              `Deleção não permitida para '${entidade}'.`,
+              {
+                correction: 'Use `deletar` apenas nas entidades permitidas por IA_TOOLS.',
+                meta: { tool_kind: 'action', action: 'delete', entidade, id }
+              }
+            )
         }
 
         try {
-            db.prepare(`DELETE FROM ${entidade} WHERE id = ?`).run(id)
-            return { sucesso: true }
+            const res = db.prepare(`DELETE FROM ${entidade} WHERE id = ?`).run(id)
+            const changes = typeof res?.changes === 'number' ? res.changes : undefined
+
+            if (changes === 0) {
+                return toolError(
+                  'DELETAR_NAO_ENCONTRADO',
+                  `Nenhum registro com id ${id} foi encontrado em '${entidade}'.`,
+                  {
+                    correction: 'Confirme o ID consultando a entidade antes de deletar.',
+                    meta: { tool_kind: 'action', action: 'delete', entidade, id }
+                  }
+                )
+            }
+
+            return toolOk(
+              {
+                sucesso: true,
+                entidade,
+                id,
+                changes,
+              },
+              {
+                summary: `Registro ${id} de ${entidade} deletado com sucesso.`,
+                meta: { tool_kind: 'action', action: 'delete', entidade, id }
+              }
+            )
         } catch (e: any) {
-            return { erro: e.message }
+            return toolError(
+              'DELETAR_FALHOU',
+              e.message,
+              {
+                correction: 'Verifique se o registro não está referenciado por outras tabelas.',
+                meta: { tool_kind: 'action', action: 'delete', entidade, id }
+              }
+            )
         }
     }
 
@@ -663,23 +1716,59 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         const validStatuses = ['HARD', 'SOFT', 'OFF', 'ON']
         if (!validStatuses.includes(status)) {
-            return { erro: `Status '${status}' inválido. Use: HARD, SOFT, OFF ou ON.` }
+            return toolError(
+              'EDITAR_REGRA_STATUS_INVALIDO',
+              `Status '${status}' inválido. Use: HARD, SOFT, OFF ou ON.`,
+              {
+                correction: 'Escolha exatamente um dos valores permitidos: HARD, SOFT, OFF, ON.',
+                meta: { tool_kind: 'action', action: 'edit-rule', codigo, status }
+              }
+            )
         }
 
         const regra = db.prepare('SELECT codigo, nome, editavel FROM regra_definicao WHERE codigo = ?').get(codigo) as { codigo: string; nome: string; editavel: number } | undefined
         if (!regra) {
-            return { erro: `Regra '${codigo}' não encontrada. Use consultar com entidade 'regra_definicao' para ver todas as regras disponíveis.` }
+            return toolError(
+              'EDITAR_REGRA_NAO_ENCONTRADA',
+              `Regra '${codigo}' não encontrada. Use consultar com entidade 'regra_definicao' para ver todas as regras disponíveis.`,
+              {
+                correction: "Use `consultar` na entidade 'regra_definicao' para localizar o código correto.",
+                meta: { tool_kind: 'action', action: 'edit-rule', codigo, status }
+              }
+            )
         }
 
         if (!regra.editavel) {
-            return { erro: `Regra '${codigo}' (${regra.nome}) é fixa por lei (CLT/CCT) e não pode ser alterada. Regras editáveis incluem: H1, H6, H10, DIAS_TRABALHO, MIN_DIARIO e todas SOFT/ANTIPATTERN.` }
+            return toolError(
+              'EDITAR_REGRA_NAO_EDITAVEL',
+              `Regra '${codigo}' (${regra.nome}) é fixa por lei (CLT/CCT) e não pode ser alterada. Regras editáveis incluem: H1, H6, H10, DIAS_TRABALHO, MIN_DIARIO e todas SOFT/ANTIPATTERN.`,
+              {
+                correction: 'Edite apenas regras marcadas como editáveis na tabela regra_definicao.',
+                meta: { tool_kind: 'action', action: 'edit-rule', codigo, status }
+              }
+            )
         }
 
         db.prepare(`INSERT OR REPLACE INTO regra_empresa (codigo, status) VALUES (?, ?)`).run(codigo, status)
-        return {
+        return toolOk(
+          {
             sucesso: true,
+            codigo,
+            regra_nome: regra.nome,
+            novo_status: status,
             mensagem: `Regra ${codigo} (${regra.nome}) alterada para ${status}. A próxima geração de escala usará esta configuração.`
-        }
+          },
+          {
+            summary: `Regra ${codigo} alterada para ${status}.`,
+            meta: {
+              tool_kind: 'action',
+              action: 'edit-rule',
+              codigo,
+              regra_nome: regra.nome,
+              novo_status: status,
+            }
+          }
+        )
     }
 
     if (name === 'gerar_escala') {
@@ -692,28 +1781,105 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             const solverResult = await runSolver(solverInput, 60_000)
 
             if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
-                return {
-                    sucesso: false,
-                    status: solverResult.status,
-                    diagnostico: solverResult.diagnostico,
-                    erro: solverResult.erro?.mensagem ?? `Solver retornou ${solverResult.status}: impossível gerar escala com as restrições atuais.`,
-                }
+                return toolError(
+                  'GERAR_ESCALA_SOLVER_FALHOU',
+                  solverResult.erro?.mensagem ?? `Solver retornou ${solverResult.status}: impossível gerar escala com as restrições atuais.`,
+                  {
+                    correction: 'Rode `preflight`, revise demanda/equipe/regras e tente novamente.',
+                    details: {
+                      sucesso: false,
+                      solver_status: solverResult.status,
+                      diagnostico: solverResult.diagnostico,
+                    },
+                    meta: {
+                      tool_kind: 'action',
+                      action: 'generate-schedule',
+                      setor_id,
+                      data_inicio,
+                      data_fim,
+                      solver_status: solverResult.status,
+                    }
+                  }
+                )
             }
 
             const escalaId = persistirSolverResult(setor_id, data_inicio, data_fim, solverResult)
-            return {
+
+            // --- Revisão pós-geração: agregar dados que o solver já calcula ---
+            const deficits = (solverResult.comparacao_demanda ?? [])
+                .filter(s => s.delta < 0)
+                .sort((a, b) => a.delta - b.delta)
+                .slice(0, 10)
+                .map(s => ({
+                    data: s.data,
+                    faixa: `${s.hora_inicio}-${s.hora_fim}`,
+                    faltam: Math.abs(s.delta),
+                    tem: s.executado,
+                    precisa: s.planejado,
+                }))
+
+            const alocacoes = solverResult.alocacoes ?? []
+            const cargaPorColab: Record<number, { nome: string; dias: number; minutos: number }> = {}
+            for (const a of alocacoes) {
+                if (a.status !== 'TRABALHO') continue
+                if (!cargaPorColab[a.colaborador_id]) {
+                    const dec = (solverResult.decisoes ?? []).find(d => d.colaborador_id === a.colaborador_id)
+                    cargaPorColab[a.colaborador_id] = {
+                        nome: dec?.colaborador_nome ?? `#${a.colaborador_id}`,
+                        dias: 0,
+                        minutos: 0,
+                    }
+                }
+                cargaPorColab[a.colaborador_id].dias++
+                cargaPorColab[a.colaborador_id].minutos += a.minutos_trabalho
+            }
+            const carga = Object.values(cargaPorColab).map(c => ({
+                ...c,
+                horas: +(c.minutos / 60).toFixed(1),
+            }))
+
+            const revisao = {
+                piores_deficits: deficits,
+                carga_colaboradores: carga,
+                total_alocacoes: alocacoes.length,
+                dias_periodo: new Set(alocacoes.map(a => a.data)).size,
+            }
+
+            return toolOk(
+              {
                 sucesso: true,
                 escala_id: escalaId,
-                status: solverResult.status,
+                solver_status: solverResult.status,
                 indicadores: solverResult.indicadores,
                 violacoes_hard: solverResult.indicadores.violacoes_hard,
                 violacoes_soft: solverResult.indicadores.violacoes_soft,
                 cobertura_percent: solverResult.indicadores.cobertura_percent,
                 pontuacao: solverResult.indicadores.pontuacao,
                 diagnostico: solverResult.diagnostico,
-            }
+                revisao,
+              },
+              {
+                summary: `Escala ${escalaId} gerada para setor ${setor_id} (${data_inicio} até ${data_fim}). Solver: ${solverResult.status}.`,
+                meta: {
+                  tool_kind: 'action',
+                  action: 'generate-schedule',
+                  setor_id,
+                  data_inicio,
+                  data_fim,
+                  solver_status: solverResult.status,
+                }
+              }
+            )
         } catch (e: any) {
-            return { sucesso: false, erro: e.message }
+            return toolError(
+              'GERAR_ESCALA_FALHOU',
+              e.message,
+              {
+                correction: 'Verifique os parâmetros da geração e a disponibilidade do solver.',
+                details: { sucesso: false },
+                meta: { tool_kind: 'action', action: 'generate-schedule', setor_id, data_inicio, data_fim }
+              }
+            )
         }
     }
 
@@ -722,7 +1888,14 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         const statusValidos = ['TRABALHO', 'FOLGA', 'INDISPONIVEL']
         if (!statusValidos.includes(status)) {
-            return { erro: `Status '${status}' inválido. Use: TRABALHO | FOLGA | INDISPONIVEL` }
+            return toolError(
+              'AJUSTAR_ALOCACAO_STATUS_INVALIDO',
+              `Status '${status}' inválido. Use: TRABALHO | FOLGA | INDISPONIVEL`,
+              {
+                correction: 'Escolha exatamente um status entre TRABALHO, FOLGA ou INDISPONIVEL.',
+                meta: { tool_kind: 'action', action: 'adjust-allocation', escala_id, colaborador_id, data, status }
+              }
+            )
         }
 
         const existing = db.prepare(
@@ -730,19 +1903,134 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         ).get(escala_id, colaborador_id, data)
 
         if (!existing) {
-            return { erro: `Alocação não encontrada para escala ${escala_id}, colaborador ${colaborador_id}, data ${data}.` }
+            return toolError(
+              'AJUSTAR_ALOCACAO_NAO_ENCONTRADA',
+              `Alocação não encontrada para escala ${escala_id}, colaborador ${colaborador_id}, data ${data}.`,
+              {
+                correction: 'Confirme a escala, colaborador e data com `consultar` em alocacoes antes de ajustar.',
+                meta: { tool_kind: 'action', action: 'adjust-allocation', escala_id, colaborador_id, data, status }
+              }
+            )
         }
 
         try {
             db.prepare(
                 'UPDATE alocacoes SET status = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?'
             ).run(status, escala_id, colaborador_id, data)
-            return {
+            return toolOk(
+              {
                 sucesso: true,
+                escala_id,
+                colaborador_id,
+                data,
+                novo_status: status,
                 mensagem: `Alocação ajustada: colaborador ${colaborador_id} em ${data} → ${status}. Regenere a escala para que o motor respeite este ajuste.`
-            }
+              },
+              {
+                summary: `Alocação ajustada para ${status} (colaborador ${colaborador_id}, ${data}).`,
+                meta: {
+                  tool_kind: 'action',
+                  action: 'adjust-allocation',
+                  escala_id,
+                  colaborador_id,
+                  data,
+                  novo_status: status,
+                }
+              }
+            )
         } catch (e: any) {
-            return { erro: e.message }
+            return toolError(
+              'AJUSTAR_ALOCACAO_FALHOU',
+              e.message,
+              {
+                correction: 'Tente novamente e valide se a alocação ainda existe.',
+                meta: { tool_kind: 'action', action: 'adjust-allocation', escala_id, colaborador_id, data, status }
+              }
+            )
+        }
+    }
+
+    if (name === 'ajustar_horario') {
+        const { escala_id, colaborador_id, data, hora_inicio, hora_fim } = args
+        const status = (args.status ?? 'TRABALHO') as 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
+
+        if (!HORA_HHMM_REGEX.test(hora_inicio) || !HORA_HHMM_REGEX.test(hora_fim)) {
+            return toolError(
+              'AJUSTAR_HORARIO_FORMATO_INVALIDO',
+              'Horários inválidos. Use o formato HH:MM para `hora_inicio` e `hora_fim`.',
+              {
+                correction: 'Exemplo: `hora_inicio: "08:00", hora_fim: "16:20"`.',
+                meta: { tool_kind: 'action', action: 'adjust-shift-time', escala_id, colaborador_id, data }
+              }
+            )
+        }
+
+        const minutos = minutesBetweenTimes(hora_inicio, hora_fim)
+        if (minutos <= 0) {
+            return toolError(
+              'AJUSTAR_HORARIO_INTERVALO_INVALIDO',
+              `Intervalo inválido: ${hora_inicio} → ${hora_fim}. O fim deve ser maior que o início no mesmo dia.`,
+              {
+                correction: 'Informe um intervalo positivo (mesmo dia) com `hora_fim` maior que `hora_inicio`.',
+                meta: { tool_kind: 'action', action: 'adjust-shift-time', escala_id, colaborador_id, data }
+              }
+            )
+        }
+
+        const existing = db.prepare(
+          'SELECT id, status, hora_inicio, hora_fim FROM alocacoes WHERE escala_id = ? AND colaborador_id = ? AND data = ?'
+        ).get(escala_id, colaborador_id, data) as Record<string, any> | undefined
+
+        if (!existing) {
+          return toolError(
+            'AJUSTAR_HORARIO_ALOCACAO_NAO_ENCONTRADA',
+            `Alocação não encontrada para escala ${escala_id}, colaborador ${colaborador_id}, data ${data}.`,
+            {
+              correction: 'Confirme a célula com `consultar("alocacoes")` (e, se necessário, `consultar("escalas")`) antes de ajustar horário.',
+              meta: { tool_kind: 'action', action: 'adjust-shift-time', escala_id, colaborador_id, data }
+            }
+          )
+        }
+
+        try {
+          db.prepare(
+            'UPDATE alocacoes SET status = ?, hora_inicio = ?, hora_fim = ?, minutos = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?'
+          ).run(status, hora_inicio, hora_fim, minutos, escala_id, colaborador_id, data)
+
+          return toolOk(
+            {
+              sucesso: true,
+              escala_id,
+              colaborador_id,
+              data,
+              novo_status: status,
+              hora_inicio,
+              hora_fim,
+              minutos,
+              mensagem: `Horário ajustado para ${hora_inicio}-${hora_fim} (${minutos} min) na escala ${escala_id}.`,
+            },
+            {
+              summary: `Horário ajustado (${hora_inicio}-${hora_fim}) para colaborador ${colaborador_id} em ${data}.`,
+              meta: {
+                tool_kind: 'action',
+                action: 'adjust-shift-time',
+                escala_id,
+                colaborador_id,
+                data,
+                minutos,
+                next_tools_hint: ['diagnosticar_escala', 'oficializar_escala'],
+              }
+            }
+          )
+        } catch (e: any) {
+          return toolError(
+            'AJUSTAR_HORARIO_FALHOU',
+            e.message,
+            {
+              correction: 'Tente novamente. Se persistir, confirme se a escala/alocação ainda existe.',
+              meta: { tool_kind: 'action', action: 'adjust-shift-time', escala_id, colaborador_id, data }
+            }
+          )
         }
     }
 
@@ -751,75 +2039,207 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         const escala = db.prepare('SELECT id, status, violacoes_hard FROM escalas WHERE id = ?').get(escala_id) as { id: number; status: string; violacoes_hard: number } | undefined
         if (!escala) {
-            return { erro: `Escala ${escala_id} não encontrada.` }
+            return toolError(
+              'OFICIALIZAR_ESCALA_NAO_ENCONTRADA',
+              `Escala ${escala_id} não encontrada.`,
+              {
+                correction: 'Consulte as escalas existentes e use um `escala_id` válido.',
+                meta: { tool_kind: 'action', action: 'officialize-schedule', escala_id }
+              }
+            )
         }
         if (escala.status === 'OFICIAL') {
-            return { aviso: `Escala ${escala_id} já está OFICIAL.` }
+            return toolOk(
+              {
+                sucesso: true,
+                escala_id,
+                ja_estava_oficial: true,
+                aviso: `Escala ${escala_id} já está OFICIAL.`
+              },
+              {
+                summary: `Escala ${escala_id} já estava OFICIAL.`,
+                meta: { tool_kind: 'action', action: 'officialize-schedule', escala_id, noop: true }
+              }
+            )
         }
         if (escala.violacoes_hard > 0) {
-            return {
-                erro: `Não é possível oficializar: a escala tem ${escala.violacoes_hard} violação(ões) HARD. Corrija as violações antes de oficializar.`
-            }
+            return toolError(
+              'OFICIALIZAR_ESCALA_COM_VIOLACAO_HARD',
+              `Não é possível oficializar: a escala tem ${escala.violacoes_hard} violação(ões) HARD. Corrija as violações antes de oficializar.`,
+              {
+                correction: 'Corrija as violações HARD antes de oficializar a escala.',
+                details: { violacoes_hard: escala.violacoes_hard },
+                meta: { tool_kind: 'action', action: 'officialize-schedule', escala_id }
+              }
+            )
         }
 
         db.prepare("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?").run(escala_id)
-        return { sucesso: true, mensagem: `Escala ${escala_id} oficializada com sucesso. Ela está travada definitivamente.` }
+        return toolOk(
+          {
+            sucesso: true,
+            escala_id,
+            mensagem: `Escala ${escala_id} oficializada com sucesso. Ela está travada definitivamente.`
+          },
+          {
+            summary: `Escala ${escala_id} oficializada com sucesso.`,
+            meta: { tool_kind: 'action', action: 'officialize-schedule', escala_id }
+          }
+        )
     }
 
     if (name === 'preflight') {
-        const { setor_id, data_inicio, data_fim } = args
-        const blockers: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
-        const warnings: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
+        try {
+            const { setor_id, data_inicio, data_fim } = args
+            const blockers: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
+            const warnings: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
 
-        const setor = db.prepare('SELECT id, ativo FROM setores WHERE id = ?').get(setor_id) as { id: number; ativo: number } | undefined
-        if (!setor || setor.ativo !== 1) {
-            blockers.push({
-                codigo: 'SETOR_INVALIDO',
-                severidade: 'BLOCKER',
-                mensagem: `Setor ${setor_id} não encontrado ou inativo.`
+            const setor = db.prepare('SELECT id, ativo FROM setores WHERE id = ?').get(setor_id) as { id: number; ativo: number } | undefined
+            if (!setor || setor.ativo !== 1) {
+                blockers.push({
+                    codigo: 'SETOR_INVALIDO',
+                    severidade: 'BLOCKER',
+                    mensagem: `Setor ${setor_id} não encontrado ou inativo.`
+                })
+            }
+
+            const colabsAtivos = (
+                db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(setor_id) as { count: number }
+            ).count
+            if (colabsAtivos === 0) {
+                blockers.push({
+                    codigo: 'SEM_COLABORADORES',
+                    severidade: 'BLOCKER',
+                    mensagem: 'Setor não tem colaboradores ativos.',
+                    detalhe: 'Cadastre ao menos 1 colaborador para gerar escala.'
+                })
+            }
+
+            const demandasCount = (
+                db.prepare('SELECT COUNT(*) as count FROM demandas WHERE setor_id = ?').get(setor_id) as { count: number }
+            ).count
+            if (demandasCount === 0) {
+                warnings.push({
+                    codigo: 'SEM_DEMANDA',
+                    severidade: 'WARNING',
+                    mensagem: 'Setor sem demanda planejada cadastrada.',
+                    detalhe: 'O motor vai considerar demanda zero — todos os slots serão de livre distribuição.'
+                })
+            }
+
+            const feriadosNoPeriodo = (
+                db.prepare('SELECT COUNT(*) as count FROM feriados WHERE data BETWEEN ? AND ?').get(data_inicio, data_fim) as { count: number }
+            ).count
+
+            const ok = blockers.length === 0
+            return toolOk({
+                ok,
+                blockers,
+                warnings,
+                diagnostico: {
+                    setor_id,
+                    data_inicio,
+                    data_fim,
+                    colaboradores_ativos: colabsAtivos,
+                    demandas_cadastradas: demandasCount,
+                    feriados_no_periodo: feriadosNoPeriodo,
+                },
+            }, {
+                summary: ok
+                  ? `Preflight OK para setor ${setor_id}. ${warnings.length} warning(s), 0 blocker(s).`
+                  : `Preflight encontrou ${blockers.length} blocker(s) e ${warnings.length} warning(s) para o setor ${setor_id}.`,
+                meta: {
+                  tool_kind: 'validation',
+                  can_proceed_to: ok ? ['gerar_escala'] : [],
+                  blockers_count: blockers.length,
+                  warnings_count: warnings.length,
+                }
             })
+        } catch (e: any) {
+            return toolError(
+              'PREFLIGHT_FAILED',
+              `Erro ao executar preflight: ${e.message}`,
+              {
+                correction: 'Verifique se o setor_id e o período estão corretos e tente novamente.',
+                meta: { tool_kind: 'validation', next_tools_hint: ['get_context'] }
+              }
+            )
         }
+    }
 
-        const colabsAtivos = (
-            db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(setor_id) as { count: number }
-        ).count
-        if (colabsAtivos === 0) {
-            blockers.push({
-                codigo: 'SEM_COLABORADORES',
-                severidade: 'BLOCKER',
-                mensagem: 'Setor não tem colaboradores ativos.',
-                detalhe: 'Cadastre ao menos 1 colaborador para gerar escala.'
-            })
-        }
+    if (name === 'preflight_completo') {
+        try {
+            const { setor_id, data_inicio, data_fim } = args
+            const regimesOverride = normalizeRegimesOverrideForTool(args.regimes_override as any[] | undefined)
 
-        const demandasCount = (
-            db.prepare('SELECT COUNT(*) as count FROM demandas WHERE setor_id = ?').get(setor_id) as { count: number }
-        ).count
-        if (demandasCount === 0) {
-            warnings.push({
-                codigo: 'SEM_DEMANDA',
-                severidade: 'WARNING',
-                mensagem: 'Setor sem demanda planejada cadastrada.',
-                detalhe: 'O motor vai considerar demanda zero — todos os slots serão de livre distribuição.'
-            })
-        }
+            const base = await executeTool('preflight', { setor_id, data_inicio, data_fim })
+            if (base?.status === 'error') {
+              return {
+                ...base,
+                _meta: {
+                  ...(base?._meta ?? {}),
+                  semantic_wrapper: 'preflight_completo',
+                },
+              }
+            }
 
-        const feriadosNoPeriodo = (
-            db.prepare('SELECT COUNT(*) as count FROM feriados WHERE data BETWEEN ? AND ?').get(data_inicio, data_fim) as { count: number }
-        ).count
+            const blockers = Array.isArray(base?.blockers) ? [...base.blockers] : []
+            const warnings = Array.isArray(base?.warnings) ? [...base.warnings] : []
 
-        return {
-            ok: blockers.length === 0,
-            blockers,
-            warnings,
-            summary: {
-                setor_id,
-                data_inicio,
-                data_fim,
-                colaboradores_ativos: colabsAtivos,
-                demandas_cadastradas: demandasCount,
-                feriados_no_periodo: feriadosNoPeriodo,
-            },
+            if (base?.ok !== false) {
+              try {
+                const solverInput = buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
+                  regimesOverride,
+                })
+                enrichPreflightWithCapacityChecksForTool(solverInput, blockers as any, warnings as any)
+              } catch (err: any) {
+                warnings.push({
+                  codigo: 'PREFLIGHT_COMPLETO_DIAGNOSTICO_INDISPONIVEL',
+                  severidade: 'WARNING',
+                  mensagem: 'Não foi possível executar checks completos de capacidade.',
+                  detalhe: err?.message ?? String(err),
+                })
+              }
+            }
+
+            const ok = blockers.length === 0
+            const diagnostico = {
+              ...(base?.diagnostico ?? {}),
+              demanda_zero_fallback: (base?.diagnostico?.demandas_cadastradas ?? 0) === 0,
+              checks_capacidade_executados: base?.ok !== false,
+              regimes_override_count: regimesOverride.length,
+            }
+
+            return toolOk(
+              {
+                ok,
+                blockers,
+                warnings,
+                diagnostico,
+              },
+              {
+                summary: ok
+                  ? `Preflight completo OK para setor ${setor_id}. ${warnings.length} warning(s), 0 blocker(s).`
+                  : `Preflight completo encontrou ${blockers.length} blocker(s) e ${warnings.length} warning(s) para o setor ${setor_id}.`,
+                meta: {
+                  tool_kind: 'validation',
+                  validation_level: 'completo',
+                  can_proceed_to: ok ? ['gerar_escala'] : [],
+                  blockers_count: blockers.length,
+                  warnings_count: warnings.length,
+                  regimes_override_count: regimesOverride.length,
+                }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'PREFLIGHT_COMPLETO_FAILED',
+              `Erro ao executar preflight completo: ${e.message}`,
+              {
+                correction: 'Verifique setor_id, período e overrides. Se necessário, rode `preflight` simples primeiro.',
+                meta: { tool_kind: 'validation', validation_level: 'completo', next_tools_hint: ['preflight', 'get_context'] }
+              }
+            )
         }
     }
 
@@ -827,7 +2247,14 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { entidade, registros } = args
 
         if (!ENTIDADES_CRIACAO_PERMITIDAS.has(entidade)) {
-            return { erro: `❌ Criação em lote não permitida para '${entidade}'. Entidades permitidas: ${[...ENTIDADES_CRIACAO_PERMITIDAS].join(', ')}` }
+            return toolError(
+              'CADASTRAR_LOTE_ENTIDADE_NAO_PERMITIDA',
+              `❌ Criação em lote não permitida para '${entidade}'. Entidades permitidas: ${[...ENTIDADES_CRIACAO_PERMITIDAS].join(', ')}`,
+              {
+                correction: 'Escolha uma entidade permitida para cadastro em lote.',
+                meta: { entidade_solicitada: entidade, entidades_permitidas: [...ENTIDADES_CRIACAO_PERMITIDAS] }
+              }
+            )
         }
 
         const resultados: Array<{ indice: number; sucesso: boolean; id?: number; erro?: string }> = []
@@ -906,43 +2333,603 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         const erros = resultados.filter(r => !r.sucesso)
-        return {
+        const idsCriados = resultados.filter(r => r.sucesso).map(r => r.id)
+        const payload = {
             sucesso: erros.length === 0,
+            entidade,
             total_enviado: registros.length,
             total_criado: criados,
             total_erros: erros.length,
             erros: erros.length > 0 ? erros : undefined,
-            ids_criados: resultados.filter(r => r.sucesso).map(r => r.id),
+            ids_criados: idsCriados,
+        }
+
+        if (erros.length === 0) {
+            return toolOk(payload, {
+              summary: `Cadastro em lote concluído em ${entidade}: ${criados}/${registros.length} registro(s) criados.`,
+              meta: {
+                tool_kind: 'action',
+                action: 'batch-create',
+                entidade,
+                partial_failure: false,
+              }
+            })
+        }
+
+        if (criados > 0) {
+            return toolOk(payload, {
+              summary: `Cadastro em lote parcial em ${entidade}: ${criados} criado(s), ${erros.length} erro(s).`,
+              meta: {
+                tool_kind: 'action',
+                action: 'batch-create',
+                entidade,
+                partial_failure: true,
+              }
+            })
+        }
+
+        return toolError(
+          'CADASTRAR_LOTE_FALHOU_TOTAL',
+          `Nenhum registro foi criado em lote para '${entidade}'. ${erros.length} erro(s) encontrados.`,
+          {
+            correction: 'Revise os registros com erro e tente novamente.',
+            details: payload,
+            meta: {
+              tool_kind: 'action',
+              action: 'batch-create',
+              entidade,
+              partial_failure: false,
+            }
+          }
+        )
+    }
+
+    if (name === 'salvar_regra_horario_colaborador') {
+        const {
+          colaborador_id,
+          ativo,
+          perfil_horario_id,
+          inicio_min,
+          inicio_max,
+          fim_min,
+          fim_max,
+          preferencia_turno_soft,
+          domingo_ciclo_trabalho,
+          domingo_ciclo_folga,
+          folga_fixa_dia_semana,
+        } = args
+
+        const colab = db.prepare('SELECT id, nome, setor_id, ativo FROM colaboradores WHERE id = ?').get(colaborador_id) as
+          { id: number; nome: string; setor_id: number; ativo: number } | undefined
+
+        if (!colab) {
+          return toolError(
+            'SALVAR_REGRA_HORARIO_COLABORADOR_NAO_ENCONTRADO',
+            `Colaborador ${colaborador_id} não encontrado.`,
+            {
+              correction: 'Resolva um colaborador válido com `buscar_colaborador` e tente novamente.',
+              meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id }
+            }
+          )
+        }
+
+        const timePairs: Array<[string, unknown]> = [
+          ['inicio_min', inicio_min],
+          ['inicio_max', inicio_max],
+          ['fim_min', fim_min],
+          ['fim_max', fim_max],
+        ]
+        for (const [label, value] of timePairs) {
+          if (value !== undefined && value !== null && (typeof value !== 'string' || !HORA_HHMM_REGEX.test(value))) {
+            return toolError(
+              'SALVAR_REGRA_HORARIO_COLABORADOR_HORA_INVALIDA',
+              `Campo ${label} inválido: use HH:MM.`,
+              {
+                correction: `Corrija ${label} para o formato HH:MM ou envie null para limpar o campo.`,
+                meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id, campo: label }
+              }
+            )
+          }
+        }
+
+        const comparePair = (aLabel: string, aVal: unknown, bLabel: string, bVal: unknown) => {
+          if (typeof aVal === 'string' && typeof bVal === 'string') {
+            if (minutesBetweenTimes(aVal, bVal) <= 0) {
+              return toolError(
+                'SALVAR_REGRA_HORARIO_COLABORADOR_JANELA_INVALIDA',
+                `Intervalo inválido em ${aLabel}/${bLabel}: ${aVal} -> ${bVal}.`,
+                {
+                  correction: `Garanta que ${bLabel} seja maior que ${aLabel} no mesmo dia.`,
+                  meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id, aLabel, bLabel }
+                }
+              )
+            }
+          }
+          return null
+        }
+
+        const invalidPair =
+          comparePair('inicio_min', inicio_min, 'inicio_max', inicio_max) ??
+          comparePair('fim_min', fim_min, 'fim_max', fim_max) ??
+          comparePair('inicio_min', inicio_min, 'fim_max', fim_max)
+        if (invalidPair) return invalidPair
+
+        try {
+          const existe = db.prepare('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?').get(colaborador_id) as { id: number } | undefined
+          if (existe) {
+            db.prepare(`
+              UPDATE colaborador_regra_horario SET
+                ativo = COALESCE(?, ativo),
+                perfil_horario_id = ?,
+                inicio_min = ?, inicio_max = ?, fim_min = ?, fim_max = ?,
+                preferencia_turno_soft = ?,
+                domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
+                domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
+                folga_fixa_dia_semana = ?
+              WHERE colaborador_id = ?
+            `).run(
+              ativo !== undefined ? (ativo ? 1 : 0) : null,
+              perfil_horario_id ?? null,
+              inicio_min ?? null,
+              inicio_max ?? null,
+              fim_min ?? null,
+              fim_max ?? null,
+              preferencia_turno_soft ?? null,
+              domingo_ciclo_trabalho ?? null,
+              domingo_ciclo_folga ?? null,
+              folga_fixa_dia_semana ?? null,
+              colaborador_id,
+            )
+          } else {
+            db.prepare(`
+              INSERT INTO colaborador_regra_horario
+                (colaborador_id, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              colaborador_id,
+              ativo !== undefined ? (ativo ? 1 : 0) : 1,
+              perfil_horario_id ?? null,
+              inicio_min ?? null,
+              inicio_max ?? null,
+              fim_min ?? null,
+              fim_max ?? null,
+              preferencia_turno_soft ?? null,
+              domingo_ciclo_trabalho ?? 2,
+              domingo_ciclo_folga ?? 1,
+              folga_fixa_dia_semana ?? null,
+            )
+          }
+
+          const regra = db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(colaborador_id) as Record<string, any> | null
+          return toolOk(
+            {
+              sucesso: true,
+              colaborador: { id: colab.id, nome: colab.nome, setor_id: colab.setor_id, ativo: colab.ativo },
+              regra,
+            },
+            {
+              summary: `Regra de horário salva para ${colab.nome} (id ${colab.id}).`,
+              meta: {
+                tool_kind: 'action',
+                action: 'save-collaborator-rule',
+                colaborador_id: colab.id,
+                ids_usaveis_em: ['obter_regra_horario_colaborador', 'definir_janela_colaborador', 'gerar_escala', 'preflight_completo'],
+              }
+            }
+          )
+        } catch (e: any) {
+          return toolError(
+            'SALVAR_REGRA_HORARIO_COLABORADOR_FALHOU',
+            `Erro ao salvar regra de horário do colaborador: ${e.message}`,
+            {
+              correction: 'Revise os campos enviados (janela, ciclo e folga fixa) e tente novamente.',
+              meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id }
+            }
+          )
         }
     }
 
-    if (name === 'resumo_sistema') {
-        const colabs = (db.prepare('SELECT count(*) as c FROM colaboradores WHERE ativo = 1').get() as any).c
-        const setores = (db.prepare('SELECT count(*) as c FROM setores WHERE ativo = 1').get() as any).c
-        const rascunhos = (db.prepare("SELECT count(*) as c FROM escalas WHERE status = 'RASCUNHO'").get() as any).c
-        const oficiais = (db.prepare("SELECT count(*) as c FROM escalas WHERE status = 'OFICIAL'").get() as any).c
-        const regrasCustomizadas = (db.prepare('SELECT count(*) as c FROM regra_empresa').get() as any).c
-        return {
-            setores_ativos: setores,
-            colaboradores_ativos: colabs,
-            escalas_rascunho: rascunhos,
-            escalas_oficiais: oficiais,
-            regras_customizadas_pela_empresa: regrasCustomizadas,
+    if (name === 'definir_janela_colaborador') {
+        const {
+          colaborador_id,
+          inicio_min,
+          inicio_max,
+          fim_min,
+          fim_max,
+        } = args
+        const ativo = args.ativo !== false
+
+        const base = await executeTool('salvar_regra_horario_colaborador', {
+          colaborador_id,
+          ativo,
+          inicio_min,
+          inicio_max,
+          fim_min,
+          fim_max,
+        })
+
+        if (base?.status !== 'ok') {
+          return {
+            ...base,
+            _meta: {
+              ...(base?._meta ?? {}),
+              semantic_wrapper: 'definir_janela_colaborador',
+              wrapped_tool: 'salvar_regra_horario_colaborador',
+            },
+          }
         }
+
+        const partes = [
+          inicio_min ? `início >= ${inicio_min}` : null,
+          inicio_max ? `início <= ${inicio_max}` : null,
+          fim_min ? `fim >= ${fim_min}` : null,
+          fim_max ? `fim <= ${fim_max}` : null,
+        ].filter(Boolean)
+
+        return toolOk(
+          {
+            sucesso: true,
+            colaborador: base.colaborador,
+            regra: base.regra,
+            janela_definida: { inicio_min, inicio_max, fim_min, fim_max, ativo },
+          },
+          {
+            summary: `Janela de horário definida para ${base.colaborador?.nome ?? `colaborador ${colaborador_id}`}: ${partes.join(', ')}.`,
+            meta: {
+              tool_kind: 'action',
+              action: 'set-collaborator-window',
+              colaborador_id,
+              wrapped_tool: 'salvar_regra_horario_colaborador',
+              next_tools_hint: ['obter_regra_horario_colaborador', 'preflight_completo', 'gerar_escala'],
+            }
+          }
+        )
     }
 
     if (name === 'explicar_violacao') {
         const { codigo_regra } = args
         const explicacao = DICIONARIO_VIOLACOES[codigo_regra]
         if (explicacao) {
-            return { codigo: codigo_regra, explicacao }
+            return toolOk(
+              { codigo: codigo_regra, explicacao },
+              {
+                summary: `Explicação da regra ${codigo_regra}.`,
+                meta: { tool_kind: 'reference', source: 'violations-dictionary', codigo_regra, encontrada: true }
+              }
+            )
         }
         const regra = db.prepare('SELECT nome, descricao FROM regra_definicao WHERE codigo = ?').get(codigo_regra) as { nome: string; descricao: string } | undefined
         if (regra) {
-            return { codigo: codigo_regra, explicacao: `${regra.nome}: ${regra.descricao}` }
+            return toolOk(
+              { codigo: codigo_regra, explicacao: `${regra.nome}: ${regra.descricao}` },
+              {
+                summary: `Explicação da regra ${codigo_regra} obtida da tabela regra_definicao.`,
+                meta: { tool_kind: 'reference', source: 'regra_definicao', codigo_regra, encontrada: true }
+              }
+            )
         }
-        return { codigo: codigo_regra, explicacao: 'Regra não encontrada no dicionário. Consulte o MOTOR_V3_RFC.md para a lista completa de regras CLT/CCT aplicáveis.' }
+        return toolOk(
+          {
+            codigo: codigo_regra,
+            explicacao: 'Regra não encontrada no dicionário. Consulte o MOTOR_V3_RFC.md para a lista completa de regras CLT/CCT aplicáveis.'
+          },
+          {
+            summary: `Regra ${codigo_regra} não foi encontrada no dicionário local.`,
+            meta: { tool_kind: 'reference', source: 'fallback', codigo_regra, encontrada: false }
+          }
+        )
     }
 
-    return { erro: `Tool '${name}' não reconhecida.` }
+    if (name === 'salvar_demanda_excecao_data') {
+        try {
+            const { setor_id, data, hora_inicio, hora_fim, min_pessoas } = args
+            const override = args.override ? 1 : 0
+
+            const setor = db.prepare('SELECT id, nome FROM setores WHERE id = ? AND ativo = 1').get(setor_id) as { id: number; nome: string } | undefined
+            if (!setor) {
+                return toolError(
+                  'SALVAR_DEMANDA_EXCECAO_SETOR_INVALIDO',
+                  `Setor ${setor_id} não encontrado ou inativo.`,
+                  {
+                    correction: 'Use get_context() para resolver o setor_id correto.',
+                    meta: { tool_kind: 'action', action: 'create-demand-exception', setor_id }
+                  }
+                )
+            }
+
+            if (minutesBetweenTimes(hora_inicio, hora_fim) <= 0) {
+                return toolError(
+                  'SALVAR_DEMANDA_EXCECAO_FAIXA_INVALIDA',
+                  `Faixa inválida: ${hora_inicio} → ${hora_fim}. O fim deve ser maior que o início.`,
+                  {
+                    correction: 'Corrija hora_inicio/hora_fim para uma faixa válida.',
+                    meta: { tool_kind: 'action', action: 'create-demand-exception', setor_id }
+                  }
+                )
+            }
+
+            const res = db.prepare(
+              'INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override) VALUES (?, ?, ?, ?, ?, ?)'
+            ).run(setor_id, data, hora_inicio, hora_fim, min_pessoas, override)
+
+            const registro = db.prepare('SELECT * FROM demandas_excecao_data WHERE id = ?').get(res.lastInsertRowid) as Record<string, any>
+
+            return toolOk(
+              {
+                sucesso: true,
+                setor: { id: setor.id, nome: setor.nome },
+                registro,
+              },
+              {
+                summary: `Demanda excepcional criada para ${setor.nome} em ${data}: ${min_pessoas} pessoa(s) das ${hora_inicio} às ${hora_fim}.`,
+                meta: {
+                  tool_kind: 'action',
+                  action: 'create-demand-exception',
+                  next_tools_hint: ['preflight', 'gerar_escala'],
+                }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'SALVAR_DEMANDA_EXCECAO_FALHOU',
+              `Erro ao salvar demanda excepcional: ${e.message}`,
+              {
+                correction: 'Revise os campos e tente novamente.',
+                meta: { tool_kind: 'action', action: 'create-demand-exception' }
+              }
+            )
+        }
+    }
+
+    if (name === 'upsert_regra_excecao_data') {
+        try {
+            const { colaborador_id, data } = args
+
+            const colab = db.prepare('SELECT id, nome, setor_id FROM colaboradores WHERE id = ?').get(colaborador_id) as { id: number; nome: string; setor_id: number } | undefined
+            if (!colab) {
+                return toolError(
+                  'UPSERT_REGRA_EXCECAO_COLAB_NAO_ENCONTRADO',
+                  `Colaborador ${colaborador_id} não encontrado.`,
+                  {
+                    correction: 'Resolva o colaborador via buscar_colaborador ou get_context().',
+                    meta: { tool_kind: 'action', action: 'upsert-date-exception-rule', colaborador_id }
+                  }
+                )
+            }
+
+            const timeFields = ['inicio_min', 'inicio_max', 'fim_min', 'fim_max'] as const
+            for (const field of timeFields) {
+                const val = args[field]
+                if (val !== undefined && val !== null && (typeof val !== 'string' || !HORA_HHMM_REGEX.test(val))) {
+                    return toolError(
+                      'UPSERT_REGRA_EXCECAO_HORA_INVALIDA',
+                      `Campo ${field} inválido: use HH:MM ou null.`,
+                      {
+                        correction: `Corrija ${field} para o formato HH:MM ou envie null.`,
+                        meta: { tool_kind: 'action', action: 'upsert-date-exception-rule', colaborador_id, campo: field }
+                      }
+                    )
+                }
+            }
+
+            const existing = db.prepare(
+              'SELECT id FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?'
+            ).get(colaborador_id, data) as { id: number } | undefined
+
+            const ativo = args.ativo !== false ? 1 : 0
+            const domingo_forcar_folga = args.domingo_forcar_folga ? 1 : 0
+
+            if (existing) {
+                db.prepare(`
+                  UPDATE colaborador_regra_horario_excecao_data SET
+                    ativo = ?,
+                    inicio_min = COALESCE(?, inicio_min),
+                    inicio_max = COALESCE(?, inicio_max),
+                    fim_min = COALESCE(?, fim_min),
+                    fim_max = COALESCE(?, fim_max),
+                    preferencia_turno_soft = COALESCE(?, preferencia_turno_soft),
+                    domingo_forcar_folga = ?
+                  WHERE id = ?
+                `).run(
+                  ativo,
+                  args.inicio_min ?? null,
+                  args.inicio_max ?? null,
+                  args.fim_min ?? null,
+                  args.fim_max ?? null,
+                  args.preferencia_turno_soft ?? null,
+                  domingo_forcar_folga,
+                  existing.id,
+                )
+            } else {
+                db.prepare(`
+                  INSERT INTO colaborador_regra_horario_excecao_data
+                    (colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_forcar_folga)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `).run(
+                  colaborador_id,
+                  data,
+                  ativo,
+                  args.inicio_min ?? null,
+                  args.inicio_max ?? null,
+                  args.fim_min ?? null,
+                  args.fim_max ?? null,
+                  args.preferencia_turno_soft ?? null,
+                  domingo_forcar_folga,
+                )
+            }
+
+            const regra = db.prepare(
+              'SELECT * FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?'
+            ).get(colaborador_id, data) as Record<string, any>
+
+            return toolOk(
+              {
+                sucesso: true,
+                colaborador: { id: colab.id, nome: colab.nome, setor_id: colab.setor_id },
+                regra_excecao: regra,
+                modo: existing ? 'atualizado' : 'criado',
+              },
+              {
+                summary: `Exceção de horário ${existing ? 'atualizada' : 'criada'} para ${colab.nome} em ${data}.`,
+                meta: {
+                  tool_kind: 'action',
+                  action: 'upsert-date-exception-rule',
+                  next_tools_hint: ['obter_regra_horario_colaborador', 'gerar_escala'],
+                }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'UPSERT_REGRA_EXCECAO_FALHOU',
+              `Erro ao salvar exceção de horário por data: ${e.message}`,
+              {
+                correction: 'Revise colaborador_id, data e campos de horário.',
+                meta: { tool_kind: 'action', action: 'upsert-date-exception-rule' }
+              }
+            )
+        }
+    }
+
+    if (name === 'resumir_horas_setor') {
+        try {
+            const { setor_id, data_inicio, data_fim, escala_id } = args
+
+            const setor = db.prepare('SELECT id, nome FROM setores WHERE id = ? AND ativo = 1').get(setor_id) as { id: number; nome: string } | undefined
+            if (!setor) {
+                return toolError(
+                  'RESUMIR_HORAS_SETOR_INVALIDO',
+                  `Setor ${setor_id} não encontrado ou inativo.`,
+                  {
+                    correction: 'Use get_context() para resolver o setor_id correto.',
+                    meta: { tool_kind: 'discovery', action: 'summarize-hours', setor_id }
+                  }
+                )
+            }
+
+            let query = `
+              SELECT c.id, c.nome, c.tipo_contrato_id,
+                     COUNT(CASE WHEN a.status = 'TRABALHO' THEN 1 END) as dias_trabalho,
+                     SUM(CASE WHEN a.status = 'TRABALHO' THEN a.minutos ELSE 0 END) as total_minutos,
+                     COUNT(CASE WHEN a.status = 'FOLGA' THEN 1 END) as dias_folga
+              FROM alocacoes a
+              JOIN colaboradores c ON c.id = a.colaborador_id
+              JOIN escalas e ON e.id = a.escala_id
+              WHERE e.setor_id = ?
+                AND a.data BETWEEN ? AND ?
+            `
+            const params: unknown[] = [setor_id, data_inicio, data_fim]
+
+            if (escala_id) {
+                query += ' AND a.escala_id = ?'
+                params.push(escala_id)
+            }
+
+            query += ' GROUP BY c.id ORDER BY total_minutos DESC'
+
+            const rows = db.prepare(query).all(...params) as Array<{
+              id: number
+              nome: string
+              tipo_contrato_id: number
+              dias_trabalho: number
+              total_minutos: number
+              dias_folga: number
+            }>
+
+            const colaboradores = rows.map(r => ({
+              id: r.id,
+              nome: r.nome,
+              tipo_contrato_id: r.tipo_contrato_id,
+              dias_trabalho: r.dias_trabalho,
+              dias_folga: r.dias_folga,
+              total_horas: +(r.total_minutos / 60).toFixed(1),
+              total_minutos: r.total_minutos,
+              media_horas_dia: r.dias_trabalho > 0 ? +((r.total_minutos / 60) / r.dias_trabalho).toFixed(1) : 0,
+            }))
+
+            const totalMinutos = rows.reduce((acc, r) => acc + r.total_minutos, 0)
+            const totalDias = rows.reduce((acc, r) => acc + r.dias_trabalho, 0)
+
+            return toolOk(
+              {
+                setor: { id: setor.id, nome: setor.nome },
+                periodo: { data_inicio, data_fim },
+                colaboradores,
+                totais: {
+                  pessoas: rows.length,
+                  total_horas: +(totalMinutos / 60).toFixed(1),
+                  total_dias_trabalho: totalDias,
+                  media_horas_pessoa: rows.length > 0 ? +((totalMinutos / 60) / rows.length).toFixed(1) : 0,
+                },
+              },
+              {
+                summary: `Resumo de horas do setor ${setor.nome}: ${rows.length} colaborador(es), ${+(totalMinutos / 60).toFixed(1)}h total no período ${data_inicio} a ${data_fim}.`,
+                meta: { tool_kind: 'discovery' }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'RESUMIR_HORAS_SETOR_FALHOU',
+              `Erro ao resumir horas: ${e.message}`,
+              {
+                correction: 'Verifique setor_id e período.',
+                meta: { tool_kind: 'discovery', action: 'summarize-hours' }
+              }
+            )
+        }
+    }
+
+    if (name === 'resetar_regras_empresa') {
+        if (args.confirmar !== true) {
+            return toolError(
+              'RESETAR_REGRAS_CONFIRMACAO_AUSENTE',
+              'Parâmetro confirmar deve ser true para executar o reset.',
+              {
+                correction: 'Envie confirmar: true para confirmar o reset de todas as regras.',
+                meta: { tool_kind: 'action', action: 'reset-enterprise-rules' }
+              }
+            )
+        }
+
+        try {
+            const count = (db.prepare('SELECT COUNT(*) as count FROM regra_empresa').get() as { count: number }).count
+
+            if (count === 0) {
+                return toolOk(
+                  { sucesso: true, regras_removidas: 0, mensagem: 'Nenhuma regra customizada para resetar.' },
+                  {
+                    summary: 'Nenhuma regra customizada existia — já estava no padrão.',
+                    meta: { tool_kind: 'action', action: 'reset-enterprise-rules', noop: true }
+                  }
+                )
+            }
+
+            db.prepare('DELETE FROM regra_empresa').run()
+
+            return toolOk(
+              {
+                sucesso: true,
+                regras_removidas: count,
+                mensagem: `${count} regra(s) customizada(s) removida(s). Todas as regras voltaram ao padrão do sistema.`,
+              },
+              {
+                summary: `${count} regra(s) resetada(s) para o padrão.`,
+                meta: { tool_kind: 'action', action: 'reset-enterprise-rules' }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'RESETAR_REGRAS_FALHOU',
+              `Erro ao resetar regras: ${e.message}`,
+              {
+                correction: 'Tente novamente.',
+                meta: { tool_kind: 'action', action: 'reset-enterprise-rules' }
+              }
+            )
+        }
+    }
+
+    return toolError('UNKNOWN_TOOL', `Tool '${name}' não reconhecida.`, {
+      correction: 'Use apenas tools declaradas em IA_TOOLS.',
+      meta: { tool_name: name }
+    })
 }
