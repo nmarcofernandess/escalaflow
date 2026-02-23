@@ -9,6 +9,7 @@ import {
   Moon,
   Check,
   Download,
+  Upload,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
@@ -17,13 +18,15 @@ import {
   Eye,
   EyeOff,
   Save,
+  ExternalLink,
+  HardDrive,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -46,6 +49,75 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+
+import type { IaProviderId, IaModelCatalogItem, IaModelCatalogResult } from '@shared/types'
+import { IaModelCatalogPicker } from '@/componentes/IaModelCatalogPicker'
+
+type IaProviderConfigForm = {
+  token?: string
+  modelo?: string
+  favoritos?: string[]
+}
+
+const IA_PROVIDER_LABELS: Record<IaProviderId, string> = {
+  gemini: 'Google Gemini',
+  openrouter: 'OpenRouter (Gateway)',
+}
+
+const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: string }>> = {
+  gemini: [
+    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (Mais Novo)' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Estável)' },
+    { value: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking Exp' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
+  ],
+  openrouter: [
+    { value: 'anthropic/claude-sonnet-4', label: 'Anthropic Claude Sonnet 4 (OpenRouter)' },
+    { value: 'openai/gpt-4o-mini', label: 'OpenAI GPT-4o Mini (OpenRouter)' },
+    { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash (Free, OpenRouter)' },
+  ],
+}
+
+const IA_PROVIDER_DOCS: Record<IaProviderId, string> = {
+  gemini: 'https://aistudio.google.com/apikey',
+  openrouter: 'https://openrouter.ai/keys',
+}
+
+function getDefaultProviderConfigs() {
+  return {
+    gemini: {
+      token: '',
+      modelo: IA_PROVIDER_MODELS.gemini[0].value,
+      favoritos: [] as string[],
+    },
+    openrouter: {
+      token: '',
+      modelo: IA_PROVIDER_MODELS.openrouter[0].value,
+      favoritos: [] as string[],
+    },
+  }
+}
+
+function normalizeProviderConfigs(input: any, iaConfig?: any) {
+  const defaults = getDefaultProviderConfigs()
+  const incoming = input && typeof input === 'object' ? input : {}
+  const geminiLegacyToken = typeof iaConfig?.api_key === 'string' ? iaConfig.api_key : ''
+  const geminiLegacyModel = typeof iaConfig?.modelo === 'string' ? iaConfig.modelo : defaults.gemini.modelo
+
+  return {
+    gemini: {
+      ...defaults.gemini,
+      ...(incoming.gemini || {}),
+      token: (incoming.gemini?.token ?? geminiLegacyToken ?? '').toString(),
+      modelo: (incoming.gemini?.modelo ?? geminiLegacyModel ?? defaults.gemini.modelo).toString(),
+    },
+    openrouter: {
+      ...defaults.openrouter,
+      ...(incoming.openrouter || {}),
+    },
+  }
+}
 
 export function ConfiguracoesPagina() {
   const { theme: currentMode, setTheme } = useTheme()
@@ -86,20 +158,64 @@ export function ConfiguracoesPagina() {
     window.electron.ipcRenderer.invoke('update:install').catch(() => { })
   }
 
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [restoreLoading, setRestoreLoading] = useState(false)
+
+  const handleExportar = async () => {
+    setBackupLoading(true)
+    try {
+      const res = await window.electron.ipcRenderer.invoke('dados.exportar') as { filepath: string } | null
+      if (res) {
+        toast.success('Backup exportado com sucesso!', { description: res.filepath })
+      }
+    } catch (err: any) {
+      toast.error('Erro ao exportar backup', { description: err?.message ?? 'Erro desconhecido' })
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleImportar = async () => {
+    setRestoreLoading(true)
+    try {
+      const res = await window.electron.ipcRenderer.invoke('dados.importar') as { tabelas: number; registros: number } | null
+      if (res) {
+        toast.success('Dados restaurados com sucesso!', {
+          description: `${res.tabelas} tabelas, ${res.registros} registros importados. Reinicie o app para garantir consistencia.`,
+        })
+      }
+    } catch (err: any) {
+      toast.error('Erro ao importar backup', { description: err?.message ?? 'Erro desconhecido' })
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
+
   const iaForm = useForm({
     resolver: zodResolver(
       z.object({
-        provider: z.string(),
+        provider: z.enum(['gemini', 'openrouter']),
         api_key: z.string().optional(),
         modelo: z.string(),
-        ativo: z.boolean(),
+        provider_configs: z.object({
+          gemini: z.object({
+            token: z.string().optional(),
+            modelo: z.string().optional(),
+            favoritos: z.array(z.string()).optional(),
+          }),
+          openrouter: z.object({
+            token: z.string().optional(),
+            modelo: z.string().optional(),
+            favoritos: z.array(z.string()).optional(),
+          }),
+        }),
       })
     ),
     defaultValues: {
-      provider: 'gemini',
+      provider: 'gemini' as IaProviderId,
       api_key: '',
-      modelo: 'gemini-3-flash-preview',
-      ativo: true, // 🟢 Default ativado quando cadastra API key pela primeira vez
+      modelo: IA_PROVIDER_MODELS.gemini[0].value,
+      provider_configs: getDefaultProviderConfigs(),
     },
   })
 
@@ -110,11 +226,25 @@ export function ConfiguracoesPagina() {
 
   useEffect(() => {
     if (iaConfig) {
+      let parsedProviderConfigs: any = iaConfig.provider_configs
+      if (!parsedProviderConfigs && iaConfig.provider_configs_json) {
+        try {
+          parsedProviderConfigs = JSON.parse(iaConfig.provider_configs_json)
+        } catch {
+          parsedProviderConfigs = {}
+        }
+      }
+      const normalized = normalizeProviderConfigs(parsedProviderConfigs, iaConfig)
+      const provider = (iaConfig.provider || 'gemini') as IaProviderId
+      const activeModel = normalized[provider]?.modelo || iaConfig.modelo || IA_PROVIDER_MODELS[provider][0].value
+      const activeToken = provider === 'gemini'
+        ? (normalized.gemini.token || iaConfig.api_key || '')
+        : ''
       iaForm.reset({
-        provider: iaConfig.provider,
-        api_key: iaConfig.api_key,
-        modelo: iaConfig.modelo,
-        ativo: Boolean(iaConfig.ativo),
+        provider,
+        api_key: activeToken,
+        modelo: activeModel,
+        provider_configs: normalized,
       })
     }
   }, [iaConfig, iaForm])
@@ -122,16 +252,133 @@ export function ConfiguracoesPagina() {
   const [testandoIa, setTestandoIa] = useState(false)
   const [salvandoIa, setSalvandoIa] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [modelCatalogByProvider, setModelCatalogByProvider] = useState<Partial<Record<IaProviderId, IaModelCatalogResult>>>({})
+  const [modelCatalogBusyProvider, setModelCatalogBusyProvider] = useState<IaProviderId | null>(null)
+
+  const iaProvider = (iaForm.watch('provider') || 'gemini') as IaProviderId
+  const providerConfigs = iaForm.watch('provider_configs') as ReturnType<typeof getDefaultProviderConfigs>
+  const selectedProviderConfig = (providerConfigs?.[iaProvider] || {}) as IaProviderConfigForm
+  const remoteCatalog = modelCatalogByProvider[iaProvider]
+  const openrouterFavoritos = providerConfigs?.openrouter?.favoritos ?? []
+  const currentModelOptions = (() => {
+    if (!remoteCatalog?.models?.length) return IA_PROVIDER_MODELS[iaProvider]
+    // OpenRouter com favoritos → dropdown mostra apenas favoritos
+    if (iaProvider === 'openrouter' && openrouterFavoritos.length > 0) {
+      const favSet = new Set(openrouterFavoritos)
+      const favModels = remoteCatalog.models
+        .filter((m) => favSet.has(m.id))
+        .map((m) => ({ value: m.id, label: m.label }))
+      return favModels.length > 0 ? favModels : IA_PROVIDER_MODELS[iaProvider]
+    }
+    return remoteCatalog.models.map((m) => ({ value: m.id, label: m.label }))
+  })()
+  const currentModelValue = iaForm.watch('modelo')
+  const tokenFieldLabel = iaProvider === 'gemini'
+    ? 'API Key (Google AI Studio)'
+    : 'OpenRouter API Key'
+  const tokenFieldPlaceholder = iaProvider === 'gemini'
+    ? 'AIza...'
+    : 'sk-or-...'
+  useEffect(() => {
+    if (!currentModelOptions.some((m) => m.value === currentModelValue)) {
+      const fallback = selectedProviderConfig?.modelo && currentModelOptions.some((m) => m.value === selectedProviderConfig.modelo)
+        ? selectedProviderConfig.modelo
+        : currentModelOptions[0].value
+      iaForm.setValue('modelo', fallback, { shouldDirty: true })
+    }
+  }, [currentModelOptions, currentModelValue, iaForm, selectedProviderConfig?.modelo])
+
+  useEffect(() => {
+    if (iaProvider === 'gemini') {
+      const geminiToken = (providerConfigs?.gemini?.token || '').trim()
+      const legacyValue = (iaForm.getValues('api_key') || '').trim()
+      if (geminiToken !== legacyValue) {
+        iaForm.setValue('api_key', geminiToken, { shouldDirty: false })
+      }
+    }
+  }, [iaProvider, providerConfigs?.gemini?.token, iaForm])
+
+  useEffect(() => {
+    // Auto-carrega OpenRouter porque é público e dá metadados ricos (free/tools) úteis para escolha.
+    if (iaProvider === 'openrouter' && !modelCatalogByProvider.openrouter && modelCatalogBusyProvider !== 'openrouter') {
+      onCarregarCatalogoModelos('openrouter', false, true)
+    }
+  }, [iaProvider, modelCatalogByProvider.openrouter, modelCatalogBusyProvider])
+
+  const buildIaConfigPayload = (rawValues?: any) => {
+    const values = rawValues || iaForm.getValues()
+    const provider = (values.provider || 'gemini') as IaProviderId
+    const normalizedProviderConfigs = normalizeProviderConfigs(values.provider_configs, values)
+    normalizedProviderConfigs[provider] = {
+      ...normalizedProviderConfigs[provider],
+      modelo: values.modelo || normalizedProviderConfigs[provider].modelo,
+      ...(provider === 'gemini'
+        ? { token: normalizedProviderConfigs.gemini.token || values.api_key || '' }
+        : {}),
+    }
+
+    const activeCfg = normalizedProviderConfigs[provider]
+    const apiKeyForCompat = provider === 'gemini'
+      ? (normalizedProviderConfigs.gemini.token || values.api_key || '')
+      : (activeCfg?.token || '')
+
+    return {
+      provider,
+      api_key: apiKeyForCompat,
+      modelo: values.modelo,
+      provider_configs: normalizedProviderConfigs,
+      provider_configs_json: JSON.stringify(normalizedProviderConfigs),
+    }
+  }
+
+  const getCurrentProviderConfig = (provider: IaProviderId) => {
+    const payload = buildIaConfigPayload()
+    return (payload.provider_configs?.[provider] || {}) as IaProviderConfigForm
+  }
+
+  const onCarregarCatalogoModelos = async (provider: IaProviderId, forceRefresh = true, silent = false) => {
+    setModelCatalogBusyProvider(provider)
+    try {
+      const res = await window.electron.ipcRenderer.invoke('ia.modelos.catalogo', {
+        provider,
+        provider_config: getCurrentProviderConfig(provider),
+        force_refresh: forceRefresh,
+      }) as IaModelCatalogResult
+
+      setModelCatalogByProvider((prev) => ({ ...prev, [provider]: res }))
+
+      const currentValue = iaForm.getValues('modelo')
+      const providerCfg = getCurrentProviderConfig(provider)
+      const preferred = providerCfg?.modelo
+      const nextModel =
+        (preferred && res.models.some((m) => m.id === preferred) && preferred) ||
+        (currentValue && res.models.some((m) => m.id === currentValue) && currentValue) ||
+        res.models[0]?.id
+
+      if (iaForm.getValues('provider') === provider && nextModel) {
+        iaForm.setValue('modelo', nextModel, { shouldDirty: true })
+      }
+
+      if (!silent) {
+        toast.success(`${IA_PROVIDER_LABELS[provider]}: ${res.models.length} modelos carregados (${res.source})`)
+        if (res.message) {
+          toast.message(res.message)
+        }
+      }
+    } catch (err: any) {
+      if (!silent) {
+        toast.error(err.message || `Erro ao carregar catálogo de modelos (${IA_PROVIDER_LABELS[provider]})`)
+      }
+    } finally {
+      setModelCatalogBusyProvider(null)
+    }
+  }
 
   const onTestarIa = async () => {
-    const values = iaForm.getValues()
+    const payload = buildIaConfigPayload()
     setTestandoIa(true)
     try {
-      const res = await window.electron.ipcRenderer.invoke('ia.configuracao.testar', {
-        provider: values.provider,
-        api_key: values.api_key,
-        modelo: values.modelo,
-      })
+      const res = await window.electron.ipcRenderer.invoke('ia.configuracao.testar', payload)
       if (res.sucesso) {
         toast.success(res.mensagem || 'Conectado com sucesso!')
       }
@@ -145,12 +392,9 @@ export function ConfiguracoesPagina() {
   const onSubmitIa = async (data: any) => {
     setSalvandoIa(true)
     try {
-      await window.electron.ipcRenderer.invoke('ia.configuracao.salvar', {
-        provider: data.provider,
-        api_key: data.api_key || '',
-        modelo: data.modelo,
-        ativo: data.ativo,
-      })
+      const payload = buildIaConfigPayload(data)
+      await window.electron.ipcRenderer.invoke('ia.configuracao.salvar', payload)
+      window.dispatchEvent(new CustomEvent('ia-config-changed'))
       toast.success('Configuracoes de IA salvas.')
     } catch (err: any) {
       toast.error(err.message || 'Erro ao salvar configuracoes.')
@@ -165,7 +409,7 @@ export function ConfiguracoesPagina() {
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Configuracoes' }]}
       />
 
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+      <div className="flex flex-col gap-6 p-6">
         {/* Aparência */}
         <Card>
           <CardHeader>
@@ -255,62 +499,40 @@ export function ConfiguracoesPagina() {
 
         {/* Assistente IA */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <BrainCircuit className="size-4 text-purple-500" />
-                Assistente IA
-              </CardTitle>
-              <CardDescription className="mt-1">
-                Configure o provedor para usar o chat inteligente e a pre-analise de escalas.
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa}>
-                {testandoIa ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}
-                Testar
-              </Button>
-              <Button size="sm" onClick={iaForm.handleSubmit(onSubmitIa)} disabled={salvandoIa}>
-                {salvandoIa ? (
-                  <Loader2 className="mr-1 size-3.5 animate-spin" />
-                ) : (
-                  <Save className="mr-1 size-3.5" />
-                )}
-                Salvar IA
-              </Button>
-            </div>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BrainCircuit className="size-4" />
+              Assistente IA
+            </CardTitle>
+            <CardDescription>Configure o provedor e modelo de IA para o chat do RH</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...iaForm}>
               <form className="space-y-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
-                <div className="flex items-center gap-3 rounded-lg border p-4">
-                  <FormField
-                    control={iaForm.control}
-                    name="ativo"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center gap-3 space-y-0">
-                        <FormControl>
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        </FormControl>
-                        <div>
-                          <FormLabel className="text-sm font-medium">Ativar Assistente</FormLabel>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Habilita o painel de chat e a analise via LLM em todo o aplicativo.
-                          </p>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <FormField
                     control={iaForm.control}
                     name="provider"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Provedor</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
+                        <Select
+                          value={field.value}
+                          onValueChange={(next) => {
+                            field.onChange(next)
+                            const nextProvider = next as IaProviderId
+                            const nextCfg = iaForm.getValues(`provider_configs.${nextProvider}` as any) as IaProviderConfigForm | undefined
+                            const nextOptions = IA_PROVIDER_MODELS[nextProvider]
+                            const nextModel =
+                              nextCfg?.modelo && nextOptions.some((m) => m.value === nextCfg.modelo)
+                                ? nextCfg.modelo
+                                : nextOptions[0].value
+                            iaForm.setValue('modelo', nextModel, { shouldDirty: true })
+                            if (nextProvider === 'gemini') {
+                              iaForm.setValue('api_key', nextCfg?.token || '', { shouldDirty: false })
+                            }
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Selecione o provedor..." />
@@ -318,6 +540,7 @@ export function ConfiguracoesPagina() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="gemini">Google Gemini</SelectItem>
+                            <SelectItem value="openrouter">OpenRouter</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -330,82 +553,120 @@ export function ConfiguracoesPagina() {
                     name="modelo"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Modelo</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
+                        <FormLabel>Modelo{iaProvider === 'openrouter' && openrouterFavoritos.length > 0 ? ` (${openrouterFavoritos.length} favoritos)` : ''}</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={(next) => {
+                            field.onChange(next)
+                            iaForm.setValue(`provider_configs.${iaProvider}.modelo` as any, next, {
+                              shouldDirty: true,
+                            })
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Selecione o modelo..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="gemini-3-flash-preview">
-                              Gemini 3 Flash Preview (Mais Novo) 🚀
-                            </SelectItem>
-                            <SelectItem value="gemini-2.5-flash">
-                              Gemini 2.5 Flash (Estável)
-                            </SelectItem>
-                            <SelectItem value="gemini-2.0-flash-thinking-exp-1219">
-                              Gemini 2.0 Flash Thinking Exp
-                            </SelectItem>
-                            <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                            <SelectItem value="gemini-2.5-flash-lite">
-                              Gemini 2.5 Flash-Lite
-                            </SelectItem>
+                            {!currentModelOptions.some((m) => m.value === field.value) && field.value ? (
+                              <SelectItem value={field.value}>{field.value} (custom)</SelectItem>
+                            ) : null}
+                            {currentModelOptions.map((model) => (
+                              <SelectItem key={`${iaProvider}-${model.value}`} value={model.value}>
+                                {model.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          Flash = rapido e barato · Pro = mais inteligente
-                        </p>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                </div>
 
-                  <FormField
-                    control={iaForm.control}
-                    name="api_key"
-                    render={({ field }) => (
-                      <FormItem className="sm:col-span-2 lg:col-span-3">
-                        <div className="flex items-center justify-between">
-                          <FormLabel>API Key</FormLabel>
-                          <a
-                            href="https://aistudio.google.com/apikey"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-purple-500 hover:text-purple-400 underline underline-offset-2"
-                          >
-                            Obter chave no Google AI Studio →
-                          </a>
-                        </div>
-                        <div className="flex w-full items-center gap-2">
-                          <FormControl>
-                            <div className="relative flex-1">
-                              <Input
-                                type={showApiKey ? 'text' : 'password'}
-                                placeholder="sk-..."
-                                {...field}
-                                className="pr-10"
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                                onClick={() => setShowApiKey(!showApiKey)}
-                              >
-                                {showApiKey ? (
-                                  <EyeOff className="size-4 text-muted-foreground" />
-                                ) : (
-                                  <Eye className="size-4 text-muted-foreground" />
-                                )}
-                              </Button>
-                            </div>
-                          </FormControl>
-                        </div>
-                        <FormMessage />
-                      </FormItem>
+                {/* API Key */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>{tokenFieldLabel}</Label>
+                    <a
+                      href={IA_PROVIDER_DOCS[iaProvider]}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Obter chave
+                      <ExternalLink className="size-3" />
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      type={showApiKey ? 'text' : 'password'}
+                      placeholder={tokenFieldPlaceholder}
+                      value={(selectedProviderConfig.token ?? '') as string}
+                      onChange={(e) => {
+                        iaForm.setValue(`provider_configs.${iaProvider}.token` as any, e.target.value, {
+                          shouldDirty: true,
+                        })
+                        if (iaProvider === 'gemini') {
+                          iaForm.setValue('api_key', e.target.value, { shouldDirty: true })
+                        }
+                      }}
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full w-10 hover:bg-transparent"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                    >
+                      {showApiKey ? (
+                        <EyeOff className="size-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="size-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Picker de modelos OpenRouter — aparece quando catálogo carregado */}
+                {iaProvider === 'openrouter' && remoteCatalog?.models?.length ? (
+                  <div className="space-y-2">
+                    <Label>Modelo</Label>
+                    <IaModelCatalogPicker
+                      models={remoteCatalog.models}
+                      value={currentModelValue}
+                      favorites={openrouterFavoritos}
+                      onChange={(modelId) => {
+                        iaForm.setValue('modelo', modelId, { shouldDirty: true })
+                        iaForm.setValue('provider_configs.openrouter.modelo' as any, modelId, { shouldDirty: true })
+                      }}
+                      onToggleFavorite={(modelId) => {
+                        const current = iaForm.getValues('provider_configs.openrouter.favoritos' as any) as string[] ?? []
+                        const next = current.includes(modelId)
+                          ? current.filter((id: string) => id !== modelId)
+                          : [...current, modelId]
+                        iaForm.setValue('provider_configs.openrouter.favoritos' as any, next, { shouldDirty: true })
+                      }}
+                    />
+                  </div>
+                ) : null}
+
+                {/* Footer com ações */}
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa}>
+                    {testandoIa ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
+                    Testar conexão
+                  </Button>
+                  <Button type="submit" size="sm" disabled={salvandoIa}>
+                    {salvandoIa ? (
+                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    ) : (
+                      <Save className="mr-1.5 size-3.5" />
                     )}
-                  />
+                    Salvar
+                  </Button>
                 </div>
               </form>
             </Form>
@@ -497,6 +758,65 @@ export function ConfiguracoesPagina() {
                   </Button>
                 )}
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Backup / Restauracao */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <HardDrive className="size-4" />
+              Backup e Restauracao
+            </CardTitle>
+            <CardDescription>
+              Exporte todos os dados do sistema para um arquivo JSON ou restaure a partir de um backup anterior.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Exportar dados</p>
+                <p className="text-xs text-muted-foreground">
+                  Salva empresa, setores, colaboradores, escalas, regras e configuracoes em um arquivo.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExportar}
+                disabled={backupLoading}
+              >
+                {backupLoading ? (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                ) : (
+                  <Download className="mr-1.5 size-3.5" />
+                )}
+                Exportar backup
+              </Button>
+            </div>
+            <Separator />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Restaurar dados</p>
+                <p className="text-xs text-muted-foreground">
+                  Substitui TODOS os dados atuais pelo conteudo do backup. Esta acao nao pode ser desfeita.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleImportar}
+                disabled={restoreLoading}
+                className="text-destructive hover:text-destructive"
+              >
+                {restoreLoading ? (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                ) : (
+                  <Upload className="mr-1.5 size-3.5" />
+                )}
+                Importar backup
+              </Button>
             </div>
           </CardContent>
         </Card>

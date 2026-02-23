@@ -2,7 +2,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import electron from 'electron'
 import { createTables } from './db/schema'
-import { seedData } from './db/seed'
+import { seedData, seedLocalData } from './db/seed'
 import { closeDb } from './db/database'
 import pkg from 'electron-updater'
 const { autoUpdater } = pkg
@@ -96,6 +96,7 @@ function createWindow(
 async function bootstrap(): Promise<void> {
   createTables()
   seedData()
+  seedLocalData()
 
   const { app, BrowserWindow, shell, ipcMain } = electron
 

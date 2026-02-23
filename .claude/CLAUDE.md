@@ -251,6 +251,90 @@ npm run release:mac      # build + upload para GitHub Releases (Mac)
 
 ---
 
+## Layout Contract (NUNCA QUEBRAR)
+
+O layout do app é uma cadeia de altura fixa do viewport até os componentes. Quebrar qualquer elo = gap preto, scroll duplo, conteúdo cortado.
+
+### Cadeia de altura (cada nível depende do anterior)
+
+```
+html (height: 100%)
+  └─ body (height: 100%)
+      └─ #root (height: 100%)
+          └─ SidebarProvider (h-svh overflow-hidden)
+              ├─ AppSidebar
+              └─ SidebarInset (h-full min-h-0 overflow-hidden)
+                  └─ #CONTENT_AREA (flex min-h-0 flex-1)
+                      ├─ main (min-h-0 flex-1 min-w-0 overflow-auto)  ← ÚNICO scroll owner de página
+                      └─ IaChatPanel (h-full shrink-0 border-l)       ← largura animada, sem absolute
+```
+
+### Regras invioláveis
+
+| Regra | Por quê |
+|-------|---------|
+| `main` é o ÚNICO scroll owner de página | Dois `overflow-auto` aninhados = scroll duplo |
+| Páginas NUNCA adicionam `overflow-y-auto` no wrapper interno | Cria segundo scroll owner, compete com `main` |
+| `IaChatPanel` usa `w-[380px]` / `w-0` (width animation) | Absolute + transform + rail = over-engineering que quebra |
+| `IaChatView` usa `viewport.scrollTo()`, NUNCA `scrollIntoView` | `scrollIntoView` propaga para TODOS os ancestrais scrolláveis |
+| `ScrollArea` em flex context DEVE ter `min-h-0` | Sem isso, conteúdo cresce e empurra irmãos pra fora do viewport |
+| Componentes que retornam lista (ScrollArea + Input) DEVEM ter wrapper div com `overflow-hidden min-h-0` | Fragment (`<>`) perde contenção de overflow — filhos viram flex children diretos do pai |
+
+### Padrão correto para páginas
+
+```tsx
+// BOM — página delega scroll ao <main> do App.tsx
+export function MinhaPagina() {
+  return (
+    <div className="flex flex-1 flex-col">
+      <PageHeader ... />
+      <div className="flex flex-col gap-6 p-6">
+        {/* conteúdo */}
+      </div>
+    </div>
+  )
+}
+
+// ERRADO — cria segundo scroll owner
+export function MinhaPagina() {
+  return (
+    <div className="flex flex-1 flex-col">
+      <PageHeader ... />
+      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">  {/* ← PROIBIDO */}
+        {/* conteúdo */}
+      </div>
+    </div>
+  )
+}
+```
+
+### Padrão correto para scroll interno (ex: chat)
+
+```tsx
+// BOM — scroll targeted no viewport do Radix
+const scrollAreaRef = useRef<HTMLDivElement>(null)
+useEffect(() => {
+  const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+  if (viewport) {
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+  }
+}, [mensagens])
+
+// ERRADO — propaga scroll pra main e qualquer ancestral
+msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })  // ← PROIBIDO
+```
+
+### Arquivos críticos do layout (tocar com cuidado)
+
+| Arquivo | Papel |
+|---------|-------|
+| `index.css` | `html, body, #root { height: 100% }` — base da cadeia |
+| `App.tsx` | Shell: SidebarProvider → SidebarInset → main + IaChatPanel |
+| `IaChatPanel.tsx` | Painel IA: width animation, `shrink-0`, `overflow-hidden` |
+| `IaChatView.tsx` | Chat: ScrollArea com `min-h-0`, scroll targeted |
+
+---
+
 ## Checklist antes de commitar
 
 - [ ] `npm run typecheck` retorna 0 erros
@@ -259,3 +343,4 @@ npm run release:mac      # build + upload para GitHub Releases (Mac)
 - [ ] Novos tipos adicionados em `src/shared/types.ts`
 - [ ] Nenhum `console.log` de debug esquecido no código
 - [ ] Componentes shadcn verificados antes de criar div soup
+- [ ] Layout chain intacto (ver "Layout Contract") — sem `overflow-y-auto` em páginas, sem `scrollIntoView`

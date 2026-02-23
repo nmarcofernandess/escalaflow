@@ -255,6 +255,7 @@ CREATE TABLE IF NOT EXISTS configuracao_ia (
   provider TEXT NOT NULL DEFAULT 'gemini',
   api_key TEXT NOT NULL DEFAULT '',
   modelo TEXT NOT NULL DEFAULT 'gemini-3-flash-preview',
+  provider_configs_json TEXT NOT NULL DEFAULT '{}',
   ativo INTEGER NOT NULL DEFAULT 0,
   criado_em TEXT NOT NULL DEFAULT (datetime('now')),
   atualizado_em TEXT NOT NULL DEFAULT (datetime('now'))
@@ -503,6 +504,10 @@ END
   // --- v5: remover piso_operacional do setor (campo obsoleto) ---
   dropColumnIfExists('setores', 'piso_operacional')
 
+  // --- IA providers vNext: configs por provider em JSON (Codex / Claude Code / Gemini) ---
+  const iaConfigCols = getColumnNames('configuracao_ia')
+  addColumnIfMissing('configuracao_ia', 'provider_configs_json', "TEXT NOT NULL DEFAULT '{}'", iaConfigCols)
+
   // --- v2.3: indicadores escalas ---
   const escalaCols = getColumnNames('escalas')
   addColumnIfMissing('escalas', 'cobertura_percent', 'REAL DEFAULT 0', escalaCols)
@@ -590,6 +595,11 @@ END
   // v7 — Tool Calls Visíveis (Transparência na UI)
   // ==========================================================================
   addColumnIfMissing('ia_mensagens', 'tool_calls_json', 'TEXT')
+
+  // ==========================================================================
+  // v8 — IA sempre ativo (remove switch desnecessário)
+  // ==========================================================================
+  db.exec(`UPDATE configuracao_ia SET ativo = 1 WHERE ativo = 0`)
 }
 
 // ============================================================================

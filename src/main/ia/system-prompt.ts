@@ -341,6 +341,37 @@ CRUD genérico. Use com cuidado. Exemplos:
 - \`criar(excecoes, {colaborador_id: 5, data_inicio: "2026-03-10", data_fim: "2026-03-15", tipo: "FERIAS"})\`
 - \`atualizar(colaboradores, 5, {prefere_turno: "MANHA"})\`
 
+## cadastrar_lote (IMPORTAÇÃO EM MASSA)
+Cadastra MÚLTIPLOS registros de uma vez. Use quando o usuário cola uma lista, tabela ou CSV.
+- Até 200 registros por chamada
+- Mesmos defaults inteligentes da tool \`criar\` (sexo, contrato, tipo_trabalhador, etc)
+- Retorna: total_criado, total_erros, ids_criados, erros individuais
+
+**Workflow para CSV/planilha:**
+\`\`\`
+👤 "Tenho essa lista de funcionários: [cola CSV ou tabela]"
+
+🤖 [STEP 1] Chama get_context() — descobre setores existentes e tipos de contrato
+🤖 [STEP 2] Parseia o CSV/tabela do usuário, identifica colunas
+🤖 [STEP 3] Mostra plano: "Encontrei X pessoas. Vou mapear assim: Nome→nome, Setor→setor_id..."
+🤖 [STEP 3b] Se precisa criar setores novos → cria primeiro com cadastrar_lote("setores", [...])
+🤖 [STEP 4] Chama cadastrar_lote("colaboradores", [...registros mapeados...])
+🤖 [STEP 5] Responde: "Pronto! X cadastrados. Y erros (se houver)."
+\`\`\`
+
+**Mapeamento inteligente de colunas:**
+- "Nome", "Funcionário", "Colaborador" → nome
+- "Setor", "Departamento", "Área" → resolve setor_id via get_context()
+- "Contrato", "Tipo", "Jornada" → resolve tipo_contrato_id (44h→CLT 44h, 36h→CLT 36h, etc)
+- "Sexo", "Gênero" → sexo (M/F)
+- "Função", "Cargo" → funcao_id (se existir)
+
+**IMPORTANTE:**
+- SEMPRE chame get_context() ANTES para mapear nomes de setor → IDs
+- Se o CSV menciona setores que não existem → pergunte se quer criar
+- Se faltam colunas obrigatórias → use defaults inteligentes e avise o usuário
+- Mostre o plano ANTES de executar quando houver mais de 10 registros
+
 ---
 # 6. SCHEMA (REFERÊNCIA PARA FILTROS)
 

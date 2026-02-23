@@ -60,30 +60,28 @@ export function App() {
         isTourCompleted={tourCompleted}
       >
         <AppSidebar />
-        <SidebarInset className="h-full overflow-hidden">
-          <div id={TOUR_STEP_IDS.CONTENT_AREA} className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex flex-1 overflow-hidden">
-              <main className="flex-1 min-w-0 overflow-auto">
-                <ErrorBoundary>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/setores" element={<SetorLista />} />
-                    <Route path="/setores/:id" element={<SetorDetalhe />} />
-                    <Route path="/setores/:id/escala" element={<EscalaPagina />} />
-                    <Route path="/escalas" element={<EscalasHub />} />
-                    <Route path="/colaboradores" element={<ColaboradorLista />} />
-                    <Route path="/colaboradores/:id" element={<ColaboradorDetalhe />} />
-                    <Route path="/tipos-contrato" element={<ContratoLista />} />
-                    <Route path="/empresa" element={<EmpresaConfig />} />
-                    <Route path="/feriados" element={<FeriadosPagina />} />
-                    <Route path="/configuracoes" element={<ConfiguracoesPagina />} />
-                    <Route path="/regras" element={<RegrasPagina />} />
-                    <Route path="*" element={<NaoEncontrado />} />
-                  </Routes>
-                </ErrorBoundary>
-              </main>
-              <IaChatPanel />
-            </div>
+        <SidebarInset className="h-full min-h-0 overflow-hidden">
+          <div id={TOUR_STEP_IDS.CONTENT_AREA} className="flex min-h-0 flex-1">
+            <main className="min-h-0 flex-1 min-w-0 overflow-auto">
+              <ErrorBoundary>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/setores" element={<SetorLista />} />
+                  <Route path="/setores/:id" element={<SetorDetalhe />} />
+                  <Route path="/setores/:id/escala" element={<EscalaPagina />} />
+                  <Route path="/escalas" element={<EscalasHub />} />
+                  <Route path="/colaboradores" element={<ColaboradorLista />} />
+                  <Route path="/colaboradores/:id" element={<ColaboradorDetalhe />} />
+                  <Route path="/tipos-contrato" element={<ContratoLista />} />
+                  <Route path="/empresa" element={<EmpresaConfig />} />
+                  <Route path="/feriados" element={<FeriadosPagina />} />
+                  <Route path="/configuracoes" element={<ConfiguracoesPagina />} />
+                  <Route path="/regras" element={<RegrasPagina />} />
+                  <Route path="*" element={<NaoEncontrado />} />
+                </Routes>
+              </ErrorBoundary>
+            </main>
+            <IaChatPanel />
           </div>
         </SidebarInset>
         <TourSetup />

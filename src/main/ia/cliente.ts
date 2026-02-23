@@ -1,5 +1,6 @@
 import { generateText, stepCountIs } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { SYSTEM_PROMPT } from './system-prompt'
 import { getVercelAiTools } from './tools'
 import { buildContextBriefing } from './discovery'
@@ -22,47 +23,7 @@ function normalizeToolArgs(rawArgs: unknown): Record<string, unknown> | undefine
     return { value: rawArgs }
 }
 
-export async function iaEnviarMensagem(
-    mensagem: string,
-    historico: IaMensagem[],
-    contexto?: IaContexto
-): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const db = getDb()
-    const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get() as IaConfiguracao | undefined
-
-    if (!config || !config.ativo) {
-        throw new Error('Assistente IA não está ativo ou configurado.')
-    }
-    if (!config.api_key) {
-        throw new Error('API Key da Inteligência Artificial não configurada.')
-    }
-
-    if (config.provider === 'gemini') {
-        return _callGemini(config, mensagem, historico, contexto)
-    }
-
-    throw new Error(`Provider "${config.provider}" não suportado. Apenas Gemini está implementado.`)
-}
-
-// =============================================================================
-// GEMINI — Vercel AI SDK (CÓDIGO QUE FUNCIONOU NO TESTE!)
-// =============================================================================
-
-async function _callGemini(
-    config: IaConfiguracao,
-    currentMsg: string,
-    historico: IaMensagem[],
-    contexto?: IaContexto
-): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const modelo = config.modelo || 'gemini-2.5-flash'
-
-    const google = createGoogleGenerativeAI({ apiKey: config.api_key })
-
-    const contextBriefing = buildContextBriefing(contexto)
-    const fullSystemPrompt = contextBriefing
-        ? `${SYSTEM_PROMPT}\n\n---\n${contextBriefing}`
-        : SYSTEM_PROMPT
-
+function buildChatMessages(historico: IaMensagem[], currentMsg: string) {
     const messages = historico
         .filter(h => h.papel === 'usuario' || h.papel === 'assistente')
         .map(h => ({
@@ -75,74 +36,101 @@ async function _callGemini(
         content: currentMsg
     })
 
+    return messages
+}
+
+function buildFullSystemPrompt(contexto?: IaContexto) {
+    const contextBriefing = buildContextBriefing(contexto)
+    return contextBriefing
+        ? `${SYSTEM_PROMPT}\n\n---\n${contextBriefing}`
+        : SYSTEM_PROMPT
+}
+
+function extractToolCallsFromSteps(steps: any[] | undefined): ToolCall[] {
+    const acoes: ToolCall[] = []
+    if (!steps) return acoes
+
+    for (const step of steps) {
+        if (!step.toolCalls || step.toolCalls.length === 0) continue
+
+        const stepToolResults = (step.toolResults ?? []) as any[]
+        const toolResultsById = new Map<string, any>()
+
+        for (const tr of stepToolResults) {
+            if (tr?.toolCallId) {
+                toolResultsById.set(tr.toolCallId, tr)
+            }
+        }
+
+        for (let i = 0; i < step.toolCalls.length; i++) {
+            const tc = step.toolCalls[i] as any
+            // Pair by toolCallId first. Array index is only a compatibility fallback.
+            const tr = toolResultsById.get(tc.toolCallId) ?? stepToolResults[i]
+            // AI SDK v6 uses input/output. Keep args/result fallbacks for compatibility with older payloads.
+            const args = normalizeToolArgs(tc?.input ?? tc?.args)
+
+            const hasResultProp =
+                hasOwn(tr, 'output') ||
+                hasOwn(tr, 'result') ||
+                hasOwn(tr, 'error')
+
+            const resultValue = hasOwn(tr, 'output')
+                ? tr.output
+                : hasOwn(tr, 'result')
+                    ? tr.result
+                    : hasOwn(tr, 'error')
+                        ? tr.error
+                        : undefined
+
+            acoes.push({
+                id: tc.toolCallId,
+                name: tc.toolName,
+                ...(args !== undefined ? { args } : {}),
+                ...(hasResultProp ? { result: resultValue } : {})
+            })
+        }
+    }
+
+    return acoes
+}
+
+async function _callWithVercelAiSdkTools(
+    providerLabel: 'gemini' | 'openrouter',
+    config: IaConfiguracao,
+    currentMsg: string,
+    historico: IaMensagem[],
+    contexto: IaContexto | undefined,
+    createModel: (modelo: string) => any,
+): Promise<{ resposta: string; acoes: ToolCall[] }> {
+    const modelo = config.modelo || (providerLabel === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash')
+
+    const fullSystemPrompt = buildFullSystemPrompt(contexto)
+    const messages = buildChatMessages(historico, currentMsg)
     const tools = getVercelAiTools()
 
-    console.log('[AI SDK] Chamando generateText com stopWhen...')
+    console.log(`[AI SDK:${providerLabel}] Chamando generateText com stopWhen...`)
 
     const result = await generateText({
-        model: google(modelo),
+        model: createModel(modelo),
         system: fullSystemPrompt,
         messages,
         tools,
         stopWhen: stepCountIs(10)  // CRÍTICO: sem isso, para no primeiro tool call!
     })
 
-    console.log('[AI SDK] Resultado:', {
+    console.log(`[AI SDK:${providerLabel}] Resultado:`, {
         text: result.text?.substring(0, 50) || '(vazio)',
         stepsCount: result.steps?.length || 0,
         finishReason: result.finishReason
     })
 
-    const acoes: ToolCall[] = []
-
-    if (result.steps) {
-        for (const step of result.steps) {
-            if (!step.toolCalls || step.toolCalls.length === 0) continue
-
-            const stepToolResults = (step.toolResults ?? []) as any[]
-            const toolResultsById = new Map<string, any>()
-
-            for (const tr of stepToolResults) {
-                if (tr?.toolCallId) {
-                    toolResultsById.set(tr.toolCallId, tr)
-                }
-            }
-
-            for (let i = 0; i < step.toolCalls.length; i++) {
-                const tc = step.toolCalls[i] as any
-                // Pair by toolCallId first. Array index is only a compatibility fallback.
-                const tr = toolResultsById.get(tc.toolCallId) ?? stepToolResults[i]
-                // AI SDK v6 uses input/output. Keep args/result fallbacks for compatibility with older payloads.
-                const args = normalizeToolArgs(tc?.input ?? tc?.args)
-
-                const hasResultProp =
-                    hasOwn(tr, 'output') ||
-                    hasOwn(tr, 'result') ||
-                    hasOwn(tr, 'error')
-
-                const resultValue = hasOwn(tr, 'output')
-                    ? tr.output
-                    : hasOwn(tr, 'result')
-                        ? tr.result
-                        : hasOwn(tr, 'error')
-                            ? tr.error
-                            : undefined
-
-                acoes.push({
-                    id: tc.toolCallId,
-                    name: tc.toolName,
-                    ...(args !== undefined ? { args } : {}),
-                    ...(hasResultProp ? { result: resultValue } : {})
-                })
-            }
-        }
-    }
+    const acoes = extractToolCallsFromSteps(result.steps as any[] | undefined)
 
     // 🔥 FIX: Se executou tools mas não gerou texto, força resposta
     let finalText = result.text
 
     if ((!finalText || finalText.trim().length === 0) && acoes.length > 0) {
-        console.log('[AI SDK] ⚠️ IA executou tools mas não respondeu. Forçando turno final...')
+        console.log(`[AI SDK:${providerLabel}] ⚠️ IA executou tools mas não respondeu. Forçando turno final...`)
 
         // Adiciona mensagem pedindo pra responder
         messages.push({
@@ -155,20 +143,103 @@ async function _callGemini(
         })
 
         const finalResult = await generateText({
-            model: google(modelo),
+            model: createModel(modelo),
             system: fullSystemPrompt,
             messages
             // SEM tools → força texto puro, sem tool calls
         })
 
         finalText = finalResult.text || 'Feito! ✅'
-        console.log('[AI SDK] Resposta forçada:', finalText.substring(0, 50))
+        console.log(`[AI SDK:${providerLabel}] Resposta forçada:`, finalText.substring(0, 50))
     }
 
     return {
         resposta: finalText || '(Resposta vazia)',
         acoes
     }
+}
+
+function resolveProviderApiKey(config: IaConfiguracao): string | undefined {
+    // provider_configs_json tem prioridade — é onde a UI multi-provider salva tokens
+    if (config.provider_configs_json) {
+        try {
+            const configs = typeof config.provider_configs_json === 'string'
+                ? JSON.parse(config.provider_configs_json)
+                : config.provider_configs_json
+            const providerCfg = configs?.[config.provider]
+            if (providerCfg?.token?.trim()) return providerCfg.token.trim()
+        } catch { /* fallback to api_key */ }
+    }
+    return config.api_key || undefined
+}
+
+export async function iaEnviarMensagem(
+    mensagem: string,
+    historico: IaMensagem[],
+    contexto?: IaContexto
+): Promise<{ resposta: string; acoes: ToolCall[] }> {
+    const db = getDb()
+    const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get() as IaConfiguracao | undefined
+
+    if (!config) {
+        throw new Error('Assistente IA não configurado.')
+    }
+
+    const apiKey = resolveProviderApiKey(config)
+
+    if (config.provider === 'gemini') {
+        if (!apiKey) {
+            throw new Error('API Key do Gemini não configurada.')
+        }
+        return _callGemini({ ...config, api_key: apiKey }, mensagem, historico, contexto)
+    }
+
+    if (config.provider === 'openrouter') {
+        if (!apiKey) {
+            throw new Error('Token do OpenRouter não configurado.')
+        }
+        return _callOpenRouter({ ...config, api_key: apiKey }, mensagem, historico, contexto)
+    }
+
+    throw new Error(`Provider "${config.provider}" não suportado. Providers disponíveis: Gemini e OpenRouter.`)
+}
+
+// =============================================================================
+// GEMINI — Vercel AI SDK (CÓDIGO QUE FUNCIONOU NO TESTE!)
+// =============================================================================
+
+async function _callGemini(
+    config: IaConfiguracao,
+    currentMsg: string,
+    historico: IaMensagem[],
+    contexto?: IaContexto
+): Promise<{ resposta: string; acoes: ToolCall[] }> {
+    const google = createGoogleGenerativeAI({ apiKey: config.api_key })
+    return _callWithVercelAiSdkTools(
+        'gemini',
+        config,
+        currentMsg,
+        historico,
+        contexto,
+        (modelo) => google(modelo),
+    )
+}
+
+async function _callOpenRouter(
+    config: IaConfiguracao,
+    currentMsg: string,
+    historico: IaMensagem[],
+    contexto?: IaContexto
+): Promise<{ resposta: string; acoes: ToolCall[] }> {
+    const openrouter = createOpenRouter({ apiKey: config.api_key })
+    return _callWithVercelAiSdkTools(
+        'openrouter',
+        config,
+        currentMsg,
+        historico,
+        contexto,
+        (modelo) => openrouter(modelo),
+    )
 }
 
 // =============================================================================
@@ -181,20 +252,35 @@ export async function iaTestarConexao(
     modelo: string
 ): Promise<{ sucesso: boolean; mensagem: string }> {
     if (!apiKey) throw new Error('API Key não fornecida.')
-    if (provider !== 'gemini') throw new Error('Apenas o provider Gemini está disponível.')
-
     try {
-        const google = createGoogleGenerativeAI({ apiKey })
+        if (provider === 'gemini') {
+            const google = createGoogleGenerativeAI({ apiKey })
 
-        const result = await generateText({
-            model: google(modelo),
-            prompt: 'Responda apenas: OK'
-        })
+            const result = await generateText({
+                model: google(modelo),
+                prompt: 'Responda apenas: OK'
+            })
 
-        return {
-            sucesso: true,
-            mensagem: `✅ Conectado! Modelo "${modelo}" respondeu: "${result.text.substring(0, 50)}"`
+            return {
+                sucesso: true,
+                mensagem: `✅ Conectado! Modelo "${modelo}" respondeu: "${result.text.substring(0, 50)}"`
+            }
         }
+
+        if (provider === 'openrouter') {
+            const openrouter = createOpenRouter({ apiKey })
+            const result = await generateText({
+                model: openrouter(modelo),
+                prompt: 'Responda apenas: OK'
+            })
+
+            return {
+                sucesso: true,
+                mensagem: `✅ OpenRouter conectado! Modelo "${modelo}" respondeu: "${result.text.substring(0, 50)}"`
+            }
+        }
+
+        throw new Error(`Provider "${provider}" ainda não suporta teste por API nesta rota.`)
     } catch (err: any) {
         throw new Error(`Modelo "${modelo}" retornou erro: ${err.message}`)
     }

@@ -282,7 +282,7 @@ export function RegrasPagina() {
         }
       />
 
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+      <div className="flex flex-col gap-6 p-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <Card>

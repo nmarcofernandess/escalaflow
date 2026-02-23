@@ -674,9 +674,12 @@ export interface IaMensagem {
 
 export interface IaConfiguracao {
   id: number
-  provider: 'gemini' | 'anthropic' | 'openai'
+  provider: 'gemini' | 'openrouter'
   api_key: string
   modelo: string
+  // JSON string with provider-specific settings (auth mode, token/login state, local CLI paths, etc).
+  // Kept as raw string in DB shape for backward compatibility with existing queries.
+  provider_configs_json?: string
   ativo: boolean
   criado_em: string
   atualizado_em: string
@@ -692,4 +695,33 @@ export interface IaConversa {
 
 export interface IaMensagemDB extends IaMensagem {
   conversa_id: string
+}
+
+// ============================================================================
+// CATÁLOGO DE MODELOS IA
+// ============================================================================
+
+export type IaProviderId = 'gemini' | 'openrouter'
+
+export interface IaModelCatalogItem {
+  id: string
+  label: string
+  provider: IaProviderId
+  source: 'static' | 'api' | 'fallback'
+  description?: string
+  context_length?: number
+  pricing?: { prompt?: string; completion?: string }
+  is_free?: boolean
+  supports_tools?: boolean
+  is_agentic?: boolean
+  tags?: string[]
+}
+
+export interface IaModelCatalogResult {
+  provider: IaProviderId
+  source: 'static' | 'api' | 'fallback'
+  models: IaModelCatalogItem[]
+  fetched_at: string
+  cached: boolean
+  message?: string
 }

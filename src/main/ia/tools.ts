@@ -123,6 +123,15 @@ const ExplicarViolacaoSchema = z.object({
   codigo_regra: z.string()
 })
 
+// cadastrar_lote
+const CadastrarLoteSchema = z.object({
+  entidade: z.enum([
+    'colaboradores', 'excecoes', 'demandas', 'tipos_contrato',
+    'setores', 'feriados', 'funcoes'
+  ]),
+  registros: z.array(z.record(z.string(), z.any())).min(1).max(200)
+})
+
 // ==================== IA_TOOLS (Gemini API Format) ====================
 
 export const IA_TOOLS = [
@@ -188,6 +197,11 @@ export const IA_TOOLS = [
         name: 'explicar_violacao',
         description: 'Explica uma regra CLT/CCT ou antipadrão pelo código (ex: H1, H2, H14, S_DEFICIT, AP3).',
         parameters: toJsonSchema(ExplicarViolacaoSchema)
+    },
+    {
+        name: 'cadastrar_lote',
+        description: 'Cadastra MÚLTIPLOS registros de uma vez (batch INSERT). Use quando o usuário cola uma lista, planilha ou CSV com vários itens. Muito mais eficiente que chamar "criar" várias vezes. Aceita até 200 registros por chamada. Cada registro segue as mesmas regras e defaults da tool "criar" (ex: colaboradores recebem defaults inteligentes de sexo, contrato, etc). Retorna resumo com total criado e eventuais erros individuais.',
+        parameters: toJsonSchema(CadastrarLoteSchema)
     }
 ]
 
@@ -269,6 +283,7 @@ const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   preflight: PreflightSchema,
   resumo_sistema: null, // Sem parâmetros
   explicar_violacao: ExplicarViolacaoSchema,
+  cadastrar_lote: CadastrarLoteSchema,
 }
 
 const DICIONARIO_VIOLACOES: Record<string, string> = {
@@ -805,6 +820,99 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 demandas_cadastradas: demandasCount,
                 feriados_no_periodo: feriadosNoPeriodo,
             },
+        }
+    }
+
+    if (name === 'cadastrar_lote') {
+        const { entidade, registros } = args
+
+        if (!ENTIDADES_CRIACAO_PERMITIDAS.has(entidade)) {
+            return { erro: `❌ Criação em lote não permitida para '${entidade}'. Entidades permitidas: ${[...ENTIDADES_CRIACAO_PERMITIDAS].join(', ')}` }
+        }
+
+        const resultados: Array<{ indice: number; sucesso: boolean; id?: number; erro?: string }> = []
+        let criados = 0
+
+        // Cache de setores pra não buscar N vezes
+        const setorCache: Record<number, { id: number; nome: string; hora_abertura: string; hora_fechamento: string } | null> = {}
+        function getSetor(setorId: number) {
+            if (!(setorId in setorCache)) {
+                setorCache[setorId] = db.prepare(
+                    'SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = 1'
+                ).get(setorId) as any ?? null
+            }
+            return setorCache[setorId]
+        }
+
+        for (let i = 0; i < registros.length; i++) {
+            const dados = { ...registros[i] }
+
+            try {
+                // Aplica mesma lógica de defaults da tool 'criar'
+                if (entidade === 'colaboradores') {
+                    if (!dados.nome || typeof dados.nome !== 'string') {
+                        resultados.push({ indice: i, sucesso: false, erro: 'nome obrigatório' })
+                        continue
+                    }
+                    if (!dados.setor_id || typeof dados.setor_id !== 'number') {
+                        resultados.push({ indice: i, sucesso: false, erro: 'setor_id obrigatório' })
+                        continue
+                    }
+
+                    const setor = getSetor(dados.setor_id)
+                    if (!setor) {
+                        resultados.push({ indice: i, sucesso: false, erro: `setor_id ${dados.setor_id} não encontrado` })
+                        continue
+                    }
+
+                    if (!dados.sexo) dados.sexo = 'M'
+                    if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1
+                    if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'regular'
+                    if (!dados.data_nascimento) {
+                        const idade = 25 + Math.floor(Math.random() * 15)
+                        const nasc = new Date()
+                        nasc.setFullYear(nasc.getFullYear() - idade)
+                        dados.data_nascimento = nasc.toISOString().split('T')[0]
+                    }
+                    if (!dados.hora_inicio_min) dados.hora_inicio_min = setor.hora_abertura
+                    if (!dados.hora_fim_max) dados.hora_fim_max = setor.hora_fechamento
+                    if (!dados.ativo) dados.ativo = 1
+                    if (!dados.horas_semanais) {
+                        const contrato = db.prepare('SELECT horas_semanais FROM tipos_contrato WHERE id = ?').get(dados.tipo_contrato_id) as { horas_semanais: number } | undefined
+                        dados.horas_semanais = contrato?.horas_semanais ?? 44
+                    }
+                }
+
+                if (entidade === 'excecoes') {
+                    if (!dados.colaborador_id || !dados.tipo || !dados.data_inicio || !dados.data_fim) {
+                        resultados.push({ indice: i, sucesso: false, erro: 'campos obrigatórios: colaborador_id, tipo, data_inicio, data_fim' })
+                        continue
+                    }
+                    if (!dados.motivo) dados.motivo = dados.tipo
+                }
+
+                const keys = Object.keys(dados)
+                const placeholders = keys.map(() => '?').join(', ')
+                const values = Object.values(dados)
+                const res = db.prepare(
+                    `INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`
+                ).run(...values)
+
+                resultados.push({ indice: i, sucesso: true, id: res.lastInsertRowid as number })
+                criados++
+            } catch (e: any) {
+                resultados.push({ indice: i, sucesso: false, erro: e.message })
+            }
+        }
+
+        const erros = resultados.filter(r => !r.sucesso)
+        return {
+            sucesso: erros.length === 0,
+            total_enviado: registros.length,
+            total_criado: criados,
+            total_erros: erros.length,
+            erros: erros.length > 0 ? erros : undefined,
+            ids_criados: resultados.filter(r => r.sucesso).map(r => r.id),
         }
     }
 

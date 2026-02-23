@@ -57,37 +57,49 @@ export function IaChatView() {
     useIaStore()
   const [texto, setTexto] = useState('')
   const [configurado, setConfigurado] = useState<boolean | null>(null)
+  const [modeloAtivo, setModeloAtivo] = useState<string | null>(null)
   const msgEndRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const contexto = useIaContexto()
 
-  useEffect(() => {
+  const refreshConfig = () => {
     window.electron.ipcRenderer.invoke('ia.configuracao.obter').then((config: any) => {
-      setConfigurado(!!(config?.ativo && config?.api_key))
+      if (!config) {
+        setConfigurado(false)
+        setModeloAtivo(null)
+        return
+      }
+      const temApiKey = !!config.api_key
+      const providerConfigs = config.provider_configs ?? {}
+      const temTokenEmAlgumProvider = Object.values(providerConfigs).some(
+        (pc: any) => pc?.token?.trim()
+      )
+      setConfigurado(temApiKey || temTokenEmAlgumProvider)
+      setModeloAtivo(config.modelo || null)
     })
-  }, [])
+  }
+
+  useEffect(() => { refreshConfig() }, [conversa_ativa_id])
 
   useEffect(() => {
-    msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    window.addEventListener('ia-config-changed', refreshConfig)
+    return () => window.removeEventListener('ia-config-changed', refreshConfig)
+  }, [])
+
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // Scroll only the chat viewport, never ancestor containers (main/page).
+    const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    if (viewport) {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+    }
   }, [mensagens, carregando])
 
   const enviar = async () => {
     if (!texto.trim() || carregando || !conversa_ativa_id) return
 
-    const config = await window.electron.ipcRenderer.invoke('ia.configuracao.obter')
     const now = new Date().toISOString()
-
-    if (!config?.ativo || !config?.api_key) {
-      await adicionarMensagem({
-        id: crypto.randomUUID(),
-        timestamp: now,
-        papel: 'assistente',
-        conteudo:
-          '⚠️ IA não está ativa ou API Key está faltando.\nAcesse Configurações > Inteligência Artificial.',
-      })
-      return
-    }
-
     const msg: IaMensagem = {
       id: crypto.randomUUID(),
       timestamp: now,
@@ -144,7 +156,7 @@ export function IaChatView() {
         <div className="space-y-1">
           <p className="text-sm font-medium">Assistente não configurado</p>
           <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
-            Configure sua API Key do Google Gemini para usar o chat inteligente.
+            Configure um provedor de IA (Gemini ou OpenRouter) para usar o assistente.
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => navigate('/configuracoes')}>
@@ -156,8 +168,8 @@ export function IaChatView() {
   }
 
   return (
-    <>
-      <ScrollArea className="flex-1 min-w-0">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
         <div className="flex min-w-0 max-w-full flex-col gap-3 p-4">
           {mensagens.length === 0 && (
             <div className="flex flex-col items-center justify-center text-center gap-3 text-muted-foreground py-16">
@@ -205,7 +217,8 @@ export function IaChatView() {
         onChange={setTexto}
         onEnviar={enviar}
         disabled={carregando || !conversa_ativa_id}
+        modelo={modeloAtivo}
       />
-    </>
+    </div>
   )
 }

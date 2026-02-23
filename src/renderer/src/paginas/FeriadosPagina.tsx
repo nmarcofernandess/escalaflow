@@ -100,7 +100,7 @@ export function FeriadosPagina() {
         }
       />
 
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+      <div className="flex flex-col gap-6 p-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">

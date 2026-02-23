@@ -1,4 +1,4 @@
-import { Send } from 'lucide-react'
+import { Send, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -7,9 +7,10 @@ interface Props {
   onChange: (v: string) => void
   onEnviar: () => void
   disabled: boolean
+  modelo?: string | null
 }
 
-export function IaChatInput({ value, onChange, onEnviar, disabled }: Props) {
+export function IaChatInput({ value, onChange, onEnviar, disabled, modelo }: Props) {
   return (
     <div className="p-3 shrink-0">
       <div className="relative">
@@ -34,9 +35,14 @@ export function IaChatInput({ value, onChange, onEnviar, disabled }: Props) {
           <Send className="size-4" />
         </Button>
       </div>
-      <p className="text-[10px] text-muted-foreground/50 mt-1 text-center">
-        Shift+Enter nova linha · Enter envia
-      </p>
+      {modelo && (
+        <div className="flex items-center justify-center gap-1 mt-1">
+          <Sparkles className="size-2.5 text-muted-foreground/40" />
+          <p className="text-[10px] text-muted-foreground/40 truncate max-w-[200px]">
+            {modelo}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

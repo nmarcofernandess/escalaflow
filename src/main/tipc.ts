@@ -1,5 +1,7 @@
 import { writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import os from 'node:os'
 import { getDb } from './db/database'
 import { validarEscalaV3 } from './motor/validador'
 import { buildSolverInput, computeSolverScenarioHash, runSolver } from './motor/solver-bridge'
@@ -22,7 +24,7 @@ const electron = require('electron') as typeof import('electron')
 const { tipc } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/main')
 
 const t = tipc.create()
-const { dialog, BrowserWindow } = electron
+const { dialog, BrowserWindow, app } = electron
 
 type RegimeEscalaInput = '5X2' | '6X1'
 
@@ -2129,38 +2131,225 @@ const escalasGerarPorCicloRotativo = t.procedure
 // IA CONFIGURAÇÃO
 // =============================================================================
 
+type IaProviderKey = 'gemini' | 'openrouter'
+
+type IaProviderConfig = {
+  token?: string
+  modelo?: string
+  favoritos?: string[]
+}
+
+type IaProviderConfigs = Partial<Record<IaProviderKey, IaProviderConfig>>
+
+function parseIaProviderConfigs(raw: unknown): IaProviderConfigs {
+  if (!raw) return {}
+  if (typeof raw === 'object' && raw !== null) return raw as IaProviderConfigs
+  if (typeof raw !== 'string') return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? (parsed as IaProviderConfigs) : {}
+  } catch {
+    return {}
+  }
+}
+
+function serializeIaProviderConfigs(configs: IaProviderConfigs): string {
+  try {
+    return JSON.stringify(configs ?? {})
+  } catch {
+    return '{}'
+  }
+}
+
+function normalizeIaConfigRow(raw: any) {
+  if (!raw) return null
+  const providerConfigs = parseIaProviderConfigs(raw.provider_configs_json)
+  return {
+    ...raw,
+    provider_configs_json: serializeIaProviderConfigs(providerConfigs),
+    provider_configs: providerConfigs,
+  }
+}
+
+type IaModelCatalogProvider = 'gemini' | 'openrouter'
+
+type IaModelCatalogItem = {
+  id: string
+  label: string
+  provider: IaModelCatalogProvider
+  source: 'static' | 'api' | 'fallback'
+  description?: string
+  context_length?: number
+  pricing?: { prompt?: string; completion?: string }
+  is_free?: boolean
+  supports_tools?: boolean
+  is_agentic?: boolean
+  tags?: string[]
+}
+
+type IaModelCatalogResult = {
+  provider: IaModelCatalogProvider
+  source: 'static' | 'api' | 'fallback'
+  models: IaModelCatalogItem[]
+  fetched_at: string
+  cached: boolean
+  message?: string
+}
+
+const IA_MODEL_CATALOG_CACHE_TTL_MS = 15 * 60 * 1000
+const iaModelCatalogCache = new Map<string, { at: number; value: IaModelCatalogResult }>()
+
+function makeCatalogCacheKey(provider: IaModelCatalogProvider, cfg?: IaProviderConfig): string {
+  const tokenPresent = Boolean(cfg?.token?.trim())
+  return `${provider}:${tokenPresent ? 'token' : 'no-token'}`
+}
+
+function parsePrice(raw: unknown): number {
+  const n = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : 0
+  return Number.isFinite(n) ? n : 0
+}
+
+function staticGeminiCatalog(): IaModelCatalogResult {
+  const models: IaModelCatalogItem[] = [
+    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['flash', 'preview'] },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['flash'] },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['pro'] },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['flash-lite'] },
+    { id: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking Exp', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['thinking', 'exp'] },
+  ]
+  return {
+    provider: 'gemini',
+    source: 'static',
+    models,
+    fetched_at: new Date().toISOString(),
+    cached: false,
+    message: 'Catálogo Gemini estático (pode ficar desatualizado; adicionar endpoint oficial depois).',
+  }
+}
+
+async function fetchOpenRouterCatalog(): Promise<IaModelCatalogResult> {
+  const response = await fetch('https://openrouter.ai/api/v1/models', {
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (!response.ok) {
+    throw new Error(`OpenRouter API error: ${response.status}`)
+  }
+  const data = await response.json() as { data?: any[] }
+  const models: IaModelCatalogItem[] = (data.data ?? [])
+    .map((m) => {
+      const prompt = String(m?.pricing?.prompt ?? '0')
+      const completion = String(m?.pricing?.completion ?? '0')
+      const isFree = parsePrice(prompt) === 0 && parsePrice(completion) === 0
+      const supportsTools = Array.isArray(m?.supported_parameters) ? m.supported_parameters.includes('tools') : false
+      return {
+        id: String(m.id),
+        label: m.name ? String(m.name) : String(m.id),
+        provider: 'openrouter' as const,
+        source: 'api' as const,
+        description: typeof m.description === 'string' ? m.description : undefined,
+        context_length: Number.isFinite(Number(m.context_length)) ? Number(m.context_length) : undefined,
+        pricing: { prompt, completion },
+        is_free: isFree,
+        supports_tools: supportsTools,
+        // Command Center intelligence: "agentic" here means tool-capable in practice.
+        is_agentic: supportsTools,
+        tags: [
+          ...(isFree ? ['free'] : []),
+          ...(supportsTools ? ['tools', 'agentic'] : []),
+        ],
+      }
+    })
+    .sort((a, b) => {
+      if (a.is_free && !b.is_free) return -1
+      if (!a.is_free && b.is_free) return 1
+      if (a.supports_tools && !b.supports_tools) return -1
+      if (!a.supports_tools && b.supports_tools) return 1
+      return a.label.localeCompare(b.label)
+    })
+
+  return {
+    provider: 'openrouter',
+    source: 'api',
+    models,
+    fetched_at: new Date().toISOString(),
+    cached: false,
+    message: 'Catálogo em tempo real do OpenRouter com metadados free/tools (agêntico).',
+  }
+}
+
+async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProviderConfig, forceRefresh = false): Promise<IaModelCatalogResult> {
+  const cacheKey = makeCatalogCacheKey(provider, cfg)
+  const now = Date.now()
+  const cached = iaModelCatalogCache.get(cacheKey)
+  if (!forceRefresh && cached && now - cached.at < IA_MODEL_CATALOG_CACHE_TTL_MS) {
+    return { ...cached.value, cached: true }
+  }
+
+  let result: IaModelCatalogResult
+  if (provider === 'gemini') {
+    result = staticGeminiCatalog()
+  } else {
+    result = await fetchOpenRouterCatalog()
+  }
+
+  iaModelCatalogCache.set(cacheKey, { at: now, value: { ...result, cached: false } })
+  return result
+}
+
 const iaConfiguracaoObter = t.procedure
   .action(async () => {
     const db = getDb()
     const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get()
-    return config || null
+    return normalizeIaConfigRow(config)
   })
 
 const iaConfiguracaoSalvar = t.procedure
-  .input<{ provider: string; api_key: string; modelo: string; ativo: boolean }>()
+  .input<{ provider: string; api_key: string; modelo: string; provider_configs_json?: string }>()
   .action(async ({ input }) => {
     const db = getDb()
     const existe = db.prepare('SELECT id FROM configuracao_ia LIMIT 1').get() as { id: number } | undefined
+    const providerConfigsJson = serializeIaProviderConfigs(parseIaProviderConfigs(input.provider_configs_json))
 
     if (existe) {
-      db.prepare(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, ativo = ?, atualizado_em = datetime('now') WHERE id = ?`)
-        .run(input.provider, input.api_key, input.modelo, input.ativo ? 1 : 0, existe.id)
+      db.prepare(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, provider_configs_json = ?, ativo = 1, atualizado_em = datetime('now') WHERE id = ?`)
+        .run(input.provider, input.api_key, input.modelo, providerConfigsJson, existe.id)
     } else {
-      db.prepare(`INSERT INTO configuracao_ia (provider, api_key, modelo, ativo) VALUES (?, ?, ?, ?)`)
-        .run(input.provider, input.api_key, input.modelo, input.ativo ? 1 : 0)
+      db.prepare(`INSERT INTO configuracao_ia (provider, api_key, modelo, provider_configs_json, ativo) VALUES (?, ?, ?, ?, 1)`)
+        .run(input.provider, input.api_key, input.modelo, providerConfigsJson)
     }
 
-    return db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get()
+    return normalizeIaConfigRow(db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get())
   })
 
 const iaConfiguracaoTestar = t.procedure
-  .input<{ provider: string; api_key: string; modelo: string }>()
+  .input<{ provider: string; api_key: string; modelo: string; provider_configs_json?: string }>()
   .action(async ({ input }) => {
     try {
+      if (input.provider === 'openrouter') {
+        const providerConfigs = parseIaProviderConfigs(input.provider_configs_json)
+        const providerCfg = providerConfigs.openrouter
+        if (!providerCfg?.token?.trim()) {
+          throw new Error('Token/OpenRouter API Key não configurado.')
+        }
+        const ping = await iaTestarConexao('openrouter', providerCfg.token.trim(), input.modelo)
+        const catalog = await getIaModelCatalog('openrouter', providerCfg, true)
+        return {
+          sucesso: true,
+          mensagem: `${ping.mensagem} · Catálogo: ${catalog.models.length} modelos`,
+          detalhes: { ping, catalog },
+        }
+      }
+
       return await iaTestarConexao(input.provider, input.api_key, input.modelo)
     } catch (error: any) {
       throw new Error(error.message || 'Erro desconhecido ao testar conexão.')
     }
+  })
+
+const iaModelosCatalogo = t.procedure
+  .input<{ provider: IaModelCatalogProvider; provider_config?: IaProviderConfig; force_refresh?: boolean }>()
+  .action(async ({ input }) => {
+    return await getIaModelCatalog(input.provider, input.provider_config, Boolean(input.force_refresh))
   })
 
 const iaChatEnviar = t.procedure
@@ -2382,6 +2571,170 @@ const regrasResetarRegra = t.procedure
   })
 
 // =============================================================================
+// BACKUP / RESTORE (2 handlers)
+// =============================================================================
+
+const BACKUP_TABLES = [
+  'empresa',
+  'tipos_contrato',
+  'setores',
+  'demandas',
+  'colaboradores',
+  'excecoes',
+  'escalas',
+  'alocacoes',
+  'funcoes',
+  'feriados',
+  'setor_horario_semana',
+  'empresa_horario_semana',
+  'contrato_perfis_horario',
+  'colaborador_regra_horario',
+  'colaborador_regra_horario_excecao_data',
+  'demandas_excecao_data',
+  'escala_ciclo_modelos',
+  'escala_ciclo_itens',
+  'escala_decisoes',
+  'escala_comparacao_demanda',
+  'configuracao_ia',
+  'regra_empresa',
+  'ia_conversas',
+  'ia_mensagens',
+] as const
+
+const dadosExportar = t.procedure.action(async (): Promise<{ filepath: string } | null> => {
+  const now = new Date()
+  const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
+  const result = await dialog.showSaveDialog({
+    defaultPath: `escalaflow-backup-${ts}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+
+  if (result.canceled || !result.filePath) return null
+
+  const db = getDb()
+  const payload: Record<string, unknown[]> = {}
+
+  for (const table of BACKUP_TABLES) {
+    try {
+      payload[table] = db.prepare(`SELECT * FROM ${table}`).all()
+    } catch {
+      // tabela pode não existir em DBs antigos — ignora
+    }
+  }
+
+  const backup = {
+    _meta: {
+      app: 'escalaflow',
+      versao: app.getVersion(),
+      criado_em: now.toISOString(),
+      tabelas: Object.keys(payload).length,
+      registros: Object.values(payload).reduce((acc, rows) => acc + rows.length, 0),
+    },
+    dados: payload,
+  }
+
+  await writeFile(result.filePath, JSON.stringify(backup, null, 2), 'utf-8')
+  return { filepath: result.filePath }
+})
+
+const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; registros: number } | null> => {
+  const result = await dialog.showOpenDialog({
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile'],
+  })
+
+  if (result.canceled || !result.filePaths[0]) return null
+
+  const raw = readFileSync(result.filePaths[0], 'utf-8')
+  const backup = JSON.parse(raw) as {
+    _meta?: { app?: string }
+    dados?: Record<string, unknown[]>
+  }
+
+  if (!backup?._meta?.app || backup._meta.app !== 'escalaflow') {
+    throw new Error('Arquivo de backup invalido. Selecione um arquivo exportado pelo EscalaFlow.')
+  }
+
+  if (!backup.dados || typeof backup.dados !== 'object') {
+    throw new Error('Arquivo de backup corrompido. Nenhum dado encontrado.')
+  }
+
+  const db = getDb()
+
+  // Ordem importa por causa de FKs — tabelas pai antes de filhas
+  const IMPORT_ORDER = [
+    'empresa',
+    'tipos_contrato',
+    'setores',
+    'funcoes',
+    'contrato_perfis_horario',
+    'colaboradores',
+    'demandas',
+    'excecoes',
+    'setor_horario_semana',
+    'empresa_horario_semana',
+    'colaborador_regra_horario',
+    'colaborador_regra_horario_excecao_data',
+    'demandas_excecao_data',
+    'feriados',
+    'escalas',
+    'alocacoes',
+    'escala_decisoes',
+    'escala_comparacao_demanda',
+    'escala_ciclo_modelos',
+    'escala_ciclo_itens',
+    'configuracao_ia',
+    'regra_empresa',
+    'ia_conversas',
+    'ia_mensagens',
+  ] as const
+
+  let totalTabelas = 0
+  let totalRegistros = 0
+
+  db.exec('PRAGMA foreign_keys = OFF')
+
+  try {
+    db.transaction(() => {
+      // Limpa todas as tabelas na ordem inversa (filhas antes de pais)
+      for (let i = IMPORT_ORDER.length - 1; i >= 0; i--) {
+        const table = IMPORT_ORDER[i]
+        try {
+          db.prepare(`DELETE FROM ${table}`).run()
+        } catch {
+          // tabela pode não existir
+        }
+      }
+
+      // Insere na ordem certa (pais antes de filhas)
+      for (const table of IMPORT_ORDER) {
+        const rows = backup.dados![table]
+        if (!rows || !Array.isArray(rows) || rows.length === 0) continue
+
+        const sample = rows[0] as Record<string, unknown>
+        const columns = Object.keys(sample)
+        const placeholders = columns.map(() => '?').join(', ')
+        const stmt = db.prepare(
+          `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
+        )
+
+        for (const row of rows) {
+          const r = row as Record<string, unknown>
+          stmt.run(...columns.map((col) => r[col] ?? null))
+        }
+
+        totalTabelas++
+        totalRegistros += rows.length
+      }
+    })()
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON')
+  }
+
+  return { tabelas: totalTabelas, registros: totalRegistros }
+})
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -2474,6 +2827,7 @@ export const router = {
   'ia.configuracao.obter': iaConfiguracaoObter,
   'ia.configuracao.salvar': iaConfiguracaoSalvar,
   'ia.configuracao.testar': iaConfiguracaoTestar,
+  'ia.modelos.catalogo': iaModelosCatalogo,
   'ia.chat.enviar': iaChatEnviar,
   'ia.conversas.listar': iaConversasListar,
   'ia.conversas.obter': iaConversasObter,
@@ -2485,6 +2839,9 @@ export const router = {
   'ia.conversas.arquivarTodas': iaConversasArquivarTodas,
   'ia.conversas.deletarArquivadas': iaConversasDeletarArquivadas,
   'ia.mensagens.salvar': iaMensagensSalvar,
+  // Backup / Restore
+  'dados.exportar': dadosExportar,
+  'dados.importar': dadosImportar,
 }
 
 export type Router = typeof router
