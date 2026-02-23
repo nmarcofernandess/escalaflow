@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            solver-bin: escalaflow-solver
+          - os: windows-latest
+            platform: win
+            solver-bin: escalaflow-solver.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build solver binary (PyInstaller)
+        run: |
+          pip install -r solver/requirements.txt
+          cd solver
+          pyinstaller escalaflow-solver.spec --distpath ../solver-bin/ --clean --noconfirm
+
+      - name: Verify solver binary
+        shell: bash
+        run: |
+          ls -la solver-bin/
+          file solver-bin/${{ matrix.solver-bin }} || true
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Electron app
+        run: npm run build
+
+      - name: Package (${{ matrix.platform }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+
+      - name: List dist output
+        shell: bash
+        run: ls -la dist/*.dmg dist/*.exe dist/*.blockmap dist/*.yml 2>/dev/null || ls -la dist/
+
+      - name: Upload Mac DMG
+        if: matrix.platform == 'mac'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/*.dmg
+            dist/*.blockmap
+            dist/latest-mac.yml
+
+      - name: Upload Windows installer
+        if: matrix.platform == 'win'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
