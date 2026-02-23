@@ -1197,7 +1197,7 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 
 | `regras.listar` | `regras.atualizar` | `regras.resetarEmpresa` | `regras.resetarRegra` |
 
-#### IA (14 handlers)
+#### IA (15 handlers)
 
 | Handler | Input | O que retorna | Notas |
 |---------|-------|---------------|-------|
@@ -1241,120 +1241,142 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 |---------|----------|----------------|----------------|
 | Empresa | 4 | 2 (atualizar, horarios.atualizar) | 2 |
 | Tipos Contrato | 9 | 4 (CRUD + perfis CRUD) | 5 |
-| Setores | 16 | 9 | 7 |
+| Setores | 15 | 9 | 6 |
 | Funcoes | 5 | 3 | 2 |
 | Feriados | 3 | 2 | 1 |
-| Colaboradores | 10 | 5 | 5 |
+| Colaboradores | 11 | 6 | 5 |
 | Excecoes | 5 | 3 | 2 |
-| Escalas | 12 | 5 (gerar, ajustar, oficializar, deletar, ciclo) | 7 |
+| Escalas | 14 | 6 (gerar, ajustar, oficializar, deletar, ciclo×2) | 8 |
 | Dashboard | 1 | 0 | 1 |
 | Export | 4 | 0 | 4 (geram arquivos no filesystem) |
 | Regras | 4 | 3 | 1 |
-| IA | 14 | 7 | 7 |
+| IA | 16 | 8 | 8 |
 | Backup | 2 | 1 | 1 |
-| **TOTAL** | **89** | **44** | **45** |
+| **TOTAL** | **~93** | **47** | **46** |
 
-### 5.4 O que a IA pode vs nao pode acessar via IPC
+> **Nota:** A contagem exata pode variar ±2 dependendo de como sub-handlers sao agrupados. O grep de `t.procedure` retorna ~90 ocorrencias.
 
-**A IA acessa DIRETAMENTE (via suas tools):**
-- `escalas.gerar` → tool `gerar_escala`
-- `escalas.ajustar` → tool `ajustar_alocacao`
-- `escalas.oficializar` → tool `oficializar_escala`
-- `regras.atualizar` → tool `editar_regra`
-- SELECT em varias tabelas → tool `consultar` (whitelist)
+### 5.4 O que a IA pode vs nao pode acessar
 
-**A IA NAO tem tools para (89 - 5 = 84 handlers inacessiveis):**
-- TUDO de empresa, setores, funcoes, feriados, colaboradores, excecoes, tipos contrato, perfis, regras colab, demandas, ciclos, export, dashboard, backup
-- Cada um desses e uma operacao que o usuario precisa fazer pela UI
+A IA tem **28 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
 
-**Impacto prático:**
-A IA so e autonoma no dominio de ESCALAS e REGRAS DO MOTOR. Para todo o resto, ela pode INFORMAR e ORIENTAR, mas nao pode EXECUTAR.
+**A IA EXECUTA DIRETAMENTE (via 28 tools):**
+
+| Capacidade | Tool(s) | IPC equivalente |
+|-----------|---------|-----------------|
+| Discovery completo | `get_context`, `consultar` (18 tabelas), `buscar_colaborador`, `obter_alertas` | Multiplos SELECT |
+| CRUD generico | `criar` (7 entidades), `atualizar` (5), `deletar` (4), `cadastrar_lote` | colaboradores/setores/excecoes/demandas/funcoes/feriados/tipos_contrato |
+| Gerar escala | `gerar_escala` | escalas.gerar |
+| Ajustar alocacao | `ajustar_alocacao`, `ajustar_horario` | escalas.ajustar |
+| Oficializar | `oficializar_escala` | escalas.oficializar |
+| Preflight | `preflight`, `preflight_completo` | escalas.preflight |
+| Diagnostico | `diagnosticar_escala`, `explicar_violacao` | validarEscalaV3 |
+| Regras do motor | `editar_regra`, `resetar_regras_empresa` | regras.atualizar/resetar |
+| Regras por colaborador | `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data` | colaboradores.*RegraHorario |
+| Perfis de horario | `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario` | perfisHorario.* |
+| Horario funcionamento | `configurar_horario_funcionamento` | empresa.horarios / setores.horarios |
+| Demanda excecao | `salvar_demanda_excecao_data` | setores.salvarDemandaExcecaoData |
+| KPIs | `resumir_horas_setor` | Queries agregadas |
+
+**A IA NAO tem tools para:**
+- `escala_ciclo_modelos/itens` — pode LER via `consultar`, mas nao criar/editar ciclos (orientar a usar a UI)
+- `tipos_contrato` — pode LER via `consultar`, criacao/edicao e pela UI
+- Export HTML/PDF — requer acesso ao filesystem
+- Dashboard metricas — handler `dashboard.resumo` nao exposto como tool
+- Backup/Restore — handler `dados.exportar/importar` nao exposto
+- Timeline dia (salvar horarios de demanda por drag) — handler `salvarTimelineDia` nao exposto
+
+**Impacto pratico:**
+A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoes visuais (timeline drag, export PDF) ou raramente necessarias via chat (ciclo rotativo, backup).
 
 ---
 
 ## 6. Sistema IA Atual (Fase 5)
 
 > **Arquivos fonte:**
-> - `src/main/ia/cliente.ts` (335 linhas) — orquestrador de mensagens
-> - `src/main/ia/tools.ts` (1593 linhas) — 13 tools com Zod + handlers
-> - `src/main/ia/system-prompt.ts` (423 linhas) — prompt com 9 secoes
-> - `src/main/ia/discovery.ts` (201 linhas) — auto-contexto por pagina
+> - `src/main/ia/cliente.ts` (~550 linhas) — orquestrador com streaming
+> - `src/main/ia/tools.ts` (~3240 linhas) — 28 tools com Zod + handlers
+> - `src/main/ia/system-prompt.ts` (~408 linhas) — prompt com 8 secoes
+> - `src/main/ia/discovery.ts` (~300 linhas) — auto-contexto por pagina + alertas proativos
 
 ### 6.1 Arquitetura geral do fluxo IA
 
 ```
 [Renderer]                [Main Process]                 [LLM Provider]
     |                          |                              |
-    |  iaEnviarMsg(msg,hist)   |                              |
+    |  ia.chat.enviar(msg)     |                              |
     |─────────────────────────>|                              |
     |                          |                              |
-    |                    ┌─────┴──────┐                       |
-    |                    │ resolveKey │ provider_configs_json  |
-    |                    │            │ → api_key fallback     |
-    |                    └─────┬──────┘                       |
+    |                    resolveKey (provider_configs_json)    |
     |                          |                              |
     |                    buildFullSystemPrompt(contexto)       |
     |                    = SYSTEM_PROMPT + buildContextBriefing|
     |                          |                              |
     |                    buildChatMessages(historico, msg)     |
-    |                    = [{role,content}...] user/assistant  |
+    |                    = [{role,content}...] com tool_calls  |
     |                          |                              |
     |                    getVercelAiTools()                    |
-    |                    = 13 tools com Zod + execute()        |
+    |                    = 28 tools com Zod + execute()        |
     |                          |                              |
-    |                    generateText({                        |
+    |                    streamText({                          |
     |                      model, system, messages,            |
     |                      tools,                              |
     |                      stopWhen: stepCountIs(10)           |
     |                    })────────────────────────────────────>|
     |                          |                              |
-    |                          |<─── step 1: tool_call ───────|
-    |                          |     executeTool() local       |
-    |                          |──── tool_result ─────────────>|
-    |                          |                              |
-    |                          |<─── step N: text ────────────|
+    |  ia:stream text-delta    |<─── streaming tokens ────────|
+    |<─────────────────────────|                              |
+    |  ia:stream tool-call     |<─── tool_call ───────────────|
+    |<─────────────────────────|     executeTool() local       |
+    |  ia:stream tool-result   |──── tool_result ─────────────>|
+    |<─────────────────────────|                              |
+    |                          |<─── mais steps ──────────────|
     |                          |                              |
     |                    [Se text vazio + tools executadas]    |
     |                    → forca turno final sem tools         |
     |                          |                              |
     |                    extractToolCallsFromSteps()           |
-    |                    = ToolCall[] para UI                  |
-    |                          |
-```
-
-**Code path principal** (`cliente.ts:143-207`):
-```typescript
-async function _callWithVercelAiSdkTools(providerLabel, config, currentMsg, historico, contexto, createModel) {
-    const fullSystemPrompt = buildFullSystemPrompt(contexto)  // SYSTEM_PROMPT + discovery
-    const messages = buildChatMessages(historico, currentMsg)  // só user/assistant
-    const tools = getVercelAiTools()                           // 13 tools com Zod
-    const model = await maybeWrapModelWithDevTools(createModel(modelo))
-
-    const result = await generateText({
-        model, system: fullSystemPrompt, messages, tools,
-        stopWhen: stepCountIs(10)  // CRÍTICO: sem isso, para no primeiro tool call!
-    })
-
-    const acoes = extractToolCallsFromSteps(result.steps)
-
-    // FIX: Se executou tools mas não gerou texto, força resposta
-    if ((!finalText || finalText.trim().length === 0) && acoes.length > 0) {
-        messages.push({ role: 'user', content: 'Responda agora em linguagem natural...' })
-        const finalResult = await generateText({ model, system: fullSystemPrompt, messages })
-        // SEM tools → força texto puro
-    }
-    return { resposta: finalText, acoes }
-}
-```                              |
+    |                    = ToolCall[] para persistencia        |
+    |                          |                              |
     |  {resposta, acoes}       |                              |
     |<─────────────────────────|                              |
+```
+
+**Entry point principal** (`cliente.ts`):
+```typescript
+async function iaEnviarMensagemStream(config, currentMsg, historico, contexto) {
+    const fullSystemPrompt = buildFullSystemPrompt(contexto)
+    const messages = buildChatMessages(historico, currentMsg)  // inclui tool_calls
+    const tools = getVercelAiTools()                           // 28 tools com Zod
+    const model = await maybeWrapModelWithDevTools(createModel(modelo))
+
+    const result = streamText({
+        model, system: fullSystemPrompt, messages, tools,
+        stopWhen: stepCountIs(10)
+    })
+
+    // Emite eventos IPC em tempo real pro renderer
+    for await (const part of result.fullStream) {
+      if (part.type === 'text-delta') broadcastToRenderer('ia:stream', { type: 'text-delta', delta: part.text })
+      if (part.type === 'tool-call') broadcastToRenderer('ia:stream', { type: 'tool-call-start', ... })
+      if (part.type === 'tool-result') broadcastToRenderer('ia:stream', { type: 'tool-result', ... })
+    }
+
+    // Follow-up se executou tools mas nao gerou texto
+    if ((!finalText || finalText.trim().length === 0) && acoes.length > 0) {
+        const followUp = await generateText({ model, system: fullSystemPrompt, messages: [..., nudge] })
+    }
+}
 ```
 
 **Ponto critico — `stopWhen: stepCountIs(10)`:**
 Sem essa opcao, o AI SDK para no PRIMEIRO tool call e retorna sem executar nada. Com ela, o SDK roda ate 10 turnos (tool call → tool result → proximo passo) antes de parar. Isso permite que a IA chame `get_context()`, depois `consultar()`, depois `gerar_escala()` tudo na mesma interacao.
 
+**Streaming em tempo real:**
+O sistema usa `streamText()` — tokens aparecem progressivamente no frontend via eventos IPC `ia:stream`. Tool calls e results tambem sao emitidos em tempo real.
+
 **Fix para texto vazio:**
-Alguns modelos (Gemini em particular) executam tools mas nao geram texto ao final. Quando isso acontece, o sistema forca um turno extra SEM tools, injetando `"Responda agora em linguagem natural o que voce fez e o resultado."` como mensagem do usuario. Isso garante que o usuario SEMPRE recebe uma resposta textual.
+Alguns modelos (Gemini em particular) executam tools mas nao geram texto ao final. Quando isso acontece, o sistema forca um turno extra SEM tools com nudge. Isso garante que o usuario SEMPRE recebe uma resposta textual.
 
 ### 6.2 Providers suportados
 
@@ -1367,58 +1389,63 @@ Alguns modelos (Gemini em particular) executam tools mas nao geram texto ao fina
 1. `config.provider_configs_json[provider].token` — UI multi-provider salva aqui
 2. `config.api_key` — fallback legado
 
-Ambos os providers usam a mesma funcao `_callWithVercelAiSdkTools()` — a unica diferenca e a factory do model. Isso garante comportamento identico independente do provider.
+Ambos os providers usam a mesma logica — a unica diferenca e a factory do model.
 
 ### 6.3 Historico de mensagens
 
-O `buildChatMessages()` converte `IaMensagem[]` do banco para o formato AI SDK:
+O `buildChatMessages()` converte `IaMensagem[]` do banco para o formato AI SDK **incluindo tool calls**:
 
 ```
-IaMensagem { papel: 'usuario' | 'assistente', conteudo: string }
-    ↓
-AI SDK { role: 'user' | 'assistant', content: string }
+IaMensagem { papel: 'usuario', conteudo: string }
+    → { role: 'user', content: string }
+
+IaMensagem { papel: 'assistente', conteudo: string, tool_calls_json: ToolCall[] }
+    → { role: 'assistant', content: [
+          { type: 'text', text: conteudo },
+          ...tool_calls.map(tc => { type: 'tool-call', toolCallId, toolName, input })
+       ]}
+    → { role: 'tool', content:
+          tool_calls.map(tc => { type: 'tool-result', toolCallId, toolName, output })
+       }
 ```
 
 **Regras:**
-- Filtra SOMENTE `papel === 'usuario'` ou `'assistente'` (ignora mensagens de sistema/tool)
+- Filtra `papel === 'usuario'` ou `'assistente'` (ignora mensagens de sistema)
+- Mensagens assistente COM tool_calls geram DUAS mensagens: assistant (com tool-call parts) + tool (com tool-result parts)
+- Tool results truncados em ~400 chars pra nao estourar contexto
 - Adiciona a mensagem atual do usuario ao final
-- Mensagens de tool call NAO sao re-enviadas no historico (o AI SDK cuida disso internamente via steps)
+- Isso permite que a IA "lembre" quais tools chamou e os resultados em turnos anteriores
 
-### 6.4 System prompt — 9 secoes
+### 6.4 System prompt — 8 secoes
 
-O `SYSTEM_PROMPT` em `system-prompt.ts` tem 423 linhas com 9 secoes distintas:
+O `SYSTEM_PROMPT` em `system-prompt.ts` tem ~408 linhas com 8 secoes:
 
-| # | Secao | Linhas | Proposito |
-|---|-------|--------|-----------|
-| 1 | CRITICAL WORKFLOW — DISCOVERY FIRST | 1-34 | Obriga `get_context()` como PRIMEIRA chamada SEMPRE |
-| 2 | SEMPRE FINALIZE COM RESPOSTA EM TEXTO | 36-67 | Proibe silencio apos tool calls |
-| 3 | REGRA ZERO — NUNCA PECA INFORMACOES | 69-83 | Proibe perguntar ao usuario o que pode buscar sozinha |
-| 4 | NUNCA MOSTRE ERROS TECNICOS | 85-129 | Erros sao pra IA corrigir, nao mostrar |
-| 5 | PROTOCOLO DE RESOLUCAO DE NOMES | 131-147 | nome → get_context() → ID → usar ID |
-| 6 | AUTO-CONTEXTO DA PAGINA | 148-162 | Hierarquia: get_context() > auto-contexto |
-| 7 | DOMINIO DE NEGOCIO + REGRAS V6 | 164-280 | Entidades, Motor V3, Dicionario de regras, Exemplos |
-| 8 | JORNADA SOCRATICA | 392-404 | Fluxo de ajuda com escalas (9 passos) |
-| 9 | CONDUTA E TOM DE VOZ | 407-423 | Persona "Miss Monday do EscalaFlow" |
+| # | Secao | Proposito |
+|---|-------|-----------|
+| 1 | **Conhecimento CLT/CCT** | Contratos, regras legais, grid 15min, precedencia horarios, deficit SOFT. Conhecimento de cor — nao precisa de tool |
+| 2 | **O Motor e Como Ele Funciona** | Fluxo solver, INFEASIBLE, lifecycle RASCUNHO→OFICIAL→ARQUIVADA, modos (30s/120s), rules_override, diagnostico |
+| 3 | **Entidades — O Modelo Mental** | Empresa, Setor, Colaborador, Demanda, Excecao, Funcao, Escala, 35 regras (16 CLT, 7 SOFT, 12 AP) |
+| 4 | **Tools — Guia de Uso Inteligente** | 28 tools organizadas por workflow (discovery, CRUD, geracao, validacao, regras, regras colab, KPI, perfis, horarios) |
+| 5 | **Schema de referencia** | Tabelas com FKs explicitas pra que a IA saiba WHERE/JOIN/filtros |
+| 6 | **Workflows Comuns — Receitas Prontas** | 8 receitas: gerar escala, ferias, INFEASIBLE, Black Friday, ajuste manual, ciclo rotativo, estagiarios, regras configuraveis |
+| 7 | **Formatacao de Respostas** | Sempre finalizar com texto, lidar com erros gracefully |
+| 8 | **Conduta, Limitacoes e Erros** | DOs/DONTs, protocolo de erros, persona |
 
-**Detalhe da secao 7 — Dicionario completo no prompt:**
-O system prompt inclui a lista completa de regras (H1-H18, S_*, DIAS_TRABALHO, MIN_DIARIO) com descricoes curtas. Isso permite que a IA responda "o que e H14?" sem precisar chamar `explicar_violacao`.
+**Detalhe da secao 4 — 28 tools por workflow:**
+O prompt organiza as tools por INTENCAO (nao por nome tecnico):
+- Discovery: `get_context`, `consultar`, `buscar_colaborador`, `obter_alertas`
+- CRUD: `criar`, `atualizar`, `deletar`, `cadastrar_lote`
+- Geracao: `preflight`, `preflight_completo`, `gerar_escala`
+- Ajuste: `ajustar_alocacao`, `ajustar_horario`, `oficializar_escala`
+- Diagnostico: `diagnosticar_escala`, `explicar_violacao`
+- Regras motor: `editar_regra`, `resetar_regras_empresa`
+- Regras colaborador: `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data`
+- KPI: `resumir_horas_setor`
+- Perfis: `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario`
+- Horarios: `configurar_horario_funcionamento`
 
-**Detalhe da secao 7 — Schema reference:**
-O prompt lista TODAS as tabelas consultaveis com seus campos, para que a IA saiba quais filtros usar em `consultar()`:
-```
-- setores: id, nome, hora_abertura, hora_fechamento, ativo
-- colaboradores: id, setor_id, tipo_contrato_id, nome, sexo, ativo, rank, prefere_turno, tipo_trabalhador
-- alocacoes: id, escala_id, colaborador_id, data, status, hora_inicio, hora_fim, minutos_trabalho
-- (... 12 tabelas no total)
-```
-
-**Detalhe da secao 7 — Workflow CSV/lote:**
-O prompt documenta um fluxo de 5 passos pra importacao em massa:
-1. get_context() pra descobrir setores existentes
-2. Parsear CSV/tabela
-3. Mostrar plano de mapeamento
-4. cadastrar_lote() com registros mapeados
-5. Resumo final
+**Detalhe da secao 5 — Schema reference:**
+O prompt lista TODAS as tabelas consultaveis com seus campos, para que a IA saiba quais filtros usar em `consultar()`. Inclui 18 tabelas.
 
 ### 6.5 Auto-contexto (`discovery.ts`)
 
@@ -1427,13 +1454,19 @@ O `buildContextBriefing()` e chamado ANTES da requisicao ao LLM e monta uma stri
 **Conteudo SEMPRE injetado (independente da pagina):**
 - Resumo global: total setores ativos, colaboradores ativos, escalas RASCUNHO/OFICIAL
 - Lista de setores com contagem de colaboradores
+- Feriados proximos 30 dias (com flag `proibido_trabalhar`)
+- Regras customizadas (overrides empresa vs default sistema)
+- Alertas proativos:
+  - CRITICAL: escalas RASCUNHO com violacoes HARD
+  - WARNING: escalas desatualizadas (input_hash mismatch)
+  - INFO: excecoes expirando em 7 dias
 
 **Conteudo CONDICIONAL por rota:**
 
 | Condicao | Dados injetados |
 |----------|-----------------|
-| `contexto.setor_id` presente | `_infoSetor()`: lista de colaboradores (nome, contrato, horas), demandas planejadas, escala atual (indicadores, distribuicao TRABALHO/FOLGA) |
-| `contexto.colaborador_id` presente | `_infoColaborador()`: setor, contrato, regime, preferencia de turno, excecoes ativas |
+| `contexto.setor_id` presente | `_infoSetor()`: lista de colaboradores (nome, contrato, horas), excecoes ativas (ferias/atestados), demandas planejadas, escala atual (indicadores, score, cobertura%, violacoes, distribuicao TRABALHO/FOLGA) |
+| `contexto.colaborador_id` presente | `_infoColaborador()`: setor, contrato, regime, tipo_trabalhador, preferencia de turno, excecoes ativas |
 | `contexto.pagina` | `_dicaPagina()`: hint contextual (ex: "O usuario esta na pagina de ESCALA — use dados acima sem perguntar") |
 
 **Paginas com dicas registradas:**
@@ -1443,30 +1476,77 @@ O `buildContextBriefing()` e chamado ANTES da requisicao ao LLM e monta uma stri
 1. `get_context()` tool — JSON estruturado, sempre mais confiavel
 2. Auto-contexto — String markdown, complementar (pode estar desatualizado se usuario navegou)
 
-### 6.6 As 13 tools — visao geral
+### 6.6 As 28 tools — visao geral
 
-Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts:66`) em formato Gemini API e convertidas para formato Vercel AI SDK via `getVercelAiTools()` (`tools.ts:418`). Cada tool tem:
-- Schema Zod para validacao runtime (`tools.ts:502-518`)
-- Funcao `execute()` que chama `executeTool(name, args)` (`tools.ts:497`)
+Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemini API e convertidas para formato Vercel AI SDK via `getVercelAiTools()`. Cada tool tem:
+- Schema Zod para validacao runtime
+- Funcao `execute()` que chama `executeTool(name, args)`
 - Descricao detalhada com exemplos (para o LLM)
 
-| # | Tool | Tipo | Schema Zod | O que faz |
-|---|------|------|------------|-----------|
-| 1 | `get_context` | Discovery | nenhum | Retorna setores + colaboradores + tipos_contrato + escalas ativas com JOINs |
-| 2 | `consultar` | Discovery | ConsultarSchema | SELECT generico com filtros — 12 entidades, campos validados |
-| 3 | `criar` | Acao | CriarSchema | INSERT generico — 7 entidades, defaults inteligentes pra colaboradores/excecoes |
-| 4 | `atualizar` | Acao | AtualizarSchema | UPDATE generico — 5 entidades |
-| 5 | `deletar` | Acao | DeletarSchema | DELETE — 4 entidades |
-| 6 | `editar_regra` | Acao | EditarRegraSchema | INSERT OR REPLACE em regra_empresa — valida editavel=1 |
-| 7 | `gerar_escala` | Acao | GerarEscalaSchema | buildSolverInput → runSolver(60s) → persistirSolverResult |
-| 8 | `ajustar_alocacao` | Acao | AjustarAlocacaoSchema | UPDATE alocacoes (escala_id + colaborador_id + data → status) |
-| 9 | `oficializar_escala` | Acao | OficializarEscalaSchema | UPDATE escalas status='OFICIAL' — valida violacoes_hard=0 |
-| 10 | `preflight` | Validacao | PreflightSchema | Verifica setor ativo + colabs + demandas + feriados |
-| 11 | `resumo_sistema` | Discovery | nenhum | DEPRECATED — contadores basicos (use get_context) |
-| 12 | `explicar_violacao` | Referencia | ExplicarViolacaoSchema | Lookup em DICIONARIO_VIOLACOES + fallback para regra_definicao |
-| 13 | `cadastrar_lote` | Acao | CadastrarLoteSchema | Batch INSERT ate 200 registros — mesmos defaults de `criar` |
+#### Discovery (7 tools — read-only)
 
-**Dispatch: como `executeTool()` funciona** (`tools.ts:497-525`):
+| # | Tool | Schema | O que faz |
+|---|------|--------|-----------|
+| 1 | `get_context` | nenhum | Retorna setores + colaboradores + tipos_contrato + escalas ativas com JOINs. SEMPRE primeira chamada. |
+| 2 | `buscar_colaborador` | `{nome_ou_id}` | Busca semantica por nome (LIKE) ou ID. Retorna colab + setor + contrato. |
+| 3 | `obter_regra_horario_colaborador` | `{colaborador_id}` | Regra individual 1:1 + perfil horario + excecoes por data. |
+| 4 | `consultar` | `{entidade, filtros?}` | SELECT generico em 18 tabelas com campos validados. Limit 50 rows. Enrichment FK→nome. |
+| 5 | `diagnosticar_escala` | `{escala_id}` | Roda validarEscalaV3() e retorna indicadores + violacoes atualizados. |
+| 6 | `explicar_violacao` | `{codigo_regra}` | Lookup em DICIONARIO_VIOLACOES (20+ regras) + fallback pra regra_definicao. |
+| 7 | `obter_alertas` | nenhum | Agregacao: poucos colabs, sem escala, violacoes HARD, escala desatualizada (hash), excecoes expirando. |
+
+#### CRUD generico (4 tools)
+
+| # | Tool | Schema | O que faz |
+|---|------|--------|-----------|
+| 8 | `criar` | `{entidade, dados}` | INSERT generico — 7 entidades permitidas, defaults inteligentes pra colabs/excecoes. |
+| 9 | `atualizar` | `{entidade, id, dados}` | UPDATE parcial — 5 entidades permitidas. |
+| 10 | `deletar` | `{entidade, id}` | DELETE — 4 entidades permitidas. Soft delete onde aplicavel. |
+| 11 | `cadastrar_lote` | `{entidade, registros[]}` | Batch INSERT ate 200 registros com mesmos defaults de `criar`. |
+
+#### Geracao e ajuste de escalas (6 tools)
+
+| # | Tool | Schema | O que faz |
+|---|------|--------|-----------|
+| 12 | `preflight` | `{setor_id, datas}` | Verifica viabilidade rapida: setor ativo, colabs, demandas, feriados. |
+| 13 | `preflight_completo` | `{setor_id, datas}` | Versao completa: chama `buildEscalaPreflight()` com capacity checks por colab/dia. |
+| 14 | `gerar_escala` | `{setor_id, datas, rules_override?}` | buildSolverInput → runSolver(60s) → persistirSolverResult. Retorna escala RASCUNHO. |
+| 15 | `ajustar_alocacao` | `{escala_id, colab_id, data, status}` | UPDATE alocacoes.status (TRABALHO/FOLGA/INDISPONIVEL). |
+| 16 | `ajustar_horario` | `{escala_id, colab_id, data, hora_inicio, hora_fim}` | UPDATE hora_inicio/hora_fim em alocacoes. Revalida via validarEscalaV3(). |
+| 17 | `oficializar_escala` | `{escala_id}` | UPDATE status='OFICIAL'. Valida violacoes_hard=0 antes de permitir. |
+
+#### Regras do motor (2 tools)
+
+| # | Tool | Schema | O que faz |
+|---|------|--------|-----------|
+| 18 | `editar_regra` | `{codigo, status}` | INSERT OR REPLACE em regra_empresa. Valida editavel=1. |
+| 19 | `resetar_regras_empresa` | nenhum | DELETE FROM regra_empresa. Volta tudo ao default do sistema. |
+
+#### Regras por colaborador (4 tools)
+
+| # | Tool | Schema | O que faz |
+|---|------|--------|-----------|
+| 20 | `salvar_regra_horario_colaborador` | `{colaborador_id, ...}` | UPSERT regra 1:1 (perfil, janela, ciclo domingo, folga fixa). |
+| 21 | `definir_janela_colaborador` | `{colaborador_id, inicio, fim}` | Wrapper simplificado: define janela de horario por nome natural. |
+| 22 | `upsert_regra_excecao_data` | `{colaborador_id, data, ...}` | Override pontual por data (inicio/fim, turno, forcar folga). |
+| 23 | `salvar_demanda_excecao_data` | `{setor_id, data, ...}` | Override de demanda por data (Black Friday, vespera feriado). |
+
+#### Perfis e horarios (4 tools)
+
+| # | Tool | Schema | O que faz |
+|---|------|--------|-----------|
+| 24 | `listar_perfis_horario` | `{tipo_contrato_id}` | Lista perfis de horario por contrato. |
+| 25 | `salvar_perfil_horario` | `{tipo_contrato_id, nome, ...}` | CREATE ou UPDATE perfil de horario. |
+| 26 | `deletar_perfil_horario` | `{id}` | Hard DELETE perfil. |
+| 27 | `configurar_horario_funcionamento` | `{dia_semana, ...}` | UPDATE empresa_horario_semana ou UPSERT setor_horario_semana. |
+
+#### KPI (1 tool)
+
+| # | Tool | Schema | O que faz |
+|---|------|--------|-----------|
+| 28 | `resumir_horas_setor` | `{setor_id, periodo?}` | Query agregada: horas por pessoa, totais, distribuicao. |
+
+**Dispatch: como `executeTool()` funciona:**
 ```typescript
 export async function executeTool(name: string, args: Record<string, any>): Promise<any> {
     const db = (global as any).mockDb || getDb()
@@ -1476,34 +1556,17 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (schema) {
         const validation = schema.safeParse(args)
         if (!validation.success) {
-            return toolError('INVALID_TOOL_ARGUMENTS', `❌ Validação falhou...`, {
+            return toolError('INVALID_TOOL_ARGUMENTS', `Validação falhou...`, {
                 correction: 'Corrija os argumentos com base no schema da tool.'
             })
         }
-        args = validation.data as Record<string, any>  // type-safe daqui pra frente
+        args = validation.data as Record<string, any>
     }
 
-    // Handlers por nome — if/else chain (nao switch)
+    // Handlers por nome — if/else chain (28 branches)
     if (name === 'get_context') { /* ... */ }
     if (name === 'consultar') { /* ... */ }
     // ...etc para cada tool
-}
-```
-
-**Como tools sao convertidas para Vercel AI SDK** (`tools.ts:418-494`):
-```typescript
-export function getVercelAiTools() {
-    const tools: Record<string, any> = {}
-    for (const tool of IA_TOOLS) {
-        tools[tool.name] = {
-            description: tool.description,
-            parameters: tool.parameters
-                ? toJsonSchema(TOOL_SCHEMAS[tool.name]!)  // Zod → JSON Schema
-                : z.object({}),
-            execute: async (args: any) => executeTool(tool.name, args),
-        }
-    }
-    return tools
 }
 ```
 
@@ -1513,13 +1576,13 @@ export function getVercelAiTools() {
 
 | Operacao | Entidades permitidas |
 |----------|---------------------|
-| Leitura | colaboradores, setores, escalas, alocacoes, excecoes, demandas, tipos_contrato, empresa, feriados, funcoes, regra_definicao, regra_empresa |
-| Criacao | colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes |
-| Atualizacao | colaboradores, empresa, tipos_contrato, setores, demandas |
-| Delecao | excecoes, demandas, feriados, funcoes |
+| Leitura (18) | colaboradores, setores, escalas, alocacoes, excecoes, demandas, tipos_contrato, empresa, feriados, funcoes, regra_definicao, regra_empresa, demandas_excecao_data, colaborador_regra_horario_excecao_data, contrato_perfis_horario, empresa_horario_semana, setor_horario_semana, escala_ciclo_modelos |
+| Criacao (7) | colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes |
+| Atualizacao (5) | colaboradores, empresa, tipos_contrato, setores, demandas |
+| Delecao (4) | excecoes, demandas, feriados, funcoes |
 
 **Protecao contra SQL injection:**
-O `CAMPOS_VALIDOS` define um Set<string> por entidade com TODOS os campos aceitos. Se a IA passar um campo que nao existe, recebe erro antes da query SQL. Isso impede SQL injection via nomes de campo.
+O `CAMPOS_VALIDOS` define um Set<string> por entidade (18 tabelas) com TODOS os campos aceitos. Se a IA passar um campo que nao existe, recebe erro antes da query SQL.
 
 **Validacao Zod runtime:**
 Toda chamada de tool passa por `schema.safeParse(args)`. Se invalido, retorna `toolError` com detalhes dos campos com problema. A IA pode corrigir e tentar de novo (ate 10 turnos).
@@ -1538,7 +1601,7 @@ As tools usam 3 helpers padronizados para consistencia:
 | `toolTruncated(payload, {summary, meta})` | Parcial | `status: 'truncated'`, payload espalhado |
 
 O campo `_meta` carrega metadados que a UI pode usar (ex: `tool_kind: 'discovery'`, `next_tools_hint`).
-O campo `correction` e uma dica PRO LLM de como corrigir o erro.
+O campo `correction` e uma dica PRO LLM de como corrigir o erro — 100% dos `toolError` tem `correction`.
 O campo `erro` (alias de `message`) existe por compatibilidade com fluxos legados da UI.
 
 ### 6.9 Enrichment de dados
@@ -1574,142 +1637,31 @@ Quando a IA cria um `colaborador` sem fornecer todos os campos:
 Para `excecoes`:
 - `motivo` default = `tipo` (ex: se tipo='FERIAS', motivo='FERIAS')
 
-### 6.11 A tool `gerar_escala` em detalhe
-
-```
-gerar_escala({ setor_id, data_inicio, data_fim, rules_override? })
-    │
-    ├─ [1] buildSolverInput(setor_id, data_inicio, data_fim, undefined, { rulesOverride })
-    │       → Monta JSON completo: colaboradores, demandas, regras, feriados, excecoes
-    │
-    ├─ [2] runSolver(solverInput, timeout=60_000)
-    │       → Spawn Python solver, stdin JSON, stdout JSON
-    │       → Timeout 60 segundos
-    │
-    ├─ [3] Se !sucesso: retorna toolError com diagnostico do solver
-    │       → diagnostico contém: regras_ativas, regras_off, num_colaboradores, num_dias
-    │
-    ├─ [4] persistirSolverResult(setor_id, data_inicio, data_fim, solverResult)
-    │       → INSERT escala + INSERT alocacoes em batch
-    │       → Escala salva como RASCUNHO
-    │
-    └─ [5] Retorna toolOk com:
-            escala_id, solver_status, indicadores (pontuacao, cobertura, violacoes), diagnostico
-```
-
-**Parametro `rules_override`:**
-Permite temporariamente mudar status de regras SEM alterar a configuracao permanente da empresa. Exemplo: `{"H1": "SOFT"}` — trata max dias consecutivos como penalidade em vez de hard constraint, so nessa geracao.
-
-### 6.12 A tool `get_context` em detalhe
-
-E a tool mais importante. Retorna JSON estruturado com JOINs:
-
-```json
-{
-  "version": "1.0",
-  "timestamp": "2026-02-22T...",
-  "stats": {
-    "setores_ativos": 4,
-    "colaboradores_ativos": 25,
-    "escalas_rascunho": 2,
-    "escalas_oficiais": 1
-  },
-  "setores": [
-    {
-      "id": 3, "nome": "Caixa",
-      "hora_abertura": "07:00", "hora_fechamento": "22:00",
-      "colaboradores_count": 15, "escalas_count": 1
-    }
-  ],
-  "colaboradores": [
-    {
-      "id": 5, "nome": "Joao Silva",
-      "setor_id": 3, "setor_nome": "Caixa",
-      "tipo_contrato_id": 1, "contrato_nome": "CLT 44h (6x1)",
-      "horas_semanais": 44, "tipo_trabalhador": "regular"
-    }
-  ],
-  "tipos_contrato": [
-    { "id": 1, "nome": "CLT 44h (6x1)", "horas_semanais": 44, ... }
-  ],
-  "escalas": [
-    { "id": 42, "setor_id": 3, "setor_nome": "Caixa", "status": "RASCUNHO", ... }
-  ],
-  "instructions": "Use this structured data to resolve names to IDs..."
-}
-```
-
-**Queries internas:**
-- Setores: LEFT JOIN colaboradores + escalas, GROUP BY → contagem inline
-- Colaboradores: JOIN setores + tipos_contrato → nomes e horas_semanais
-- Tipos contrato: SELECT direto, ORDER BY horas_semanais DESC
-- Escalas: JOIN setores, filtra RASCUNHO/OFICIAL, ordena por status+id
-
-### 6.13 Extraindo tool calls para a UI
-
-`extractToolCallsFromSteps()` percorre os steps do AI SDK e emparelha tool calls com tool results:
-
-```
-Para cada step:
-    Para cada toolCall:
-        [1] Busca toolResult por toolCallId (Map)
-        [2] Fallback: busca por indice do array
-        [3] Normaliza args (input ?? args → Record)
-        [4] Extrai result (output ?? result ?? error)
-        [5] Monta ToolCall { id, name, args?, result? }
-```
-
-**Compatibilidade AI SDK v6:**
-- `tc.input` (v6) ou `tc.args` (v5)
-- `tr.output` (v6) ou `tr.result` (v5) ou `tr.error`
-- `normalizeToolArgs()` converte valores nao-objeto em `{ value: X }`
-
-### 6.14 DevTools middleware (opcional)
+### 6.11 DevTools middleware (opcional)
 
 Se `ESCALAFLOW_AI_DEVTOOLS=1` ou `NODE_ENV !== 'production'`:
 - Tenta importar `@ai-sdk/devtools` dinamicamente
 - Se disponivel, wrapa o model com `wrapLanguageModel({ model, middleware: devToolsMiddleware() })`
 - Permite visualizar requests no AI SDK DevTools (http://localhost:4983)
-- Resolve uma vez, cacheia resultado — nao tenta importar de novo se falhou
 
-### 6.15 Teste de conexao
+### 6.12 Gaps e limitacoes remanescentes
 
-`iaTestarConexao(provider, apiKey, modelo)` e um endpoint separado usado pela UI de configuracao:
-- Chama `generateText({ model, prompt: 'Responda apenas: OK' })` — sem tools
-- Retorna `{ sucesso, mensagem }` com os primeiros 50 chars da resposta
-- Usado quando o usuario configura um novo provider/modelo
+**Gaps de tools (poucas operacoes restantes sem tool):**
 
-### 6.16 Gaps e limitacoes do sistema IA atual
+| Operacao | Por que nao tem tool |
+|----------|---------------------|
+| Ciclo rotativo (criar/editar) | Complexidade: modelo + itens + semana_idx — operacao visual na UI |
+| Tipos contrato (criar/editar) | Raramente necessario via chat — editavel na UI |
+| Export HTML/PDF | Requer acesso ao filesystem nativo |
+| Timeline dia (drag de demanda) | Operacao intrinsecamente visual |
+| Dashboard metricas | handler existe mas nao exposto — IA usa `get_context` + `resumir_horas_setor` |
+| Backup/restore | Acesso ao filesystem |
 
-**GAPS DE TOOLS (operacoes que existem no tipc.ts mas a IA nao acessa):**
+**Gaps de comportamento:**
 
-| Operacao | IPC handlers | Por que a IA nao tem |
-|----------|-------------|---------------------|
-| Regras horario por colaborador | 5 handlers (listar/buscar/criar/atualizar/deletar) | Complexidade: janela min/max inicio/fim |
-| Excecoes horario por data | 2 handlers (listar/criar) | Mesma janela, mas por data especifica |
-| Perfis horario por contrato | 4 handlers | Regras no nivel do contrato |
-| Demanda excecao por data | 3 handlers | Demanda override por data especifica |
-| Ciclo rotativo | 4 handlers | Modelo de ciclo + itens |
-| Funcoes (CRUD completo) | 5 handlers | So tem deletar, falta criar/atualizar |
-| Exportar HTML/PDF | 4 handlers | Precisa gerar arquivo no filesystem |
-| Duplicar escala | 1 handler | Copia com novo periodo |
-| Backup/restore | 2 handlers | Acesso ao filesystem |
-| Timeline dia (salvar horarios) | 1 handler | Edita hora_inicio/hora_fim/almoco |
-| Dashboard metricas | 1 handler | Retorna KPIs agregados |
-
-**GAPS DE COMPORTAMENTO:**
-
-1. **Preflight simplificado:** A tool `preflight` da IA e MENOS completa que `buildEscalaPreflight()` do tipc.ts. Falta `enrichPreflightWithCapacityChecks()` (validacao de capacidade por colaborador vs demanda).
-
-2. **Sem ajuste de horario:** `ajustar_alocacao` so muda status (TRABALHO/FOLGA/INDISPONIVEL), nao muda `hora_inicio`/`hora_fim`. Para ajustar horarios, o usuario precisa usar a UI de timeline.
-
-3. **Sem duplicacao/regeneracao:** A IA pode GERAR uma escala nova, mas nao pode DUPLICAR uma existente com novo periodo (handler `escalas.duplicar` no tipc.ts).
-
-4. **Sem export:** A IA nao pode gerar HTML/PDF de exportacao — isso requer acesso ao filesystem.
-
-5. **History rebuild limitado:** O `buildChatMessages()` so envia texto user/assistant. Tool calls anteriores nao sao re-enviados no historico, o que pode limitar a capacidade do LLM de "lembrar" quais tools ja chamou em conversas longas.
-
-6. **Sem streaming:** O sistema usa `generateText()` (nao `streamText()`), entao a resposta so aparece completa. Nao ha feedback progressivo durante a geracao.
+1. **Historico truncado:** Tool results no historico truncados em ~400 chars. Em conversas longas com muitas tools, a IA pode perder detalhes de resultados anteriores.
+2. **Sem duplicacao de escala:** A IA pode GERAR nova, mas nao DUPLICAR existente com novo periodo.
+3. **Follow-up fragil:** O nudge pra texto vazio funciona mas adiciona latencia. Modelos melhores (Gemini 2.5 Flash) ja geram texto naturalmente.
 
 ---
 
@@ -1860,20 +1812,20 @@ html (height: 100%)
 
 **Via IA:** "Por que a escala do caixa deu erro?" → IA chama `consultar(escalas, {setor_id, status:'RASCUNHO'})` → ve diagnostico → chama `explicar_violacao(codigo)` para cada violacao → responde em linguagem natural.
 
-#### 7.4.1 — As 10 acoes mais comuns do gestor de RH e como a IA deveria resolver
+#### 7.4.1 — As 10 acoes mais comuns do gestor de RH e como a IA resolve
 
-| # | Acao do gestor | Frequencia | Como a IA resolve HOJE | Como DEVERIA resolver |
-|---|---------------|------------|------------------------|----------------------|
-| 1 | Gerar escala do mes | Mensal | `preflight` + `gerar_escala` | OK — funciona completo |
-| 2 | Cadastrar funcionario novo | Eventual | `criar(colaboradores, {...})` | OK — defaults inteligentes |
-| 3 | Consultar quem trabalha tal dia | Diaria | `consultar(alocacoes, {data, escala_id})` | OK — enrichment com nomes |
-| 4 | Colocar funcionario de ferias | Mensal | `criar(excecoes, {tipo:'FERIAS', ...})` | OK — mas nao avisa sobre escalas existentes |
-| 5 | Ajustar horario de alguem | Semanal | ❌ Nao consegue | Precisa tool `ajustar_horario` (P0) |
-| 6 | Definir regra individual ("so de manha") | Eventual | ❌ Nao consegue | Precisa tool `regra_colaborador` (P0) |
-| 7 | Oficializar escala | Mensal | `oficializar_escala` | OK — valida violacoes_hard=0 |
-| 8 | Ver resumo de horas do setor | Semanal | `get_context` (parcial) | Precisa `dashboard` com KPIs calculados |
-| 9 | Entender por que deu INFEASIBLE | Quando ocorre | `explicar_violacao` + diagnostico | OK — mas poderia sugerir fix automaticamente |
-| 10 | Importar lista de funcionarios | Na implantacao | `cadastrar_lote` | OK — batch ate 200, mesmos defaults |
+| # | Acao do gestor | Frequencia | Como a IA resolve | Status |
+|---|---------------|------------|-------------------|--------|
+| 1 | Gerar escala do mes | Mensal | `preflight_completo` + `gerar_escala` | ✅ Completo |
+| 2 | Cadastrar funcionario novo | Eventual | `criar(colaboradores, {...})` com defaults inteligentes | ✅ Completo |
+| 3 | Consultar quem trabalha tal dia | Diaria | `consultar(alocacoes, {data, escala_id})` com enrichment | ✅ Completo |
+| 4 | Colocar funcionario de ferias | Mensal | `criar(excecoes, {tipo:'FERIAS', ...})` | ✅ Completo |
+| 5 | Ajustar horario de alguem | Semanal | `ajustar_horario` (hora_inicio/hora_fim + revalidacao) | ✅ Completo |
+| 6 | Definir regra individual ("so de manha") | Eventual | `definir_janela_colaborador` ou `salvar_regra_horario_colaborador` | ✅ Completo |
+| 7 | Oficializar escala | Mensal | `oficializar_escala` (valida violacoes_hard=0) | ✅ Completo |
+| 8 | Ver resumo de horas do setor | Semanal | `resumir_horas_setor` (KPIs agregados por pessoa/periodo) | ✅ Completo |
+| 9 | Entender por que deu INFEASIBLE | Quando ocorre | `diagnosticar_escala` + `explicar_violacao` + diagnostico do solver | ✅ Completo |
+| 10 | Importar lista de funcionarios | Na implantacao | `cadastrar_lote` (batch ate 200, mesmos defaults) | ✅ Completo |
 
 ### 7.5 Componentes criticos
 
@@ -1974,8 +1926,8 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 | Gerar escala | Escolher periodo correto | IA poderia inferir "mes que vem" = proximo mes completo |
 | Ajustar escala | Entender violacoes | `explicar_violacao` existe, mas nao e proativo |
 | Regras | Entender impacto de mudar regra | IA poderia simular: "se mudar H1 pra SOFT, a escala ficaria assim" |
-| Demanda | Configurar faixas horarias | Sem tool — IA so pode orientar |
-| Colaborador | Configurar regras individuais | Sem tool — IA so pode orientar |
+| Demanda | Configurar faixas horarias | `salvar_demanda_excecao_data` cobre excecoes por data. Demanda regular: IA pode orientar |
+| Colaborador | Configurar regras individuais | `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `upsert_regra_excecao_data` cobrem 100% |
 | Export | Gerar PDF | Sem tool — acesso a filesystem |
 
 ---
@@ -1987,110 +1939,86 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 ```
                      ┌─────────────────────────────────────────────┐
                      │            CAPACIDADES DO SISTEMA           │
-                     │                 (89 IPC handlers)           │
+                     │                 (~90 IPC handlers)          │
                      │                                             │
                      │  ┌─────────────────────────────────┐       │
                      │  │    CAPACIDADES DA IA             │       │
-                     │  │      (13 tools)                  │       │
+                     │  │      (28 tools)                  │       │
                      │  │                                  │       │
-                     │  │  ✅ Consultar qualquer entidade  │       │
-                     │  │  ✅ Criar colabs/excecoes/etc    │       │
+                     │  │  ✅ Discovery completo (18 tab)  │       │
+                     │  │  ✅ CRUD generico (7 entidades)  │       │
                      │  │  ✅ Gerar escalas (motor Python) │       │
-                     │  │  ✅ Ajustar alocacoes            │       │
+                     │  │  ✅ Ajustar alocacoes + horarios │       │
                      │  │  ✅ Oficializar escalas          │       │
+                     │  │  ✅ Preflight completo + simples │       │
                      │  │  ✅ Editar regras do motor       │       │
-                     │  │  ✅ Preflight (simplificado)     │       │
+                     │  │  ✅ Regras por colaborador       │       │
+                     │  │  ✅ Excecoes por data            │       │
+                     │  │  ✅ Perfis horario por contrato  │       │
+                     │  │  ✅ Demanda excecao por data     │       │
+                     │  │  ✅ Horario funcionamento        │       │
+                     │  │  ✅ KPIs (resumir horas setor)   │       │
+                     │  │  ✅ Alertas proativos            │       │
+                     │  │  ✅ Diagnostico + explicacao     │       │
                      │  │  ✅ Importacao em lote (CSV)     │       │
-                     │  │  ✅ Explicar violacoes           │       │
                      │  └─────────────────────────────────┘       │
                      │                                             │
-                     │  ❌ Regras horario por colaborador          │
-                     │  ❌ Excecoes horario por data               │
-                     │  ❌ Perfis horario por contrato             │
-                     │  ❌ Demanda excecao por data                │
-                     │  ❌ Ciclo rotativo                          │
-                     │  ❌ Timeline (ajustar hora_inicio/fim)      │
+                     │  ❌ Ciclo rotativo (criar/editar)           │
+                     │  ❌ Tipos contrato (criar/editar)           │
                      │  ❌ Export HTML/PDF                         │
-                     │  ❌ Duplicar escala                         │
-                     │  ❌ Dashboard metricas                      │
+                     │  ❌ Timeline dia (drag visual)              │
+                     │  ❌ Dashboard metricas (handler)            │
                      │  ❌ Backup/Restore                          │
-                     │  ❌ Config IA (provider/modelo)             │
                      └─────────────────────────────────────────────┘
 ```
 
-### 8.2 Tools prioritarias para criar
+**Cobertura: ~80% das operacoes do sistema sao acessiveis pela IA.** Os gaps restantes sao operacoes intrinsecamente visuais (timeline drag, export PDF) ou raramente necessarias via chat (ciclo rotativo, backup, tipos_contrato).
 
-Ordenadas por IMPACTO NO USUARIO (frequencia de uso x friccao):
+### 8.2 Tools futuras (backlog)
 
-| Prioridade | Tool proposta | IPC handlers ja existentes | Impacto |
-|------------|--------------|---------------------------|---------|
-| **P0** | `ajustar_horario` | `salvarTimelineDia` | IA poderia dizer "Cleunice comeca 8h amanha" e ajustar hora_inicio/hora_fim |
-| **P0** | `regra_colaborador` | 5 handlers regrasColab.* | IA poderia dizer "Cleunice so pode vir de manha" e criar regra |
-| **P1** | `excecao_horario_data` | 2 handlers | "Segunda que vem Cleunice entra as 10h" — excecao pontual |
-| **P1** | `duplicar_escala` | escalas.duplicar | "Copia a escala do caixa pra abril" |
-| **P2** | `demanda_excecao_data` | 3 handlers | "Dia 15/03 preciso de 8 pessoas no caixa" |
-| **P2** | `preflight_completo` | buildEscalaPreflight + enrichCapacity | Versao completa com analise de capacidade |
-| **P3** | `ciclo_rotativo` | 4 handlers | "Configura ciclo domingo 2x1 pro acougue" |
-| **P3** | `dashboard` | dashboardResumo | IA poderia resumir KPIs sem o usuario navegar |
+| Prioridade | Tool proposta | Impacto |
+|------------|--------------|---------|
+| **P2** | `duplicar_escala` | "Copia a escala do caixa pra abril" — handler `escalas.duplicar` existe mas nao exposto |
+| **P3** | `ciclo_rotativo` | Criar/gerenciar ciclos rotativos via chat — complexidade alta (modelo + itens + semana_idx) |
+| **P3** | `dashboard` | Resumir KPIs sem navegar — parcialmente coberto por `get_context` + `resumir_horas_setor` |
 
-### 8.3 Melhorias no system prompt
+### 8.3 Melhorias nas tools existentes
 
-| # | Problema atual | Melhoria proposta |
-|---|---------------|-------------------|
-| 1 | Prompt tem 423 linhas — muito longo, muita repeticao | Comprimir exemplos redundantes. Manter regras + schema + tool guide |
-| 2 | Secao 7 (schema) lista campos mas nao mostra relacoes | Adicionar mini-ERD textual mostrando FKs (setor_id → setores.id) |
-| 3 | Workflow CSV duplicado (secao 6 tool guide + secao 7 workflow) | Unificar em um lugar so |
-| 4 | `resumo_sistema` ainda listada apesar de DEPRECATED | Remover da lista de tools e do prompt |
-| 5 | Nao documenta `rules_override` no `gerar_escala` | Adicionar exemplo: `{"H1": "SOFT"}` e quando usar |
-| 6 | Dicionario de violacoes incompleto no prompt (vs 20+ no tools.ts) | Mover dicionario completo pro prompt ou criar link |
-| 7 | Prompt nao menciona o que a IA NAO pode fazer | Adicionar secao "Limitacoes" — evita expectativas falsas |
-| 8 | Persona "Miss Monday" so no tom — falta calibracao | Reduzir excesso de emoji no prompt, manter tom direto |
+| Tool | Melhoria potencial |
+|------|--------------------|
+| `consultar` | Offset/limit como parametros opcionais (hoje fixo em 50 rows) |
+| `gerar_escala` | Timeout configuravel (hoje fixo 60s) pra escalas grandes |
+| `cadastrar_lote` | Check de duplicatas por nome (`COLLATE NOCASE`) antes de INSERT |
 
-### 8.4 Melhorias nas tools existentes
-
-| Tool | Problema | Melhoria |
-|------|----------|---------|
-| `preflight` | Versao simplificada — falta capacity check | Integrar `enrichPreflightWithCapacityChecks()` |
-| `consultar` | Limit 50 rows fixo, sem paginacao | Adicionar offset/limit como parametros opcionais |
-| `ajustar_alocacao` | So muda status, nao muda horario | Adicionar campos opcionais `hora_inicio`, `hora_fim` |
-| `get_context` | Nao inclui feriados do periodo nem regras customizadas | Adicionar `feriados_proximos` e `regras_customizadas` |
-| `criar` | Defaults de data_nascimento aleatorios | Permitir omitir campo completamente — nem todo colab precisa |
-| `gerar_escala` | Timeout fixo 60s | Tornar configuravel ou aumentar pra escalas grandes |
-| `cadastrar_lote` | Sem validacao de duplicatas por nome | Adicionar check `nome COLLATE NOCASE` antes de INSERT |
-
-### 8.5 Melhorias de arquitetura
+### 8.4 Melhorias de arquitetura
 
 | # | Area | Estado atual | Proposta |
 |---|------|-------------|---------|
-| 1 | Streaming | `generateText()` (resposta completa) | Migrar pra `streamText()` — feedback progressivo |
-| 2 | Historico | So texto user/assistant no historico | Enviar tool calls como mensagens de tipo `tool` pro LLM lembrar |
-| 3 | Contexto | Auto-contexto rebuilda a cada mensagem | Cachear com TTL (dados nao mudam a cada 5s) |
-| 4 | Multi-turn | Max 10 steps, sem controle de custo | Adicionar token counting e budget limit |
-| 5 | Error recovery | IA tenta corrigir, mas sem retry estruturado | Adicionar retry com backoff pra erros transientes |
-| 6 | Observability | console.log basico | Estruturar logs pra debugging (tempo por tool, tokens usados) |
+| 1 | Contexto | Auto-contexto rebuilda a cada mensagem | Cachear com TTL de 30s |
+| 2 | Multi-turn | Max 10 steps, sem controle de custo | Token counting e budget limit |
+| 3 | Observability | console.log basico | Logs estruturados (tempo por tool, tokens usados) |
 
-### 8.6 Resumo executivo
+### 8.5 Resumo executivo
 
 **O que esta BOM:**
-- 13 tools cobrem o core: discovery, CRUD, geracao de escala, regras, batch import
-- Validacao Zod runtime em TODAS as tools
-- Seguranca: whitelists por operacao, campos validados, limit de rows
-- Auto-contexto por pagina (gratuito, sem tool call)
+- 28 tools cobrem ~80% das operacoes: discovery, CRUD, geracao, ajuste, regras, regras colab, perfis, horarios, KPI, alertas
+- Streaming em tempo real (`streamText`) com eventos IPC
+- Historico com tool calls preservados (`buildChatMessages` inclui tool-call + tool-result parts)
+- Validacao Zod runtime em TODAS as tools com `correction` em 100% dos toolError
+- Seguranca: whitelists por operacao (18 tabelas leitura, 7 criacao, 5 atualizacao, 4 delecao), campos validados, limit de rows
+- Auto-contexto por pagina com alertas proativos (violacoes, hash desatualizado, excecoes expirando)
 - Multi-provider (Gemini + OpenRouter) com mesma logica
-- Persistencia de conversas com SQLite
+- Persistencia de conversas com SQLite + auto-titulo
+- Evals com SAVEPOINT/ROLLBACK protegendo o banco de dados
+- System prompt de 8 secoes com workflows prontos e schema completo
 
-**O que FALTA para a IA ser realmente autonoma:**
-- 11 categorias de operacao que so a UI faz (regras colab, timeline, export, ciclo...)
-- Preflight incompleto (falta capacity check)
-- Sem streaming (resposta demora e usuario nao ve progresso)
-- Sem ajuste de horario (so status TRABALHO/FOLGA)
-- Prompt longo e repetitivo (pode confundir modelos menores)
+**Gaps restantes:**
+- 6 categorias de operacao ainda exclusivas da UI (ciclo rotativo, tipos_contrato, export, timeline drag, dashboard, backup)
+- Historico truncado (~400 chars por tool result) pode perder detalhes em conversas longas
 
-**O que e RISCO:**
-- `criar` e `cadastrar_lote` fazem INSERT direto com dados que vem do LLM — qualquer alucinacao do modelo vira dado no banco
-- Sem rollback: se `cadastrar_lote` falha no registro 150/200, os 149 anteriores ja estao no banco
-- `ajustar_alocacao` nao revalida constraints apos mudanca
-- `oficializar_escala` verifica violacoes_hard do momento da geracao, nao revalida em tempo real
+**Riscos conhecidos:**
+- `criar` e `cadastrar_lote` fazem INSERT com dados do LLM — alucinacao vira dado no banco
+- Sem rollback em `cadastrar_lote`: se falha no registro 150/200, os 149 ja estao no banco
 
 ### 8.7 Decisoes de design documentadas
 
@@ -2109,7 +2037,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | 9 | **Surplus penalty (peso 5.000)** | Sem surplus, solver empilha colabs em slots ja cobertos (surplus=3) enquanto outros ficam com deficit=2. Deficit sozinho nao distingue ONDE colocar capacidade. Surplus torna excesso CARO, forcando redistribuicao. Math: mover 1 pessoa de surplus pra deficit economiza 15.000 (10k+5k). (`constraints.py:877-912`) | Sim. Sem isso, escalas ficam desequilibradas. |
 | 10 | **Vercel AI SDK (nao SDK nativo do Gemini/OpenRouter)** | Abstrai providers (Gemini + OpenRouter) com mesma interface. `generateText()` com `stopWhen: stepCountIs(10)` resolve multi-turn tool calling. Trade-off: depende de lib terceira, mas evita reimplementar loop de tools. | Sim. Flexibilidade de trocar provider sem mudar logica. |
 | 11 | **Auto-contexto (discovery) a cada mensagem** | Injeta setores, colabs, escalas no system prompt sem tool call. Custo: ~200-500 tokens extras. Beneficio: IA responde perguntas simples sem chamar get_context. Discovery condicional por pagina reduz tamanho. | Sim, mas pode cachear com TTL de 30s. |
-| 12 | **Historico sem tool calls** | `buildChatMessages()` so envia role user/assistant. Tool calls e results NAO vao no historico. Motivo: modelos menores confundem tool results com instrucoes. Trade-off: IA "esquece" o que fez em turnos anteriores da mesma conversa. | Precisa melhorar. Enviar pelo menos nomes das tools usadas. |
+| 12 | **Historico COM tool calls** | `buildChatMessages()` envia role user/assistant/tool. Mensagens assistant incluem `tool-call` parts, seguidas de mensagem `tool` com `tool-result` parts (truncados a ~400 chars). Motivo: preserva contexto de descobertas entre turnos — IA sabe o que ja consultou/criou. Trade-off: mais tokens no historico, mas IA nao "esquece" o que fez. | Sim. Melhoria implementada sobre decisao original. Avaliar compressao se conversas ficarem longas. |
 
 ---
 
@@ -2121,64 +2049,94 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 
 > Incluido na secao 2.9
 
-## Apendice C: Inventario de tools IA (13 tools)
+## Apendice C: Inventario de tools IA (28 tools)
 
-### C.1 Tools de Discovery (3)
+### C.1 Discovery (7 tools)
 
-| Tool | Parametros | Entidades | Resultado | Notas |
-|------|-----------|-----------|-----------|-------|
-| `get_context` | nenhum | setores, colaboradores, tipos_contrato, escalas | JSON estruturado com JOINs, counts, IDs | SEMPRE primeira. Stats + listas completas |
-| `consultar` | entidade, filtros? | 12 entidades (todas) | rows[] com enrichment de nomes | Limit 50 rows. Filtros case-insensitive |
-| `resumo_sistema` | nenhum | setores, colaboradores, escalas, regra_empresa | Contadores simples | DEPRECATED — use get_context |
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `get_context` | nenhum | Retorna setores, colabs, tipos_contrato, escalas com JOINs e counts | Read-only |
+| `consultar` | entidade, filtros? | SELECT generico em 18 entidades com enrichment de nomes (FK→nome). Limit 50 rows | Read-only |
+| `buscar_colaborador` | nome ou id | Busca fuzzy por colaborador (LIKE %nome%). Retorna com setor, contrato, restricoes | Read-only |
+| `obter_regra_horario_colaborador` | colaborador_id | Regras individuais: janela, folga fixa, excecoes por data | Read-only |
+| `listar_perfis_horario` | tipo_contrato_id | Perfis de horario vinculados a um tipo de contrato | Read-only |
+| `obter_alertas` | nenhum | Agregacao: poucos colabs, sem escala, violacoes HARD, hash desatualizado, excecoes expirando | Read-only |
+| `resumir_horas_setor` | setor_id, data_inicio, data_fim | KPI: horas trabalhadas por colaborador no periodo (query em alocacoes) | Read-only |
 
-### C.2 Tools de Acao (7)
+### C.2 CRUD generico (4 tools)
 
-| Tool | Parametros obrigatorios | Validacoes | Efeito no banco | Retorno |
-|------|------------------------|------------|-----------------|---------|
-| `criar` | entidade, dados | Whitelist 7 entidades, campos obrigatorios por entidade, FK check | INSERT | id criado |
-| `atualizar` | entidade, id, dados | Whitelist 5 entidades | UPDATE parcial | changes count |
-| `deletar` | entidade, id | Whitelist 4 entidades | DELETE | changes count |
-| `editar_regra` | codigo, status | editavel=1, status in HARD/SOFT/OFF/ON | INSERT OR REPLACE regra_empresa | codigo + novo_status |
-| `gerar_escala` | setor_id, data_inicio, data_fim | Solver INFEASIBLE = erro | INSERT escala + alocacoes | escala_id, indicadores, diagnostico |
-| `ajustar_alocacao` | escala_id, colaborador_id, data, status | Existencia da alocacao | UPDATE alocacoes.status | novo_status |
-| `oficializar_escala` | escala_id | violacoes_hard = 0 | UPDATE escalas.status='OFICIAL' | sucesso |
+| Tool | Parametros | Validacoes | Efeito |
+|------|-----------|------------|--------|
+| `criar` | entidade, dados | Whitelist 7 entidades (colaboradores, setores, excecoes, funcoes, feriados, demandas, escalas) | INSERT |
+| `atualizar` | entidade, id, dados | Whitelist 5 entidades (colaboradores, setores, funcoes, feriados, demandas) | UPDATE parcial |
+| `deletar` | entidade, id | Whitelist 4 entidades (excecoes, funcoes, feriados, demandas) | DELETE |
+| `cadastrar_lote` | entidade, registros[] (1-200) | Mesma whitelist de `criar`. Batch INSERT com erros parciais | INSERT em batch |
 
-### C.3 Tools de Validacao e Referencia (3)
+### C.3 Escalas (6 tools)
 
-| Tool | Parametros | O que retorna | Efeito |
-|------|-----------|---------------|--------|
-| `preflight` | setor_id, data_inicio, data_fim | blockers[], warnings[], diagnostico | Nenhum (read-only) |
-| `explicar_violacao` | codigo_regra | explicacao textual | Nenhum (read-only) |
-| `cadastrar_lote` | entidade, registros[] (max 200) | total_criado, total_erros, ids_criados, erros[] | INSERT em batch |
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `gerar_escala` | setor_id, data_inicio, data_fim, rules_override? | Roda solver Python (OR-Tools CP-SAT). Retorna escala_id, indicadores, diagnostico | INSERT escala + alocacoes |
+| `ajustar_alocacao` | escala_id, colaborador_id, data, status | Muda status de uma alocacao (TRABALHO/FOLGA/INDISPONIVEL) | UPDATE alocacoes |
+| `ajustar_horario` | escala_id, colaborador_id, data, hora_inicio, hora_fim, almoco_inicio?, almoco_fim? | Altera horarios de uma alocacao especifica | UPDATE alocacoes |
+| `oficializar_escala` | escala_id | Valida violacoes_hard=0, muda status RASCUNHO→OFICIAL | UPDATE escalas |
+| `preflight` | setor_id, data_inicio, data_fim | Check rapido de viabilidade (colabs, demandas, blockers) | Read-only |
+| `preflight_completo` | setor_id, data_inicio, data_fim | Check extenso com capacity analysis e warnings detalhados | Read-only |
 
-### C.4 Schemas Zod completos
+### C.4 Validacao e referencia (2 tools)
+
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `diagnosticar_escala` | escala_id | Revalida escala existente contra PolicyEngine. Retorna violacoes atualizadas | Read-only |
+| `explicar_violacao` | codigo_regra | Dicionario de 20+ regras (H1-H18, SOFT, AP) com explicacao textual | Read-only |
+
+### C.5 Regras do motor (2 tools)
+
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `editar_regra` | codigo, status | Altera status de regra (HARD/SOFT/OFF/ON). Valida editavel=1 | INSERT OR REPLACE regra_empresa |
+| `resetar_regras_empresa` | confirmacao | Deleta TODOS os overrides de regra_empresa (volta ao default) | DELETE FROM regra_empresa |
+
+### C.6 Regras por colaborador (4 tools)
+
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `salvar_regra_horario_colaborador` | colaborador_id, campos | Salva/atualiza regra individual (janela, folga fixa, ciclo domingo) | UPSERT colaborador_regra_horario |
+| `definir_janela_colaborador` | colaborador_id, hora_inicio_min, hora_fim_max | Atalho: define janela de trabalho | UPSERT colaborador_regra_horario |
+| `upsert_regra_excecao_data` | colaborador_id, data, campos | Override pontual por data (ex: "dia 15/03 so pode tarde") | UPSERT colaborador_regra_horario_excecao_data |
+| `salvar_demanda_excecao_data` | setor_id, data, faixas | Demanda excepcional por data (ex: Black Friday) | INSERT demandas_excecao_data |
+
+### C.7 Perfis e horarios (3 tools)
+
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `salvar_perfil_horario` | tipo_contrato_id, nome, campos | Cria ou atualiza perfil de horario de um contrato | CREATE/UPDATE contrato_perfis_horario |
+| `deletar_perfil_horario` | id | Remove perfil de horario | DELETE contrato_perfis_horario |
+| `configurar_horario_funcionamento` | nivel (empresa/setor), campos | Configura horario de abertura/fechamento | UPDATE empresa_horario_semana ou UPSERT setor_horario_semana |
+
+### C.8 Whitelists por operacao
+
+| Operacao | Entidades permitidas (z.enum) |
+|----------|-------------------------------|
+| **Leitura** (consultar) | 18: setores, colaboradores, escalas, alocacoes, excecoes, tipos_contrato, demandas, funcoes, feriados, regra_definicao, regra_empresa, colaborador_regra_horario, colaborador_regra_horario_excecao_data, contrato_perfis_horario, empresa_horario_semana, setor_horario_semana, demandas_excecao_data, escala_ciclo_modelos |
+| **Criacao** (criar, cadastrar_lote) | 7: colaboradores, setores, excecoes, funcoes, feriados, demandas, escalas |
+| **Atualizacao** (atualizar) | 5: colaboradores, setores, funcoes, feriados, demandas |
+| **Delecao** (deletar) | 4: excecoes, funcoes, feriados, demandas |
+
+### C.9 Schemas Zod (principais)
 
 ```typescript
 // ConsultarSchema
-{ entidade: enum(12 tabelas), filtros?: Record<string, any> }
+{ entidade: enum(18 tabelas), filtros?: Record<string, any> }
 
 // CriarSchema
 { entidade: enum(7 tabelas), dados: Record<string, any> }
-
-// CriarColaboradorSchema (validacao interna, nao exposto como tool separada)
-{ nome: string, setor_id: number, tipo_contrato_id?: number,
-  sexo?: 'M'|'F', data_nascimento?: 'YYYY-MM-DD',
-  tipo_trabalhador?: string, hora_inicio_min?: 'HH:MM',
-  hora_fim_max?: 'HH:MM', ativo?: 0|1 }
-
-// CriarExcecaoSchema (validacao interna)
-{ colaborador_id: number, tipo: 'FERIAS'|'ATESTADO'|'BLOQUEIO',
-  data_inicio: 'YYYY-MM-DD', data_fim: 'YYYY-MM-DD',
-  motivo?: string, observacao?: string }
 
 // AtualizarSchema
 { entidade: enum(5 tabelas), id: number, dados: Record<string, any> }
 
 // DeletarSchema
 { entidade: enum(4 tabelas), id: number }
-
-// EditarRegraSchema
-{ codigo: string, status: 'HARD'|'SOFT'|'OFF'|'ON' }
 
 // GerarEscalaSchema
 { setor_id: number, data_inicio: 'YYYY-MM-DD', data_fim: 'YYYY-MM-DD',
@@ -2188,15 +2146,39 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 { escala_id: number, colaborador_id: number,
   data: 'YYYY-MM-DD', status: 'TRABALHO'|'FOLGA'|'INDISPONIVEL' }
 
+// AjustarHorarioSchema
+{ escala_id: number, colaborador_id: number, data: 'YYYY-MM-DD',
+  hora_inicio: 'HH:MM', hora_fim: 'HH:MM',
+  almoco_inicio?: 'HH:MM', almoco_fim?: 'HH:MM' }
+
 // OficializarEscalaSchema
 { escala_id: number }
 
-// PreflightSchema
+// PreflightSchema / PreflightCompletoSchema
 { setor_id: number, data_inicio: 'YYYY-MM-DD', data_fim: 'YYYY-MM-DD' }
 
-// ExplicarViolacaoSchema
-{ codigo_regra: string }
+// EditarRegraSchema
+{ codigo: string, status: 'HARD'|'SOFT'|'OFF'|'ON' }
+
+// SalvarRegraHorarioColaboradorSchema
+{ colaborador_id: number, hora_inicio_min?: 'HH:MM', hora_fim_max?: 'HH:MM',
+  ciclo_domingo_padrao?: string, folga_fixa_dia?: number, ... }
+
+// DefinirJanelaColaboradorSchema
+{ colaborador_id: number, hora_inicio_min: 'HH:MM', hora_fim_max: 'HH:MM' }
+
+// SalvarDemandaExcecaoDataSchema
+{ setor_id: number, data: 'YYYY-MM-DD', faixas: [{hora_inicio, hora_fim, minimo}] }
+
+// ResumirHorasSetorSchema
+{ setor_id: number, data_inicio: 'YYYY-MM-DD', data_fim: 'YYYY-MM-DD' }
 
 // CadastrarLoteSchema
 { entidade: enum(7 tabelas), registros: Record<string, any>[] (1-200) }
+
+// ConfigurarHorarioFuncionamentoSchema
+{ nivel: 'empresa'|'setor', setor_id?: number, horarios: Record<dia, {abre,fecha}> }
+
+// SalvarPerfilHorarioSchema
+{ tipo_contrato_id: number, nome: string, hora_inicio: 'HH:MM', hora_fim: 'HH:MM', ... }
 ```

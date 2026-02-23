@@ -16,9 +16,11 @@ asarUnpack:
 mac:
   icon: icon.icns
   category: public.app-category.business
+  identity: null
   target:
     - dmg
   artifactName: '${productName}-${version}-${arch}.${ext}'
+  notarize: false
 win:
   icon: icon.ico
   target:

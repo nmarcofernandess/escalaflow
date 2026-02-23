@@ -1324,8 +1324,8 @@ messages.filter(m => m.papel !== 'tool_result')
 |---------|-------|
 | Tools totais | 28 |
 | Schemas Zod | 28 (todos com .describe() em cada campo) |
-| System prompt | ~370 linhas, 8 secoes |
-| Discovery | 7 secoes injetadas por request |
+| System prompt | ~408 linhas, 8 secoes |
+| Discovery | ~9 secoes condicionais injetadas por request |
 | Eval dataset | 20+ casos |
 | Unit tests IA | 42+ |
 | Max steps (loop) | 10 |

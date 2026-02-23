@@ -1,6 +1,8 @@
 {
   "name": "escalaflow",
-  "version": "1.1.0",
+  "version": "1.2.0",
+  "description": "App desktop offline para geração automática de escalas de trabalho em supermercados",
+  "author": "Marco Fernandes",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
