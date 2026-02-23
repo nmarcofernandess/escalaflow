@@ -87,6 +87,10 @@ escalaflow/
 │   ├── BUILD_V2_ESCALAFLOW.md   # Arquitetura v2 (referência histórica)
 │   └── flowai/                  # Docs do sistema de IA (tools, prompts, evals)
 │
+├── .github/
+│   └── workflows/
+│       └── release.yml          # CI/CD: build Mac + Windows via GitHub Actions (trigger: tag v*)
+│
 ├── specs/                       # Specs e logs de implementação por feature
 ├── electron-builder.yml         # Config de build e publish (GitHub Releases)
 ├── electron.vite.config.ts      # Config electron-vite (main + preload + renderer)
@@ -111,6 +115,7 @@ escalaflow/
 | Forms | react-hook-form + Zod | 7 + 4 |
 | Router | React Router | v7 |
 | Update | electron-updater | 6 |
+| CI/CD | GitHub Actions | release.yml (Mac + Win) |
 
 ---
 
@@ -267,23 +272,56 @@ setor_id INTEGER REFERENCES setores(id)
 
 ---
 
-## Auto-Update (GitHub Releases)
+## CI/CD e Releases (GitHub Actions)
 
-O app verifica atualizações automaticamente ao iniciar (5s de delay).
+O projeto usa **GitHub Actions** para build e distribuição cross-platform automatizada.
 
-### Como fazer um release
+### Como funciona
+
+```
+git tag v1.2.1 && git push --tags
+     ↓
+GitHub Actions dispara (.github/workflows/release.yml)
+     ↓
+2 runners em paralelo:
+  - macOS: Python → PyInstaller → solver nativo → electron-builder → DMG
+  - Windows: Python → PyInstaller → solver.exe nativo → electron-builder → NSIS .exe
+     ↓
+Draft Release criado com artefatos Mac + Windows
+     ↓
+Dev publica o draft em github.com/nmarcofernandess/escalaflow/releases
+```
+
+### Quando roda
+
+| Ação | CI dispara? |
+|------|-------------|
+| `git push` (sem tag) | **Não** |
+| `git push --tags` com tag `v*` | **Sim** |
+
+### Ritual de release
 
 ```bash
-# 1. Bump version em package.json (ex: "version": "1.1.0")
+# 1. Bump version em package.json
 # 2. Commit, tag e push
-git add package.json && git commit -m "chore: bump v1.1.0"
-git tag v1.1.0 && git push && git push --tags
+git add package.json && git commit -m "chore: bump v1.2.1"
+git tag v1.2.1 && git push && git push --tags
 
-# 3. Build + upload automático (Mac)
-GH_TOKEN=$(gh auth token) npm run release:mac
-
+# 3. Esperar ~15 min (GitHub Actions build Mac + Windows)
 # 4. Publicar o draft em github.com/nmarcofernandess/escalaflow/releases
 ```
+
+### Build local (sem CI)
+
+```bash
+npm run dist:mac         # gera .dmg localmente
+npm run dist:win         # gera .exe localmente (solver precisa ser nativo do OS)
+npm run release:mac      # build + upload direto (sem CI)
+```
+
+### Auto-Update
+
+O app verifica atualizações automaticamente ao iniciar (5s de delay).
 
 **Guia completo:** `docs/COMO_FAZER_RELEASE.md`
 
