@@ -1,12 +1,12 @@
-import { getDb } from './database'
+import { queryOne, queryAll, execute, execDDL, transaction } from './query'
 
 // ============================================================================
-// DDL — Tabelas base (v2 original)
+// DDL — Tabelas base (v2 original) — Postgres
 // ============================================================================
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS empresa (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
     cnpj TEXT NOT NULL DEFAULT '',
     telefone TEXT NOT NULL DEFAULT '',
@@ -15,26 +15,26 @@ CREATE TABLE IF NOT EXISTS empresa (
 );
 
 CREATE TABLE IF NOT EXISTS tipos_contrato (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
     horas_semanais INTEGER NOT NULL,
     regime_escala TEXT NOT NULL DEFAULT '6X1' CHECK (regime_escala IN ('5X2', '6X1')),
     dias_trabalho INTEGER NOT NULL,
-    trabalha_domingo INTEGER NOT NULL DEFAULT 1,
+    trabalha_domingo BOOLEAN NOT NULL DEFAULT TRUE,
     max_minutos_dia INTEGER NOT NULL DEFAULT 600
 );
 
 CREATE TABLE IF NOT EXISTS setores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
     icone TEXT,
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
-    ativo INTEGER NOT NULL DEFAULT 1
+    ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS demandas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     setor_id INTEGER NOT NULL REFERENCES setores(id),
     dia_semana TEXT CHECK (dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR dia_semana IS NULL),
     hora_inicio TEXT NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS demandas (
 );
 
 CREATE TABLE IF NOT EXISTS colaboradores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     setor_id INTEGER NOT NULL REFERENCES setores(id),
     tipo_contrato_id INTEGER NOT NULL REFERENCES tipos_contrato(id),
     nome TEXT NOT NULL,
@@ -52,11 +52,11 @@ CREATE TABLE IF NOT EXISTS colaboradores (
     rank INTEGER NOT NULL DEFAULT 0,
     prefere_turno TEXT CHECK (prefere_turno IN ('MANHA', 'TARDE') OR prefere_turno IS NULL),
     evitar_dia_semana TEXT CHECK (evitar_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR evitar_dia_semana IS NULL),
-    ativo INTEGER NOT NULL DEFAULT 1
+    ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS excecoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id) ON DELETE CASCADE,
     data_inicio TEXT NOT NULL,
     data_fim TEXT NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS excecoes (
 );
 
 CREATE TABLE IF NOT EXISTS escalas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     setor_id INTEGER NOT NULL REFERENCES setores(id),
     data_inicio TEXT NOT NULL,
     data_fim TEXT NOT NULL,
@@ -77,11 +77,11 @@ CREATE TABLE IF NOT EXISTS escalas (
     equilibrio REAL DEFAULT 0,
     input_hash TEXT,
     simulacao_config_json TEXT,
-    criada_em TEXT NOT NULL DEFAULT (datetime('now'))
+    criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS alocacoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     escala_id INTEGER NOT NULL REFERENCES escalas(id) ON DELETE CASCADE,
     colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id),
     data TEXT NOT NULL,
@@ -94,41 +94,41 @@ CREATE TABLE IF NOT EXISTS alocacoes (
 `
 
 // ============================================================================
-// DDL — Tabelas novas v3.1 (RFC §12.1)
+// DDL — Tabelas novas v3.1 (RFC ss12.1)
 // ============================================================================
 
 const DDL_V3 = `
 CREATE TABLE IF NOT EXISTS funcoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     setor_id INTEGER NOT NULL REFERENCES setores(id),
     apelido TEXT NOT NULL,
     tipo_contrato_id INTEGER NOT NULL REFERENCES tipos_contrato(id),
-    ativo INTEGER NOT NULL DEFAULT 1,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
     ordem INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS feriados (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     data TEXT NOT NULL,
     nome TEXT NOT NULL,
     tipo TEXT NOT NULL CHECK (tipo IN ('NACIONAL', 'ESTADUAL', 'MUNICIPAL')),
-    proibido_trabalhar INTEGER NOT NULL DEFAULT 0,
-    cct_autoriza INTEGER NOT NULL DEFAULT 1
+    proibido_trabalhar BOOLEAN NOT NULL DEFAULT FALSE,
+    cct_autoriza BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS setor_horario_semana (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     setor_id INTEGER NOT NULL REFERENCES setores(id),
     dia_semana TEXT NOT NULL CHECK (dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM')),
-    ativo INTEGER NOT NULL DEFAULT 1,
-    usa_padrao INTEGER NOT NULL DEFAULT 1,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+    usa_padrao BOOLEAN NOT NULL DEFAULT TRUE,
     hora_abertura TEXT NOT NULL,
     hora_fechamento TEXT NOT NULL,
     UNIQUE(setor_id, dia_semana)
 );
 
 CREATE TABLE IF NOT EXISTS escala_decisoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     escala_id INTEGER NOT NULL REFERENCES escalas(id) ON DELETE CASCADE,
     colaborador_id INTEGER,
     data TEXT NOT NULL,
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS escala_decisoes (
 );
 
 CREATE TABLE IF NOT EXISTS escala_comparacao_demanda (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     escala_id INTEGER NOT NULL REFERENCES escalas(id) ON DELETE CASCADE,
     data TEXT NOT NULL,
     hora_inicio TEXT NOT NULL,
@@ -146,16 +146,15 @@ CREATE TABLE IF NOT EXISTS escala_comparacao_demanda (
     planejado INTEGER NOT NULL,
     executado INTEGER NOT NULL,
     delta INTEGER NOT NULL,
-    override INTEGER NOT NULL DEFAULT 0,
+    override BOOLEAN NOT NULL DEFAULT FALSE,
     justificativa TEXT
 );
 
--- v4: Perfis de horario por contrato (ex: estagiario manha, estagiario tarde)
 CREATE TABLE IF NOT EXISTS contrato_perfis_horario (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     tipo_contrato_id INTEGER NOT NULL REFERENCES tipos_contrato(id),
     nome TEXT NOT NULL,
-    ativo INTEGER NOT NULL DEFAULT 1,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
     inicio_min TEXT NOT NULL,
     inicio_max TEXT NOT NULL,
     fim_min TEXT NOT NULL,
@@ -164,11 +163,10 @@ CREATE TABLE IF NOT EXISTS contrato_perfis_horario (
     ordem INTEGER NOT NULL DEFAULT 0
 );
 
--- v4: Regra de horario individual por colaborador (1 janela ativa)
 CREATE TABLE IF NOT EXISTS colaborador_regra_horario (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     colaborador_id INTEGER NOT NULL UNIQUE REFERENCES colaboradores(id) ON DELETE CASCADE,
-    ativo INTEGER NOT NULL DEFAULT 1,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
     perfil_horario_id INTEGER REFERENCES contrato_perfis_horario(id),
     inicio_min TEXT,
     inicio_max TEXT,
@@ -180,65 +178,61 @@ CREATE TABLE IF NOT EXISTS colaborador_regra_horario (
     folga_fixa_dia_semana TEXT CHECK (folga_fixa_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR folga_fixa_dia_semana IS NULL)
 );
 
--- v4: Excecao de horario por data especifica (sobrescreve regra semanal)
 CREATE TABLE IF NOT EXISTS colaborador_regra_horario_excecao_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id) ON DELETE CASCADE,
     data TEXT NOT NULL,
-    ativo INTEGER NOT NULL DEFAULT 1,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
     inicio_min TEXT,
     inicio_max TEXT,
     fim_min TEXT,
     fim_max TEXT,
     preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
-    domingo_forcar_folga INTEGER NOT NULL DEFAULT 0,
+    domingo_forcar_folga BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE(colaborador_id, data)
 );
 
--- v4: Excecao de demanda por data (calendario)
 CREATE TABLE IF NOT EXISTS demandas_excecao_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     setor_id INTEGER NOT NULL REFERENCES setores(id),
     data TEXT NOT NULL,
     hora_inicio TEXT NOT NULL,
     hora_fim TEXT NOT NULL,
     min_pessoas INTEGER NOT NULL DEFAULT 0,
-    override INTEGER NOT NULL DEFAULT 0
+    override BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- v4: Modelo de ciclo rotativo (escala fixa que repete)
 CREATE TABLE IF NOT EXISTS escala_ciclo_modelos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     setor_id INTEGER NOT NULL REFERENCES setores(id),
     nome TEXT NOT NULL,
     semanas_no_ciclo INTEGER NOT NULL,
-    ativo INTEGER NOT NULL DEFAULT 1,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
     origem_escala_id INTEGER REFERENCES escalas(id),
-    criado_em TEXT NOT NULL DEFAULT (datetime('now'))
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- v4: Itens do ciclo rotativo (por colaborador/dia)
 CREATE TABLE IF NOT EXISTS escala_ciclo_itens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     ciclo_modelo_id INTEGER NOT NULL REFERENCES escala_ciclo_modelos(id) ON DELETE CASCADE,
     semana_idx INTEGER NOT NULL,
     colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id),
     dia_semana TEXT NOT NULL CHECK (dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM')),
-    trabalha INTEGER NOT NULL DEFAULT 1,
-    ancora_domingo INTEGER NOT NULL DEFAULT 0,
+    trabalha BOOLEAN NOT NULL DEFAULT TRUE,
+    ancora_domingo BOOLEAN NOT NULL DEFAULT FALSE,
     prioridade INTEGER NOT NULL DEFAULT 0
 );
 `
 
 // ============================================================================
-// DDL — Horários de Funcionamento da Empresa por Dia da Semana (v5)
+// DDL — Horarios de Funcionamento da Empresa por Dia da Semana (v5)
 // ============================================================================
 
 const DDL_V5_EMPRESA_HORARIO = `
 CREATE TABLE IF NOT EXISTS empresa_horario_semana (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     dia_semana TEXT NOT NULL CHECK (dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM')),
-    ativo INTEGER NOT NULL DEFAULT 1,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
     UNIQUE(dia_semana)
@@ -246,7 +240,7 @@ CREATE TABLE IF NOT EXISTS empresa_horario_semana (
 `
 
 // ============================================================================
-// DDL — Configurações IA
+// DDL — Configuracoes IA
 // ============================================================================
 
 const DDL_IA = `
@@ -256,14 +250,14 @@ CREATE TABLE IF NOT EXISTS configuracao_ia (
   api_key TEXT NOT NULL DEFAULT '',
   modelo TEXT NOT NULL DEFAULT 'gemini-3-flash-preview',
   provider_configs_json TEXT NOT NULL DEFAULT '{}',
-  ativo INTEGER NOT NULL DEFAULT 0,
-  criado_em TEXT NOT NULL DEFAULT (datetime('now')),
-  atualizado_em TEXT NOT NULL DEFAULT (datetime('now'))
+  ativo BOOLEAN NOT NULL DEFAULT FALSE,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 `
 
 // ============================================================================
-// DDL — Histórico de Chat IA
+// DDL — Historico de Chat IA
 // ============================================================================
 
 const DDL_IA_HISTORICO = `
@@ -272,8 +266,8 @@ CREATE TABLE IF NOT EXISTS ia_conversas (
   titulo TEXT NOT NULL DEFAULT 'Nova conversa',
   status TEXT NOT NULL DEFAULT 'ativo'
     CHECK (status IN ('ativo', 'arquivado')),
-  criado_em TEXT NOT NULL DEFAULT (datetime('now')),
-  atualizado_em TEXT NOT NULL DEFAULT (datetime('now'))
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS ia_mensagens (
@@ -282,8 +276,8 @@ CREATE TABLE IF NOT EXISTS ia_mensagens (
   papel TEXT NOT NULL
     CHECK (papel IN ('usuario', 'assistente', 'tool_result')),
   conteudo TEXT NOT NULL,
-  tool_calls_json TEXT,  -- JSON array de ToolCall[] (serializado)
-  timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+  tool_calls_json TEXT,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_ia_mensagens_conversa
@@ -293,35 +287,90 @@ CREATE INDEX IF NOT EXISTS idx_ia_conversas_status
 `
 
 // ============================================================================
-// Migrations — idempotentes (check column exists antes de ALTER)
+// DDL — Engine de Regras Configuraveis (v6)
 // ============================================================================
 
-function getColumnNames(table: string): Set<string> {
-  const db = getDb()
-  const query = "PRAGMA table_info('" + table + "')"
-  const cols = db.prepare(query).all() as { name: string }[]
-  return new Set(cols.map((c) => c.name))
-}
+const DDL_V6_REGRAS = `
+CREATE TABLE IF NOT EXISTS regra_definicao (
+    codigo TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    descricao TEXT,
+    categoria TEXT NOT NULL CHECK (categoria IN ('CLT','SOFT','ANTIPATTERN')),
+    status_sistema TEXT NOT NULL DEFAULT 'HARD'
+        CHECK (status_sistema IN ('HARD','SOFT','OFF','ON')),
+    editavel BOOLEAN NOT NULL DEFAULT TRUE,
+    aviso_dependencia TEXT,
+    ordem INTEGER NOT NULL DEFAULT 0
+);
 
-function dropColumnIfExists(table: string, column: string): void {
-  try {
-    const cols = getColumnNames(table)
-    if (cols.has(column)) {
-      const db = getDb()
-      db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`)
-    }
-  } catch {
-    // SQLite < 3.35 não suporta DROP COLUMN — ignora silenciosamente
-  }
-}
+CREATE TABLE IF NOT EXISTS regra_empresa (
+    codigo TEXT PRIMARY KEY REFERENCES regra_definicao(codigo),
+    status TEXT NOT NULL CHECK (status IN ('HARD','SOFT','OFF','ON')),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+);
+`
 
-function addColumnIfMissing(table: string, column: string, definition: string, cols?: Set<string>): void {
-  const colNames = cols ?? getColumnNames(table)
-  if (!colNames.has(column)) {
-    const db = getDb()
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition} `)
-  }
-}
+// ============================================================================
+// DDL — Knowledge Layer (v7): RAG + Knowledge Graph
+// ============================================================================
+
+const DDL_V7_KNOWLEDGE = `
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+  id SERIAL PRIMARY KEY,
+  tipo TEXT NOT NULL DEFAULT 'manual'
+    CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario')),
+  titulo TEXT NOT NULL,
+  conteudo_original TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  importance TEXT NOT NULL DEFAULT 'high'
+    CHECK (importance IN ('high', 'low')),
+  criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  atualizada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+  id SERIAL PRIMARY KEY,
+  source_id INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+  conteudo TEXT NOT NULL,
+  embedding vector(384),
+  search_tsv TSVECTOR,
+  importance TEXT NOT NULL DEFAULT 'high'
+    CHECK (importance IN ('high', 'low')),
+  access_count INTEGER NOT NULL DEFAULT 0,
+  last_accessed_at TIMESTAMPTZ,
+  criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_tsv ON knowledge_chunks USING gin(search_tsv);
+CREATE INDEX IF NOT EXISTS idx_chunks_trgm ON knowledge_chunks USING gin(conteudo gin_trgm_ops);
+
+CREATE TABLE IF NOT EXISTS knowledge_entities (
+  id SERIAL PRIMARY KEY,
+  nome TEXT NOT NULL,
+  tipo TEXT NOT NULL,
+  embedding vector(384),
+  valid_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  valid_to TIMESTAMPTZ DEFAULT NULL,
+  criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(nome, tipo)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_relations (
+  id SERIAL PRIMARY KEY,
+  entity_from_id INTEGER NOT NULL REFERENCES knowledge_entities(id) ON DELETE CASCADE,
+  entity_to_id INTEGER NOT NULL REFERENCES knowledge_entities(id) ON DELETE CASCADE,
+  tipo_relacao TEXT NOT NULL,
+  peso REAL NOT NULL DEFAULT 1.0,
+  valid_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  valid_to TIMESTAMPTZ DEFAULT NULL,
+  criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_relations_from ON knowledge_relations(entity_from_id);
+CREATE INDEX IF NOT EXISTS idx_relations_to ON knowledge_relations(entity_to_id);
+`
+
+// ============================================================================
+// Migrations — idempotentes (Postgres: ADD COLUMN IF NOT EXISTS nativo)
+// ============================================================================
 
 function toMin(hhmm: string): number {
   const [hh, mm] = hhmm.split(':').map(Number)
@@ -331,64 +380,37 @@ function toMin(hhmm: string): number {
 function minToHHMM(min: number): string {
   const h = Math.floor(min / 60)
   const m = min % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} `
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+async function addColumnIfMissing(table: string, column: string, definition: string): Promise<void> {
+  // Postgres supports ADD COLUMN IF NOT EXISTS natively (PG 9.6+)
+  await execDDL(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${definition}`)
 }
 
 /**
  * Migra demandas legadas (dia_semana = null) para o formato v3.1 por dia.
- * Estratégia:
- * - agrega cobertura por slot de 30min (somando sobreposições)
- * - mantém slots sem cobertura como 0
- * - comprime slots contínuos em segmentos
- * - regrava todas as demandas do setor por SEG..DOM
- *
- * Idempotente: se não há linhas legadas, não faz nada.
  */
-function migrateLegacyDemandasNullToByDay(): void {
-  const db = getDb()
-  const legacyCount = (
-    db.prepare('SELECT COUNT(*) as count FROM demandas WHERE dia_semana IS NULL').get() as { count: number }
-  ).count
-
+async function migrateLegacyDemandasNullToByDay(): Promise<void> {
+  const legacyRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM demandas WHERE dia_semana IS NULL')
+  const legacyCount = legacyRow?.count ?? 0
   if (legacyCount === 0) return
 
   const DIAS: Array<'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'> = [
     'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM',
   ]
 
-  type SetorRow = {
-    id: number
-    hora_abertura: string
-    hora_fechamento: string
-  }
-  type DemandaRow = {
-    dia_semana: string | null
-    hora_inicio: string
-    hora_fim: string
-    min_pessoas: number
-    override: number | null
-  }
+  type SetorRow = { id: number; hora_abertura: string; hora_fechamento: string }
+  type DemandaRow = { dia_semana: string | null; hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean | null }
 
-  const setores = db.prepare(`
-    SELECT id, hora_abertura, hora_fechamento
-    FROM setores
-  `).all() as SetorRow[]
+  const setores = await queryAll<SetorRow>('SELECT id, hora_abertura, hora_fechamento FROM setores')
 
-  const run = db.transaction(() => {
-    const selectDemandas = db.prepare(`
-      SELECT dia_semana, hora_inicio, hora_fim, min_pessoas, override
-      FROM demandas
-      WHERE setor_id = ?
-  ORDER BY hora_inicio, hora_fim
-    `)
-    const deleteDemandas = db.prepare('DELETE FROM demandas WHERE setor_id = ?')
-    const insertDemanda = db.prepare(`
-      INSERT INTO demandas(setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
-VALUES(?, ?, ?, ?, ?, ?)
-  `)
-
+  await transaction(async () => {
     for (const setor of setores) {
-      const allRows = selectDemandas.all(setor.id) as DemandaRow[]
+      const allRows = await queryAll<DemandaRow>(
+        'SELECT dia_semana, hora_inicio, hora_fim, min_pessoas, override FROM demandas WHERE setor_id = $1 ORDER BY hora_inicio, hora_fim',
+        setor.id,
+      )
       if (allRows.length === 0) continue
 
       const hasLegacy = allRows.some((r) => r.dia_semana == null)
@@ -398,13 +420,7 @@ VALUES(?, ?, ?, ?, ?, ?)
       const fechamento = toMin(setor.hora_fechamento)
       if (abertura >= fechamento) continue
 
-      const rebuilt: Array<{
-        dia: string
-        inicio: number
-        fim: number
-        pessoas: number
-        override: number
-      }> = []
+      const rebuilt: Array<{ dia: string; inicio: number; fim: number; pessoas: number; override: boolean }> = []
 
       for (const dia of DIAS) {
         const slots: Array<{ pessoas: number; override: boolean }> = []
@@ -442,7 +458,7 @@ VALUES(?, ?, ?, ?, ?, ?)
               inicio: segStart,
               fim: abertura + i * 30,
               pessoas: segPeople,
-              override: segOverride ? 1 : 0,
+              override: segOverride,
             })
           }
           segStart = abertura + i * 30
@@ -456,14 +472,15 @@ VALUES(?, ?, ?, ?, ?, ?)
             inicio: segStart,
             fim: fechamento,
             pessoas: segPeople,
-            override: segOverride ? 1 : 0,
+            override: segOverride,
           })
         }
       }
 
-      deleteDemandas.run(setor.id)
+      await execute('DELETE FROM demandas WHERE setor_id = $1', setor.id)
       for (const seg of rebuilt) {
-        insertDemanda.run(
+        await execute(
+          'INSERT INTO demandas(setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override) VALUES($1, $2, $3, $4, $5, $6)',
           setor.id,
           seg.dia,
           minToHHMM(seg.inicio),
@@ -474,170 +491,85 @@ VALUES(?, ?, ?, ?, ?, ?)
       }
     }
   })
-
-  run()
 }
 
-function migrateSchema(): void {
-  const db = getDb()
+async function migrateSchema(): Promise<void> {
+  // --- v3.1: Empresa columns ---
+  await addColumnIfMissing('empresa', 'min_intervalo_almoco_min', 'INTEGER NOT NULL DEFAULT 60')
+  await addColumnIfMissing('empresa', 'usa_cct_intervalo_reduzido', 'BOOLEAN NOT NULL DEFAULT TRUE')
+  await addColumnIfMissing('empresa', 'grid_minutos', 'INTEGER NOT NULL DEFAULT 30')
 
-  // --- v2.1: cnpj + telefone ---
-  const empresaCols = getColumnNames('empresa')
-  addColumnIfMissing('empresa', 'cnpj', "TEXT NOT NULL DEFAULT ''", empresaCols)
-  addColumnIfMissing('empresa', 'telefone', "TEXT NOT NULL DEFAULT ''", empresaCols)
+  // --- v3.1: Colaborador columns ---
+  await addColumnIfMissing('colaboradores', 'tipo_trabalhador', "TEXT NOT NULL DEFAULT 'CLT'")
+  await addColumnIfMissing('colaboradores', 'funcao_id', 'INTEGER REFERENCES funcoes(id)')
 
-  // --- v2.2: icone ---
-  addColumnIfMissing('setores', 'icone', 'TEXT')
+  // --- v3.1: Demanda override ---
+  await addColumnIfMissing('demandas', 'override', 'BOOLEAN NOT NULL DEFAULT FALSE')
 
-  // --- v2.4: regime de escala no contrato ---
-  const contratoCols = getColumnNames('tipos_contrato')
-  addColumnIfMissing('tipos_contrato', 'regime_escala', "TEXT NOT NULL DEFAULT '6X1'", contratoCols)
-  db.exec(`
-    UPDATE tipos_contrato
-    SET regime_escala = CASE
-      WHEN dias_trabalho <= 5 THEN '5X2'
-      ELSE '6X1'
-END
-    WHERE regime_escala IS NULL OR regime_escala NOT IN('5X2', '6X1')
-  `)
+  // --- v3.1: Alocacao columns ---
+  await addColumnIfMissing('alocacoes', 'hora_almoco_inicio', 'TEXT')
+  await addColumnIfMissing('alocacoes', 'hora_almoco_fim', 'TEXT')
+  await addColumnIfMissing('alocacoes', 'minutos_almoco', 'INTEGER')
+  await addColumnIfMissing('alocacoes', 'intervalo_15min', 'BOOLEAN NOT NULL DEFAULT FALSE')
+  await addColumnIfMissing('alocacoes', 'funcao_id', 'INTEGER REFERENCES funcoes(id)')
+  await addColumnIfMissing('alocacoes', 'minutos_trabalho', 'INTEGER')
 
-  // --- v5: remover piso_operacional do setor (campo obsoleto) ---
-  dropColumnIfExists('setores', 'piso_operacional')
+  await migrateLegacyDemandasNullToByDay()
 
-  // --- IA providers vNext: configs por provider em JSON (Codex / Claude Code / Gemini) ---
-  const iaConfigCols = getColumnNames('configuracao_ia')
-  addColumnIfMissing('configuracao_ia', 'provider_configs_json', "TEXT NOT NULL DEFAULT '{}'", iaConfigCols)
+  // --- v4: Funcao cor_hex ---
+  await addColumnIfMissing('funcoes', 'cor_hex', 'TEXT')
 
-  // --- v2.3: indicadores escalas ---
-  const escalaCols = getColumnNames('escalas')
-  addColumnIfMissing('escalas', 'cobertura_percent', 'REAL DEFAULT 0', escalaCols)
-  addColumnIfMissing('escalas', 'violacoes_hard', 'INTEGER DEFAULT 0', escalaCols)
-  addColumnIfMissing('escalas', 'violacoes_soft', 'INTEGER DEFAULT 0', escalaCols)
-  addColumnIfMissing('escalas', 'equilibrio', 'REAL DEFAULT 0', escalaCols)
-  addColumnIfMissing('escalas', 'input_hash', 'TEXT', escalaCols)
-  addColumnIfMissing('escalas', 'simulacao_config_json', 'TEXT', escalaCols)
+  // --- v4: grid_minutos 30->15 ---
+  await execute('UPDATE empresa SET grid_minutos = 15 WHERE grid_minutos = 30')
 
-  // ==========================================================================
-  // v3.1 — Motor v3 schema migration (RFC §12.1)
-  // ==========================================================================
+  // --- v4: Indices ---
+  await execDDL('CREATE INDEX IF NOT EXISTS idx_contrato_perfis_contrato ON contrato_perfis_horario(tipo_contrato_id)')
+  await execDDL('CREATE INDEX IF NOT EXISTS idx_demandas_excecao_setor_data ON demandas_excecao_data(setor_id, data)')
+  await execDDL('CREATE INDEX IF NOT EXISTS idx_colab_regra_excecao_colab_data ON colaborador_regra_horario_excecao_data(colaborador_id, data)')
+  await execDDL('CREATE INDEX IF NOT EXISTS idx_ciclo_modelo_setor_ativo ON escala_ciclo_modelos(setor_id, ativo)')
+  await execDDL('CREATE INDEX IF NOT EXISTS idx_ciclo_itens_modelo_semana ON escala_ciclo_itens(ciclo_modelo_id, semana_idx)')
 
-  // Empresa: +min_intervalo_almoco_min, +usa_cct_intervalo_reduzido, +grid_minutos
-  addColumnIfMissing('empresa', 'min_intervalo_almoco_min', 'INTEGER NOT NULL DEFAULT 60', empresaCols)
-  addColumnIfMissing('empresa', 'usa_cct_intervalo_reduzido', 'INTEGER NOT NULL DEFAULT 1', empresaCols)
-  addColumnIfMissing('empresa', 'grid_minutos', 'INTEGER NOT NULL DEFAULT 30', empresaCols)
-
-  // Colaborador: +tipo_trabalhador, +funcao_id
-  const colabCols = getColumnNames('colaboradores')
-  addColumnIfMissing('colaboradores', 'tipo_trabalhador', "TEXT NOT NULL DEFAULT 'CLT'", colabCols)
-  addColumnIfMissing('colaboradores', 'funcao_id', 'INTEGER REFERENCES funcoes(id)', colabCols)
-
-  // Demanda: +override
-  addColumnIfMissing('demandas', 'override', 'INTEGER NOT NULL DEFAULT 0')
-
-  // Alocacao: +hora_almoco_*, +minutos_almoco, +intervalo_15min, +funcao_id, +minutos_trabalho
-  const alocCols = getColumnNames('alocacoes')
-  addColumnIfMissing('alocacoes', 'hora_almoco_inicio', 'TEXT', alocCols)
-  addColumnIfMissing('alocacoes', 'hora_almoco_fim', 'TEXT', alocCols)
-  addColumnIfMissing('alocacoes', 'minutos_almoco', 'INTEGER', alocCols)
-  addColumnIfMissing('alocacoes', 'intervalo_15min', 'INTEGER NOT NULL DEFAULT 0', alocCols)
-  addColumnIfMissing('alocacoes', 'funcao_id', 'INTEGER REFERENCES funcoes(id)', alocCols)
-  addColumnIfMissing('alocacoes', 'minutos_trabalho', 'INTEGER', alocCols)
-  // NOTA: campo 'minutos' mantido pra compat v2. Motor v3 usa 'minutos_trabalho'.
-  // Rename real fica pra quando frontend migrar.
-
-  migrateLegacyDemandasNullToByDay()
-
-  // ==========================================================================
-  // v4 — PRD Motor Python + Regras Colaborador + Grid 15min
-  // ==========================================================================
-
-  // Funcao: +cor_hex
-  addColumnIfMissing('funcoes', 'cor_hex', 'TEXT')
-
-  // Empresa: grid_minutos default 30→15 (atualiza se ainda no default antigo)
-  db.exec(`UPDATE empresa SET grid_minutos = 15 WHERE grid_minutos = 30`)
-
-  // Indices para novas tabelas v4
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_contrato_perfis_contrato ON contrato_perfis_horario(tipo_contrato_id)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_demandas_excecao_setor_data ON demandas_excecao_data(setor_id, data)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_colab_regra_excecao_colab_data ON colaborador_regra_horario_excecao_data(colaborador_id, data)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_ciclo_modelo_setor_ativo ON escala_ciclo_modelos(setor_id, ativo)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_ciclo_itens_modelo_semana ON escala_ciclo_itens(ciclo_modelo_id, semana_idx)`)
-
-  // ==========================================================================
-  // v5 — Horários de empresa por dia (fallback global)
-  // ==========================================================================
-  const horarioEmpresaCount = (
-    db.prepare('SELECT COUNT(*) as count FROM empresa_horario_semana').get() as { count: number }
-  ).count
-  if (horarioEmpresaCount === 0) {
-    const upsertHorario = db.prepare(`
-      INSERT OR IGNORE INTO empresa_horario_semana (dia_semana, ativo, hora_abertura, hora_fechamento)
-      VALUES (?, ?, ?, ?)
-    `)
-    const horariosDefault = [
-      ['SEG', 1, '08:00', '22:00'],
-      ['TER', 1, '08:00', '22:00'],
-      ['QUA', 1, '08:00', '22:00'],
-      ['QUI', 1, '08:00', '22:00'],
-      ['SEX', 1, '08:00', '22:00'],
-      ['SAB', 1, '08:00', '20:00'],
-      ['DOM', 1, '08:00', '14:00'],
+  // --- v5: Horarios empresa default ---
+  const horarioEmpresaRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM empresa_horario_semana')
+  if ((horarioEmpresaRow?.count ?? 0) === 0) {
+    const horariosDefault: [string, boolean, string, string][] = [
+      ['SEG', true, '08:00', '22:00'],
+      ['TER', true, '08:00', '22:00'],
+      ['QUA', true, '08:00', '22:00'],
+      ['QUI', true, '08:00', '22:00'],
+      ['SEX', true, '08:00', '22:00'],
+      ['SAB', true, '08:00', '20:00'],
+      ['DOM', true, '08:00', '14:00'],
     ]
-    db.transaction(() => {
+    await transaction(async () => {
       for (const [dia, ativo, abertura, fechamento] of horariosDefault) {
-        upsertHorario.run(dia, ativo, abertura, fechamento)
+        await execute(
+          'INSERT INTO empresa_horario_semana (dia_semana, ativo, hora_abertura, hora_fechamento) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+          dia, ativo, abertura, fechamento,
+        )
       }
-    })()
+    })
   }
 
-  // ==========================================================================
-  // v7 — Tool Calls Visíveis (Transparência na UI)
-  // ==========================================================================
-  addColumnIfMissing('ia_mensagens', 'tool_calls_json', 'TEXT')
+  // --- v7: Tool Calls Visiveis ---
+  await addColumnIfMissing('ia_mensagens', 'tool_calls_json', 'TEXT')
 
-  // ==========================================================================
-  // v8 — IA sempre ativo (remove switch desnecessário)
-  // ==========================================================================
-  db.exec(`UPDATE configuracao_ia SET ativo = 1 WHERE ativo = 0`)
+  // --- v8: IA sempre ativo ---
+  await execute('UPDATE configuracao_ia SET ativo = TRUE WHERE ativo = FALSE')
 }
-
-// ============================================================================
-// DDL — Engine de Regras Configuráveis (v6)
-// ============================================================================
-
-const DDL_V6_REGRAS = `
-CREATE TABLE IF NOT EXISTS regra_definicao (
-    codigo TEXT PRIMARY KEY,
-    nome TEXT NOT NULL,
-    descricao TEXT,
-    categoria TEXT NOT NULL CHECK (categoria IN ('CLT','SOFT','ANTIPATTERN')),
-    status_sistema TEXT NOT NULL DEFAULT 'HARD'
-        CHECK (status_sistema IN ('HARD','SOFT','OFF','ON')),
-    editavel INTEGER NOT NULL DEFAULT 1,
-    aviso_dependencia TEXT,
-    ordem INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS regra_empresa (
-    codigo TEXT PRIMARY KEY REFERENCES regra_definicao(codigo),
-    status TEXT NOT NULL CHECK (status IN ('HARD','SOFT','OFF','ON')),
-    atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-`
 
 // ============================================================================
 // Entry point
 // ============================================================================
 
-export function createTables(): void {
-  const db = getDb()
-  db.exec(DDL)
-  db.exec(DDL_V3)
-  db.exec(DDL_V5_EMPRESA_HORARIO)
-  db.exec(DDL_IA)
-  db.exec(DDL_IA_HISTORICO)
-  db.exec(DDL_V6_REGRAS)
-  migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v6 + Regras)')
+export async function createTables(): Promise<void> {
+  await execDDL(DDL)
+  await execDDL(DDL_V3)
+  await execDDL(DDL_V5_EMPRESA_HORARIO)
+  await execDDL(DDL_IA)
+  await execDDL(DDL_IA_HISTORICO)
+  await execDDL(DDL_V6_REGRAS)
+  await execDDL(DDL_V7_KNOWLEDGE)
+  await migrateSchema()
+  console.log('[DB] Tabelas criadas com sucesso (v7 + Knowledge Layer)')
 }

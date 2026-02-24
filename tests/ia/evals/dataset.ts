@@ -20,7 +20,7 @@ export interface EscalaFlowEvalCase {
   tags?: string[]
   /** Marca que este case faz mutação no DB (INSERT/UPDATE/DELETE) — eval wrappa em SAVEPOINT+ROLLBACK */
   mutates?: boolean
-  /** Verifica efeito real no DB após a tool executar. Recebe db (better-sqlite3), retorna { ok, detail }. */
+  /** Verifica efeito real no DB após a tool executar. Recebe db (PGlite), retorna { ok, detail }. */
   dbVerify?: (db: any) => { ok: boolean; detail: string }
 }
 

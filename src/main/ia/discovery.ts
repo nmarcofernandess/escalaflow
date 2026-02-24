@@ -1,4 +1,4 @@
-import { getDb } from '../db/database'
+import { queryOne, queryAll } from '../db/query'
 import { buildSolverInput, computeSolverScenarioHash } from '../motor/solver-bridge'
 import type { IaContexto } from '../../shared/types'
 
@@ -10,29 +10,28 @@ import type { IaContexto } from '../../shared/types'
  * O objetivo é que a IA NUNCA precise perguntar informações
  * básicas que já estão visíveis na tela do usuário.
  */
-export function buildContextBriefing(contexto?: IaContexto): string {
+export async function buildContextBriefing(contexto?: IaContexto): Promise<string> {
     if (!contexto) return ''
 
-    const db = getDb()
     const sections: string[] = []
 
     sections.push(`## CONTEXTO AUTOMÁTICO — PÁGINA ATUAL DO USUÁRIO`)
     sections.push(`Rota: ${contexto.rota}`)
 
     // ─── Resumo global (sempre) ──────────────────────────────────────
-    const resumo = _resumoGlobal(db)
+    const resumo = await _resumoGlobal()
     sections.push(`\n### Resumo do sistema`)
     sections.push(`- Setores ativos: ${resumo.setores}`)
     sections.push(`- Colaboradores ativos: ${resumo.colaboradores}`)
     sections.push(`- Escalas RASCUNHO: ${resumo.rascunhos} | OFICIAL: ${resumo.oficiais}`)
 
     // ─── Feriados próximos (30 dias) ───────────────────────────────
-    const feriadosProximos = db.prepare(`
+    const feriadosProximos = await queryAll<{ data: string; nome: string; proibido_trabalhar: boolean }>(`
         SELECT data, nome, proibido_trabalhar
         FROM feriados
-        WHERE data >= date('now') AND data <= date('now', '+30 days')
+        WHERE data >= CURRENT_DATE AND data <= CURRENT_DATE + INTERVAL '30 days'
         ORDER BY data
-    `).all() as Array<{ data: string; nome: string; proibido_trabalhar: number }>
+    `)
     if (feriadosProximos.length > 0) {
         sections.push(`\n### Feriados nos próximos 30 dias`)
         for (const f of feriadosProximos) {
@@ -42,13 +41,13 @@ export function buildContextBriefing(contexto?: IaContexto): string {
     }
 
     // ─── Regras customizadas (empresa overrides ativos) ────────────
-    const regrasCustom = db.prepare(`
+    const regrasCustom = await queryAll<{ codigo: string; status: string; nome: string; status_sistema: string }>(`
         SELECT re.codigo, re.status, rd.nome, rd.status_sistema
         FROM regra_empresa re
         JOIN regra_definicao rd ON re.codigo = rd.codigo
         WHERE re.status != rd.status_sistema
         ORDER BY re.codigo
-    `).all() as Array<{ codigo: string; status: string; nome: string; status_sistema: string }>
+    `)
     if (regrasCustom.length > 0) {
         sections.push(`\n### Regras com override da empresa`)
         for (const r of regrasCustom) {
@@ -57,30 +56,35 @@ export function buildContextBriefing(contexto?: IaContexto): string {
     }
 
     // ─── Lista de setores (sempre — são poucos) ──────────────────────
-    const setores = db.prepare('SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores WHERE ativo = 1 ORDER BY nome').all() as Array<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string; ativo: number }>
+    const setores = await queryAll<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string; ativo: boolean }>('SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores WHERE ativo = 1 ORDER BY nome')
     if (setores.length > 0) {
         sections.push(`\n### Setores disponíveis`)
         for (const s of setores) {
-            const numColabs = (db.prepare('SELECT COUNT(*) as c FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(s.id) as { c: number }).c
+            const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = 1', s.id)
+            const numColabs = countRow?.c ?? 0
             sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.hora_abertura}–${s.hora_fechamento}, ${numColabs} colaboradores`)
         }
     }
 
     // ─── Contexto de SETOR específico ────────────────────────────────
     if (contexto.setor_id) {
-        const setorInfo = _infoSetor(db, contexto.setor_id)
+        const setorInfo = await _infoSetor(contexto.setor_id)
         if (setorInfo) sections.push(setorInfo)
     }
 
     // ─── Contexto de COLABORADOR específico ──────────────────────────
     if (contexto.colaborador_id) {
-        const colabInfo = _infoColaborador(db, contexto.colaborador_id)
+        const colabInfo = await _infoColaborador(contexto.colaborador_id)
         if (colabInfo) sections.push(colabInfo)
     }
 
     // ─── Alertas proativos (escalas desatualizadas, violações, exceções) ──
-    const alertaLines = _alertasProativos(db, contexto.setor_id)
+    const alertaLines = await _alertasProativos(contexto.setor_id)
     if (alertaLines) sections.push(alertaLines)
+
+    // ─── Stats Knowledge Base ────────────────────────────────────────
+    const knowledgeStats = await _statsKnowledge()
+    if (knowledgeStats) sections.push(knowledgeStats)
 
     // ─── Dica de página ──────────────────────────────────────────────
     sections.push(_dicaPagina(contexto.pagina))
@@ -92,17 +96,17 @@ export function buildContextBriefing(contexto?: IaContexto): string {
 // HELPERS INTERNOS
 // =============================================================================
 
-function _resumoGlobal(db: ReturnType<typeof getDb>) {
+async function _resumoGlobal() {
     return {
-        setores: (db.prepare('SELECT COUNT(*) as c FROM setores WHERE ativo = 1').get() as any).c,
-        colaboradores: (db.prepare('SELECT COUNT(*) as c FROM colaboradores WHERE ativo = 1').get() as any).c,
-        rascunhos: (db.prepare("SELECT COUNT(*) as c FROM escalas WHERE status = 'RASCUNHO'").get() as any).c,
-        oficiais: (db.prepare("SELECT COUNT(*) as c FROM escalas WHERE status = 'OFICIAL'").get() as any).c,
+        setores: (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM setores WHERE ativo = 1'))?.c ?? 0,
+        colaboradores: (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE ativo = 1'))?.c ?? 0,
+        rascunhos: (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM escalas WHERE status = 'RASCUNHO'"))?.c ?? 0,
+        oficiais: (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM escalas WHERE status = 'OFICIAL'"))?.c ?? 0,
     }
 }
 
-function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | null {
-    const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(setor_id) as any
+async function _infoSetor(setor_id: number): Promise<string | null> {
+    const setor = await queryOne<any>('SELECT * FROM setores WHERE id = ?', setor_id)
     if (!setor) return null
 
     const lines: string[] = []
@@ -111,13 +115,13 @@ function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | nu
     lines.push(`- Ativo: ${setor.ativo ? 'sim' : 'não'}`)
 
     // Colaboradores do setor
-    const colabs = db.prepare(`
+    const colabs = await queryAll<{ id: number; nome: string; tipo_trabalhador: string; contrato_nome: string; horas_semanais: number }>(`
         SELECT c.id, c.nome, c.tipo_trabalhador, t.nome as contrato_nome, t.horas_semanais
         FROM colaboradores c
         JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
         WHERE c.setor_id = ? AND c.ativo = 1
         ORDER BY c.nome
-    `).all(setor_id) as Array<{ id: number; nome: string; tipo_trabalhador: string; contrato_nome: string; horas_semanais: number }>
+    `, setor_id)
 
     if (colabs.length > 0) {
         lines.push(`\n#### Colaboradores (${colabs.length} ativos):`)
@@ -129,15 +133,15 @@ function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | nu
     }
 
     // Exceções ativas do setor (férias/atestados que impactam escalas)
-    const excecoes = db.prepare(`
+    const excecoes = await queryAll<{ tipo: string; data_inicio: string; data_fim: string; colab_nome: string }>(`
         SELECT e.tipo, e.data_inicio, e.data_fim, c.nome as colab_nome
         FROM excecoes e
         JOIN colaboradores c ON e.colaborador_id = c.id
         WHERE c.setor_id = ? AND c.ativo = 1
-          AND e.data_fim >= date('now')
+          AND e.data_fim >= CURRENT_DATE
         ORDER BY e.data_inicio
         LIMIT 10
-    `).all(setor_id) as Array<{ tipo: string; data_inicio: string; data_fim: string; colab_nome: string }>
+    `, setor_id)
 
     if (excecoes.length > 0) {
         lines.push(`\n#### Exceções ativas (férias/atestados):`)
@@ -147,7 +151,7 @@ function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | nu
     }
 
     // Demandas
-    const demandas = db.prepare('SELECT dia_semana, hora_inicio, hora_fim, min_pessoas FROM demandas WHERE setor_id = ? ORDER BY dia_semana, hora_inicio').all(setor_id) as Array<{ dia_semana: string | null; hora_inicio: string; hora_fim: string; min_pessoas: number }>
+    const demandas = await queryAll<{ dia_semana: string | null; hora_inicio: string; hora_fim: string; min_pessoas: number }>('SELECT dia_semana, hora_inicio, hora_fim, min_pessoas FROM demandas WHERE setor_id = ? ORDER BY dia_semana, hora_inicio', setor_id)
     if (demandas.length > 0) {
         lines.push(`\n#### Demanda planejada:`)
         for (const d of demandas) {
@@ -157,14 +161,14 @@ function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | nu
     }
 
     // Escala mais recente (RASCUNHO ou OFICIAL)
-    const escala = db.prepare(`
+    const escala = await queryOne<any>(`
         SELECT id, status, data_inicio, data_fim, pontuacao, cobertura_percent,
                violacoes_hard, violacoes_soft, equilibrio
         FROM escalas
         WHERE setor_id = ?
         ORDER BY CASE status WHEN 'RASCUNHO' THEN 0 WHEN 'OFICIAL' THEN 1 ELSE 2 END, id DESC
         LIMIT 1
-    `).get(setor_id) as any
+    `, setor_id)
 
     if (escala) {
         lines.push(`\n#### Escala atual: ${escala.status} (ID: ${escala.id})`)
@@ -179,11 +183,11 @@ function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | nu
         }
 
         // Contagem de dias TRABALHO vs FOLGA
-        const alocStats = db.prepare(`
-            SELECT status, COUNT(*) as total
+        const alocStats = await queryAll<{ status: string; total: number }>(`
+            SELECT status, COUNT(*)::int as total
             FROM alocacoes WHERE escala_id = ?
             GROUP BY status
-        `).all(escala.id) as Array<{ status: string; total: number }>
+        `, escala.id)
 
         if (alocStats.length > 0) {
             lines.push(`\n#### Distribuição de alocações:`)
@@ -198,15 +202,15 @@ function _infoSetor(db: ReturnType<typeof getDb>, setor_id: number): string | nu
     return lines.join('\n')
 }
 
-function _infoColaborador(db: ReturnType<typeof getDb>, colaborador_id: number): string | null {
-    const colab = db.prepare(`
+async function _infoColaborador(colaborador_id: number): Promise<string | null> {
+    const colab = await queryOne<any>(`
         SELECT c.*, t.nome as contrato_nome, t.horas_semanais, t.regime_escala, t.dias_trabalho,
                s.nome as setor_nome
         FROM colaboradores c
         JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
         JOIN setores s ON c.setor_id = s.id
         WHERE c.id = ?
-    `).get(colaborador_id) as any
+    `, colaborador_id)
 
     if (!colab) return null
 
@@ -218,11 +222,11 @@ function _infoColaborador(db: ReturnType<typeof getDb>, colaborador_id: number):
     if (colab.prefere_turno) lines.push(`- Preferência turno: ${colab.prefere_turno}`)
 
     // Exceções ativas
-    const excecoes = db.prepare(`
+    const excecoes = await queryAll<{ tipo: string; data_inicio: string; data_fim: string; observacao: string | null }>(`
         SELECT tipo, data_inicio, data_fim, observacao
-        FROM excecoes WHERE colaborador_id = ? AND data_fim >= date('now')
+        FROM excecoes WHERE colaborador_id = ? AND data_fim >= CURRENT_DATE
         ORDER BY data_inicio
-    `).all(colaborador_id) as Array<{ tipo: string; data_inicio: string; data_fim: string; observacao: string | null }>
+    `, colaborador_id)
 
     if (excecoes.length > 0) {
         lines.push(`\n#### Exceções ativas:`)
@@ -234,14 +238,16 @@ function _infoColaborador(db: ReturnType<typeof getDb>, colaborador_id: number):
     return lines.join('\n')
 }
 
-function _alertasProativos(db: ReturnType<typeof getDb>, setor_id?: number): string | null {
+async function _alertasProativos(setor_id?: number): Promise<string | null> {
     const lines: string[] = []
 
     // Escalas RASCUNHO com violações HARD (escopo: setor em foco ou todos)
     const violQuery = setor_id
         ? "SELECT e.id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?"
         : "SELECT e.id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0"
-    const violacoes = (setor_id ? db.prepare(violQuery).all(setor_id) : db.prepare(violQuery).all()) as Array<{ id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>
+    const violacoes = setor_id
+        ? await queryAll<{ id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>(violQuery, setor_id)
+        : await queryAll<{ id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>(violQuery)
     for (const v of violacoes) {
         lines.push(`- CRITICAL: ${v.setor_nome} escala ${v.data_inicio}–${v.data_fim} tem ${v.violacoes_hard} violação(ões) HARD`)
     }
@@ -250,10 +256,12 @@ function _alertasProativos(db: ReturnType<typeof getDb>, setor_id?: number): str
     const hashQuery = setor_id
         ? "SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL AND e.setor_id = ?"
         : "SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL"
-    const rascunhos = (setor_id ? db.prepare(hashQuery).all(setor_id) : db.prepare(hashQuery).all()) as Array<{ id: number; setor_id: number; setor_nome: string; input_hash: string; data_inicio: string; data_fim: string }>
+    const rascunhos = setor_id
+        ? await queryAll<{ id: number; setor_id: number; setor_nome: string; input_hash: string; data_inicio: string; data_fim: string }>(hashQuery, setor_id)
+        : await queryAll<{ id: number; setor_id: number; setor_nome: string; input_hash: string; data_inicio: string; data_fim: string }>(hashQuery)
     for (const e of rascunhos) {
         try {
-            const currentInput = buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
+            const currentInput = await buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
             const currentHash = computeSolverScenarioHash(currentInput)
             if (currentHash !== e.input_hash) {
                 lines.push(`- WARNING: ${e.setor_nome} escala ${e.data_inicio}–${e.data_fim} está DESATUALIZADA — dados mudaram desde a geração`)
@@ -265,13 +273,15 @@ function _alertasProativos(db: ReturnType<typeof getDb>, setor_id?: number): str
     const expQuery = setor_id
         ? `SELECT e.tipo, e.data_fim, c.nome as colab_nome, s.nome as setor_nome
            FROM excecoes e JOIN colaboradores c ON e.colaborador_id = c.id JOIN setores s ON c.setor_id = s.id
-           WHERE c.ativo = 1 AND e.data_fim >= date('now') AND e.data_fim <= date('now', '+7 days') AND c.setor_id = ?
+           WHERE c.ativo = 1 AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days' AND c.setor_id = ?
            ORDER BY e.data_fim LIMIT 5`
         : `SELECT e.tipo, e.data_fim, c.nome as colab_nome, s.nome as setor_nome
            FROM excecoes e JOIN colaboradores c ON e.colaborador_id = c.id JOIN setores s ON c.setor_id = s.id
-           WHERE c.ativo = 1 AND e.data_fim >= date('now') AND e.data_fim <= date('now', '+7 days')
+           WHERE c.ativo = 1 AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days'
            ORDER BY e.data_fim LIMIT 5`
-    const expirando = (setor_id ? db.prepare(expQuery).all(setor_id) : db.prepare(expQuery).all()) as Array<{ tipo: string; data_fim: string; colab_nome: string; setor_nome: string }>
+    const expirando = setor_id
+        ? await queryAll<{ tipo: string; data_fim: string; colab_nome: string; setor_nome: string }>(expQuery, setor_id)
+        : await queryAll<{ tipo: string; data_fim: string; colab_nome: string; setor_nome: string }>(expQuery)
     for (const ex of expirando) {
         lines.push(`- INFO: ${ex.colab_nome} (${ex.setor_nome}) — ${ex.tipo} termina em ${ex.data_fim}`)
     }
@@ -279,6 +289,20 @@ function _alertasProativos(db: ReturnType<typeof getDb>, setor_id?: number): str
     if (lines.length === 0) return null
 
     return `\n### Alertas ativos\n${lines.join('\n')}`
+}
+
+async function _statsKnowledge(): Promise<string | null> {
+    try {
+        const sources = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM knowledge_sources')
+        if (!sources?.count) return null
+        const chunks = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM knowledge_chunks')
+        const entities = await queryOne<{ count: number }>(
+            "SELECT COUNT(*)::int as count FROM knowledge_entities WHERE valid_to IS NULL"
+        )
+        return `\n### Base de Conhecimento\n- ${sources.count} fonte(s) | ${chunks?.count ?? 0} chunks indexados | ${entities?.count ?? 0} entidade(s) ativa(s)`
+    } catch {
+        return null
+    }
 }
 
 function _dicaPagina(pagina: string): string {

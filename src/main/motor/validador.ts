@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3'
+import { queryOne, queryAll } from '../db/query'
 import type {
   EscalaCompletaV3, Alocacao, Escala, Setor, Demanda, Feriado,
   SetorHorarioSemana, Empresa, AntipatternViolacao, DecisaoMotor,
@@ -72,27 +72,28 @@ interface ColabComContrato {
  *
  * NÃO faz backtrack. NÃO modifica alocações. Apenas analisa e reporta.
  */
-export function validarEscalaV3(escalaId: number, db: Database.Database): EscalaCompletaV3 {
+export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV3> {
   // ═══════════════════════════════════════════════════════════════════════════
   // 1. Buscar escala e alocações do banco
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as Escala | undefined
+  const escala = await queryOne<Escala>('SELECT * FROM escalas WHERE id = ?', escalaId)
 
   if (!escala) throw new Error(`Escala ${escalaId} não encontrada`)
 
   // ── Ler regras efetivas (empresa merged com sistema) ───────────────────────
-  const rulesRows = (() => {
+  const rulesRows = await (async () => {
     try {
-      const tableExists = (db.prepare(
-        "SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='regra_definicao'"
-      ).get() as { c: number }).c > 0
+      const tableCheck = await queryOne<{ c: number }>(
+        "SELECT COUNT(*)::int as c FROM information_schema.tables WHERE table_name = 'regra_definicao'"
+      )
+      const tableExists = (tableCheck?.c ?? 0) > 0
       if (!tableExists) return []
-      return db.prepare(`
+      return await queryAll<{ codigo: string; status_efetivo: string }>(`
         SELECT rd.codigo, COALESCE(re.status, rd.status_sistema) AS status_efetivo
         FROM regra_definicao rd
         LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
-      `).all() as Array<{ codigo: string; status_efetivo: string }>
+      `)
     } catch {
       return []
     }
@@ -103,58 +104,48 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
     return rules[codigo] ?? defaultStatus
   }
 
-  const alocacoesDB = db
-    .prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data')
-    .all(escalaId) as Alocacao[]
+  const alocacoesDB = await queryAll<Alocacao>('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data', escalaId)
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 2. Buscar entidades necessárias (mesmas queries do gerador)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const empresa = db.prepare('SELECT * FROM empresa LIMIT 1').get() as Empresa | undefined
+  const empresa = await queryOne<Empresa>('SELECT * FROM empresa LIMIT 1')
 
   if (!empresa) throw new Error('Empresa não configurada — execute o seed antes de validar escalas.')
 
-  const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(escala.setor_id) as Setor | undefined
+  const setor = await queryOne<Setor>('SELECT * FROM setores WHERE id = ?', escala.setor_id)
 
   if (!setor) throw new Error(`Setor ${escala.setor_id} não encontrado`)
 
-  const horariosSemana = db
-    .prepare('SELECT * FROM setor_horario_semana WHERE setor_id = ?')
-    .all(escala.setor_id) as SetorHorarioSemana[]
+  const horariosSemana = await queryAll<SetorHorarioSemana>('SELECT * FROM setor_horario_semana WHERE setor_id = ?', escala.setor_id)
 
-  const demandas = db
-    .prepare('SELECT * FROM demandas WHERE setor_id = ?')
-    .all(escala.setor_id) as Demanda[]
+  const demandas = await queryAll<Demanda>('SELECT * FROM demandas WHERE setor_id = ?', escala.setor_id)
 
-  const colaboradoresRaw = db
-    .prepare(
-      `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.trabalha_domingo, tc.max_minutos_dia
-       FROM colaboradores c
-       JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
-       WHERE c.setor_id = ? AND c.ativo = 1
-       ORDER BY c.rank DESC`
-    )
-    .all(escala.setor_id) as ColabComContrato[]
+  const colaboradoresRaw = await queryAll<ColabComContrato>(
+    `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.trabalha_domingo, tc.max_minutos_dia
+     FROM colaboradores c
+     JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
+     WHERE c.setor_id = ? AND c.ativo = 1
+     ORDER BY c.rank DESC`,
+    escala.setor_id
+  )
 
-  const excecoes = db
-    .prepare(
-      `SELECT * FROM excecoes
-       WHERE colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
-         AND data_fim >= ? AND data_inicio <= ?`
-    )
-    .all(escala.setor_id, escala.data_inicio, escala.data_fim) as Array<{
-      id: number
-      colaborador_id: number
-      data_inicio: string
-      data_fim: string
-      tipo: string
-      observacao: string | null
-    }>
+  const excecoes = await queryAll<{
+    id: number
+    colaborador_id: number
+    data_inicio: string
+    data_fim: string
+    tipo: string
+    observacao: string | null
+  }>(
+    `SELECT * FROM excecoes
+     WHERE colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
+       AND data_fim >= ? AND data_inicio <= ?`,
+    escala.setor_id, escala.data_inicio, escala.data_fim
+  )
 
-  const feriados = db
-    .prepare('SELECT * FROM feriados WHERE data BETWEEN ? AND ?')
-    .all(escala.data_inicio, escala.data_fim) as Feriado[]
+  const feriados = await queryAll<Feriado>('SELECT * FROM feriados WHERE data BETWEEN ? AND ?', escala.data_inicio, escala.data_fim)
 
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -188,20 +179,17 @@ export function validarEscalaV3(escalaId: number, db: Database.Database): Escala
   // 5. Lookback: buscar escala OFICIAL anterior para continuidade (H1, H2, H3)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const escalasAnteriores = db
-    .prepare(
-      `SELECT * FROM escalas
-       WHERE setor_id = ? AND status = 'OFICIAL' AND data_fim < ?
-       ORDER BY data_fim DESC LIMIT 1`
-    )
-    .get(escala.setor_id, escala.data_inicio) as Escala | undefined
+  const escalasAnteriores = await queryOne<Escala>(
+    `SELECT * FROM escalas
+     WHERE setor_id = ? AND status = 'OFICIAL' AND data_fim < ?
+     ORDER BY data_fim DESC LIMIT 1`,
+    escala.setor_id, escala.data_inicio
+  )
 
   const lookback = new Map<number, LookbackV3>()
 
   if (escalasAnteriores) {
-    const alocacoesAnteriores = db
-      .prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data DESC')
-      .all(escalasAnteriores.id) as Alocacao[]
+    const alocacoesAnteriores = await queryAll<Alocacao>('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data DESC', escalasAnteriores.id)
 
     for (const colab of colaboradores) {
       const alocColabRev = alocacoesAnteriores

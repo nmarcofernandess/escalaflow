@@ -9,6 +9,7 @@ import {
   FileText,
   Settings,
   ShieldCheck,
+  Brain,
   ChevronsUpDown,
   Sun,
   Moon,
@@ -60,6 +61,7 @@ const configNav = [
   { label: 'Tipos de Contrato', to: '/tipos-contrato', icon: FileText },
   { label: 'Feriados', to: '/feriados', icon: CalendarDays },
   { label: 'Regras', to: '/regras', icon: ShieldCheck },
+  { label: 'Memoria', to: '/memoria', icon: Brain },
 ]
 
 const temaOpcoes = [

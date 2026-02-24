@@ -711,6 +711,50 @@ export type IaStreamEvent =
 // CATÁLOGO DE MODELOS IA
 // ============================================================================
 
+// ============================================================================
+// KNOWLEDGE LAYER — RAG + Knowledge Graph
+// ============================================================================
+
+export interface KnowledgeSource {
+  id: number
+  tipo: 'manual' | 'auto_capture'
+  titulo: string
+  conteudo_original: string
+  metadata: Record<string, unknown>
+  importance: 'high' | 'low'
+  criada_em: string
+  atualizada_em: string
+}
+
+export interface KnowledgeChunk {
+  id: number
+  source_id: number
+  conteudo: string
+  importance: 'high' | 'low'
+  access_count: number
+  last_accessed_at: string | null
+  criada_em: string
+}
+
+export interface KnowledgeEntity {
+  id: number
+  nome: string
+  tipo: string
+  valid_from: string
+  valid_to: string | null
+  criada_em: string
+}
+
+export interface KnowledgeRelation {
+  id: number
+  entity_from_id: number
+  entity_to_id: number
+  tipo_relacao: string
+  peso: number
+  valid_from: string
+  valid_to: string | null
+}
+
 export type IaProviderId = 'gemini' | 'openrouter'
 
 export interface IaModelCatalogItem {

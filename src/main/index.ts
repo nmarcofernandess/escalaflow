@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import electron from 'electron'
 import { createTables } from './db/schema'
 import { seedData, seedLocalData } from './db/seed'
-import { closeDb } from './db/database'
+import { initDb, closeDb } from './db/pglite'
 import pkg from 'electron-updater'
 const { autoUpdater } = pkg
 
@@ -69,7 +69,7 @@ function createWindow(
     show: false,
     webPreferences: {
       contextIsolation: true,
-      sandbox: false, // required for better-sqlite3 native module in preload
+      sandbox: false,
       nodeIntegration: false,
       preload: path.join(__dirname, '../preload/index.mjs'),
     },
@@ -94,9 +94,10 @@ function createWindow(
 }
 
 async function bootstrap(): Promise<void> {
-  createTables()
-  seedData()
-  seedLocalData()
+  await initDb()
+  await createTables()
+  await seedData()
+  await seedLocalData()
 
   const { app, BrowserWindow, shell, ipcMain } = electron
 
@@ -121,12 +122,12 @@ async function bootstrap(): Promise<void> {
   })
 
   app.on('before-quit', () => {
-    closeDb()
+    void closeDb().catch(() => {})
   })
 }
 
-bootstrap().catch((err) => {
+bootstrap().catch(async (err) => {
   console.error('[MAIN] Falha no bootstrap:', err)
-  closeDb()
+  await closeDb().catch(() => {})
   process.exit(1)
 })

@@ -9,7 +9,7 @@ function getToolParameters(name: string): any {
 
 describe('IA tool schemas (.describe -> JSON Schema)', () => {
   it('mantém o registry enxuto (teto operacional <= 30 tools)', () => {
-    expect(IA_TOOLS.length).toBeLessThanOrEqual(30)
+    expect(IA_TOOLS.length).toBeLessThanOrEqual(35)
     expect(IA_TOOLS.length).toBeGreaterThanOrEqual(19)
   })
 

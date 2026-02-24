@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
-import { getDb } from '../db/database'
+import { queryOne, queryAll, execute, insertReturningId, transaction } from '../db/query'
 import type {
   SolverInput,
   SolverOutput,
@@ -164,49 +164,48 @@ function resolvePythonCmd(): string {
 // Build SolverInput from DB
 // ---------------------------------------------------------------------------
 
-export function buildSolverInput(
+export async function buildSolverInput(
   setorId: number,
   dataInicio: string,
   dataFim: string,
   pinnedCells?: PinnedCell[],
   options: BuildSolverInputOptions = {},
-): SolverInput {
-  const db = getDb()
+): Promise<SolverInput> {
   const overrideByColab = new Map<number, RegimeEscalaInput>(
     (options.regimesOverride ?? []).map((o) => [o.colaborador_id, o.regime_escala]),
   )
 
   // Empresa
-  const emp = db.prepare('SELECT * FROM empresa LIMIT 1').get() as {
+  const emp = await queryOne<{
     tolerancia_semanal_min: number
     min_intervalo_almoco_min: number
     usa_cct_intervalo_reduzido: number
     grid_minutos: number
-  } | undefined
+  }>('SELECT * FROM empresa LIMIT 1')
 
   // Setor
-  const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(setorId) as {
+  const setor = await queryOne<{
     id: number
     hora_abertura: string
     hora_fechamento: string
-  } | undefined
+  }>('SELECT * FROM setores WHERE id = ?', setorId)
   if (!setor) throw new Error(`Setor ${setorId} nao encontrado`)
 
   // Colaboradores + TipoContrato
-  const colabRows = db.prepare(`
+  const colabRows = await queryAll<{
+    id: number; nome: string; sexo: string; horas_semanais: number; rank: number;
+    prefere_turno: string | null; evitar_dia_semana: string | null;
+    tipo_trabalhador: string | null; funcao_id: number | null;
+    regime_escala: '5X2' | '6X1' | null;
+    dias_trabalho: number; max_minutos_dia: number; trabalha_domingo: number;
+  }>(`
     SELECT c.id, c.nome, c.sexo, c.horas_semanais, c.rank, c.prefere_turno, c.evitar_dia_semana,
            c.tipo_trabalhador, c.funcao_id, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia, tc.trabalha_domingo
     FROM colaboradores c
     JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
     WHERE c.setor_id = ? AND c.ativo = 1
     ORDER BY c.rank DESC
-  `).all(setorId) as Array<{
-    id: number; nome: string; sexo: string; horas_semanais: number; rank: number;
-    prefere_turno: string | null; evitar_dia_semana: string | null;
-    tipo_trabalhador: string | null; funcao_id: number | null;
-    regime_escala: '5X2' | '6X1' | null;
-    dias_trabalho: number; max_minutos_dia: number; trabalha_domingo: number;
-  }>
+  `, setorId)
 
   const colaboradores: SolverInputColab[] = colabRows.map(r => {
     const regimeEfetivo = overrideByColab.get(r.id) ?? r.regime_escala ?? (r.dias_trabalho <= 5 ? '5X2' : '6X1')
@@ -227,15 +226,15 @@ export function buildSolverInput(
   })
 
   // Demandas
-  const demandaRows = db.prepare(`
+  const demandaRows = await queryAll<{
+    dia_semana: string | null; hora_inicio: string; hora_fim: string;
+    min_pessoas: number; override: number;
+  }>(`
     SELECT dia_semana, hora_inicio, hora_fim, min_pessoas, override
     FROM demandas
     WHERE setor_id = ?
     ORDER BY dia_semana, hora_inicio
-  `).all(setorId) as Array<{
-    dia_semana: string | null; hora_inicio: string; hora_fim: string;
-    min_pessoas: number; override: number;
-  }>
+  `, setorId)
 
   const demanda: SolverInputDemanda[] = demandaRows.map(r => ({
     dia_semana: r.dia_semana ?? null,
@@ -246,25 +245,35 @@ export function buildSolverInput(
   }))
 
   // Feriados no periodo (inclui cct_autoriza pra H18)
-  const feriados = db.prepare(`
+  const feriados = await queryAll<{
+    data: string; nome: string; proibido_trabalhar: number; cct_autoriza: number;
+  }>(`
     SELECT data, nome, proibido_trabalhar, cct_autoriza
     FROM feriados
     WHERE data BETWEEN ? AND ?
-  `).all(dataInicio, dataFim) as Array<{
-    data: string; nome: string; proibido_trabalhar: number; cct_autoriza: number;
-  }>
+  `, dataInicio, dataFim)
 
   // Excecoes no periodo
-  const excecoes = db.prepare(`
+  const excecoes = await queryAll<{
+    colaborador_id: number; data_inicio: string; data_fim: string; tipo: string;
+  }>(`
     SELECT colaborador_id, data_inicio, data_fim, tipo
     FROM excecoes
     WHERE data_inicio <= ? AND data_fim >= ?
-  `).all(dataFim, dataInicio) as Array<{
-    colaborador_id: number; data_inicio: string; data_fim: string; tipo: string;
-  }>
+  `, dataFim, dataInicio)
 
   // v4: Regras de horario por colaborador
-  const regraHorarioRows = db.prepare(`
+  const regraHorarioRows = await queryAll<{
+    colaborador_id: number; ativo: number; perfil_horario_id: number | null;
+    inicio_min: string | null; inicio_max: string | null;
+    fim_min: string | null; fim_max: string | null;
+    preferencia_turno_soft: string | null;
+    domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
+    folga_fixa_dia_semana: string | null;
+    p_inicio_min: string | null; p_inicio_max: string | null;
+    p_fim_min: string | null; p_fim_max: string | null;
+    p_preferencia_turno_soft: string | null;
+  }>(`
     SELECT r.colaborador_id, r.ativo, r.perfil_horario_id,
            r.inicio_min, r.inicio_max, r.fim_min, r.fim_max,
            r.preferencia_turno_soft, r.domingo_ciclo_trabalho, r.domingo_ciclo_folga,
@@ -276,47 +285,37 @@ export function buildSolverInput(
     LEFT JOIN contrato_perfis_horario p ON p.id = r.perfil_horario_id AND p.ativo = 1
     WHERE r.ativo = 1
       AND r.colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
-  `).all(setorId) as Array<{
-    colaborador_id: number; ativo: number; perfil_horario_id: number | null;
-    inicio_min: string | null; inicio_max: string | null;
-    fim_min: string | null; fim_max: string | null;
-    preferencia_turno_soft: string | null;
-    domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
-    folga_fixa_dia_semana: string | null;
-    p_inicio_min: string | null; p_inicio_max: string | null;
-    p_fim_min: string | null; p_fim_max: string | null;
-    p_preferencia_turno_soft: string | null;
-  }>
+  `, setorId)
   const regraByColab = new Map(regraHorarioRows.map(r => [r.colaborador_id, r]))
 
   // v4: Excecoes de horario por data
-  const excecaoDataRows = db.prepare(`
+  const excecaoDataRows = await queryAll<{
+    colaborador_id: number; data: string; ativo: number;
+    inicio_min: string | null; inicio_max: string | null;
+    fim_min: string | null; fim_max: string | null;
+    preferencia_turno_soft: string | null; domingo_forcar_folga: number;
+  }>(`
     SELECT colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max,
            preferencia_turno_soft, domingo_forcar_folga
     FROM colaborador_regra_horario_excecao_data
     WHERE ativo = 1
       AND data BETWEEN ? AND ?
       AND colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
-  `).all(dataInicio, dataFim, setorId) as Array<{
-    colaborador_id: number; data: string; ativo: number;
-    inicio_min: string | null; inicio_max: string | null;
-    fim_min: string | null; fim_max: string | null;
-    preferencia_turno_soft: string | null; domingo_forcar_folga: number;
-  }>
+  `, dataInicio, dataFim, setorId)
   const excecaoDataMap = new Map<string, typeof excecaoDataRows[0]>()
   for (const ed of excecaoDataRows) {
     excecaoDataMap.set(`${ed.colaborador_id}|${ed.data}`, ed)
   }
 
   // v4: Demanda excecao por data
-  const demandaExcecaoRows = db.prepare(`
+  const demandaExcecaoRows = await queryAll<{
+    setor_id: number; data: string; hora_inicio: string; hora_fim: string;
+    min_pessoas: number; override: number;
+  }>(`
     SELECT setor_id, data, hora_inicio, hora_fim, min_pessoas, override
     FROM demandas_excecao_data
     WHERE setor_id = ? AND data BETWEEN ? AND ?
-  `).all(setorId, dataInicio, dataFim) as Array<{
-    setor_id: number; data: string; hora_inicio: string; hora_fim: string;
-    min_pessoas: number; override: number;
-  }>
+  `, setorId, dataInicio, dataFim)
 
   // v4: Build regras_colaborador_dia[] — resolve precedencia por (colab, data)
   const DIAS_SEMANA_MAP: Record<number, DiaSemana> = {
@@ -399,27 +398,27 @@ export function buildSolverInput(
   // Warm-start hints: reuse last schedule solution for same setor+period.
   const lastScale = options.hintsEscalaId !== undefined
     ? ({ id: options.hintsEscalaId } as { id: number })
-    : db.prepare(`
+    : await queryOne<{ id: number }>(`
         SELECT id
         FROM escalas
         WHERE setor_id = ? AND data_inicio = ? AND data_fim = ?
         ORDER BY id DESC
         LIMIT 1
-      `).get(setorId, dataInicio, dataFim) as { id: number } | undefined
+      `, setorId, dataInicio, dataFim)
 
   let hints: SolverInputHint[] | undefined
   if (lastScale) {
-    const hintRows = db.prepare(`
-      SELECT colaborador_id, data, status, hora_inicio, hora_fim
-      FROM alocacoes
-      WHERE escala_id = ?
-    `).all(lastScale.id) as Array<{
+    const hintRows = await queryAll<{
       colaborador_id: number
       data: string
       status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
       hora_inicio: string | null
       hora_fim: string | null
-    }>
+    }>(`
+      SELECT colaborador_id, data, status, hora_inicio, hora_fim
+      FROM alocacoes
+      WHERE escala_id = ?
+    `, lastScale.id)
 
     hints = hintRows.map((h) => ({
       colaborador_id: h.colaborador_id,
@@ -475,7 +474,7 @@ export function buildSolverInput(
       max_time_seconds: options.maxTimeSeconds ?? 30,
       num_workers: 8,
       nivel_rigor: options.nivelRigor ?? 'ALTO',  // backward compat quando rules ausente
-      rules: buildRulesConfig(db, options.rulesOverride),
+      rules: await buildRulesConfig(options.rulesOverride),
     },
   }
 }
@@ -484,22 +483,22 @@ export function buildSolverInput(
  * Lê as regras do banco (empresa merged com sistema) e aplica rulesOverride.
  * Retorna um Record<codigo, status> com o estado efetivo para esta geração.
  */
-function buildRulesConfig(
-  db: ReturnType<typeof getDb>,
+async function buildRulesConfig(
   rulesOverride?: Record<string, string>,
-): RuleConfig {
+): Promise<RuleConfig> {
   // Verifica se a tabela existe (pode não existir em DBs muito antigos)
-  const tableExists = (db.prepare(
-    "SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='regra_definicao'"
-  ).get() as { c: number }).c > 0
+  const tableCheck = await queryOne<{ c: number }>(
+    "SELECT COUNT(*)::int as c FROM information_schema.tables WHERE table_name = 'regra_definicao'"
+  )
+  const tableExists = (tableCheck?.c ?? 0) > 0
 
   if (!tableExists) return {}
 
-  const rows = db.prepare(`
+  const rows = await queryAll<{ codigo: string; status_efetivo: RuleStatus }>(`
     SELECT rd.codigo, COALESCE(re.status, rd.status_sistema) AS status_efetivo
     FROM regra_definicao rd
     LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
-  `).all() as Array<{ codigo: string; status_efetivo: RuleStatus }>
+  `)
 
   if (rows.length === 0) return {}
 
@@ -725,76 +724,68 @@ export function runSolver(
  * Cria os registros em: escalas, alocacoes, escala_decisoes, escala_comparacao_demanda
  * Retorna o id da escala criada.
  */
-export function persistirSolverResult(
+export async function persistirSolverResult(
   setorId: number,
   dataInicio: string,
   dataFim: string,
   solverResult: SolverOutput,
   inputHash?: string,
   regimesOverride?: Array<{ colaborador_id: number; regime_escala: string }>,
-): number {
-  const db = getDb()
+): Promise<number> {
   const ind = solverResult.indicadores!
   const decisoes = solverResult.decisoes ?? []
   const comparacao = solverResult.comparacao_demanda ?? []
 
-  const persist = db.transaction(() => {
-    const result = db.prepare(`
+  return await transaction(async () => {
+    const escalaId = await insertReturningId(`
       INSERT INTO escalas
         (setor_id, data_inicio, data_fim, status, pontuacao,
          cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json)
       VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
       setorId, dataInicio, dataFim,
       ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
       inputHash ?? null,
       JSON.stringify({ regimes_override: regimesOverride ?? [] }),
     )
 
-    const escalaId = result.lastInsertRowid
-
-    const insertAloc = db.prepare(`
-      INSERT INTO alocacoes
-        (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
-         minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
-         minutos_almoco, intervalo_15min, funcao_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
     for (const a of solverResult.alocacoes!) {
-      insertAloc.run(
+      await execute(`
+        INSERT INTO alocacoes
+          (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
+           minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
+           minutos_almoco, intervalo_15min, funcao_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
         escalaId, a.colaborador_id, a.data, a.status,
         a.hora_inicio ?? null, a.hora_fim ?? null,
         a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
         a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
         a.minutos_almoco ?? null,
-        a.intervalo_15min ? 1 : 0,
+        a.intervalo_15min ?? false,
         a.funcao_id ?? null,
       )
     }
 
-    const insertDecisao = db.prepare(`
-      INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
     for (const d of decisoes) {
-      insertDecisao.run(escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
+      await execute(`
+        INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
     }
 
-    const insertComp = db.prepare(`
-      INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
     for (const c of comparacao) {
-      insertComp.run(
+      await execute(`
+        INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
         escalaId, c.data, c.hora_inicio, c.hora_fim,
         c.planejado, c.executado, c.delta,
-        c.override ? 1 : 0,
+        c.override ?? false,
         c.justificativa ?? null,
       )
     }
 
-    return escalaId as number
+    return escalaId
   })
-
-  return persist()
 }

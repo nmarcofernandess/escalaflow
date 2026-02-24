@@ -10,9 +10,16 @@ extraResources:
     to: 'solver-bin/'
     filter:
       - '**/*'
+  - from: 'models/'
+    to: 'models/'
+    filter:
+      - '**/*'
+  - from: 'knowledge/'
+    to: 'knowledge/'
+    filter:
+      - '**/*.md'
 asarUnpack:
   - '**/*.node'
-  - '**/better-sqlite3/**'
 mac:
   icon: icon.icns
   category: public.app-category.business

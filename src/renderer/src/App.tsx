@@ -20,6 +20,7 @@ import { EmpresaConfig } from './paginas/EmpresaConfig'
 import { FeriadosPagina } from './paginas/FeriadosPagina'
 import { ConfiguracoesPagina } from './paginas/ConfiguracoesPagina'
 import { RegrasPagina } from './paginas/RegrasPagina'
+import { MemoriaPagina } from './paginas/MemoriaPagina'
 import { NaoEncontrado } from './paginas/NaoEncontrado'
 
 export function App() {
@@ -77,6 +78,7 @@ export function App() {
                   <Route path="/feriados" element={<FeriadosPagina />} />
                   <Route path="/configuracoes" element={<ConfiguracoesPagina />} />
                   <Route path="/regras" element={<RegrasPagina />} />
+                  <Route path="/memoria" element={<MemoriaPagina />} />
                   <Route path="*" element={<NaoEncontrado />} />
                 </Routes>
               </ErrorBoundary>

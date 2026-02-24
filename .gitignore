@@ -41,6 +41,12 @@ solver-bin/
 solver/build/
 solver/dist/
 
+# Embedding model (binário ~118MB, baixado via npm run model:download)
+models/embeddings/
+
+# Knowledge seed manifest (gerado por knowledge:seed)
+knowledge/.manifest.json
+
 # Testes / artefatos temporários
 horario/teste/.venv/
 horario/teste/__pycache__/

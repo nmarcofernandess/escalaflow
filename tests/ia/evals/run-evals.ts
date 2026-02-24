@@ -2,10 +2,10 @@ import '../../setup/load-env'
 import { resolve } from 'path'
 import { fileURLToPath } from 'url'
 
-// Garante que getDb() encontra o banco mesmo em ESM (tsx) onde __dirname não existe
+// Garante que o PGlite encontra o banco mesmo em ESM (tsx) onde __dirname não existe
 if (!process.env.ESCALAFLOW_DB_PATH) {
   const __here = resolve(fileURLToPath(import.meta.url), '..')
-  process.env.ESCALAFLOW_DB_PATH = resolve(__here, '../../../data/escalaflow.db')
+  process.env.ESCALAFLOW_DB_PATH = resolve(__here, '../../../data/escalaflow-pg')
 }
 
 import { generateText, stepCountIs, wrapLanguageModel } from 'ai'
@@ -145,28 +145,23 @@ function extractToolCallsFromSteps(steps: any[] | undefined) {
 type RuntimeBits = {
   getVercelAiTools: () => Record<string, any>
   SYSTEM_PROMPT: string
-  buildContextBriefing: (contexto?: any) => string
+  buildContextBriefing: (contexto?: any) => Promise<string>
+  initDb: () => Promise<any>
   getDb: () => any
 }
 
 async function loadRuntimeBits(): Promise<RuntimeBits> {
   try {
-    const [{ getVercelAiTools }, { SYSTEM_PROMPT }, { buildContextBriefing }, { getDb }] = await Promise.all([
+    const [{ getVercelAiTools }, { SYSTEM_PROMPT }, { buildContextBriefing }, { initDb, getDb }] = await Promise.all([
       import('../../../src/main/ia/tools'),
       import('../../../src/main/ia/system-prompt'),
       import('../../../src/main/ia/discovery'),
-      import('../../../src/main/db/database'),
+      import('../../../src/main/db/pglite'),
     ])
-    return { getVercelAiTools, SYSTEM_PROMPT, buildContextBriefing, getDb }
+    return { getVercelAiTools, SYSTEM_PROMPT, buildContextBriefing, initDb, getDb }
   } catch (err: any) {
     const msg = String(err?.message ?? err)
-    if (msg.includes('NODE_MODULE_VERSION') || msg.includes('better_sqlite3') || msg.includes('better-sqlite3')) {
-      throw new Error(
-        `Falha ao carregar runtime do EscalaFlow (possivel ABI do better-sqlite3). ` +
-        `Tente rodar via Electron/Node compatível ou refazer rebuild. Erro: ${msg}`
-      )
-    }
-    throw err
+    throw new Error(`Falha ao carregar runtime do EscalaFlow. Erro: ${msg}`)
   }
 }
 
@@ -184,12 +179,12 @@ async function runCase(
     model: any
     tools: Record<string, any>
     systemPrompt: string
-    buildContextBriefing: (contexto?: any) => string
+    buildContextBriefing: (contexto?: any) => Promise<string>
   },
 ): Promise<EvalRunOutput> {
   // Injeta contexto real (default=dashboard) — IA recebe discovery do DB como no app
   const contexto = tc.contexto ?? DEFAULT_EVAL_CONTEXTO
-  const contextBriefing = deps.buildContextBriefing(contexto)
+  const contextBriefing = await deps.buildContextBriefing(contexto)
   const system = contextBriefing
     ? `${deps.systemPrompt}\n\n---\n${contextBriefing}`
     : deps.systemPrompt
@@ -237,12 +232,13 @@ async function main() {
   }
 
   const runtime = await loadRuntimeBits()
+  await runtime.initDb()
   const tools = runtime.getVercelAiTools()
   const db = runtime.getDb()
   const model = await createModel(cfg.provider, cfg.apiKey, cfg.model, cfg.useDevTools)
 
   console.log(`[ia-eval] Iniciando batch: ${selected.length} caso(s) | provider=${cfg.provider} | model=${cfg.model}`)
-  console.log(`[ia-eval] DB: ${db.name} | contexto: dashboard (real)`)
+  console.log(`[ia-eval] DB: PGlite | contexto: dashboard (real)`)
   if (!cfg.includeSlow) {
     console.log('[ia-eval] Casos slow/solver estão excluídos (ESCALAFLOW_EVAL_INCLUDE_SLOW=1 para incluir).')
   }
@@ -255,7 +251,7 @@ async function main() {
 
     // SAVEPOINT — protege o DB contra mutações do eval
     if (useSavepoint) {
-      db.exec(`SAVEPOINT eval_${tc.id.replace(/[^a-z0-9_]/g, '_')}`)
+      await db.exec(`SAVEPOINT eval_${tc.id.replace(/[^a-z0-9_]/g, '_')}`)
     }
 
     try {
@@ -302,8 +298,8 @@ async function main() {
       // ROLLBACK — desfaz mutações, DB volta ao estado original
       if (useSavepoint) {
         try {
-          db.exec(`ROLLBACK TO eval_${tc.id.replace(/[^a-z0-9_]/g, '_')}`)
-          db.exec(`RELEASE eval_${tc.id.replace(/[^a-z0-9_]/g, '_')}`)
+          await db.exec(`ROLLBACK TO eval_${tc.id.replace(/[^a-z0-9_]/g, '_')}`)
+          await db.exec(`RELEASE eval_${tc.id.replace(/[^a-z0-9_]/g, '_')}`)
         } catch {
           // Se o savepoint já foi released (ex: por autocommit), ignore
         }

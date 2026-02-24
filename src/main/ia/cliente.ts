@@ -5,7 +5,8 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { SYSTEM_PROMPT } from './system-prompt'
 import { getVercelAiTools } from './tools'
 import { buildContextBriefing } from './discovery'
-import { getDb } from '../db/database'
+import { ingestKnowledge } from '../knowledge/ingest'
+import { queryOne } from '../db/query'
 import type { IaMensagem, ToolCall, IaConfiguracao, IaContexto, IaStreamEvent } from '../../shared/types'
 
 import { createRequire } from 'node:module'
@@ -162,8 +163,8 @@ function buildChatMessages(historico: IaMensagem[], currentMsg: string): ModelMe
     return messages
 }
 
-function buildFullSystemPrompt(contexto?: IaContexto) {
-    const contextBriefing = buildContextBriefing(contexto)
+async function buildFullSystemPrompt(contexto?: IaContexto) {
+    const contextBriefing = await buildContextBriefing(contexto)
     return contextBriefing
         ? `${SYSTEM_PROMPT}\n\n---\n${contextBriefing}`
         : SYSTEM_PROMPT
@@ -217,6 +218,30 @@ function extractToolCallsFromSteps(steps: any[] | undefined): ToolCall[] {
     return acoes
 }
 
+/**
+ * Auto-capture conservador: salva como LOW importance se a resposta contém
+ * fatos CLT/legislativos explícitos que não são meros dados do banco.
+ * Fire-and-forget — falha silenciosamente.
+ */
+async function maybeAutoCapture(response: string): Promise<void> {
+    try {
+        if (!response || response.length < 100) return
+        // Heurística: menção a artigo de lei, CLT, CCT, legislação
+        const legalKeywords = /\b(Art\.\s*\d+|CLT|CCT|Lei\s+\d+|Portaria|NR-?\d+|ECA|interjornada|intrajornada)\b/i
+        if (!legalKeywords.test(response)) return
+
+        // Extrai um título a partir dos primeiros 80 chars da resposta
+        const titulo = `Auto: ${response.slice(0, 80).replace(/\n/g, ' ').trim()}...`
+        // Salva apenas o trecho relevante (primeiros 2000 chars)
+        const conteudo = response.slice(0, 2000)
+
+        await ingestKnowledge(titulo, conteudo, 'low')
+        console.log('[AI SDK] Auto-capture: conhecimento salvo como LOW')
+    } catch {
+        // Non-critical — falha silenciosa
+    }
+}
+
 // Test hooks for unit tests of mapper/history behavior.
 // Keeping these internal helpers accessible avoids mocking the whole provider stack.
 export const __iaClienteTestables = {
@@ -236,7 +261,7 @@ async function _callWithVercelAiSdkTools(
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const modelo = config.modelo || (providerLabel === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash')
 
-    const fullSystemPrompt = buildFullSystemPrompt(contexto)
+    const fullSystemPrompt = await buildFullSystemPrompt(contexto)
     const messages = buildChatMessages(historico, currentMsg)
     const tools = getVercelAiTools()
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
@@ -281,10 +306,12 @@ async function _callWithVercelAiSdkTools(
         console.log(`[AI SDK:${providerLabel}] Follow-up:`, finalText.substring(0, 80))
     }
 
-    return {
-        resposta: finalText || '(Resposta vazia)',
-        acoes,
-    }
+    const resposta = finalText || '(Resposta vazia)'
+
+    // Auto-capture fire-and-forget
+    maybeAutoCapture(resposta).catch(() => {})
+
+    return { resposta, acoes }
 }
 
 async function _callWithVercelAiSdkToolsStreaming(
@@ -298,7 +325,7 @@ async function _callWithVercelAiSdkToolsStreaming(
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const modelo = config.modelo || (providerLabel === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash')
 
-    const fullSystemPrompt = buildFullSystemPrompt(contexto)
+    const fullSystemPrompt = await buildFullSystemPrompt(contexto)
     const messages = buildChatMessages(historico, currentMsg)
     const tools = getVercelAiTools()
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
@@ -377,11 +404,13 @@ async function _callWithVercelAiSdkToolsStreaming(
             const resposta = followUpText || 'Feito!'
 
             emitStream({ type: 'finish', stream_id: streamId, resposta, acoes })
+            maybeAutoCapture(resposta).catch(() => {})
             return { resposta, acoes }
         }
 
         const resposta = finalText || '(Resposta vazia)'
         emitStream({ type: 'finish', stream_id: streamId, resposta, acoes })
+        maybeAutoCapture(resposta).catch(() => {})
         return { resposta, acoes }
     } catch (err: any) {
         console.error(`[AI SDK:${providerLabel}:stream] Erro:`, err.message)
@@ -396,8 +425,7 @@ export async function iaEnviarMensagemStream(
     streamId: string,
     contexto?: IaContexto
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const db = getDb()
-    const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get() as IaConfiguracao | undefined
+    const config = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
 
     if (!config) {
         throw new Error('Assistente IA não configurado.')
@@ -439,8 +467,7 @@ export async function iaEnviarMensagem(
     historico: IaMensagem[],
     contexto?: IaContexto
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const db = getDb()
-    const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get() as IaConfiguracao | undefined
+    const config = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
 
     if (!config) {
         throw new Error('Assistente IA não configurado.')

@@ -384,7 +384,30 @@ Bom (escaneável):
 
 ---
 
-## 8) Conduta, Limitações e Erros
+## 8) Base de Conhecimento
+
+O sistema mantém uma base de conhecimento pesquisável com documentação e procedimentos.
+
+### Quando usar
+- Perguntas sobre regras, procedimentos, legislação que não estão nas outras tools
+- "Qual a política de X?" → \`buscar_conhecimento\`
+- "Registra que Y" / "Salva que Z" → \`salvar_conhecimento\` (importance=high)
+- "O que temos salvo?" → \`listar_conhecimento\`
+
+### Diferença com \`consultar\`
+- \`consultar\` = dados estruturados (tabelas: colaboradores, escalas, etc)
+- \`buscar_conhecimento\` = texto livre, busca semântica, não estruturado
+
+### Auto-capture
+Quando você identificar um fato NOVO e EXTERNO (legislação, procedimento) na sua resposta,
+salve automaticamente com importance=low. NÃO salve:
+- Dados que já existem no banco (é query, não conhecimento)
+- Opiniões ou análises contextuais (não é fato)
+- Na dúvida, não salve (melhor perder do que poluir)
+
+---
+
+## 9) Conduta, Limitações e Erros
 
 ### Conduta
 - Formate TODAS as respostas usando Markdown (negrito, listas, tabelas) conforme seção 7. O chat renderiza Markdown.

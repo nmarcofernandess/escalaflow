@@ -1,6 +1,8 @@
-import { getDb } from '../db/database'
+import { queryOne, queryAll, execute, insertReturningId } from '../db/query'
 import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenarioHash } from '../motor/solver-bridge'
 import { validarEscalaV3 } from '../motor/validador'
+import { searchKnowledge } from '../knowledge/search'
+import { ingestKnowledge } from '../knowledge/ingest'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 
@@ -299,7 +301,7 @@ const CriarColaboradorSchema = z.object({
   tipo_trabalhador: z.string().optional().describe('Tipo de trabalhador (ex: regular, aprendiz, estagiario).'),
   hora_inicio_min: z.string().optional().describe('Horário mínimo de início permitido (HH:MM).'),
   hora_fim_max: z.string().optional().describe('Horário máximo de término permitido (HH:MM).'),
-  ativo: z.number().int().min(0).max(1).optional().describe('1 = ativo, 0 = inativo.')
+  ativo: z.boolean().optional().describe('true = ativo, false = inativo.')
 })
 
 // criar — schema genérico
@@ -470,6 +472,25 @@ const ObterAlertasSchema = z.object({
   setor_id: z.number().int().positive().optional().describe('Se informado, filtra alertas para este setor. Se omitido, retorna alertas de todos os setores.'),
 })
 
+// buscar_conhecimento
+const BuscarConhecimentoSchema = z.object({
+  consulta: z.string().min(1).describe('Pergunta ou termo de busca na base de conhecimento.'),
+  limite: z.number().int().min(1).max(10).default(5).describe('Máximo de resultados.'),
+})
+
+// salvar_conhecimento
+const SalvarConhecimentoSchema = z.object({
+  titulo: z.string().min(1).describe('Título descritivo do conhecimento.'),
+  conteudo: z.string().min(1).describe('Texto completo a ser indexado.'),
+  importance: z.enum(['high', 'low']).default('high').describe('high=salvamento explícito do usuário, low=auto-capture pela IA.'),
+})
+
+// listar_conhecimento
+const ListarConhecimentoSchema = z.object({
+  tipo: z.enum(['todos', 'manual', 'auto_capture']).default('todos').describe('Filtro por tipo de fonte.'),
+  limite: z.number().int().min(1).max(50).default(20).describe('Máximo de fontes.'),
+})
+
 // ==================== IA_TOOLS (Gemini API Format) ====================
 
 export const IA_TOOLS = [
@@ -615,6 +636,21 @@ export const IA_TOOLS = [
         name: 'obter_alertas',
         description: 'Retorna alertas ativos do sistema: setores sem escala, poucos colaboradores, escalas desatualizadas (dados mudaram desde geração), violações HARD pendentes. Use para dar contexto proativo ao usuário.',
         parameters: toJsonSchema(ObterAlertasSchema)
+    },
+    {
+        name: 'buscar_conhecimento',
+        description: 'Busca semântica na base de conhecimento (RAG). Retorna chunks relevantes + relações do knowledge graph. Use para perguntas sobre regras, procedimentos, legislação que não estão nas outras tools. Diferente de `consultar` (dados estruturados), esta busca em texto livre e semântico.',
+        parameters: toJsonSchema(BuscarConhecimentoSchema)
+    },
+    {
+        name: 'salvar_conhecimento',
+        description: 'Salva conhecimento na base de conhecimento. importance=high: salvamento explícito do usuário. importance=low: auto-capture pela IA. Use quando o usuário pedir "registra que...", "salva que...", "anota que...".',
+        parameters: toJsonSchema(SalvarConhecimentoSchema)
+    },
+    {
+        name: 'listar_conhecimento',
+        description: 'Lista fontes de conhecimento salvas com estatísticas (chunks, entidades, último acesso). Use para "o que temos salvo?", "quantas fontes temos?". Filtrável por tipo (manual/auto_capture).',
+        parameters: toJsonSchema(ListarConhecimentoSchema)
     }
 ]
 
@@ -723,107 +759,117 @@ function getConsultarRelatedTools(entidade: string): string[] {
   return mapa[entidade] ?? ['consultar']
 }
 
-function enrichConsultarRows(db: any, entidade: string, rows: Array<Record<string, any>>) {
+async function enrichConsultarRows(entidade: string, rows: Array<Record<string, any>>): Promise<Array<Record<string, any>>> {
   const setorNomeCache = new Map<number, string | undefined>()
   const contratoNomeCache = new Map<number, string | undefined>()
   const colaboradorNomeCache = new Map<number, string | undefined>()
   const regraNomeCache = new Map<string, string | undefined>()
 
-  const getSetorNome = (id: unknown): string | undefined => {
+  const getSetorNome = async (id: unknown): Promise<string | undefined> => {
     if (typeof id !== 'number') return undefined
     if (!setorNomeCache.has(id)) {
-      const row = db.prepare('SELECT id, nome FROM setores WHERE id = ?').get(id) as { nome?: string } | undefined
+      const row = await queryOne<{ nome?: string }>('SELECT id, nome FROM setores WHERE id = ?', id)
       setorNomeCache.set(id, row?.nome)
     }
     return setorNomeCache.get(id)
   }
 
-  const getContratoNome = (id: unknown): string | undefined => {
+  const getContratoNome = async (id: unknown): Promise<string | undefined> => {
     if (typeof id !== 'number') return undefined
     if (!contratoNomeCache.has(id)) {
-      const row = db.prepare('SELECT id, nome FROM tipos_contrato WHERE id = ?').get(id) as { nome?: string } | undefined
+      const row = await queryOne<{ nome?: string }>('SELECT id, nome FROM tipos_contrato WHERE id = ?', id)
       contratoNomeCache.set(id, row?.nome)
     }
     return contratoNomeCache.get(id)
   }
 
-  const getColaboradorNome = (id: unknown): string | undefined => {
+  const getColaboradorNome = async (id: unknown): Promise<string | undefined> => {
     if (typeof id !== 'number') return undefined
     if (!colaboradorNomeCache.has(id)) {
-      const row = db.prepare('SELECT id, nome FROM colaboradores WHERE id = ?').get(id) as { nome?: string } | undefined
+      const row = await queryOne<{ nome?: string }>('SELECT id, nome FROM colaboradores WHERE id = ?', id)
       colaboradorNomeCache.set(id, row?.nome)
     }
     return colaboradorNomeCache.get(id)
   }
 
-  const getRegraNome = (codigo: unknown): string | undefined => {
+  const getRegraNome = async (codigo: unknown): Promise<string | undefined> => {
     if (typeof codigo !== 'string') return undefined
     if (!regraNomeCache.has(codigo)) {
-      const row = db.prepare('SELECT codigo, nome FROM regra_definicao WHERE codigo = ?').get(codigo) as { nome?: string } | undefined
+      const row = await queryOne<{ nome?: string }>('SELECT codigo, nome FROM regra_definicao WHERE codigo = ?', codigo)
       regraNomeCache.set(codigo, row?.nome)
     }
     return regraNomeCache.get(codigo)
   }
 
-  return rows.map((row) => {
+  const enrichedRows: Array<Record<string, any>> = []
+  for (const row of rows) {
     const enriched = { ...row }
 
     if (entidade === 'colaboradores') {
-      const setorNome = getSetorNome(row.setor_id)
-      const contratoNome = getContratoNome(row.tipo_contrato_id)
+      const setorNome = await getSetorNome(row.setor_id)
+      const contratoNome = await getContratoNome(row.tipo_contrato_id)
       if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
       if (contratoNome && !('tipo_contrato_nome' in enriched)) enriched.tipo_contrato_nome = contratoNome
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
     if (entidade === 'escalas') {
-      const setorNome = getSetorNome(row.setor_id)
+      const setorNome = await getSetorNome(row.setor_id)
       if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
     if (entidade === 'alocacoes') {
-      const colaboradorNome = getColaboradorNome(row.colaborador_id)
+      const colaboradorNome = await getColaboradorNome(row.colaborador_id)
       if (colaboradorNome && !('colaborador_nome' in enriched)) enriched.colaborador_nome = colaboradorNome
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
     if (entidade === 'excecoes') {
-      const colaboradorNome = getColaboradorNome(row.colaborador_id)
+      const colaboradorNome = await getColaboradorNome(row.colaborador_id)
       if (colaboradorNome && !('colaborador_nome' in enriched)) enriched.colaborador_nome = colaboradorNome
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
     if (entidade === 'demandas' || entidade === 'funcoes') {
-      const setorNome = getSetorNome(row.setor_id)
+      const setorNome = await getSetorNome(row.setor_id)
       if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
       if ('tipo_contrato_id' in enriched) {
-        const contratoNome = getContratoNome(row.tipo_contrato_id)
+        const contratoNome = await getContratoNome(row.tipo_contrato_id)
         if (contratoNome && !('tipo_contrato_nome' in enriched)) enriched.tipo_contrato_nome = contratoNome
       }
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
     if (entidade === 'regra_empresa') {
-      const regraNome = getRegraNome(row.codigo)
+      const regraNome = await getRegraNome(row.codigo)
       if (regraNome && !('regra_nome' in enriched)) enriched.regra_nome = regraNome
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
     if (entidade === 'demandas_excecao_data') {
-      const setorNome = getSetorNome(row.setor_id)
+      const setorNome = await getSetorNome(row.setor_id)
       if (setorNome && !('setor_nome' in enriched)) enriched.setor_nome = setorNome
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
     if (entidade === 'colaborador_regra_horario_excecao_data') {
-      const colaboradorNome = getColaboradorNome(row.colaborador_id)
+      const colaboradorNome = await getColaboradorNome(row.colaborador_id)
       if (colaboradorNome && !('colaborador_nome' in enriched)) enriched.colaborador_nome = colaboradorNome
-      return enriched
+      enrichedRows.push(enriched)
+      continue
     }
 
-    return enriched
-  })
+    enrichedRows.push(enriched)
+  }
+  return enrichedRows
 }
 
 // ==================== VALIDAÇÃO RUNTIME (Zod) ====================
@@ -857,6 +903,9 @@ const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   deletar_perfil_horario: DeletarPerfilHorarioSchema,
   configurar_horario_funcionamento: ConfigurarHorarioFuncionamentoSchema,
   obter_alertas: ObterAlertasSchema,
+  buscar_conhecimento: BuscarConhecimentoSchema,
+  salvar_conhecimento: SalvarConhecimentoSchema,
+  listar_conhecimento: ListarConhecimentoSchema,
 }
 
 const DICIONARIO_VIOLACOES: Record<string, string> = {
@@ -912,9 +961,6 @@ export function getVercelAiTools() {
 }
 
 export async function executeTool(name: string, args: Record<string, any>): Promise<any> {
-    // Support mock DB for testing
-    const db = (global as any).mockDb || getDb()
-
     // ==================== VALIDAÇÃO ZOD RUNTIME ====================
     const schema = TOOL_SCHEMAS[name]
     if (schema) {
@@ -943,7 +989,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         // DISCOVERY TOOL — retorna contexto completo estruturado
         try {
             // Setores com contagens
-            const setores = db.prepare(`
+            const setores = await queryAll<{
+                id: number
+                nome: string
+                hora_abertura: string
+                hora_fechamento: string
+                ativo: boolean
+                colaboradores_count: number
+                escalas_count: number
+            }>(`
                 SELECT
                     s.id,
                     s.nome,
@@ -953,23 +1007,24 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     COUNT(DISTINCT c.id) as colaboradores_count,
                     COUNT(DISTINCT e.id) as escalas_count
                 FROM setores s
-                LEFT JOIN colaboradores c ON c.setor_id = s.id AND c.ativo = 1
+                LEFT JOIN colaboradores c ON c.setor_id = s.id AND c.ativo = true
                 LEFT JOIN escalas e ON e.setor_id = s.id AND e.status IN ('RASCUNHO', 'OFICIAL')
-                WHERE s.ativo = 1
-                GROUP BY s.id
+                WHERE s.ativo = true
+                GROUP BY s.id, s.nome, s.hora_abertura, s.hora_fechamento, s.ativo
                 ORDER BY s.nome
-            `).all() as Array<{
-                id: number
-                nome: string
-                hora_abertura: string
-                hora_fechamento: string
-                ativo: number
-                colaboradores_count: number
-                escalas_count: number
-            }>
+            `)
 
             // Colaboradores ativos com setor e contrato
-            const colaboradores = db.prepare(`
+            const colaboradores = await queryAll<{
+                id: number
+                nome: string
+                setor_id: number
+                setor_nome: string
+                tipo_contrato_id: number
+                contrato_nome: string
+                horas_semanais: number
+                tipo_trabalhador: string
+            }>(`
                 SELECT
                     c.id,
                     c.nome,
@@ -982,21 +1037,20 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 FROM colaboradores c
                 JOIN setores s ON c.setor_id = s.id
                 JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
-                WHERE c.ativo = 1
+                WHERE c.ativo = true
                 ORDER BY s.nome, c.nome
-            `).all() as Array<{
-                id: number
-                nome: string
-                setor_id: number
-                setor_nome: string
-                tipo_contrato_id: number
-                contrato_nome: string
-                horas_semanais: number
-                tipo_trabalhador: string
-            }>
+            `)
 
             // Tipos de contrato disponíveis (Fase 2: Discovery explícito)
-            const tipos_contrato = db.prepare(`
+            const tipos_contrato = await queryAll<{
+                id: number
+                nome: string
+                horas_semanais: number
+                regime_escala: string
+                dias_trabalho: number
+                trabalha_domingo: boolean
+                max_minutos_dia: number
+            }>(`
                 SELECT
                     id,
                     nome,
@@ -1007,18 +1061,21 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     max_minutos_dia
                 FROM tipos_contrato
                 ORDER BY horas_semanais DESC
-            `).all() as Array<{
-                id: number
-                nome: string
-                horas_semanais: number
-                regime_escala: string
-                dias_trabalho: number
-                trabalha_domingo: number
-                max_minutos_dia: number
-            }>
+            `)
 
             // Escalas ativas (RASCUNHO ou OFICIAL)
-            const escalas = db.prepare(`
+            const escalas = await queryAll<{
+                id: number
+                setor_id: number
+                setor_nome: string
+                status: string
+                data_inicio: string
+                data_fim: string
+                pontuacao: number
+                cobertura_percent: number
+                violacoes_hard: number
+                violacoes_soft: number
+            }>(`
                 SELECT
                     e.id,
                     e.setor_id,
@@ -1040,18 +1097,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                         ELSE 2
                     END,
                     e.id DESC
-            `).all() as Array<{
-                id: number
-                setor_id: number
-                setor_nome: string
-                status: string
-                data_inicio: string
-                data_fim: string
-                pontuacao: number
-                cobertura_percent: number
-                violacoes_hard: number
-                violacoes_soft: number
-            }>
+            `)
 
             // Resumo estatístico
             const stats = {
@@ -1108,18 +1154,18 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               LEFT JOIN tipos_contrato t ON t.id = c.tipo_contrato_id
             `
 
-            const runSearch = (whereParts: string[], params: unknown[]) => {
+            const runSearch = async (whereParts: string[], params: unknown[]) => {
               let sql = selectBase
               if (whereParts.length > 0) sql += ' WHERE ' + whereParts.join(' AND ')
               sql += ' ORDER BY c.ativo DESC, c.nome'
-              return db.prepare(sql).all(...params) as Array<Record<string, any>>
+              return await queryAll<Record<string, any>>(sql, ...params)
             }
 
             if (typeof args.id === 'number') {
               const whereParts = ['c.id = ?']
               const params: unknown[] = [args.id]
-              if (ativoApenas) whereParts.push('c.ativo = 1')
-              const rows = runSearch(whereParts, params)
+              if (ativoApenas) whereParts.push('c.ativo = true')
+              const rows = await runSearch(whereParts, params)
               if (rows.length === 0) {
                 return toolError(
                   'BUSCAR_COLABORADOR_NAO_ENCONTRADO',
@@ -1154,15 +1200,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               baseParams.push(setorId)
             }
             if (ativoApenas) {
-              baseWhere.push('c.ativo = 1')
+              baseWhere.push('c.ativo = true')
             }
 
             let rows: Array<Record<string, any>> = []
             let encontradoPor: 'nome_exato' | 'nome_parcial' | 'nome_auto' = 'nome_auto'
 
             if (modo === 'EXATO' || modo === 'AUTO') {
-              rows = runSearch(
-                [...baseWhere, 'c.nome = ? COLLATE NOCASE'],
+              rows = await runSearch(
+                [...baseWhere, 'LOWER(c.nome) = LOWER(?)'],
                 [...baseParams, nomeBusca],
               )
               if (rows.length > 0) {
@@ -1171,8 +1217,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             if (rows.length === 0 && (modo === 'PARCIAL' || modo === 'AUTO')) {
-              rows = runSearch(
-                [...baseWhere, 'c.nome LIKE ? COLLATE NOCASE'],
+              rows = await runSearch(
+                [...baseWhere, 'c.nome ILIKE ?'],
                 [...baseParams, `%${nomeBusca}%`],
               )
               encontradoPor = 'nome_parcial'
@@ -1262,18 +1308,18 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'obter_regra_horario_colaborador') {
         try {
             const { colaborador_id } = args
-            const colaborador = db.prepare(`
+            const colaborador = await queryOne<{
+              id: number
+              nome: string
+              ativo: boolean
+              setor_id: number
+              setor_nome?: string
+            }>(`
               SELECT c.id, c.nome, c.ativo, c.setor_id, s.nome as setor_nome
               FROM colaboradores c
               LEFT JOIN setores s ON s.id = c.setor_id
               WHERE c.id = ?
-            `).get(colaborador_id) as {
-              id: number
-              nome: string
-              ativo: number
-              setor_id: number
-              setor_nome?: string
-            } | undefined
+            `, colaborador_id)
 
             if (!colaborador) {
               return toolError(
@@ -1286,7 +1332,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               )
             }
 
-            const regra = db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(colaborador_id) as Record<string, any> | null
+            const regra = await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', colaborador_id) ?? null
 
             return toolOk(
               {
@@ -1324,12 +1370,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             const { escala_id } = args
             const incluirAmostras = args.incluir_amostras !== false
 
-            const escala = db.prepare(`
+            const escala = await queryOne<Record<string, any> & { setor_nome?: string }>(`
               SELECT e.*, s.nome as setor_nome
               FROM escalas e
               LEFT JOIN setores s ON s.id = e.setor_id
               WHERE e.id = ?
-            `).get(escala_id) as (Record<string, any> & { setor_nome?: string }) | undefined
+            `, escala_id)
 
             if (!escala) {
               return toolError(
@@ -1342,7 +1388,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               )
             }
 
-            const validacao = validarEscalaV3(escala_id, db as any)
+            const validacao = await validarEscalaV3(escala_id)
             const indicadores = validacao.indicadores ?? {}
             const violacoes = Array.isArray((validacao as any).violacoes) ? (validacao as any).violacoes : []
             const antipatterns = Array.isArray((validacao as any).antipatterns) ? (validacao as any).antipatterns : []
@@ -1459,7 +1505,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         if (filtros && Object.keys(filtros).length > 0) {
             const conditions = Object.entries(filtros).map(([k, v]) => {
-                if (typeof v === 'string') return `${k} = ? COLLATE NOCASE`
+                if (typeof v === 'string') return `LOWER(${k}) = LOWER(?)`
                 return `${k} = ?`
             })
             query += ' WHERE ' + conditions.join(' AND ')
@@ -1467,11 +1513,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
-            const rows = db.prepare(query).all(...params) as Array<Record<string, any>>
+            const rows = await queryAll<Record<string, any>>(query, ...params)
             const total = rows.length
             const truncated = total > CONSULTAR_MODEL_ROW_LIMIT
             const slicedRows = truncated ? rows.slice(0, CONSULTAR_MODEL_ROW_LIMIT) : rows
-            const dados = enrichConsultarRows(db, entidade, slicedRows)
+            const dados = await enrichConsultarRows(entidade, slicedRows)
             const commonMeta = {
               tool_kind: 'discovery',
               entidade,
@@ -1558,7 +1604,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             // Validar setor existe
-            const setor = db.prepare('SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = 1').get(dados.setor_id) as any
+            const setor = await queryOne<any>('SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = true', dados.setor_id)
             if (!setor) {
                 return toolError(
                   'CRIAR_COLABORADOR_SETOR_INVALIDO',
@@ -1583,7 +1629,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
             if (!dados.hora_inicio_min) dados.hora_inicio_min = setor.hora_abertura
             if (!dados.hora_fim_max) dados.hora_fim_max = setor.hora_fechamento
-            if (!dados.ativo) dados.ativo = 1
+            if (!dados.ativo) dados.ativo = true
         }
 
         if (entidade === 'excecoes') {
@@ -1632,15 +1678,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const values = Object.values(dados)
 
         try {
-            const res = db.prepare(`INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`).run(...values)
+            const newId = await insertReturningId(`INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`, ...values)
             return toolOk(
               {
                 sucesso: true,
-                id: res.lastInsertRowid,
+                id: newId,
                 entidade,
               },
               {
-                summary: `Registro criado em ${entidade} com sucesso (id: ${String(res.lastInsertRowid)}).`,
+                summary: `Registro criado em ${entidade} com sucesso (id: ${String(newId)}).`,
                 meta: {
                   tool_kind: 'action',
                   action: 'create',
@@ -1651,8 +1697,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         } catch (e: any) {
             // Traduz erros SQL pra mensagens acionáveis
-            if (e.message?.includes('NOT NULL constraint')) {
-                const match = e.message.match(/NOT NULL constraint failed: \w+\.(\w+)/)
+            if (e.message?.includes('NOT NULL') || e.message?.includes('not-null')) {
+                const match = e.message.match(/column "(\w+)"/) ?? e.message.match(/NOT NULL constraint failed: \w+\.(\w+)/)
                 const campo = match?.[1] || 'desconhecido'
                 return toolError(
                   'CRIAR_NOT_NULL',
@@ -1663,7 +1709,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   }
                 )
             }
-            if (e.message?.includes('UNIQUE constraint')) {
+            if (e.message?.includes('UNIQUE') || e.message?.includes('unique') || e.message?.includes('duplicate key')) {
                 return toolError(
                   'CRIAR_UNIQUE_CONSTRAINT',
                   `❌ Registro duplicado: ${entidade} com esses valores únicos já existe.`,
@@ -1673,7 +1719,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   }
                 )
             }
-            if (e.message?.includes('FOREIGN KEY constraint')) {
+            if (e.message?.includes('FOREIGN KEY') || e.message?.includes('foreign key') || e.message?.includes('violates foreign key')) {
                 return toolError(
                   'CRIAR_FOREIGN_KEY',
                   '❌ Referência inválida: um dos IDs fornecidos não existe no banco. Verifique setor_id, colaborador_id, etc.',
@@ -1712,13 +1758,13 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const values = [...Object.values(dados), id]
 
         try {
-            const res = db.prepare(`UPDATE ${entidade} SET ${sets} WHERE id = ?`).run(...values)
+            const res = await execute(`UPDATE ${entidade} SET ${sets} WHERE id = ?`, ...values)
             return toolOk(
               {
                 sucesso: true,
                 entidade,
                 id,
-                changes: typeof res?.changes === 'number' ? res.changes : undefined,
+                changes: res.changes,
               },
               {
                 summary: `Registro ${id} de ${entidade} atualizado com sucesso.`,
@@ -1758,8 +1804,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
-            const res = db.prepare(`DELETE FROM ${entidade} WHERE id = ?`).run(id)
-            const changes = typeof res?.changes === 'number' ? res.changes : undefined
+            const res = await execute(`DELETE FROM ${entidade} WHERE id = ?`, id)
+            const changes = res.changes
 
             if (changes === 0) {
                 return toolError(
@@ -1811,7 +1857,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
-        const regra = db.prepare('SELECT codigo, nome, editavel FROM regra_definicao WHERE codigo = ?').get(codigo) as { codigo: string; nome: string; editavel: number } | undefined
+        const regra = await queryOne<{ codigo: string; nome: string; editavel: boolean }>('SELECT codigo, nome, editavel FROM regra_definicao WHERE codigo = ?', codigo)
         if (!regra) {
             return toolError(
               'EDITAR_REGRA_NAO_ENCONTRADA',
@@ -1834,7 +1880,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
-        db.prepare(`INSERT OR REPLACE INTO regra_empresa (codigo, status) VALUES (?, ?)`).run(codigo, status)
+        await execute(`INSERT INTO regra_empresa (codigo, status) VALUES (?, ?) ON CONFLICT(codigo) DO UPDATE SET status = excluded.status`, codigo, status)
         return toolOk(
           {
             sucesso: true,
@@ -1860,7 +1906,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { setor_id, data_inicio, data_fim, rules_override } = args
 
         try {
-            const solverInput = buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
+            const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
                 rulesOverride: rules_override,
             })
             const solverResult = await runSolver(solverInput, 60_000)
@@ -1888,7 +1934,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
-            const escalaId = persistirSolverResult(setor_id, data_inicio, data_fim, solverResult)
+            const escalaId = await persistirSolverResult(setor_id, data_inicio, data_fim, solverResult)
 
             // --- Revisão pós-geração: agregar dados que o solver já calcula ---
             const deficits = (solverResult.comparacao_demanda ?? [])
@@ -1983,9 +2029,10 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
-        const existing = db.prepare(
-            'SELECT id FROM alocacoes WHERE escala_id = ? AND colaborador_id = ? AND data = ?'
-        ).get(escala_id, colaborador_id, data)
+        const existing = await queryOne<{ id: number }>(
+            'SELECT id FROM alocacoes WHERE escala_id = ? AND colaborador_id = ? AND data = ?',
+            escala_id, colaborador_id, data
+        )
 
         if (!existing) {
             return toolError(
@@ -1999,9 +2046,10 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
-            db.prepare(
-                'UPDATE alocacoes SET status = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?'
-            ).run(status, escala_id, colaborador_id, data)
+            await execute(
+                'UPDATE alocacoes SET status = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?',
+                status, escala_id, colaborador_id, data
+            )
             return toolOk(
               {
                 sucesso: true,
@@ -2062,9 +2110,10 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
-        const existing = db.prepare(
-          'SELECT id, status, hora_inicio, hora_fim FROM alocacoes WHERE escala_id = ? AND colaborador_id = ? AND data = ?'
-        ).get(escala_id, colaborador_id, data) as Record<string, any> | undefined
+        const existing = await queryOne<Record<string, any>>(
+          'SELECT id, status, hora_inicio, hora_fim FROM alocacoes WHERE escala_id = ? AND colaborador_id = ? AND data = ?',
+          escala_id, colaborador_id, data
+        )
 
         if (!existing) {
           return toolError(
@@ -2078,9 +2127,10 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
-          db.prepare(
-            'UPDATE alocacoes SET status = ?, hora_inicio = ?, hora_fim = ?, minutos = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?'
-          ).run(status, hora_inicio, hora_fim, minutos, escala_id, colaborador_id, data)
+          await execute(
+            'UPDATE alocacoes SET status = ?, hora_inicio = ?, hora_fim = ?, minutos = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?',
+            status, hora_inicio, hora_fim, minutos, escala_id, colaborador_id, data
+          )
 
           return toolOk(
             {
@@ -2122,7 +2172,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'oficializar_escala') {
         const { escala_id } = args
 
-        const escala = db.prepare('SELECT id, status, violacoes_hard FROM escalas WHERE id = ?').get(escala_id) as { id: number; status: string; violacoes_hard: number } | undefined
+        const escala = await queryOne<{ id: number; status: string; violacoes_hard: number }>('SELECT id, status, violacoes_hard FROM escalas WHERE id = ?', escala_id)
         if (!escala) {
             return toolError(
               'OFICIALIZAR_ESCALA_NAO_ENCONTRADA',
@@ -2159,7 +2209,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
-        db.prepare("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?").run(escala_id)
+        await execute("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?", escala_id)
         return toolOk(
           {
             sucesso: true,
@@ -2179,8 +2229,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             const blockers: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
             const warnings: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
 
-            const setor = db.prepare('SELECT id, ativo FROM setores WHERE id = ?').get(setor_id) as { id: number; ativo: number } | undefined
-            if (!setor || setor.ativo !== 1) {
+            const setor = await queryOne<{ id: number; ativo: boolean }>('SELECT id, ativo FROM setores WHERE id = ?', setor_id)
+            if (!setor || !setor.ativo) {
                 blockers.push({
                     codigo: 'SETOR_INVALIDO',
                     severidade: 'BLOCKER',
@@ -2189,8 +2239,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             const colabsAtivos = (
-                db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(setor_id) as { count: number }
-            ).count
+                await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE setor_id = ? AND ativo = true', setor_id)
+            )!.count
             if (colabsAtivos === 0) {
                 blockers.push({
                     codigo: 'SEM_COLABORADORES',
@@ -2201,8 +2251,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             const demandasCount = (
-                db.prepare('SELECT COUNT(*) as count FROM demandas WHERE setor_id = ?').get(setor_id) as { count: number }
-            ).count
+                await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM demandas WHERE setor_id = ?', setor_id)
+            )!.count
             if (demandasCount === 0) {
                 warnings.push({
                     codigo: 'SEM_DEMANDA',
@@ -2213,8 +2263,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             const feriadosNoPeriodo = (
-                db.prepare('SELECT COUNT(*) as count FROM feriados WHERE data BETWEEN ? AND ?').get(data_inicio, data_fim) as { count: number }
-            ).count
+                await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM feriados WHERE data BETWEEN ? AND ?', data_inicio, data_fim)
+            )!.count
 
             const ok = blockers.length === 0
             return toolOk({
@@ -2273,7 +2323,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
             if (base?.ok !== false) {
               try {
-                const solverInput = buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
+                const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
                   regimesOverride,
                 })
                 enrichPreflightWithCapacityChecksForTool(solverInput, blockers as any, warnings as any)
@@ -2347,11 +2397,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         // Cache de setores pra não buscar N vezes
         const setorCache: Record<number, { id: number; nome: string; hora_abertura: string; hora_fechamento: string } | null> = {}
-        function getSetor(setorId: number) {
+        async function getSetor(setorId: number) {
             if (!(setorId in setorCache)) {
-                setorCache[setorId] = db.prepare(
-                    'SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = 1'
-                ).get(setorId) as any ?? null
+                setorCache[setorId] = await queryOne<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string }>(
+                    'SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = true', setorId
+                ) ?? null
             }
             return setorCache[setorId]
         }
@@ -2371,7 +2421,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                         continue
                     }
 
-                    const setor = getSetor(dados.setor_id)
+                    const setor = await getSetor(dados.setor_id)
                     if (!setor) {
                         resultados.push({ indice: i, sucesso: false, erro: `setor_id ${dados.setor_id} não encontrado` })
                         continue
@@ -2388,9 +2438,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     }
                     if (!dados.hora_inicio_min) dados.hora_inicio_min = setor.hora_abertura
                     if (!dados.hora_fim_max) dados.hora_fim_max = setor.hora_fechamento
-                    if (!dados.ativo) dados.ativo = 1
+                    if (!dados.ativo) dados.ativo = true
                     if (!dados.horas_semanais) {
-                        const contrato = db.prepare('SELECT horas_semanais FROM tipos_contrato WHERE id = ?').get(dados.tipo_contrato_id) as { horas_semanais: number } | undefined
+                        const contrato = await queryOne<{ horas_semanais: number }>('SELECT horas_semanais FROM tipos_contrato WHERE id = ?', dados.tipo_contrato_id)
                         dados.horas_semanais = contrato?.horas_semanais ?? 44
                     }
                 }
@@ -2406,11 +2456,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 const keys = Object.keys(dados)
                 const placeholders = keys.map(() => '?').join(', ')
                 const values = Object.values(dados)
-                const res = db.prepare(
-                    `INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`
-                ).run(...values)
+                const newId = await insertReturningId(
+                    `INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`, ...values
+                )
 
-                resultados.push({ indice: i, sucesso: true, id: res.lastInsertRowid as number })
+                resultados.push({ indice: i, sucesso: true, id: newId })
                 criados++
             } catch (e: any) {
                 resultados.push({ indice: i, sucesso: false, erro: e.message })
@@ -2484,8 +2534,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           folga_fixa_dia_semana,
         } = args
 
-        const colab = db.prepare('SELECT id, nome, setor_id, ativo FROM colaboradores WHERE id = ?').get(colaborador_id) as
-          { id: number; nome: string; setor_id: number; ativo: number } | undefined
+        const colab = await queryOne<{ id: number; nome: string; setor_id: number; ativo: boolean }>('SELECT id, nome, setor_id, ativo FROM colaboradores WHERE id = ?', colaborador_id)
 
         if (!colab) {
           return toolError(
@@ -2540,9 +2589,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         if (invalidPair) return invalidPair
 
         try {
-          const existe = db.prepare('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?').get(colaborador_id) as { id: number } | undefined
+          const existe = await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?', colaborador_id)
           if (existe) {
-            db.prepare(`
+            await execute(`
               UPDATE colaborador_regra_horario SET
                 ativo = COALESCE(?, ativo),
                 perfil_horario_id = ?,
@@ -2552,8 +2601,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
                 folga_fixa_dia_semana = ?
               WHERE colaborador_id = ?
-            `).run(
-              ativo !== undefined ? (ativo ? 1 : 0) : null,
+            `,
+              ativo !== undefined ? ativo : null,
               perfil_horario_id ?? null,
               inicio_min ?? null,
               inicio_max ?? null,
@@ -2566,13 +2615,13 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               colaborador_id,
             )
           } else {
-            db.prepare(`
+            await execute(`
               INSERT INTO colaborador_regra_horario
                 (colaborador_id, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(
+            `,
               colaborador_id,
-              ativo !== undefined ? (ativo ? 1 : 0) : 1,
+              ativo !== undefined ? ativo : true,
               perfil_horario_id ?? null,
               inicio_min ?? null,
               inicio_max ?? null,
@@ -2585,7 +2634,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
           }
 
-          const regra = db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(colaborador_id) as Record<string, any> | null
+          const regra = await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', colaborador_id) ?? null
           return toolOk(
             {
               sucesso: true,
@@ -2683,7 +2732,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               }
             )
         }
-        const regra = db.prepare('SELECT nome, descricao FROM regra_definicao WHERE codigo = ?').get(codigo_regra) as { nome: string; descricao: string } | undefined
+        const regra = await queryOne<{ nome: string; descricao: string }>('SELECT nome, descricao FROM regra_definicao WHERE codigo = ?', codigo_regra)
         if (regra) {
             return toolOk(
               { codigo: codigo_regra, explicacao: `${regra.nome}: ${regra.descricao}` },
@@ -2708,9 +2757,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'salvar_demanda_excecao_data') {
         try {
             const { setor_id, data, hora_inicio, hora_fim, min_pessoas } = args
-            const override = args.override ? 1 : 0
+            const override = args.override ?? false
 
-            const setor = db.prepare('SELECT id, nome FROM setores WHERE id = ? AND ativo = 1').get(setor_id) as { id: number; nome: string } | undefined
+            const setor = await queryOne<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE id = ? AND ativo = true', setor_id)
             if (!setor) {
                 return toolError(
                   'SALVAR_DEMANDA_EXCECAO_SETOR_INVALIDO',
@@ -2733,11 +2782,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
-            const res = db.prepare(
-              'INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override) VALUES (?, ?, ?, ?, ?, ?)'
-            ).run(setor_id, data, hora_inicio, hora_fim, min_pessoas, override)
+            const newId = await insertReturningId(
+              'INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override) VALUES (?, ?, ?, ?, ?, ?)',
+              setor_id, data, hora_inicio, hora_fim, min_pessoas, override
+            )
 
-            const registro = db.prepare('SELECT * FROM demandas_excecao_data WHERE id = ?').get(res.lastInsertRowid) as Record<string, any>
+            const registro = await queryOne<Record<string, any>>('SELECT * FROM demandas_excecao_data WHERE id = ?', newId)
 
             return toolOk(
               {
@@ -2770,7 +2820,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         try {
             const { colaborador_id, data } = args
 
-            const colab = db.prepare('SELECT id, nome, setor_id FROM colaboradores WHERE id = ?').get(colaborador_id) as { id: number; nome: string; setor_id: number } | undefined
+            const colab = await queryOne<{ id: number; nome: string; setor_id: number }>('SELECT id, nome, setor_id FROM colaboradores WHERE id = ?', colaborador_id)
             if (!colab) {
                 return toolError(
                   'UPSERT_REGRA_EXCECAO_COLAB_NAO_ENCONTRADO',
@@ -2797,15 +2847,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 }
             }
 
-            const existing = db.prepare(
-              'SELECT id FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?'
-            ).get(colaborador_id, data) as { id: number } | undefined
+            const existing = await queryOne<{ id: number }>(
+              'SELECT id FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?',
+              colaborador_id, data
+            )
 
-            const ativo = args.ativo !== false ? 1 : 0
-            const domingo_forcar_folga = args.domingo_forcar_folga ? 1 : 0
+            const ativo = args.ativo !== false
+            const domingo_forcar_folga = args.domingo_forcar_folga ?? false
 
             if (existing) {
-                db.prepare(`
+                await execute(`
                   UPDATE colaborador_regra_horario_excecao_data SET
                     ativo = ?,
                     inicio_min = COALESCE(?, inicio_min),
@@ -2815,7 +2866,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     preferencia_turno_soft = COALESCE(?, preferencia_turno_soft),
                     domingo_forcar_folga = ?
                   WHERE id = ?
-                `).run(
+                `,
                   ativo,
                   args.inicio_min ?? null,
                   args.inicio_max ?? null,
@@ -2826,11 +2877,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   existing.id,
                 )
             } else {
-                db.prepare(`
+                await execute(`
                   INSERT INTO colaborador_regra_horario_excecao_data
                     (colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_forcar_folga)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                `).run(
+                `,
                   colaborador_id,
                   data,
                   ativo,
@@ -2843,9 +2894,10 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
-            const regra = db.prepare(
-              'SELECT * FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?'
-            ).get(colaborador_id, data) as Record<string, any>
+            const regra = await queryOne<Record<string, any>>(
+              'SELECT * FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?',
+              colaborador_id, data
+            )
 
             return toolOk(
               {
@@ -2879,7 +2931,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         try {
             const { setor_id, data_inicio, data_fim, escala_id } = args
 
-            const setor = db.prepare('SELECT id, nome FROM setores WHERE id = ? AND ativo = 1').get(setor_id) as { id: number; nome: string } | undefined
+            const setor = await queryOne<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE id = ? AND ativo = true', setor_id)
             if (!setor) {
                 return toolError(
                   'RESUMIR_HORAS_SETOR_INVALIDO',
@@ -2909,16 +2961,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 params.push(escala_id)
             }
 
-            query += ' GROUP BY c.id ORDER BY total_minutos DESC'
+            query += ' GROUP BY c.id, c.nome, c.tipo_contrato_id ORDER BY total_minutos DESC'
 
-            const rows = db.prepare(query).all(...params) as Array<{
+            const rows = await queryAll<{
               id: number
               nome: string
               tipo_contrato_id: number
               dias_trabalho: number
               total_minutos: number
               dias_folga: number
-            }>
+            }>(query, ...params)
 
             const colaboradores = rows.map(r => ({
               id: r.id,
@@ -2976,7 +3028,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
-            const count = (db.prepare('SELECT COUNT(*) as count FROM regra_empresa').get() as { count: number }).count
+            const count = (await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM regra_empresa'))!.count
 
             if (count === 0) {
                 return toolOk(
@@ -2988,7 +3040,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
-            db.prepare('DELETE FROM regra_empresa').run()
+            await execute('DELETE FROM regra_empresa')
 
             return toolOk(
               {
@@ -3023,14 +3075,14 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             })
         }
         try {
-            const contrato = db.prepare('SELECT id, nome FROM tipos_contrato WHERE id = ?').get(tipo_contrato_id) as { id: number; nome: string } | undefined
+            const contrato = await queryOne<{ id: number; nome: string }>('SELECT id, nome FROM tipos_contrato WHERE id = ?', tipo_contrato_id)
             if (!contrato) {
                 return toolError('CONTRATO_NAO_ENCONTRADO', `Tipo de contrato ${tipo_contrato_id} não encontrado.`, {
                   correction: 'Use get_context() ou consultar("tipos_contrato") para ver os IDs válidos.',
                   meta: { tool_kind: 'discovery' }
                 })
             }
-            const perfis = db.prepare('SELECT * FROM contrato_perfis_horario WHERE tipo_contrato_id = ? ORDER BY ordem, id').all(tipo_contrato_id)
+            const perfis = await queryAll('SELECT * FROM contrato_perfis_horario WHERE tipo_contrato_id = ? ORDER BY ordem, id', tipo_contrato_id)
             return toolOk(
               { contrato: { id: contrato.id, nome: contrato.nome }, perfis, total: (perfis as any[]).length },
               { summary: `${(perfis as any[]).length} perfil(is) de horário para ${contrato.nome}.`, meta: { tool_kind: 'discovery' } }
@@ -3046,7 +3098,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         try {
             if (id) {
                 // UPDATE
-                const existing = db.prepare('SELECT id FROM contrato_perfis_horario WHERE id = ?').get(id)
+                const existing = await queryOne('SELECT id FROM contrato_perfis_horario WHERE id = ?', id)
                 if (!existing) {
                     return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
                 }
@@ -3059,13 +3111,13 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 if (fim_max !== undefined) { fields.push('fim_max = ?'); values.push(fim_max) }
                 if (preferencia_turno_soft !== undefined) { fields.push('preferencia_turno_soft = ?'); values.push(preferencia_turno_soft) }
                 if (ordem !== undefined) { fields.push('ordem = ?'); values.push(ordem) }
-                if (ativo !== undefined) { fields.push('ativo = ?'); values.push(ativo ? 1 : 0) }
+                if (ativo !== undefined) { fields.push('ativo = ?'); values.push(ativo) }
                 if (fields.length === 0) {
                     return toolError('PERFIL_NADA_PARA_ATUALIZAR', 'Nenhum campo informado para atualizar.', { correction: 'Informe ao menos um campo: nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem ou ativo.', meta: { tool_kind: 'action' } })
                 }
                 values.push(id)
-                db.prepare(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`).run(...values)
-                const updated = db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(id)
+                await execute(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`, ...values)
+                const updated = await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
                 return toolOk(
                   { perfil: updated, operacao: 'atualizado' },
                   { summary: `Perfil ${id} atualizado.`, meta: { tool_kind: 'action' } }
@@ -3075,11 +3127,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 if (!tipo_contrato_id || !nome || !inicio_min || !inicio_max || !fim_min || !fim_max) {
                     return toolError('PERFIL_CAMPOS_OBRIGATORIOS', 'Para criar: tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max são obrigatórios.', { correction: 'Inclua todos os campos obrigatórios. Horários no formato HH:MM (ex: "08:00").', meta: { tool_kind: 'action' } })
                 }
-                const result = db.prepare(`
+                const newId = await insertReturningId(`
                   INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                `).run(tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft ?? null, ordem ?? 0)
-                const created = db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(result.lastInsertRowid)
+                `, tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft ?? null, ordem ?? 0)
+                const created = await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', newId)
                 return toolOk(
                   { perfil: created, operacao: 'criado' },
                   { summary: `Perfil "${nome}" criado para contrato ${tipo_contrato_id}.`, meta: { tool_kind: 'action' } }
@@ -3097,11 +3149,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             return toolError('DELETAR_PERFIL_PARAM', 'id é obrigatório.', { correction: 'Informe o id do perfil. Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
         }
         try {
-            const existing = db.prepare('SELECT id, nome FROM contrato_perfis_horario WHERE id = ?').get(id) as { id: number; nome: string } | undefined
+            const existing = await queryOne<{ id: number; nome: string }>('SELECT id, nome FROM contrato_perfis_horario WHERE id = ?', id)
             if (!existing) {
                 return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
             }
-            db.prepare('DELETE FROM contrato_perfis_horario WHERE id = ?').run(id)
+            await execute('DELETE FROM contrato_perfis_horario WHERE id = ?', id)
             return toolOk(
               { sucesso: true, perfil_removido: existing.nome },
               { summary: `Perfil "${existing.nome}" removido.`, meta: { tool_kind: 'action' } }
@@ -3123,12 +3175,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         try {
             if (nivel === 'empresa') {
-                db.prepare(`
+                await execute(`
                   UPDATE empresa_horario_semana
                   SET ativo = ?, hora_abertura = ?, hora_fechamento = ?
                   WHERE dia_semana = ?
-                `).run(diaAtivo ? 1 : 0, hora_abertura ?? '08:00', hora_fechamento ?? '22:00', dia_semana)
-                const result = db.prepare('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?').get(dia_semana)
+                `, diaAtivo, hora_abertura ?? '08:00', hora_fechamento ?? '22:00', dia_semana)
+                const result = await queryOne('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?', dia_semana)
                 return toolOk(
                   { horario: result, nivel: 'empresa', operacao: 'atualizado' },
                   { summary: `Horário da empresa para ${dia_semana}: ${diaAtivo ? `${hora_abertura}–${hora_fechamento}` : 'FECHADO'}.`, meta: { tool_kind: 'action' } }
@@ -3138,11 +3190,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 if (!setor_id) {
                     return toolError('HORARIO_SETOR_ID', 'setor_id é obrigatório quando nivel="setor".', { correction: 'Informe setor_id. Use consultar("setores") para ver os IDs válidos.', meta: { tool_kind: 'action' } })
                 }
-                const setor = db.prepare('SELECT id, nome FROM setores WHERE id = ?').get(setor_id) as { id: number; nome: string } | undefined
+                const setor = await queryOne<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE id = ?', setor_id)
                 if (!setor) {
                     return toolError('SETOR_NAO_ENCONTRADO', `Setor ${setor_id} não encontrado.`, { correction: 'Use consultar("setores") para ver os IDs válidos.', meta: { tool_kind: 'action' } })
                 }
-                db.prepare(`
+                await execute(`
                   INSERT INTO setor_horario_semana (setor_id, dia_semana, ativo, usa_padrao, hora_abertura, hora_fechamento)
                   VALUES (?, ?, ?, ?, ?, ?)
                   ON CONFLICT(setor_id, dia_semana) DO UPDATE SET
@@ -3150,8 +3202,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     usa_padrao = excluded.usa_padrao,
                     hora_abertura = excluded.hora_abertura,
                     hora_fechamento = excluded.hora_fechamento
-                `).run(setor_id, dia_semana, diaAtivo ? 1 : 0, usa_padrao ? 1 : 0, hora_abertura ?? '08:00', hora_fechamento ?? '22:00')
-                const result = db.prepare('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?').get(setor_id, dia_semana)
+                `, setor_id, dia_semana, diaAtivo, usa_padrao ?? false, hora_abertura ?? '08:00', hora_fechamento ?? '22:00')
+                const result = await queryOne('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?', setor_id, dia_semana)
                 return toolOk(
                   { horario: result, nivel: 'setor', setor_nome: setor.nome, operacao: 'upsert' },
                   { summary: `Horário do ${setor.nome} para ${dia_semana}: ${diaAtivo ? (usa_padrao ? 'herda empresa' : `${hora_abertura}–${hora_fechamento}`) : 'FECHADO'}.`, meta: { tool_kind: 'action' } }
@@ -3170,16 +3222,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
             // 1) Setores sem escala ou com poucos colaboradores
             const setoresQ = filtroSetorId
-              ? db.prepare('SELECT id, nome FROM setores WHERE ativo = 1 AND id = ?').all(filtroSetorId) as Array<{ id: number; nome: string }>
-              : db.prepare('SELECT id, nome FROM setores WHERE ativo = 1').all() as Array<{ id: number; nome: string }>
+              ? await queryAll<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE ativo = true AND id = ?', filtroSetorId)
+              : await queryAll<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE ativo = true')
 
             for (const s of setoresQ) {
-                const colabCount = (db.prepare('SELECT COUNT(*) as c FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(s.id) as { c: number }).c
+                const colabCount = (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id))!.c
                 if (colabCount < 2) {
                     alertas.push({ tipo: 'POUCOS_COLABORADORES', severidade: 'WARNING', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: apenas ${colabCount} colaborador(es) ativo(s).` })
                 }
 
-                const temEscala = db.prepare("SELECT COUNT(*) as c FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')").get(s.id) as { c: number }
+                const temEscala = (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')", s.id))!
                 if (temEscala.c === 0) {
                     alertas.push({ tipo: 'SEM_ESCALA', severidade: 'INFO', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: nenhuma escala gerada.` })
                 }
@@ -3187,8 +3239,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
             // 2) Escalas RASCUNHO com violações HARD
             const rascunhosHard = filtroSetorId
-              ? db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?").all(filtroSetorId) as any[]
-              : db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0").all() as any[]
+              ? await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?", filtroSetorId)
+              : await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0")
 
             for (const e of rascunhosHard) {
                 alertas.push({ tipo: 'VIOLACOES_HARD_PENDENTES', severidade: 'CRITICAL', setor_id: e.setor_id, setor_nome: e.setor_nome, escala_id: e.id, mensagem: `${e.setor_nome}: escala ${e.data_inicio}–${e.data_fim} tem ${e.violacoes_hard} violação(ões) HARD — não pode oficializar.` })
@@ -3196,12 +3248,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
             // 3) Escalas desatualizadas (input_hash diverge dos dados atuais)
             const rascunhos = filtroSetorId
-              ? db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL AND e.setor_id = ?").all(filtroSetorId) as any[]
-              : db.prepare("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL").all() as any[]
+              ? await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL AND e.setor_id = ?", filtroSetorId)
+              : await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL")
 
             for (const e of rascunhos) {
                 try {
-                    const currentInput = buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
+                    const currentInput = await buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
                     const currentHash = computeSolverScenarioHash(currentInput)
                     if (currentHash !== e.input_hash) {
                         alertas.push({ tipo: 'ESCALA_DESATUALIZADA', severidade: 'WARNING', setor_id: e.setor_id, setor_nome: e.setor_nome, escala_id: e.id, mensagem: `${e.setor_nome}: escala ${e.data_inicio}–${e.data_fim} está desatualizada — dados mudaram desde a geração. Regere antes de oficializar.` })
@@ -3210,16 +3262,26 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             // 4) Exceções prestes a expirar (próximos 7 dias)
-            const expirando = db.prepare(`
-              SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
-              FROM excecoes e
-              JOIN colaboradores c ON e.colaborador_id = c.id
-              JOIN setores s ON c.setor_id = s.id
-              WHERE c.ativo = 1 AND e.data_fim >= date('now') AND e.data_fim <= date('now', '+7 days')
-              ${filtroSetorId ? 'AND c.setor_id = ?' : ''}
-              ORDER BY e.data_fim
-              LIMIT 10
-            `).all(...(filtroSetorId ? [filtroSetorId] : [])) as any[]
+            const expirando = filtroSetorId
+              ? await queryAll<any>(`
+                SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
+                FROM excecoes e
+                JOIN colaboradores c ON e.colaborador_id = c.id
+                JOIN setores s ON c.setor_id = s.id
+                WHERE c.ativo = true AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days'
+                AND c.setor_id = ?
+                ORDER BY e.data_fim
+                LIMIT 10
+              `, filtroSetorId)
+              : await queryAll<any>(`
+                SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
+                FROM excecoes e
+                JOIN colaboradores c ON e.colaborador_id = c.id
+                JOIN setores s ON c.setor_id = s.id
+                WHERE c.ativo = true AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days'
+                ORDER BY e.data_fim
+                LIMIT 10
+              `)
 
             for (const ex of expirando) {
                 alertas.push({ tipo: 'EXCECAO_EXPIRANDO', severidade: 'INFO', setor_id: ex.setor_id, setor_nome: ex.setor_nome, mensagem: `${ex.colab_nome} (${ex.setor_nome}): ${ex.tipo} termina em ${ex.data_fim}.` })
@@ -3231,6 +3293,76 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         } catch (e: any) {
             return toolError('OBTER_ALERTAS_FALHOU', `Erro: ${e.message}`, { correction: 'Tente sem setor_id para alertas gerais, ou verifique se o setor_id existe.', meta: { tool_kind: 'discovery' } })
+        }
+    }
+
+    // ==================== KNOWLEDGE LAYER TOOLS ====================
+
+    if (name === 'buscar_conhecimento') {
+        const { consulta, limite } = args
+        try {
+            const result = await searchKnowledge(consulta as string, { limite: limite as number | undefined })
+            if (result.chunks.length === 0) {
+                return toolOk(
+                  { chunks: [], relations: [], context_for_llm: '' },
+                  { summary: 'Nenhum conhecimento encontrado para esta busca.', meta: { tool_kind: 'knowledge' } }
+                )
+            }
+            return toolOk(
+              {
+                chunks: result.chunks.map(c => ({ id: c.id, conteudo: c.conteudo.slice(0, 500), importance: c.importance, score: c.score })),
+                relations: result.relations.map(r => ({ from: r.from_nome, to: r.to_nome, tipo: r.tipo_relacao })),
+                context_for_llm: result.context_for_llm,
+              },
+              { summary: `${result.chunks.length} resultado(s) encontrado(s).`, meta: { tool_kind: 'knowledge' } }
+            )
+        } catch (e: any) {
+            return toolError('BUSCAR_CONHECIMENTO_FALHOU', `Erro na busca: ${e.message}`, { correction: 'Tente reformular a consulta ou use termos mais específicos.', meta: { tool_kind: 'knowledge' } })
+        }
+    }
+
+    if (name === 'salvar_conhecimento') {
+        const { titulo, conteudo, importance } = args
+        try {
+            const result = await ingestKnowledge(titulo as string, conteudo as string, importance as 'high' | 'low')
+            return toolOk(
+              { source_id: result.source_id, chunks_count: result.chunks_count, entities_count: result.entities_count },
+              { summary: `Conhecimento salvo: ${result.chunks_count} chunk(s)${result.entities_count > 0 ? `, ${result.entities_count} entidade(s) extraída(s)` : ''}.`, meta: { tool_kind: 'knowledge' } }
+            )
+        } catch (e: any) {
+            return toolError('SALVAR_CONHECIMENTO_FALHOU', `Erro ao salvar: ${e.message}`, { correction: 'Verifique se título e conteúdo não estão vazios e tente novamente.', meta: { tool_kind: 'knowledge' } })
+        }
+    }
+
+    if (name === 'listar_conhecimento') {
+        const { tipo, limite } = args
+        try {
+            const sources = tipo === 'todos'
+              ? await queryAll<{ id: number; tipo: string; titulo: string; importance: string; criada_em: string; atualizada_em: string }>(
+                  'SELECT id, tipo, titulo, importance, criada_em, atualizada_em FROM knowledge_sources ORDER BY atualizada_em DESC LIMIT $1',
+                  limite as number,
+                )
+              : await queryAll<{ id: number; tipo: string; titulo: string; importance: string; criada_em: string; atualizada_em: string }>(
+                  'SELECT id, tipo, titulo, importance, criada_em, atualizada_em FROM knowledge_sources WHERE tipo = $1 ORDER BY atualizada_em DESC LIMIT $2',
+                  tipo as string,
+                  limite as number,
+                )
+
+            // Stats
+            const totalSources = (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM knowledge_sources'))?.c ?? 0
+            const totalChunks = (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM knowledge_chunks'))?.c ?? 0
+            const totalEntities = (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM knowledge_entities WHERE valid_to IS NULL"))?.c ?? 0
+            const totalRelations = (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM knowledge_relations WHERE valid_to IS NULL"))?.c ?? 0
+
+            return toolOk(
+              {
+                sources,
+                stats: { total_sources: totalSources, total_chunks: totalChunks, total_entities: totalEntities, total_relations: totalRelations },
+              },
+              { summary: `${sources.length} fonte(s) listada(s) de ${totalSources} total. ${totalChunks} chunks, ${totalEntities} entidades, ${totalRelations} relações.`, meta: { tool_kind: 'knowledge' } }
+            )
+        } catch (e: any) {
+            return toolError('LISTAR_CONHECIMENTO_FALHOU', `Erro: ${e.message}`, { correction: 'Tente sem filtro de tipo.', meta: { tool_kind: 'knowledge' } })
         }
     }
 

@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
-import { getDb } from './db/database'
+import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
 import { validarEscalaV3 } from './motor/validador'
 import { buildSolverInput, computeSolverScenarioHash, runSolver } from './motor/solver-bridge'
 import path from 'node:path'
@@ -227,18 +227,17 @@ function enrichPreflightWithCapacityChecks(
   }
 }
 
-function buildEscalaPreflight(
+async function buildEscalaPreflight(
   setorId: number,
   dataInicio: string,
   dataFim: string,
   regimesOverride?: SimulacaoRegimeOverride[],
-): EscalaPreflightResult {
-  const db = getDb()
+): Promise<EscalaPreflightResult> {
   const blockers: EscalaPreflightResult['blockers'] = []
   const warnings: EscalaPreflightResult['warnings'] = []
 
-  const setor = db.prepare('SELECT id, ativo FROM setores WHERE id = ?').get(setorId) as { id: number; ativo: number } | undefined
-  if (!setor || setor.ativo !== 1) {
+  const setor = await queryOne<{ id: number; ativo: boolean }>('SELECT id, ativo FROM setores WHERE id = ?', setorId)
+  if (!setor || !setor.ativo) {
     blockers.push({
       codigo: 'SETOR_INVALIDO',
       severidade: 'BLOCKER',
@@ -246,9 +245,8 @@ function buildEscalaPreflight(
     })
   }
 
-  const colabsAtivos = (
-    db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(setorId) as { count: number }
-  ).count
+  const colabsRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE setor_id = ? AND ativo = TRUE', setorId)
+  const colabsAtivos = colabsRow?.count ?? 0
   if (colabsAtivos === 0) {
     blockers.push({
       codigo: 'SEM_COLABORADORES',
@@ -258,9 +256,8 @@ function buildEscalaPreflight(
     })
   }
 
-  const demandasCount = (
-    db.prepare('SELECT COUNT(*) as count FROM demandas WHERE setor_id = ?').get(setorId) as { count: number }
-  ).count
+  const demandasRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM demandas WHERE setor_id = ?', setorId)
+  const demandasCount = demandasRow?.count ?? 0
   if (demandasCount === 0) {
     warnings.push({
       codigo: 'SEM_DEMANDA',
@@ -270,13 +267,12 @@ function buildEscalaPreflight(
     })
   }
 
-  const feriadosNoPeriodo = (
-    db.prepare('SELECT COUNT(*) as count FROM feriados WHERE data BETWEEN ? AND ?').get(dataInicio, dataFim) as { count: number }
-  ).count
+  const feriadosRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM feriados WHERE data BETWEEN ? AND ?', dataInicio, dataFim)
+  const feriadosNoPeriodo = feriadosRow?.count ?? 0
 
   if (blockers.length === 0) {
     try {
-      const input = buildSolverInput(setorId, dataInicio, dataFim, undefined, {
+      const input = await buildSolverInput(setorId, dataInicio, dataFim, undefined, {
         regimesOverride: normalizeRegimesOverride(regimesOverride),
       })
       enrichPreflightWithCapacityChecks(input, blockers, warnings)
@@ -312,8 +308,7 @@ function buildEscalaPreflight(
 
 const empresaBuscar = t.procedure
   .action(async () => {
-    const db = getDb()
-    const empresa = db.prepare('SELECT * FROM empresa LIMIT 1').get()
+    const empresa = await queryOne('SELECT * FROM empresa LIMIT 1')
     if (!empresa) throw new Error('Empresa nao configurada')
     return empresa
   })
@@ -321,29 +316,26 @@ const empresaBuscar = t.procedure
 const empresaAtualizar = t.procedure
   .input<{ nome: string; cnpj: string; telefone: string; corte_semanal: string; tolerancia_semanal_min: number; min_intervalo_almoco_min?: number; usa_cct_intervalo_reduzido?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const empresa = db.prepare('SELECT id FROM empresa LIMIT 1').get() as { id: number } | undefined
+    const empresa = await queryOne<{ id: number }>('SELECT id FROM empresa LIMIT 1')
 
     if (empresa) {
-      db.prepare(`UPDATE empresa SET nome = ?, cnpj = ?, telefone = ?, corte_semanal = ?, tolerancia_semanal_min = ?,
-        min_intervalo_almoco_min = ?, usa_cct_intervalo_reduzido = ? WHERE id = ?`)
-        .run(
+      await execute(`UPDATE empresa SET nome = ?, cnpj = ?, telefone = ?, corte_semanal = ?, tolerancia_semanal_min = ?,
+        min_intervalo_almoco_min = ?, usa_cct_intervalo_reduzido = ? WHERE id = ?`,
           input.nome, input.cnpj, input.telefone, input.corte_semanal, input.tolerancia_semanal_min,
           input.min_intervalo_almoco_min ?? 60,
-          input.usa_cct_intervalo_reduzido !== false ? 1 : 0,
+          input.usa_cct_intervalo_reduzido !== false,
           empresa.id
         )
     } else {
-      db.prepare(`INSERT INTO empresa (nome, cnpj, telefone, corte_semanal, tolerancia_semanal_min, min_intervalo_almoco_min, usa_cct_intervalo_reduzido)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(
+      await execute(`INSERT INTO empresa (nome, cnpj, telefone, corte_semanal, tolerancia_semanal_min, min_intervalo_almoco_min, usa_cct_intervalo_reduzido)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
           input.nome, input.cnpj, input.telefone, input.corte_semanal, input.tolerancia_semanal_min,
           input.min_intervalo_almoco_min ?? 60,
-          input.usa_cct_intervalo_reduzido !== false ? 1 : 0
+          input.usa_cct_intervalo_reduzido !== false
         )
     }
 
-    return db.prepare('SELECT * FROM empresa LIMIT 1').get()
+    return await queryOne('SELECT * FROM empresa LIMIT 1')
   })
 
 // =============================================================================
@@ -352,15 +344,13 @@ const empresaAtualizar = t.procedure
 
 const tiposContratoListar = t.procedure
   .action(async () => {
-    const db = getDb()
-    return db.prepare('SELECT * FROM tipos_contrato ORDER BY horas_semanais DESC').all()
+    return await queryAll('SELECT * FROM tipos_contrato ORDER BY horas_semanais DESC')
   })
 
 const tiposContratoBuscar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const tipo = db.prepare('SELECT * FROM tipos_contrato WHERE id = ?').get(input.id)
+    const tipo = await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', input.id)
     if (!tipo) throw new Error('Tipo de contrato nao encontrado')
     return tipo
   })
@@ -375,15 +365,14 @@ const tiposContratoCriar = t.procedure
     max_minutos_dia: number
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
     const diasTrabalho = regime === '5X2' ? 5 : 6
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, trabalha_domingo, max_minutos_dia)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo ? 1 : 0, input.max_minutos_dia)
+    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo, input.max_minutos_dia)
 
-    return db.prepare('SELECT * FROM tipos_contrato WHERE id = ?').get(result.lastInsertRowid)
+    return await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', id)
   })
 
 const tiposContratoAtualizar = t.procedure
@@ -397,26 +386,24 @@ const tiposContratoAtualizar = t.procedure
     max_minutos_dia: number
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
     const diasTrabalho = regime === '5X2' ? 5 : 6
-    db.prepare(`
+    await execute(`
       UPDATE tipos_contrato SET nome = ?, horas_semanais = ?, regime_escala = ?, dias_trabalho = ?,
       trabalha_domingo = ?, max_minutos_dia = ? WHERE id = ?
-    `).run(input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo ? 1 : 0, input.max_minutos_dia, input.id)
+    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo, input.max_minutos_dia, input.id)
 
-    return db.prepare('SELECT * FROM tipos_contrato WHERE id = ?').get(input.id)
+    return await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', input.id)
   })
 
 const tiposContratoDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const count = db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE tipo_contrato_id = ?').get(input.id) as { count: number }
-    if (count.count > 0) {
+    const count = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE tipo_contrato_id = ?', input.id)
+    if (count && count.count > 0) {
       throw new Error(`${count.count} colaboradores usam este contrato. Mova-os antes de deletar.`)
     }
-    db.prepare('DELETE FROM tipos_contrato WHERE id = ?').run(input.id)
+    await execute('DELETE FROM tipos_contrato WHERE id = ?', input.id)
     return undefined
   })
 
@@ -427,8 +414,7 @@ const tiposContratoDeletar = t.procedure
 const tiposContratoListarPerfisHorario = t.procedure
   .input<{ tipo_contrato_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    return db.prepare('SELECT * FROM contrato_perfis_horario WHERE tipo_contrato_id = ? ORDER BY ordem, id').all(input.tipo_contrato_id)
+    return await queryAll('SELECT * FROM contrato_perfis_horario WHERE tipo_contrato_id = ? ORDER BY ordem, id', input.tipo_contrato_id)
   })
 
 const tiposContratoCriarPerfilHorario = t.procedure
@@ -443,16 +429,15 @@ const tiposContratoCriarPerfilHorario = t.procedure
     ordem?: number
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
       input.tipo_contrato_id, input.nome,
       input.inicio_min, input.inicio_max, input.fim_min, input.fim_max,
       input.preferencia_turno_soft ?? null, input.ordem ?? 0
     )
-    return db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(result.lastInsertRowid)
+    return await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
   })
 
 const tiposContratoAtualizarPerfilHorario = t.procedure
@@ -468,12 +453,11 @@ const tiposContratoAtualizarPerfilHorario = t.procedure
     ordem?: number
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const { id, ...rest } = input
     const fields: string[] = []
     const values: unknown[] = []
     if (rest.nome !== undefined) { fields.push('nome = ?'); values.push(rest.nome) }
-    if (rest.ativo !== undefined) { fields.push('ativo = ?'); values.push(rest.ativo ? 1 : 0) }
+    if (rest.ativo !== undefined) { fields.push('ativo = ?'); values.push(rest.ativo) }
     if (rest.inicio_min !== undefined) { fields.push('inicio_min = ?'); values.push(rest.inicio_min) }
     if (rest.inicio_max !== undefined) { fields.push('inicio_max = ?'); values.push(rest.inicio_max) }
     if (rest.fim_min !== undefined) { fields.push('fim_min = ?'); values.push(rest.fim_min) }
@@ -482,16 +466,15 @@ const tiposContratoAtualizarPerfilHorario = t.procedure
     if (rest.ordem !== undefined) { fields.push('ordem = ?'); values.push(rest.ordem) }
     if (fields.length > 0) {
       values.push(id)
-      db.prepare(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+      await execute(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
-    return db.prepare('SELECT * FROM contrato_perfis_horario WHERE id = ?').get(id)
+    return await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
   })
 
 const tiposContratoDeletarPerfilHorario = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM contrato_perfis_horario WHERE id = ?').run(input.id)
+    await execute('DELETE FROM contrato_perfis_horario WHERE id = ?', input.id)
     return undefined
   })
 
@@ -502,24 +485,22 @@ const tiposContratoDeletarPerfilHorario = t.procedure
 const setoresListar = t.procedure
   .input<{ ativo?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
     let sql = 'SELECT * FROM setores'
     const params: unknown[] = []
 
     if (input?.ativo !== undefined) {
       sql += ' WHERE ativo = ?'
-      params.push(input.ativo ? 1 : 0)
+      params.push(input.ativo)
     }
     sql += ' ORDER BY nome'
 
-    return db.prepare(sql).all(...params)
+    return await queryAll(sql, ...params)
   })
 
 const setoresBuscar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(input.id)
+    const setor = await queryOne('SELECT * FROM setores WHERE id = ?', input.id)
     if (!setor) throw new Error('Setor nao encontrado')
     return setor
   })
@@ -527,19 +508,17 @@ const setoresBuscar = t.procedure
 const setoresCriar = t.procedure
   .input<{ nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento)
       VALUES (?, ?, ?, ?)
-    `).run(input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento)
+    `, input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento)
 
-    return db.prepare('SELECT * FROM setores WHERE id = ?').get(result.lastInsertRowid)
+    return await queryOne('SELECT * FROM setores WHERE id = ?', id)
   })
 
 const setoresAtualizar = t.procedure
   .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; ativo?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const fields: string[] = []
     const values: unknown[] = []
 
@@ -547,21 +526,20 @@ const setoresAtualizar = t.procedure
     if (input.icone !== undefined) { fields.push('icone = ?'); values.push(input.icone) }
     if (input.hora_abertura !== undefined) { fields.push('hora_abertura = ?'); values.push(input.hora_abertura) }
     if (input.hora_fechamento !== undefined) { fields.push('hora_fechamento = ?'); values.push(input.hora_fechamento) }
-    if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo ? 1 : 0) }
+    if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo) }
 
     if (fields.length > 0) {
       values.push(input.id)
-      db.prepare(`UPDATE setores SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+      await execute(`UPDATE setores SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
 
-    return db.prepare('SELECT * FROM setores WHERE id = ?').get(input.id)
+    return await queryOne('SELECT * FROM setores WHERE id = ?', input.id)
   })
 
 const setoresDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM setores WHERE id = ?').run(input.id)
+    await execute('DELETE FROM setores WHERE id = ?', input.id)
     return undefined
   })
 
@@ -570,8 +548,7 @@ const setoresDeletar = t.procedure
 const setoresListarDemandas = t.procedure
   .input<{ setor_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    return db.prepare(`
+    return await queryAll(`
       SELECT * FROM demandas
       WHERE setor_id = ?
       ORDER BY CASE dia_semana
@@ -584,14 +561,13 @@ const setoresListarDemandas = t.procedure
         WHEN 'DOM' THEN 7
         ELSE 8
       END, hora_inicio, hora_fim, id
-    `).all(input.setor_id)
+    `, input.setor_id)
   })
 
 const setoresCriarDemanda = t.procedure
   .input<{ setor_id: number; dia_semana?: string | null; hora_inicio: string; hora_fim: string; min_pessoas: number; override?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(input.setor_id) as { hora_abertura: string; hora_fechamento: string } | undefined
+    const setor = await queryOne<{ hora_abertura: string; hora_fechamento: string }>('SELECT * FROM setores WHERE id = ?', input.setor_id)
     if (!setor) throw new Error('Setor nao encontrado')
 
     if (!Number.isInteger(input.min_pessoas) || input.min_pessoas < 1) {
@@ -599,14 +575,14 @@ const setoresCriarDemanda = t.procedure
     }
 
     const horarioDia = input.dia_semana
-      ? (db.prepare(`
+      ? await queryOne<{ ativo: boolean; hora_abertura: string; hora_fechamento: string }>(`
           SELECT ativo, hora_abertura, hora_fechamento
           FROM setor_horario_semana
           WHERE setor_id = ? AND dia_semana = ?
-        `).get(input.setor_id, input.dia_semana) as { ativo: number; hora_abertura: string; hora_fechamento: string } | undefined)
+        `, input.setor_id, input.dia_semana)
       : undefined
 
-    if (horarioDia && horarioDia.ativo === 0) {
+    if (horarioDia && !horarioDia.ativo) {
       throw new Error(`Dia ${input.dia_semana} esta inativo no horario semanal do setor`)
     }
 
@@ -620,32 +596,32 @@ const setoresCriarDemanda = t.procedure
       throw new Error(`Faixa termina depois do fechamento do setor (${fechamento})`)
     }
 
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(input.setor_id, input.dia_semana ?? null, input.hora_inicio, input.hora_fim, input.min_pessoas, input.override ? 1 : 0)
+    `, input.setor_id, input.dia_semana ?? null, input.hora_inicio, input.hora_fim, input.min_pessoas, input.override ?? false)
 
-    return db.prepare('SELECT * FROM demandas WHERE id = ?').get(result.lastInsertRowid)
+    return await queryOne('SELECT * FROM demandas WHERE id = ?', id)
   })
 
 const setoresAtualizarDemanda = t.procedure
   .input<{ id: number; dia_semana?: string | null; hora_inicio?: string; hora_fim?: string; min_pessoas?: number; override?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const demanda = db.prepare('SELECT * FROM demandas WHERE id = ?').get(input.id) as { setor_id: number; dia_semana: string | null; hora_inicio: string; hora_fim: string } | undefined
+    const demanda = await queryOne<{ setor_id: number; dia_semana: string | null; hora_inicio: string; hora_fim: string }>('SELECT * FROM demandas WHERE id = ?', input.id)
     if (!demanda) throw new Error('Demanda nao encontrada')
 
-    const setor = db.prepare('SELECT * FROM setores WHERE id = ?').get(demanda.setor_id) as { hora_abertura: string; hora_fechamento: string }
+    const setor = await queryOne<{ hora_abertura: string; hora_fechamento: string }>('SELECT * FROM setores WHERE id = ?', demanda.setor_id)
+    if (!setor) throw new Error('Setor nao encontrado')
     const diaSemAtual = input.dia_semana !== undefined ? input.dia_semana : demanda.dia_semana
     const horarioDia = diaSemAtual
-      ? (db.prepare(`
+      ? await queryOne<{ ativo: boolean; hora_abertura: string; hora_fechamento: string }>(`
           SELECT ativo, hora_abertura, hora_fechamento
           FROM setor_horario_semana
           WHERE setor_id = ? AND dia_semana = ?
-        `).get(demanda.setor_id, diaSemAtual) as { ativo: number; hora_abertura: string; hora_fechamento: string } | undefined)
+        `, demanda.setor_id, diaSemAtual)
       : undefined
 
-    if (horarioDia && horarioDia.ativo === 0) {
+    if (horarioDia && !horarioDia.ativo) {
       throw new Error(`Dia ${diaSemAtual} esta inativo no horario semanal do setor`)
     }
 
@@ -671,21 +647,20 @@ const setoresAtualizarDemanda = t.procedure
     if (input.hora_inicio != null) { fields.push('hora_inicio = ?'); values.push(input.hora_inicio) }
     if (input.hora_fim != null) { fields.push('hora_fim = ?'); values.push(input.hora_fim) }
     if (input.min_pessoas != null) { fields.push('min_pessoas = ?'); values.push(input.min_pessoas) }
-    if (input.override !== undefined) { fields.push('override = ?'); values.push(input.override ? 1 : 0) }
+    if (input.override !== undefined) { fields.push('override = ?'); values.push(input.override) }
 
     if (fields.length > 0) {
       values.push(input.id)
-      db.prepare(`UPDATE demandas SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+      await execute(`UPDATE demandas SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
 
-    return db.prepare('SELECT * FROM demandas WHERE id = ?').get(input.id)
+    return await queryOne('SELECT * FROM demandas WHERE id = ?', input.id)
   })
 
 const setoresDeletarDemanda = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM demandas WHERE id = ?').run(input.id)
+    await execute('DELETE FROM demandas WHERE id = ?', input.id)
     return undefined
   })
 
@@ -694,15 +669,12 @@ const setoresDeletarDemanda = t.procedure
 const setoresReordenarRank = t.procedure
   .input<{ setor_id: number; colaborador_ids: number[] }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const updateRank = db.prepare('UPDATE colaboradores SET rank = ? WHERE id = ? AND setor_id = ?')
-
-    const reorder = db.transaction(() => {
+    await transaction(async () => {
       for (let i = 0; i < input.colaborador_ids.length; i++) {
-        updateRank.run(input.colaborador_ids.length - i, input.colaborador_ids[i], input.setor_id)
+        await execute('UPDATE colaboradores SET rank = ? WHERE id = ? AND setor_id = ?',
+          input.colaborador_ids.length - i, input.colaborador_ids[i], input.setor_id)
       }
     })
-    reorder()
 
     return undefined
   })
@@ -714,7 +686,6 @@ const setoresReordenarRank = t.procedure
 const colaboradoresListar = t.procedure
   .input<{ setor_id?: number; ativo?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
     let sql = 'SELECT * FROM colaboradores WHERE 1=1'
     const params: unknown[] = []
 
@@ -724,18 +695,17 @@ const colaboradoresListar = t.procedure
     }
     if (input?.ativo !== undefined) {
       sql += ' AND ativo = ?'
-      params.push(input.ativo ? 1 : 0)
+      params.push(input.ativo)
     }
     sql += ' ORDER BY rank DESC, nome'
 
-    return db.prepare(sql).all(...params)
+    return await queryAll(sql, ...params)
   })
 
 const colaboradoresBuscar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const colab = db.prepare('SELECT * FROM colaboradores WHERE id = ?').get(input.id)
+    const colab = await queryOne('SELECT * FROM colaboradores WHERE id = ?', input.id)
     if (!colab) throw new Error('Colaborador nao encontrado')
     return colab
   })
@@ -743,19 +713,17 @@ const colaboradoresBuscar = t.procedure
 const colaboradoresCriar = t.procedure
   .input<{ setor_id: number; tipo_contrato_id: number; nome: string; sexo: string; horas_semanais?: number; rank?: number; prefere_turno?: string | null; evitar_dia_semana?: string | null; tipo_trabalhador?: string; funcao_id?: number | null }>()
   .action(async ({ input }) => {
-    const db = getDb()
-
     let horasSemanais = input.horas_semanais
     if (horasSemanais === undefined) {
-      const tipo = db.prepare('SELECT horas_semanais FROM tipos_contrato WHERE id = ?').get(input.tipo_contrato_id) as { horas_semanais: number } | undefined
+      const tipo = await queryOne<{ horas_semanais: number }>('SELECT horas_semanais FROM tipos_contrato WHERE id = ?', input.tipo_contrato_id)
       if (!tipo) throw new Error('Tipo de contrato nao encontrado')
       horasSemanais = tipo.horas_semanais
     }
 
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO colaboradores (setor_id, tipo_contrato_id, nome, sexo, horas_semanais, rank, prefere_turno, evitar_dia_semana, tipo_trabalhador, funcao_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
       input.setor_id,
       input.tipo_contrato_id,
       input.nome,
@@ -768,24 +736,22 @@ const colaboradoresCriar = t.procedure
       input.funcao_id ?? null
     )
 
-    return db.prepare('SELECT * FROM colaboradores WHERE id = ?').get(result.lastInsertRowid)
+    return await queryOne('SELECT * FROM colaboradores WHERE id = ?', id)
   })
 
 const colaboradoresAtualizar = t.procedure
   .input<{ id: number; setor_id?: number; tipo_contrato_id?: number; nome?: string; sexo?: string; horas_semanais?: number; rank?: number; prefere_turno?: string | null; evitar_dia_semana?: string | null; ativo?: boolean; tipo_trabalhador?: string; funcao_id?: number | null }>()
   .action(async ({ input }) => {
-    const db = getDb()
-
     // Validacao: se mudar de setor, nao pode ter escala RASCUNHO aberta
     if (input.setor_id !== undefined) {
-      const atual = db.prepare('SELECT setor_id FROM colaboradores WHERE id = ?').get(input.id) as { setor_id: number } | undefined
+      const atual = await queryOne<{ setor_id: number }>('SELECT setor_id FROM colaboradores WHERE id = ?', input.id)
       if (atual && input.setor_id !== atual.setor_id) {
-        const rascunho = db.prepare(`
-          SELECT COUNT(*) as count FROM escalas e
+        const rascunho = await queryOne<{ count: number }>(`
+          SELECT COUNT(*)::int as count FROM escalas e
           JOIN alocacoes a ON a.escala_id = e.id
           WHERE a.colaborador_id = ? AND e.status = 'RASCUNHO'
-        `).get(input.id) as { count: number }
-        if (rascunho.count > 0) {
+        `, input.id)
+        if (rascunho && rascunho.count > 0) {
           throw new Error('Colaborador tem escala em rascunho no setor atual. Descarte antes de mover.')
         }
       }
@@ -802,23 +768,22 @@ const colaboradoresAtualizar = t.procedure
     if (input.rank !== undefined) { fields.push('rank = ?'); values.push(input.rank) }
     if (input.prefere_turno !== undefined) { fields.push('prefere_turno = ?'); values.push(input.prefere_turno) }
     if (input.evitar_dia_semana !== undefined) { fields.push('evitar_dia_semana = ?'); values.push(input.evitar_dia_semana) }
-    if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo ? 1 : 0) }
+    if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo) }
     if (input.tipo_trabalhador !== undefined) { fields.push('tipo_trabalhador = ?'); values.push(input.tipo_trabalhador) }
     if (input.funcao_id !== undefined) { fields.push('funcao_id = ?'); values.push(input.funcao_id) }
 
     if (fields.length > 0) {
       values.push(input.id)
-      db.prepare(`UPDATE colaboradores SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+      await execute(`UPDATE colaboradores SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
 
-    return db.prepare('SELECT * FROM colaboradores WHERE id = ?').get(input.id)
+    return await queryOne('SELECT * FROM colaboradores WHERE id = ?', input.id)
   })
 
 const colaboradoresDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM colaboradores WHERE id = ?').run(input.id)
+    await execute('DELETE FROM colaboradores WHERE id = ?', input.id)
     return undefined
   })
 
@@ -829,46 +794,41 @@ const colaboradoresDeletar = t.procedure
 const excecoesListar = t.procedure
   .input<{ colaborador_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    return db.prepare('SELECT * FROM excecoes WHERE colaborador_id = ? ORDER BY data_inicio').all(input.colaborador_id)
+    return await queryAll('SELECT * FROM excecoes WHERE colaborador_id = ? ORDER BY data_inicio', input.colaborador_id)
   })
 
 const excecoesListarAtivas = t.procedure
   .input<Record<string, never>>()
   .action(async () => {
-    const db = getDb()
     const hoje = new Date().toISOString().split('T')[0]
-    return db.prepare('SELECT * FROM excecoes WHERE data_inicio <= ? AND data_fim >= ? ORDER BY tipo, data_inicio').all(hoje, hoje)
+    return await queryAll('SELECT * FROM excecoes WHERE data_inicio <= ? AND data_fim >= ? ORDER BY tipo, data_inicio', hoje, hoje)
   })
 
 const excecoesCriar = t.procedure
   .input<{ colaborador_id: number; data_inicio: string; data_fim: string; tipo: string; observacao?: string | null }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO excecoes (colaborador_id, data_inicio, data_fim, tipo, observacao)
       VALUES (?, ?, ?, ?, ?)
-    `).run(input.colaborador_id, input.data_inicio, input.data_fim, input.tipo, input.observacao ?? null)
+    `, input.colaborador_id, input.data_inicio, input.data_fim, input.tipo, input.observacao ?? null)
 
-    return db.prepare('SELECT * FROM excecoes WHERE id = ?').get(result.lastInsertRowid)
+    return await queryOne('SELECT * FROM excecoes WHERE id = ?', id)
   })
 
 const excecoesAtualizar = t.procedure
   .input<{ id: number; data_inicio: string; data_fim: string; tipo: string; observacao?: string | null }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(`
+    await execute(`
       UPDATE excecoes SET data_inicio = ?, data_fim = ?, tipo = ?, observacao = ? WHERE id = ?
-    `).run(input.data_inicio, input.data_fim, input.tipo, input.observacao ?? null, input.id)
+    `, input.data_inicio, input.data_fim, input.tipo, input.observacao ?? null, input.id)
 
-    return db.prepare('SELECT * FROM excecoes WHERE id = ?').get(input.id)
+    return await queryOne('SELECT * FROM excecoes WHERE id = ?', input.id)
   })
 
 const excecoesDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM excecoes WHERE id = ?').run(input.id)
+    await execute('DELETE FROM excecoes WHERE id = ?', input.id)
     return undefined
   })
 
@@ -879,36 +839,28 @@ const excecoesDeletar = t.procedure
 const escalasBuscar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }): Promise<EscalaCompletaV3> => {
-    const db = getDb()
-    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(input.id) as Escala | undefined
+    const escala = await queryOne<Escala>('SELECT * FROM escalas WHERE id = ?', input.id)
     if (!escala) throw new Error('Escala nao encontrada')
 
-    const alocacoes = db
-      .prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id')
-      .all(input.id) as Alocacao[]
+    const alocacoes = await queryAll<Alocacao>('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id', input.id)
 
-    const snapshotDecisoes = db.prepare(`
-      SELECT ed.*,
-             COALESCE(c.nome, 'Sistema') as colaborador_nome
-      FROM escala_decisoes ed
-      LEFT JOIN colaboradores c ON c.id = ed.colaborador_id
-      WHERE ed.escala_id = ?
-      ORDER BY ed.data, ed.colaborador_id, ed.id
-    `).all(input.id) as Array<{
+    const snapshotDecisoes = await queryAll<{
       colaborador_id: number
       colaborador_nome: string
       data: string
       acao: 'ALOCADO' | 'FOLGA' | 'MOVIDO' | 'REMOVIDO'
       razao: string
       alternativas_tentadas: number
-    }>
+    }>(`
+      SELECT ed.*,
+             COALESCE(c.nome, 'Sistema') as colaborador_nome
+      FROM escala_decisoes ed
+      LEFT JOIN colaboradores c ON c.id = ed.colaborador_id
+      WHERE ed.escala_id = ?
+      ORDER BY ed.data, ed.colaborador_id, ed.id
+    `, input.id)
 
-    const snapshotComparacao = db.prepare(`
-      SELECT data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa
-      FROM escala_comparacao_demanda
-      WHERE escala_id = ?
-      ORDER BY data, hora_inicio, hora_fim, id
-    `).all(input.id) as Array<{
+    const snapshotComparacao = await queryAll<{
       data: string
       hora_inicio: string
       hora_fim: string
@@ -917,9 +869,14 @@ const escalasBuscar = t.procedure
       delta: number
       override: number | boolean
       justificativa: string | null
-    }>
+    }>(`
+      SELECT data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa
+      FROM escala_comparacao_demanda
+      WHERE escala_id = ?
+      ORDER BY data, hora_inicio, hora_fim, id
+    `, input.id)
 
-    const base = validarEscalaV3(input.id, db)
+    const base = await validarEscalaV3(input.id)
     const hasSnapshot = snapshotDecisoes.length > 0 || snapshotComparacao.length > 0
     if (!hasSnapshot) return base
 
@@ -950,8 +907,7 @@ const escalasBuscar = t.procedure
 
 const escalasResumoPorSetor = t.procedure
   .action(async () => {
-    const db = getDb()
-    return db.prepare(`
+    return await queryAll<{ setor_id: number; data_inicio: string; data_fim: string; status: string }>(`
       SELECT e.setor_id, e.data_inicio, e.data_fim, e.status
       FROM escalas e
       INNER JOIN (
@@ -963,13 +919,12 @@ const escalasResumoPorSetor = t.procedure
         GROUP BY setor_id
       ) latest ON e.setor_id = latest.setor_id
         AND (CASE e.status WHEN 'OFICIAL' THEN 2 WHEN 'RASCUNHO' THEN 1 ELSE 0 END * 1000000 + e.id) = latest.prio
-    `).all() as { setor_id: number; data_inicio: string; data_fim: string; status: string }[]
+    `)
   })
 
 const escalasListarPorSetor = t.procedure
   .input<{ setor_id: number; status?: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
     let sql = 'SELECT * FROM escalas WHERE setor_id = ?'
     const params: unknown[] = [input.setor_id]
 
@@ -979,7 +934,7 @@ const escalasListarPorSetor = t.procedure
     }
     sql += ' ORDER BY data_inicio DESC'
 
-    return db.prepare(sql).all(...params)
+    return await queryAll(sql, ...params)
   })
 
 const escalasPreflight = t.procedure
@@ -990,7 +945,7 @@ const escalasPreflight = t.procedure
     regimes_override?: SimulacaoRegimeOverride[]
   }>()
   .action(async ({ input }): Promise<EscalaPreflightResult> => {
-    return buildEscalaPreflight(
+    return await buildEscalaPreflight(
       input.setor_id,
       input.data_inicio,
       input.data_fim,
@@ -1001,20 +956,19 @@ const escalasPreflight = t.procedure
 const escalasOficializar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(input.id) as {
+    const escala = await queryOne<{
       setor_id: number
       status: string
       data_inicio: string
       data_fim: string
       input_hash?: string | null
       simulacao_config_json?: string | null
-    } | undefined
+    }>('SELECT * FROM escalas WHERE id = ?', input.id)
     if (!escala) throw new Error('Escala nao encontrada')
 
     if (escala.input_hash) {
       const cfg = parseEscalaSimulacaoConfig(escala.simulacao_config_json ?? null)
-      const currentInput = buildSolverInput(escala.setor_id, escala.data_inicio, escala.data_fim, undefined, {
+      const currentInput = await buildSolverInput(escala.setor_id, escala.data_inicio, escala.data_fim, undefined, {
         regimesOverride: cfg.regimes_override,
       })
       const currentHash = computeSolverScenarioHash(currentInput)
@@ -1025,37 +979,36 @@ const escalasOficializar = t.procedure
       }
     }
 
-    const { indicadores } = validarEscalaV3(input.id, db)
+    const { indicadores } = await validarEscalaV3(input.id)
 
     if (indicadores.violacoes_hard > 0) {
       throw new Error(`Escala tem ${indicadores.violacoes_hard} violacoes criticas. Corrija antes de oficializar.`)
     }
 
     // Arquivar oficial anterior do mesmo setor
-    db.prepare(`
+    await execute(`
       UPDATE escalas SET status = 'ARQUIVADA'
       WHERE setor_id = ? AND status = 'OFICIAL'
-    `).run(escala.setor_id)
+    `, escala.setor_id)
 
     // Oficializar esta
-    db.prepare("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?").run(input.id)
+    await execute("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?", input.id)
 
-    return db.prepare('SELECT * FROM escalas WHERE id = ?').get(input.id)
+    return await queryOne('SELECT * FROM escalas WHERE id = ?', input.id)
   })
 
 const escalasAjustar = t.procedure
   .input<{ id: number; alocacoes: { colaborador_id: number; data: string; status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'; hora_inicio?: string | null; hora_fim?: string | null }[] }>()
   .action(async ({ input }): Promise<EscalaCompletaV3> => {
-    const db = getDb()
     const escalaId = input.id
 
-    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as {
+    const escala = await queryOne<{
       setor_id: number
       data_inicio: string
       data_fim: string
       status: string
       simulacao_config_json?: string | null
-    } | undefined
+    }>('SELECT * FROM escalas WHERE id = ?', escalaId)
     if (!escala) throw new Error('Escala nao encontrada')
     if (escala.status !== 'RASCUNHO') {
       throw new Error('So e possivel ajustar escalas em rascunho')
@@ -1075,7 +1028,7 @@ const escalasAjustar = t.procedure
 
     // Build input e chamar solver Python
     const cfg = parseEscalaSimulacaoConfig(escala.simulacao_config_json ?? null)
-    const solverInput = buildSolverInput(
+    const solverInput = await buildSolverInput(
       escala.setor_id,
       escala.data_inicio,
       escala.data_fim,
@@ -1090,7 +1043,7 @@ const escalasAjustar = t.procedure
 
     if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
       if (solverResult.status === 'INFEASIBLE') {
-        const diag = buildEscalaPreflight(
+        const diag = await buildEscalaPreflight(
           escala.setor_id,
           escala.data_inicio,
           escala.data_fim,
@@ -1109,51 +1062,48 @@ const escalasAjustar = t.procedure
     const comparacao = solverResult.comparacao_demanda ?? []
 
     // Persistir resultado do solver (substituir alocacoes + decisoes + comparacao)
-    const persist = db.transaction(() => {
-      db.prepare('DELETE FROM alocacoes WHERE escala_id = ?').run(escalaId)
-      db.prepare('DELETE FROM escala_decisoes WHERE escala_id = ?').run(escalaId)
-      db.prepare('DELETE FROM escala_comparacao_demanda WHERE escala_id = ?').run(escalaId)
+    await transaction(async () => {
+      await execute('DELETE FROM alocacoes WHERE escala_id = ?', escalaId)
+      await execute('DELETE FROM escala_decisoes WHERE escala_id = ?', escalaId)
+      await execute('DELETE FROM escala_comparacao_demanda WHERE escala_id = ?', escalaId)
 
-      const insertAloc = db.prepare(`
-        INSERT INTO alocacoes
-          (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
-           minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
-           minutos_almoco, intervalo_15min, funcao_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
       for (const a of solverResult.alocacoes!) {
-        insertAloc.run(
+        await execute(`
+          INSERT INTO alocacoes
+            (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
+             minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
+             minutos_almoco, intervalo_15min, funcao_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
           escalaId, a.colaborador_id, a.data, a.status,
           a.hora_inicio ?? null, a.hora_fim ?? null,
           a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
           a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
           a.minutos_almoco ?? null,
-          a.intervalo_15min ? 1 : 0,
+          a.intervalo_15min ?? false,
           a.funcao_id ?? null
         )
       }
 
-      const insertDecisao = db.prepare(`
-        INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `)
       for (const d of decisoes) {
-        insertDecisao.run(escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
+        await execute(`
+          INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
       }
 
-      const insertComp = db.prepare(`
-        INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
       for (const c of comparacao) {
-        insertComp.run(escalaId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ? 1 : 0, c.justificativa ?? null)
+        await execute(`
+          INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, escalaId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ?? false, c.justificativa ?? null)
       }
 
-      db.prepare(`
+      await execute(`
         UPDATE escalas
         SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?, input_hash = ?, simulacao_config_json = ?
         WHERE id = ?
-      `).run(
+      `,
         ind.pontuacao,
         ind.cobertura_percent,
         ind.violacoes_hard,
@@ -1164,13 +1114,12 @@ const escalasAjustar = t.procedure
         escalaId,
       )
     })
-    persist()
 
-    const escalaAtual = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as Escala
-    const alocacoesDB = db.prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id').all(escalaId) as Alocacao[]
+    const escalaAtual = await queryOne<Escala>('SELECT * FROM escalas WHERE id = ?', escalaId)
+    const alocacoesDB = await queryAll<Alocacao>('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id', escalaId)
 
     return {
-      escala: escalaAtual,
+      escala: escalaAtual!,
       alocacoes: alocacoesDB,
       indicadores: ind,
       violacoes: [],
@@ -1189,8 +1138,7 @@ const escalasAjustar = t.procedure
 const escalasDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM escalas WHERE id = ?').run(input.id)
+    await execute('DELETE FROM escalas WHERE id = ?', input.id)
     return undefined
   })
 
@@ -1206,12 +1154,11 @@ const escalasGerar = t.procedure
     rules_override?: Record<string, string>
   }>()
   .action(async ({ input }): Promise<EscalaCompletaV3> => {
-    const db = getDb()
     const setorId = input.setor_id
     const regimesOverride = normalizeRegimesOverride(input.regimes_override)
 
     // Preflight antes de chamar solver
-    const preflight = buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
+    const preflight = await buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
     if (!preflight.ok) {
       const msg = preflight.blockers[0]?.mensagem ?? 'Preflight falhou'
       throw new Error(msg)
@@ -1227,7 +1174,7 @@ const escalasGerar = t.procedure
     sendLog('Montando modelo...')
 
     // Build input e chamar solver Python (agora com solveMode + rulesOverride)
-    const solverInput = buildSolverInput(setorId, input.data_inicio, input.data_fim, undefined, {
+    const solverInput = await buildSolverInput(setorId, input.data_inicio, input.data_fim, undefined, {
       regimesOverride,
       solveMode: input.solve_mode,
       maxTimeSeconds: input.max_time_seconds,
@@ -1238,7 +1185,7 @@ const escalasGerar = t.procedure
 
     if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
       if (solverResult.status === 'INFEASIBLE') {
-        const diag = buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
+        const diag = await buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
         const blocker = diag.blockers[0]
         if (blocker) {
           throw new Error(`INFEASIBLE: ${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`)
@@ -1252,65 +1199,59 @@ const escalasGerar = t.procedure
     const comparacao = solverResult.comparacao_demanda ?? []
 
     // Persist escala + alocacoes + decisoes + comparacao em transaction
-    const persist = db.transaction(() => {
-      const result = db.prepare(`
+    const escalaId = await transaction(async () => {
+      const newId = await insertReturningId(`
         INSERT INTO escalas
           (setor_id, data_inicio, data_fim, status, pontuacao,
            cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json)
         VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `,
         setorId, input.data_inicio, input.data_fim,
         ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
         inputHash,
         JSON.stringify({ regimes_override: regimesOverride } satisfies EscalaSimulacaoConfig),
       )
 
-      const escalaId = result.lastInsertRowid
-
-      const insertAloc = db.prepare(`
-        INSERT INTO alocacoes
-          (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
-           minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
-           minutos_almoco, intervalo_15min, funcao_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
       for (const a of solverResult.alocacoes!) {
-        insertAloc.run(
-          escalaId, a.colaborador_id, a.data, a.status,
+        await execute(`
+          INSERT INTO alocacoes
+            (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
+             minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
+             minutos_almoco, intervalo_15min, funcao_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+          newId, a.colaborador_id, a.data, a.status,
           a.hora_inicio ?? null, a.hora_fim ?? null,
           a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
           a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
           a.minutos_almoco ?? null,
-          a.intervalo_15min ? 1 : 0,
+          a.intervalo_15min ?? false,
           a.funcao_id ?? null
         )
       }
 
-      const insertDecisao = db.prepare(`
-        INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `)
       for (const d of decisoes) {
-        insertDecisao.run(escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
+        await execute(`
+          INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, newId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
       }
 
-      const insertComp = db.prepare(`
-        INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
       for (const c of comparacao) {
-        insertComp.run(escalaId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ? 1 : 0, c.justificativa ?? null)
+        await execute(`
+          INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, newId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ?? false, c.justificativa ?? null)
       }
 
-      return escalaId
+      return newId
     })
 
-    const escalaId = persist()
-    const escalaAtual = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as Escala
-    const alocacoesDB = db.prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id').all(escalaId) as Alocacao[]
+    const escalaAtual = await queryOne<Escala>('SELECT * FROM escalas WHERE id = ?', escalaId)
+    const alocacoesDB = await queryAll<Alocacao>('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id', escalaId)
 
     return {
-      escala: escalaAtual,
+      escala: escalaAtual!,
       alocacoes: alocacoesDB,
       indicadores: ind,
       violacoes: [],
@@ -1332,31 +1273,35 @@ const escalasGerar = t.procedure
 
 const dashboardResumo = t.procedure
   .action(async (): Promise<DashboardResumo> => {
-    const db = getDb()
-
-    const totalSetores = (db.prepare('SELECT COUNT(*) as count FROM setores WHERE ativo = 1').get() as { count: number }).count
-    const totalColaboradores = (db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE ativo = 1').get() as { count: number }).count
+    const totalSetoresRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM setores WHERE ativo = TRUE')
+    const totalSetores = totalSetoresRow?.count ?? 0
+    const totalColaboradoresRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE ativo = TRUE')
+    const totalColaboradores = totalColaboradoresRow?.count ?? 0
 
     const hoje = new Date().toISOString().split('T')[0]
-    const totalEmFerias = (db.prepare(`
+    const totalEmFeriasRow = await queryOne<{ count: number }>(`
       SELECT COUNT(DISTINCT colaborador_id) as count FROM excecoes
       WHERE tipo = 'FERIAS' AND data_inicio <= ? AND data_fim >= ?
-    `).get(hoje, hoje) as { count: number }).count
+    `, hoje, hoje)
+    const totalEmFerias = totalEmFeriasRow?.count ?? 0
 
-    const totalEmAtestado = (db.prepare(`
+    const totalEmAtestadoRow = await queryOne<{ count: number }>(`
       SELECT COUNT(DISTINCT colaborador_id) as count FROM excecoes
       WHERE tipo = 'ATESTADO' AND data_inicio <= ? AND data_fim >= ?
-    `).get(hoje, hoje) as { count: number }).count
+    `, hoje, hoje)
+    const totalEmAtestado = totalEmAtestadoRow?.count ?? 0
 
-    const setoresDb = db.prepare('SELECT * FROM setores WHERE ativo = 1 ORDER BY nome').all() as { id: number; nome: string; icone?: string | null }[]
-    const setores: SetorResumo[] = setoresDb.map((s) => {
-      const totalColab = (db.prepare('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1').get(s.id) as { count: number }).count
-      const escalaAtual = db.prepare(`
+    const setoresDb = await queryAll<{ id: number; nome: string; icone?: string | null }>('SELECT * FROM setores WHERE ativo = TRUE ORDER BY nome')
+    const setores: SetorResumo[] = []
+    for (const s of setoresDb) {
+      const totalColabRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE setor_id = ? AND ativo = TRUE', s.id)
+      const totalColab = totalColabRow?.count ?? 0
+      const escalaAtual = await queryOne<{ status: string }>(`
         SELECT status FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')
         ORDER BY CASE status WHEN 'OFICIAL' THEN 1 WHEN 'RASCUNHO' THEN 2 END LIMIT 1
-      `).get(s.id) as { status: string } | undefined
+      `, s.id)
 
-      return {
+      setores.push({
         id: s.id,
         nome: s.nome,
         icone: s.icone ?? null,
@@ -1364,8 +1309,8 @@ const dashboardResumo = t.procedure
         escala_atual: (escalaAtual?.status ?? 'SEM_ESCALA') as SetorResumo['escala_atual'],
         proxima_geracao: null,
         violacoes_pendentes: 0,
-      }
-    })
+      })
+    }
 
     const alertas: AlertaDashboard[] = []
     for (const s of setores) {
@@ -1496,22 +1441,20 @@ const exportBatchHTML = t.procedure
 const funcoesListar = t.procedure
   .input<{ setor_id: number; ativo?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
     let sql = 'SELECT * FROM funcoes WHERE setor_id = ?'
     const params: unknown[] = [input.setor_id]
     if (input.ativo !== undefined) {
       sql += ' AND ativo = ?'
-      params.push(input.ativo ? 1 : 0)
+      params.push(input.ativo)
     }
     sql += ' ORDER BY ordem ASC, apelido'
-    return db.prepare(sql).all(...params)
+    return await queryAll(sql, ...params)
   })
 
 const funcoesBuscar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const funcao = db.prepare('SELECT * FROM funcoes WHERE id = ?').get(input.id)
+    const funcao = await queryOne('SELECT * FROM funcoes WHERE id = ?', input.id)
     if (!funcao) throw new Error('Funcao nao encontrada')
     return funcao
   })
@@ -1519,38 +1462,35 @@ const funcoesBuscar = t.procedure
 const funcoesCriar = t.procedure
   .input<{ setor_id: number; apelido: string; tipo_contrato_id: number; ordem?: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO funcoes (setor_id, apelido, tipo_contrato_id, ordem)
       VALUES (?, ?, ?, ?)
-    `).run(input.setor_id, input.apelido, input.tipo_contrato_id, input.ordem ?? 0)
-    return db.prepare('SELECT * FROM funcoes WHERE id = ?').get(result.lastInsertRowid)
+    `, input.setor_id, input.apelido, input.tipo_contrato_id, input.ordem ?? 0)
+    return await queryOne('SELECT * FROM funcoes WHERE id = ?', id)
   })
 
 const funcoesAtualizar = t.procedure
   .input<{ id: number; apelido?: string; tipo_contrato_id?: number; ativo?: boolean; ordem?: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const fields: string[] = []
     const values: unknown[] = []
     if (input.apelido !== undefined) { fields.push('apelido = ?'); values.push(input.apelido) }
     if (input.tipo_contrato_id !== undefined) { fields.push('tipo_contrato_id = ?'); values.push(input.tipo_contrato_id) }
-    if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo ? 1 : 0) }
+    if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo) }
     if (input.ordem !== undefined) { fields.push('ordem = ?'); values.push(input.ordem) }
     if (fields.length > 0) {
       values.push(input.id)
-      db.prepare(`UPDATE funcoes SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+      await execute(`UPDATE funcoes SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
-    return db.prepare('SELECT * FROM funcoes WHERE id = ?').get(input.id)
+    return await queryOne('SELECT * FROM funcoes WHERE id = ?', input.id)
   })
 
 const funcoesDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
     // Desassociar colaboradores antes de deletar
-    db.prepare('UPDATE colaboradores SET funcao_id = NULL WHERE funcao_id = ?').run(input.id)
-    db.prepare('DELETE FROM funcoes WHERE id = ?').run(input.id)
+    await execute('UPDATE colaboradores SET funcao_id = NULL WHERE funcao_id = ?', input.id)
+    await execute('DELETE FROM funcoes WHERE id = ?', input.id)
     return undefined
   })
 
@@ -1561,36 +1501,32 @@ const funcoesDeletar = t.procedure
 const feriadosListar = t.procedure
   .input<{ ano?: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
     if (input.ano !== undefined) {
-      return db.prepare("SELECT * FROM feriados WHERE data LIKE ? ORDER BY data")
-        .all(`${input.ano}-%`)
+      return await queryAll("SELECT * FROM feriados WHERE data LIKE ? ORDER BY data", `${input.ano}-%`)
     }
-    return db.prepare('SELECT * FROM feriados ORDER BY data').all()
+    return await queryAll('SELECT * FROM feriados ORDER BY data')
   })
 
 const feriadosCriar = t.procedure
   .input<{ data: string; nome: string; tipo: string; proibido_trabalhar?: boolean; cct_autoriza?: boolean }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO feriados (data, nome, tipo, proibido_trabalhar, cct_autoriza)
       VALUES (?, ?, ?, ?, ?)
-    `).run(
+    `,
       input.data,
       input.nome,
       input.tipo,
-      input.proibido_trabalhar ? 1 : 0,
-      input.cct_autoriza !== false ? 1 : 0
+      input.proibido_trabalhar ?? false,
+      input.cct_autoriza !== false
     )
-    return db.prepare('SELECT * FROM feriados WHERE id = ?').get(result.lastInsertRowid)
+    return await queryOne('SELECT * FROM feriados WHERE id = ?', id)
   })
 
 const feriadosDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM feriados WHERE id = ?').run(input.id)
+    await execute('DELETE FROM feriados WHERE id = ?', input.id)
     return undefined
   })
 
@@ -1601,8 +1537,7 @@ const feriadosDeletar = t.procedure
 const setoresListarHorarioSemana = t.procedure
   .input<{ setor_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    return db.prepare(`
+    return await queryAll(`
       SELECT * FROM setor_horario_semana
       WHERE setor_id = ?
       ORDER BY CASE dia_semana
@@ -1614,14 +1549,13 @@ const setoresListarHorarioSemana = t.procedure
         WHEN 'SAB' THEN 6
         WHEN 'DOM' THEN 7
       END
-    `).all(input.setor_id)
+    `, input.setor_id)
   })
 
 const setoresUpsertHorarioSemana = t.procedure
   .input<{ setor_id: number; dia_semana: string; ativo: boolean; usa_padrao: boolean; hora_abertura: string; hora_fechamento: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(`
+    await execute(`
       INSERT INTO setor_horario_semana (setor_id, dia_semana, ativo, usa_padrao, hora_abertura, hora_fechamento)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(setor_id, dia_semana) DO UPDATE SET
@@ -1629,16 +1563,16 @@ const setoresUpsertHorarioSemana = t.procedure
         usa_padrao = excluded.usa_padrao,
         hora_abertura = excluded.hora_abertura,
         hora_fechamento = excluded.hora_fechamento
-    `).run(
+    `,
       input.setor_id,
       input.dia_semana,
-      input.ativo ? 1 : 0,
-      input.usa_padrao ? 1 : 0,
+      input.ativo,
+      input.usa_padrao,
       input.hora_abertura,
       input.hora_fechamento
     )
-    return db.prepare('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?')
-      .get(input.setor_id, input.dia_semana)
+    return await queryOne('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?',
+      input.setor_id, input.dia_semana)
   })
 
 /** Salva horário do dia + segmentos de demanda de forma transacional (RFC §11.1) */
@@ -1653,8 +1587,6 @@ const setoresSalvarTimelineDia = t.procedure
     segmentos: Array<{ hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }>
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
-
     const toMin = (hhmm: string): number => {
       const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm)
       if (!m) throw new Error(`Horario invalido: "${hhmm}"`)
@@ -1679,7 +1611,7 @@ const setoresSalvarTimelineDia = t.procedure
       throw new Error('Janela diaria deve ser multipla de 30 minutos')
     }
 
-    const setor = db.prepare('SELECT id FROM setores WHERE id = ?').get(input.setor_id) as { id: number } | undefined
+    const setor = await queryOne<{ id: number }>('SELECT id FROM setores WHERE id = ?', input.setor_id)
     if (!setor) throw new Error('Setor nao encontrado')
 
     if (!input.ativo && input.segmentos.length > 0) {
@@ -1777,9 +1709,9 @@ const setoresSalvarTimelineDia = t.procedure
       }
     }
 
-    const salvar = db.transaction(() => {
-      // 1. Upsert horário do dia
-      db.prepare(`
+    await transaction(async () => {
+      // 1. Upsert horario do dia
+      await execute(`
         INSERT INTO setor_horario_semana (setor_id, dia_semana, ativo, usa_padrao, hora_abertura, hora_fechamento)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(setor_id, dia_semana) DO UPDATE SET
@@ -1787,43 +1719,40 @@ const setoresSalvarTimelineDia = t.procedure
           usa_padrao = excluded.usa_padrao,
           hora_abertura = excluded.hora_abertura,
           hora_fechamento = excluded.hora_fechamento
-      `).run(
+      `,
         input.setor_id,
         input.dia_semana,
-        input.ativo ? 1 : 0,
-        input.usa_padrao ? 1 : 0,
+        input.ativo,
+        input.usa_padrao,
         input.hora_abertura,
         input.hora_fechamento
       )
 
       // 2. Apagar demandas existentes para este setor + dia
-      db.prepare('DELETE FROM demandas WHERE setor_id = ? AND dia_semana = ?')
-        .run(input.setor_id, input.dia_semana)
+      await execute('DELETE FROM demandas WHERE setor_id = ? AND dia_semana = ?',
+        input.setor_id, input.dia_semana)
 
       // 3. Inserir novos segmentos
-      const insertDemanda = db.prepare(`
-        INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `)
       for (const seg of normalizados) {
-        insertDemanda.run(
+        await execute(`
+          INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `,
           input.setor_id,
           input.dia_semana,
           seg.hora_inicio,
           seg.hora_fim,
           seg.min_pessoas,
-          seg.override ? 1 : 0
+          seg.override
         )
       }
     })
 
-    salvar()
-
     return {
-      horario: db.prepare('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?')
-        .get(input.setor_id, input.dia_semana),
-      demandas: db.prepare('SELECT * FROM demandas WHERE setor_id = ? AND dia_semana = ? ORDER BY hora_inicio')
-        .all(input.setor_id, input.dia_semana),
+      horario: await queryOne('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?',
+        input.setor_id, input.dia_semana),
+      demandas: await queryAll('SELECT * FROM demandas WHERE setor_id = ? AND dia_semana = ? ORDER BY hora_inicio',
+        input.setor_id, input.dia_semana),
       normalizacao: {
         slots_total: slotsTotal,
         slots_overlap_detectados: slotsOverlapDetectados,
@@ -1839,13 +1768,12 @@ const setoresSalvarTimelineDia = t.procedure
 const setoresListarDemandasExcecaoData = t.procedure
   .input<{ setor_id: number; data_inicio?: string; data_fim?: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
     let sql = 'SELECT * FROM demandas_excecao_data WHERE setor_id = ?'
     const params: unknown[] = [input.setor_id]
     if (input.data_inicio) { sql += ' AND data >= ?'; params.push(input.data_inicio) }
     if (input.data_fim) { sql += ' AND data <= ?'; params.push(input.data_fim) }
     sql += ' ORDER BY data, hora_inicio'
-    return db.prepare(sql).all(...params)
+    return await queryAll(sql, ...params)
   })
 
 const setoresSalvarDemandaExcecaoData = t.procedure
@@ -1858,19 +1786,17 @@ const setoresSalvarDemandaExcecaoData = t.procedure
     override?: boolean
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const result = db.prepare(`
+    const id = await insertReturningId(`
       INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(input.setor_id, input.data, input.hora_inicio, input.hora_fim, input.min_pessoas, input.override ? 1 : 0)
-    return db.prepare('SELECT * FROM demandas_excecao_data WHERE id = ?').get(result.lastInsertRowid)
+    `, input.setor_id, input.data, input.hora_inicio, input.hora_fim, input.min_pessoas, input.override ?? false)
+    return await queryOne('SELECT * FROM demandas_excecao_data WHERE id = ?', id)
   })
 
 const setoresDeletarDemandaExcecaoData = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM demandas_excecao_data WHERE id = ?').run(input.id)
+    await execute('DELETE FROM demandas_excecao_data WHERE id = ?', input.id)
     return undefined
   })
 
@@ -1881,8 +1807,7 @@ const setoresDeletarDemandaExcecaoData = t.procedure
 const colaboradoresBuscarRegraHorario = t.procedure
   .input<{ colaborador_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    return db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(input.colaborador_id) ?? null
+    return await queryOne('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', input.colaborador_id) ?? null
   })
 
 const colaboradoresSalvarRegraHorario = t.procedure
@@ -1900,10 +1825,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
     folga_fixa_dia_semana?: string | null
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const existe = db.prepare('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?').get(input.colaborador_id) as { id: number } | undefined
+    const existe = await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?', input.colaborador_id)
     if (existe) {
-      db.prepare(`
+      await execute(`
         UPDATE colaborador_regra_horario SET
           ativo = COALESCE(?, ativo),
           perfil_horario_id = ?,
@@ -1913,8 +1837,8 @@ const colaboradoresSalvarRegraHorario = t.procedure
           domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
           folga_fixa_dia_semana = ?
         WHERE colaborador_id = ?
-      `).run(
-        input.ativo !== undefined ? (input.ativo ? 1 : 0) : null,
+      `,
+        input.ativo !== undefined ? input.ativo : null,
         input.perfil_horario_id ?? null,
         input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
         input.preferencia_turno_soft ?? null,
@@ -1924,13 +1848,13 @@ const colaboradoresSalvarRegraHorario = t.procedure
         input.colaborador_id
       )
     } else {
-      db.prepare(`
+      await execute(`
         INSERT INTO colaborador_regra_horario
           (colaborador_id, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `,
         input.colaborador_id,
-        input.ativo !== undefined ? (input.ativo ? 1 : 0) : 1,
+        input.ativo !== undefined ? input.ativo : true,
         input.perfil_horario_id ?? null,
         input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
         input.preferencia_turno_soft ?? null,
@@ -1939,14 +1863,13 @@ const colaboradoresSalvarRegraHorario = t.procedure
         input.folga_fixa_dia_semana ?? null
       )
     }
-    return db.prepare('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?').get(input.colaborador_id)
+    return await queryOne('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', input.colaborador_id)
   })
 
 const colaboradoresListarRegrasExcecaoData = t.procedure
   .input<{ colaborador_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    return db.prepare('SELECT * FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? ORDER BY data').all(input.colaborador_id)
+    return await queryAll('SELECT * FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? ORDER BY data', input.colaborador_id)
   })
 
 const colaboradoresUpsertRegraExcecaoData = t.procedure
@@ -1962,46 +1885,44 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
     domingo_forcar_folga?: boolean
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const existe = db.prepare('SELECT id FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?')
-      .get(input.colaborador_id, input.data) as { id: number } | undefined
+    const existe = await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND data = ?',
+      input.colaborador_id, input.data)
     if (existe) {
-      db.prepare(`
+      await execute(`
         UPDATE colaborador_regra_horario_excecao_data SET
           ativo = COALESCE(?, ativo),
           inicio_min = ?, inicio_max = ?, fim_min = ?, fim_max = ?,
           preferencia_turno_soft = ?,
           domingo_forcar_folga = COALESCE(?, domingo_forcar_folga)
         WHERE id = ?
-      `).run(
-        input.ativo !== undefined ? (input.ativo ? 1 : 0) : null,
+      `,
+        input.ativo !== undefined ? input.ativo : null,
         input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
         input.preferencia_turno_soft ?? null,
-        input.domingo_forcar_folga !== undefined ? (input.domingo_forcar_folga ? 1 : 0) : null,
+        input.domingo_forcar_folga !== undefined ? input.domingo_forcar_folga : null,
         existe.id
       )
-      return db.prepare('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?').get(existe.id)
+      return await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', existe.id)
     } else {
-      const result = db.prepare(`
+      const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario_excecao_data
           (colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_forcar_folga)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `,
         input.colaborador_id, input.data,
-        input.ativo !== undefined ? (input.ativo ? 1 : 0) : 1,
+        input.ativo !== undefined ? input.ativo : true,
         input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
         input.preferencia_turno_soft ?? null,
-        input.domingo_forcar_folga ? 1 : 0
+        input.domingo_forcar_folga ?? false
       )
-      return db.prepare('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?').get(result.lastInsertRowid)
+      return await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', id)
     }
   })
 
 const colaboradoresDeletarRegraExcecaoData = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM colaborador_regra_horario_excecao_data WHERE id = ?').run(input.id)
+    await execute('DELETE FROM colaborador_regra_horario_excecao_data WHERE id = ?', input.id)
     return undefined
   })
 
@@ -2012,13 +1933,12 @@ const colaboradoresDeletarRegraExcecaoData = t.procedure
 const escalasDetectarCicloRotativo = t.procedure
   .input<{ escala_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(input.escala_id) as { data_inicio: string; data_fim: string } | undefined
-    if (!escala) throw new Error('Escala não encontrada')
+    const escala = await queryOne<{ data_inicio: string; data_fim: string }>('SELECT * FROM escalas WHERE id = ?', input.escala_id)
+    if (!escala) throw new Error('Escala nao encontrada')
     const start = new Date(escala.data_inicio)
     const end = new Date(escala.data_fim)
     const semanas = Math.max(1, Math.round((end.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)))
-    const r = db.prepare(`SELECT COUNT(DISTINCT colaborador_id) as p FROM alocacoes WHERE escala_id = ? AND status != 'FOLGA'`).get(input.escala_id) as { p: number }
+    const r = await queryOne<{ p: number }>(`SELECT COUNT(DISTINCT colaborador_id) as p FROM alocacoes WHERE escala_id = ? AND status != 'FOLGA'`, input.escala_id)
     const P = r?.p ?? 0
     return {
       ciclo_detectado: semanas >= 2 && P > 0,
@@ -2045,58 +1965,45 @@ const escalasSalvarCicloRotativo = t.procedure
     }>
   }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const insertModelo = db.prepare(`
-      INSERT INTO escala_ciclo_modelos (setor_id, nome, semanas_no_ciclo, origem_escala_id)
-      VALUES (?, ?, ?, ?)
-    `)
-    const insertItem = db.prepare(`
-      INSERT INTO escala_ciclo_itens (ciclo_modelo_id, semana_idx, colaborador_id, dia_semana, trabalha, ancora_domingo, prioridade)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-    const transaction = db.transaction(() => {
-      const res = insertModelo.run(input.setor_id, input.nome, input.semanas_no_ciclo, input.origem_escala_id ?? null)
-      const modeloId = res.lastInsertRowid
+    const modeloId = await transaction(async () => {
+      const newId = await insertReturningId(`
+        INSERT INTO escala_ciclo_modelos (setor_id, nome, semanas_no_ciclo, origem_escala_id)
+        VALUES (?, ?, ?, ?)
+      `, input.setor_id, input.nome, input.semanas_no_ciclo, input.origem_escala_id ?? null)
       for (const item of input.itens) {
-        insertItem.run(modeloId, item.semana_idx, item.colaborador_id, item.dia_semana, item.trabalha ? 1 : 0, item.ancora_domingo ? 1 : 0, item.prioridade ?? 0)
+        await execute(`
+          INSERT INTO escala_ciclo_itens (ciclo_modelo_id, semana_idx, colaborador_id, dia_semana, trabalha, ancora_domingo, prioridade)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, newId, item.semana_idx, item.colaborador_id, item.dia_semana, item.trabalha, item.ancora_domingo ?? false, item.prioridade ?? 0)
       }
-      return modeloId
+      return newId
     })
-    const modeloId = transaction()
-    return db.prepare('SELECT * FROM escala_ciclo_modelos WHERE id = ?').get(modeloId)
+    return await queryOne('SELECT * FROM escala_ciclo_modelos WHERE id = ?', modeloId)
   })
 
 const escalasListarCiclosRotativos = t.procedure
   .input<{ setor_id: number }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    return db.prepare('SELECT * FROM escala_ciclo_modelos WHERE setor_id = ? AND ativo = 1 ORDER BY criado_em DESC').all(input.setor_id)
+    return await queryAll('SELECT * FROM escala_ciclo_modelos WHERE setor_id = ? AND ativo = TRUE ORDER BY criado_em DESC', input.setor_id)
   })
 
 const escalasGerarPorCicloRotativo = t.procedure
   .input<{ ciclo_modelo_id: number; data_inicio: string; data_fim: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const modelo = db.prepare('SELECT * FROM escala_ciclo_modelos WHERE id = ?').get(input.ciclo_modelo_id) as { id: number; setor_id: number; nome: string; semanas_no_ciclo: number } | undefined
-    if (!modelo) throw new Error('Modelo de ciclo não encontrado')
-    const itens = db.prepare('SELECT * FROM escala_ciclo_itens WHERE ciclo_modelo_id = ? ORDER BY semana_idx, dia_semana').all(input.ciclo_modelo_id) as Array<{ semana_idx: number; colaborador_id: number; dia_semana: string; trabalha: number }>
+    const modelo = await queryOne<{ id: number; setor_id: number; nome: string; semanas_no_ciclo: number }>('SELECT * FROM escala_ciclo_modelos WHERE id = ?', input.ciclo_modelo_id)
+    if (!modelo) throw new Error('Modelo de ciclo nao encontrado')
+    const itens = await queryAll<{ semana_idx: number; colaborador_id: number; dia_semana: string; trabalha: boolean | number }>('SELECT * FROM escala_ciclo_itens WHERE ciclo_modelo_id = ? ORDER BY semana_idx, dia_semana', input.ciclo_modelo_id)
 
-    const diaSemanaMap: Record<string, number> = { DOM: 0, SEG: 1, TER: 2, QUA: 3, QUI: 4, SEX: 5, SAB: 6 }
     const numeroDiaSemana: Record<number, string> = { 0: 'DOM', 1: 'SEG', 2: 'TER', 3: 'QUA', 4: 'QUI', 5: 'SEX', 6: 'SAB' }
 
     // Criar escala RASCUNHO
-    const escalaRes = db.prepare(`
+    const escalaId = await insertReturningId(`
       INSERT INTO escalas (setor_id, data_inicio, data_fim, status, criada_em)
-      VALUES (?, ?, ?, 'RASCUNHO', datetime('now'))
-    `).run(modelo.setor_id, input.data_inicio, input.data_fim)
-    const escalaId = escalaRes.lastInsertRowid as number
+      VALUES (?, ?, ?, 'RASCUNHO', NOW())
+    `, modelo.setor_id, input.data_inicio, input.data_fim)
 
-    // Gerar alocações
-    const insertAlocacao = db.prepare(`
-      INSERT INTO alocacoes (escala_id, colaborador_id, data, status)
-      VALUES (?, ?, ?, ?)
-    `)
-    const transaction = db.transaction(() => {
+    // Gerar alocacoes
+    await transaction(async () => {
       const start = new Date(input.data_inicio)
       const end = new Date(input.data_fim)
       const T = modelo.semanas_no_ciclo
@@ -2110,16 +2017,18 @@ const escalasGerarPorCicloRotativo = t.procedure
         const semanaIdx = ((semanaOffset - 1) % T + T) % T
         const itensHoje = itens.filter(i => i.dia_semana === diaSemanaStr && i.semana_idx === semanaIdx)
         for (const item of itensHoje) {
-          insertAlocacao.run(escalaId, item.colaborador_id, dataStr, item.trabalha ? 'TRABALHO' : 'FOLGA')
+          await execute(`
+            INSERT INTO alocacoes (escala_id, colaborador_id, data, status)
+            VALUES (?, ?, ?, ?)
+          `, escalaId, item.colaborador_id, dataStr, item.trabalha ? 'TRABALHO' : 'FOLGA')
         }
         current.setDate(current.getDate() + 1)
       }
     })
-    transaction()
 
     // Retornar escala completa
-    const escala = db.prepare('SELECT * FROM escalas WHERE id = ?').get(escalaId) as any
-    const alocacoes = db.prepare('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id').all(escalaId)
+    const escala = await queryOne('SELECT * FROM escalas WHERE id = ?', escalaId) as any
+    const alocacoes = await queryAll('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id', escalaId)
     return {
       ...escala,
       alocacoes,
@@ -2300,27 +2209,25 @@ async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProvi
 
 const iaConfiguracaoObter = t.procedure
   .action(async () => {
-    const db = getDb()
-    const config = db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get()
+    const config = await queryOne('SELECT * FROM configuracao_ia LIMIT 1')
     return normalizeIaConfigRow(config)
   })
 
 const iaConfiguracaoSalvar = t.procedure
   .input<{ provider: string; api_key: string; modelo: string; provider_configs_json?: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const existe = db.prepare('SELECT id FROM configuracao_ia LIMIT 1').get() as { id: number } | undefined
+    const existe = await queryOne<{ id: number }>('SELECT id FROM configuracao_ia LIMIT 1')
     const providerConfigsJson = serializeIaProviderConfigs(parseIaProviderConfigs(input.provider_configs_json))
 
     if (existe) {
-      db.prepare(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, provider_configs_json = ?, ativo = 1, atualizado_em = datetime('now') WHERE id = ?`)
-        .run(input.provider, input.api_key, input.modelo, providerConfigsJson, existe.id)
+      await execute(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, provider_configs_json = ?, ativo = 1, atualizado_em = NOW() WHERE id = ?`,
+        input.provider, input.api_key, input.modelo, providerConfigsJson, existe.id)
     } else {
-      db.prepare(`INSERT INTO configuracao_ia (provider, api_key, modelo, provider_configs_json, ativo) VALUES (?, ?, ?, ?, 1)`)
-        .run(input.provider, input.api_key, input.modelo, providerConfigsJson)
+      await execute(`INSERT INTO configuracao_ia (provider, api_key, modelo, provider_configs_json, ativo) VALUES (?, ?, ?, ?, 1)`,
+        input.provider, input.api_key, input.modelo, providerConfigsJson)
     }
 
-    return normalizeIaConfigRow(db.prepare('SELECT * FROM configuracao_ia LIMIT 1').get())
+    return normalizeIaConfigRow(await queryOne('SELECT * FROM configuracao_ia LIMIT 1'))
   })
 
 const iaConfiguracaoTestar = t.procedure
@@ -2370,38 +2277,31 @@ const iaChatEnviar = t.procedure
 const iaConversasListar = t.procedure
   .input<{ status?: string; busca?: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const status = input.status ?? 'ativo'
     const busca = input.busca ? `%${input.busca}%` : '%'
-    return db
-      .prepare(
-        `SELECT * FROM ia_conversas WHERE status = ? AND titulo LIKE ? ORDER BY atualizado_em DESC`,
-      )
-      .all(status, busca) as import('@shared/index').IaConversa[]
+    return await queryAll<import('@shared/index').IaConversa>(
+      `SELECT * FROM ia_conversas WHERE status = ? AND titulo LIKE ? ORDER BY atualizado_em DESC`,
+      status, busca)
   })
 
 const iaConversasObter = t.procedure
   .input<{ id: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    const conversa = db
-      .prepare(`SELECT * FROM ia_conversas WHERE id = ?`)
-      .get(input.id) as import('@shared/index').IaConversa | undefined
+    const conversa = await queryOne<import('@shared/index').IaConversa>(
+      `SELECT * FROM ia_conversas WHERE id = ?`, input.id)
     if (!conversa) throw new Error('Conversa não encontrada')
 
     // FASE 4: Carregar tool_calls_json e deserializar
-    const mensagensRaw = db
-      .prepare(
-        `SELECT id, conversa_id, papel, conteudo, timestamp, tool_calls_json FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC`,
-      )
-      .all(input.id) as Array<{
-        id: string
-        conversa_id: string
-        papel: string
-        conteudo: string
-        timestamp: string
-        tool_calls_json: string | null
-      }>
+    const mensagensRaw = await queryAll<{
+      id: string
+      conversa_id: string
+      papel: string
+      conteudo: string
+      timestamp: string
+      tool_calls_json: string | null
+    }>(
+      `SELECT id, conversa_id, papel, conteudo, timestamp, tool_calls_json FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC`,
+      input.id)
 
     const mensagens: import('@shared/index').IaMensagem[] = mensagensRaw.map((m) => ({
       id: m.id,
@@ -2420,53 +2320,46 @@ const iaConversasObter = t.procedure
 const iaConversasCriar = t.procedure
   .input<{ id?: string; titulo?: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const id = input.id ?? crypto.randomUUID()
     const titulo = input.titulo ?? 'Nova conversa'
-    db.prepare(`INSERT INTO ia_conversas (id, titulo) VALUES (?, ?)`).run(id, titulo)
-    return db
-      .prepare(`SELECT * FROM ia_conversas WHERE id = ?`)
-      .get(id) as import('@shared/index').IaConversa
+    await execute(`INSERT INTO ia_conversas (id, titulo) VALUES (?, ?)`, id, titulo)
+    return await queryOne<import('@shared/index').IaConversa>(
+      `SELECT * FROM ia_conversas WHERE id = ?`, id) as import('@shared/index').IaConversa
   })
 
 const iaConversasRenomear = t.procedure
   .input<{ id: string; titulo: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(
-      `UPDATE ia_conversas SET titulo = ?, atualizado_em = datetime('now') WHERE id = ?`,
-    ).run(input.titulo, input.id)
+    await execute(
+      `UPDATE ia_conversas SET titulo = ?, atualizado_em = NOW() WHERE id = ?`,
+      input.titulo, input.id)
   })
 
 const iaConversasArquivar = t.procedure
   .input<{ id: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(
-      `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = datetime('now') WHERE id = ?`,
-    ).run(input.id)
+    await execute(
+      `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = NOW() WHERE id = ?`,
+      input.id)
   })
 
 const iaConversasRestaurar = t.procedure
   .input<{ id: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(
-      `UPDATE ia_conversas SET status = 'ativo', atualizado_em = datetime('now') WHERE id = ?`,
-    ).run(input.id)
+    await execute(
+      `UPDATE ia_conversas SET status = 'ativo', atualizado_em = NOW() WHERE id = ?`,
+      input.id)
   })
 
 const iaConversasDeletar = t.procedure
   .input<{ id: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(`DELETE FROM ia_conversas WHERE id = ?`).run(input.id)
+    await execute(`DELETE FROM ia_conversas WHERE id = ?`, input.id)
   })
 
 const iaMensagensSalvar = t.procedure
   .input<{ conversa_id: string; mensagem: import('@shared/index').IaMensagem }>()
   .action(async ({ input }) => {
-    const db = getDb()
     const { conversa_id, mensagem } = input
 
     // FASE 4: Serializar tool_calls se existir
@@ -2474,9 +2367,8 @@ const iaMensagensSalvar = t.procedure
       ? JSON.stringify(mensagem.tool_calls)
       : null
 
-    db.prepare(
-      `INSERT OR IGNORE INTO ia_mensagens (id, conversa_id, papel, conteudo, timestamp, tool_calls_json) VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(
+    await execute(
+      `INSERT INTO ia_mensagens (id, conversa_id, papel, conteudo, timestamp, tool_calls_json) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
       mensagem.id,
       conversa_id,
       mensagem.papel,
@@ -2484,21 +2376,18 @@ const iaMensagensSalvar = t.procedure
       mensagem.timestamp,
       toolCallsJson
     )
-    db.prepare(
-      `UPDATE ia_conversas SET atualizado_em = datetime('now') WHERE id = ?`,
-    ).run(conversa_id)
+    await execute(
+      `UPDATE ia_conversas SET atualizado_em = NOW() WHERE id = ?`,
+      conversa_id)
   })
 
 const iaConversasArquivarTodas = t.procedure.action(async () => {
-  const db = getDb()
-  db.prepare(
-    `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = datetime('now') WHERE status = 'ativo'`,
-  ).run()
+  await execute(
+    `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = NOW() WHERE status = 'ativo'`)
 })
 
 const iaConversasDeletarArquivadas = t.procedure.action(async () => {
-  const db = getDb()
-  db.prepare(`DELETE FROM ia_conversas WHERE status = 'arquivado'`).run()
+  await execute(`DELETE FROM ia_conversas WHERE status = 'arquivado'`)
 })
 
 // =============================================================================
@@ -2507,8 +2396,7 @@ const iaConversasDeletarArquivadas = t.procedure.action(async () => {
 
 const empresaHorariosListar = t.procedure
   .action(async () => {
-    const db = getDb()
-    return db.prepare(`
+    return await queryAll(`
       SELECT * FROM empresa_horario_semana
       ORDER BY CASE dia_semana
         WHEN 'SEG' THEN 1
@@ -2519,19 +2407,18 @@ const empresaHorariosListar = t.procedure
         WHEN 'SAB' THEN 6
         WHEN 'DOM' THEN 7
       END
-    `).all()
+    `)
   })
 
 const empresaHorariosAtualizar = t.procedure
   .input<{ dia_semana: string; ativo: boolean; hora_abertura: string; hora_fechamento: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(`
+    await execute(`
       UPDATE empresa_horario_semana
       SET ativo = ?, hora_abertura = ?, hora_fechamento = ?
       WHERE dia_semana = ?
-    `).run(input.ativo ? 1 : 0, input.hora_abertura, input.hora_fechamento, input.dia_semana)
-    return db.prepare('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?').get(input.dia_semana)
+    `, input.ativo, input.hora_abertura, input.hora_fechamento, input.dia_semana)
+    return await queryOne('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?', input.dia_semana)
   })
 
 // =============================================================================
@@ -2539,40 +2426,36 @@ const empresaHorariosAtualizar = t.procedure
 // =============================================================================
 
 const regrasListar = t.procedure.action(async () => {
-  const db = getDb()
-  return db.prepare(`
+  return await queryAll(`
     SELECT rd.codigo, rd.nome, rd.descricao, rd.categoria,
            rd.status_sistema, rd.editavel, rd.aviso_dependencia, rd.ordem,
            COALESCE(re.status, rd.status_sistema) as status_efetivo
     FROM regra_definicao rd
     LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
     ORDER BY rd.ordem
-  `).all()
+  `)
 })
 
 const regrasAtualizar = t.procedure
   .input<{ codigo: string; status: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare(`
+    await execute(`
       INSERT INTO regra_empresa (codigo, status, atualizado_em)
       VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(codigo) DO UPDATE SET
         status = excluded.status,
         atualizado_em = excluded.atualizado_em
-    `).run(input.codigo, input.status)
+    `, input.codigo, input.status)
   })
 
 const regrasResetarEmpresa = t.procedure.action(async () => {
-  const db = getDb()
-  db.prepare('DELETE FROM regra_empresa').run()
+  await execute('DELETE FROM regra_empresa')
 })
 
 const regrasResetarRegra = t.procedure
   .input<{ codigo: string }>()
   .action(async ({ input }) => {
-    const db = getDb()
-    db.prepare('DELETE FROM regra_empresa WHERE codigo = ?').run(input.codigo)
+    await execute('DELETE FROM regra_empresa WHERE codigo = ?', input.codigo)
   })
 
 // =============================================================================
@@ -2616,12 +2499,11 @@ const dadosExportar = t.procedure.action(async (): Promise<{ filepath: string } 
 
   if (result.canceled || !result.filePath) return null
 
-  const db = getDb()
   const payload: Record<string, unknown[]> = {}
 
   for (const table of BACKUP_TABLES) {
     try {
-      payload[table] = db.prepare(`SELECT * FROM ${table}`).all()
+      payload[table] = await queryAll(`SELECT * FROM ${table}`)
     } catch {
       // tabela pode não existir em DBs antigos — ignora
     }
@@ -2664,8 +2546,6 @@ const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; re
     throw new Error('Arquivo de backup corrompido. Nenhum dado encontrado.')
   }
 
-  const db = getDb()
-
   // Ordem importa por causa de FKs — tabelas pai antes de filhas
   const IMPORT_ORDER = [
     'empresa',
@@ -2697,15 +2577,16 @@ const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; re
   let totalTabelas = 0
   let totalRegistros = 0
 
-  db.exec('PRAGMA foreign_keys = OFF')
+  return await transaction(async () => {
+    // Desabilita FK checks durante o import
+    await execDDL('SET session_replication_role = \'replica\'')
 
-  try {
-    db.transaction(() => {
+    try {
       // Limpa todas as tabelas na ordem inversa (filhas antes de pais)
       for (let i = IMPORT_ORDER.length - 1; i >= 0; i--) {
         const table = IMPORT_ORDER[i]
         try {
-          db.prepare(`DELETE FROM ${table}`).run()
+          await execute(`DELETE FROM ${table}`)
         } catch {
           // tabela pode não existir
         }
@@ -2718,25 +2599,115 @@ const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; re
 
         const sample = rows[0] as Record<string, unknown>
         const columns = Object.keys(sample)
-        const placeholders = columns.map(() => '?').join(', ')
-        const stmt = db.prepare(
-          `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
-        )
+        const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ')
 
         for (const row of rows) {
           const r = row as Record<string, unknown>
-          stmt.run(...columns.map((col) => r[col] ?? null))
+          const values = columns.map((col) => r[col] ?? null)
+          await execute(
+            `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+            ...values,
+          )
         }
 
         totalTabelas++
         totalRegistros += rows.length
       }
-    })()
-  } finally {
-    db.exec('PRAGMA foreign_keys = ON')
+    } finally {
+      // Reabilita FK checks
+      await execDDL('SET session_replication_role = \'origin\'')
+    }
+
+    return { tabelas: totalTabelas, registros: totalRegistros }
+  })
+})
+
+// =============================================================================
+// KNOWLEDGE
+// =============================================================================
+
+const knowledgeListarFontes = t.procedure.action(async () => {
+  return await queryAll<{
+    id: number
+    tipo: string
+    titulo: string
+    importance: string
+    criada_em: string
+    atualizada_em: string
+  }>('SELECT id, tipo, titulo, importance, criada_em, atualizada_em FROM knowledge_sources ORDER BY atualizada_em DESC')
+})
+
+const knowledgeStats = t.procedure.action(async () => {
+  const fontes = await queryAll<{
+    id: number
+    tipo: string
+    titulo: string
+    importance: string
+    criada_em: string
+    atualizada_em: string
+    chunks_count: number
+  }>(`
+    SELECT ks.id, ks.tipo, ks.titulo, ks.importance, ks.criada_em, ks.atualizada_em,
+           COUNT(kc.id)::int as chunks_count
+    FROM knowledge_sources ks
+    LEFT JOIN knowledge_chunks kc ON kc.source_id = ks.id
+    GROUP BY ks.id
+    ORDER BY ks.atualizada_em DESC
+  `)
+
+  const totais = await queryOne<{
+    total_fontes: number
+    total_chunks: number
+    total_sistema: number
+    total_usuario: number
+  }>(`
+    SELECT
+      (SELECT COUNT(*)::int FROM knowledge_sources) as total_fontes,
+      (SELECT COUNT(*)::int FROM knowledge_chunks) as total_chunks,
+      (SELECT COUNT(*)::int FROM knowledge_sources WHERE tipo = 'sistema') as total_sistema,
+      (SELECT COUNT(*)::int FROM knowledge_sources WHERE tipo != 'sistema') as total_usuario
+  `)
+
+  return { fontes, totais: totais ?? { total_fontes: 0, total_chunks: 0, total_sistema: 0, total_usuario: 0 } }
+})
+
+const knowledgeEscolherArquivo = t.procedure.action(async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [
+      { name: 'Documentos', extensions: ['md', 'txt'] }
+    ]
+  })
+  if (result.canceled || !result.filePaths.length) return null
+  return result.filePaths[0]
+})
+
+const knowledgeImportar = t.procedure
+  .input<{ caminho_arquivo: string }>()
+  .action(async ({ input }) => {
+  const fs = require('node:fs') as typeof import('node:fs')
+  const p = require('node:path') as typeof import('node:path')
+  const { ingestKnowledge } = await import('./knowledge/ingest')
+
+  if (!fs.existsSync(input.caminho_arquivo)) {
+    throw new Error(`Arquivo não encontrado: ${input.caminho_arquivo}`)
   }
 
-  return { tabelas: totalTabelas, registros: totalRegistros }
+  const conteudo = fs.readFileSync(input.caminho_arquivo, 'utf-8')
+  const titulo = p.basename(input.caminho_arquivo, p.extname(input.caminho_arquivo))
+  const result = await ingestKnowledge(titulo, conteudo, 'high', {
+    tipo: 'importacao_usuario',
+    arquivo_original: input.caminho_arquivo,
+  })
+
+  return result
+})
+
+const knowledgeRemoverFonte = t.procedure
+  .input<{ id: number }>()
+  .action(async ({ input }) => {
+  await execute('DELETE FROM knowledge_sources WHERE id = $1', input.id)
+  return { ok: true }
 })
 
 // =============================================================================
@@ -2844,6 +2815,12 @@ export const router = {
   'ia.conversas.arquivarTodas': iaConversasArquivarTodas,
   'ia.conversas.deletarArquivadas': iaConversasDeletarArquivadas,
   'ia.mensagens.salvar': iaMensagensSalvar,
+  // Knowledge
+  'knowledge.listarFontes': knowledgeListarFontes,
+  'knowledge.stats': knowledgeStats,
+  'knowledge.escolherArquivo': knowledgeEscolherArquivo,
+  'knowledge.importar': knowledgeImportar,
+  'knowledge.removerFonte': knowledgeRemoverFonte,
   // Backup / Restore
   'dados.exportar': dadosExportar,
   'dados.importar': dadosImportar,

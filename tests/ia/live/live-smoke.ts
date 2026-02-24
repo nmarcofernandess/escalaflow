@@ -66,8 +66,8 @@ async function main() {
     runtime = await loadRuntime()
   } catch (err: any) {
     const msg = String(err?.message ?? err)
-    if (msg.includes('NODE_MODULE_VERSION') || msg.includes('better-sqlite3')) {
-      throw new Error(`Falha carregando runtime para smoke de tools (ABI better-sqlite3): ${msg}`)
+    if (msg.includes('NODE_MODULE_VERSION') || msg.includes('pglite')) {
+      throw new Error(`Falha carregando runtime para smoke de tools (PGlite): ${msg}`)
     }
     throw err
   }
