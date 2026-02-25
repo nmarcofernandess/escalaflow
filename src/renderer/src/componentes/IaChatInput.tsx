@@ -239,7 +239,7 @@ export function IaChatInput({
             size="icon"
             className="size-8 rounded-full"
             disabled={!canSend}
-            onClick={onEnviar}
+            onClick={() => onEnviar()}
           >
             <ArrowUp className="size-4" />
           </Button>

@@ -298,7 +298,7 @@ Use estes campos como guia para filtros e leitura via \`consultar\`:
 - \`colaboradores\`: \`id\`, \`setor_id->setores\`, \`tipo_contrato_id->tipos_contrato\`, \`nome\`, \`sexo\`, \`ativo\`, \`rank\`, \`prefere_turno\`, \`tipo_trabalhador\`, \`funcao_id->funcoes\`
 - \`escalas\`: \`id\`, \`setor_id->setores\`, \`status\` (RASCUNHO/OFICIAL/ARQUIVADA), \`data_inicio\`, \`data_fim\`, \`pontuacao\`, \`cobertura_percent\`, \`violacoes_hard\`, \`violacoes_soft\`, \`equilibrio\`
 - \`alocacoes\`: \`id\`, \`escala_id->escalas\`, \`colaborador_id->colaboradores\`, \`data\`, \`status\`, \`hora_inicio\`, \`hora_fim\`, \`minutos_trabalho\`, \`hora_almoco_inicio\`, \`hora_almoco_fim\`, \`funcao_id->funcoes\`
-- \`tipos_contrato\`: \`id\`, \`nome\`, \`horas_semanais\`, \`regime_escala\`, \`dias_trabalho\`, \`trabalha_domingo\`, \`max_minutos_dia\`
+- \`tipos_contrato\`: \`id\`, \`nome\`, \`horas_semanais\`, \`regime_escala\`, \`dias_trabalho\`, \`max_minutos_dia\`
 - \`excecoes\`: \`id\`, \`colaborador_id->colaboradores\`, \`tipo\` (FERIAS/ATESTADO/BLOQUEIO), \`data_inicio\`, \`data_fim\`, \`observacao\`
 - \`demandas\`: \`id\`, \`setor_id->setores\`, \`dia_semana\`, \`hora_inicio\`, \`hora_fim\`, \`min_pessoas\`
 - \`funcoes\`: \`id\`, \`setor_id->setores\`, \`apelido\`, \`tipo_contrato_id->tipos_contrato\`, \`cor_hex\`, \`ativo\`, \`ordem\`
@@ -306,10 +306,10 @@ Use estes campos como guia para filtros e leitura via \`consultar\`:
 - \`regra_definicao\`: \`codigo\` (PK), \`nome\`, \`descricao\`, \`categoria\`, \`status_sistema\`, \`editavel\`, \`aviso_dependencia\`
 - \`regra_empresa\`: \`codigo->regra_definicao\`, \`status\`
 - \`demandas_excecao_data\`: \`id\`, \`setor_id->setores\`, \`data\`, \`hora_inicio\`, \`hora_fim\`, \`min_pessoas\`, \`override\`
-- \`colaborador_regra_horario\`: \`colaborador_id->colaboradores\`, \`dia_semana_regra\` (NULL=padrão, SEG..DOM=dia específico), \`perfil_horario_id\`, \`inicio_min/max\`, \`fim_min/max\`, \`domingo_ciclo_trabalho/folga\` (só padrão), \`folga_fixa_dia_semana\` (só padrão)
-- \`colaborador_regra_horario_excecao_data\`: \`id\`, \`colaborador_id->colaboradores\`, \`data\`, \`ativo\`, \`inicio_min/max\`, \`fim_min/max\`, \`preferencia_turno_soft\`, \`domingo_forcar_folga\`
+- \`colaborador_regra_horario\`: \`colaborador_id->colaboradores\`, \`dia_semana_regra\` (NULL=padrão, SEG..DOM=dia específico), \`perfil_horario_id\`, \`inicio\` (entrada fixa HH:MM), \`fim\` (saída máxima HH:MM), \`domingo_ciclo_trabalho/folga\` (só padrão), \`folga_fixa_dia_semana\` (só padrão)
+- \`colaborador_regra_horario_excecao_data\`: \`id\`, \`colaborador_id->colaboradores\`, \`data\`, \`ativo\`, \`inicio\` (entrada fixa), \`fim\` (saída máxima), \`preferencia_turno_soft\`, \`domingo_forcar_folga\`
 
-- \`contrato_perfis_horario\`: \`id\`, \`tipo_contrato_id->tipos_contrato\`, \`nome\`, \`inicio_min\`, \`inicio_max\`, \`fim_min\`, \`fim_max\`, \`preferencia_turno_soft\`, \`ativo\`, \`ordem\`
+- \`contrato_perfis_horario\`: \`id\`, \`tipo_contrato_id->tipos_contrato\`, \`nome\`, \`inicio\` (HH:MM), \`fim\` (HH:MM), \`preferencia_turno_soft\`, \`ativo\`, \`ordem\`
 - \`empresa_horario_semana\`: \`dia_semana\`, \`ativo\`, \`hora_abertura\`, \`hora_fechamento\`
 - \`setor_horario_semana\`: \`setor_id->setores\`, \`dia_semana\`, \`ativo\`, \`usa_padrao\`, \`hora_abertura\`, \`hora_fechamento\`
 - \`escala_ciclo_modelos\`: \`id\`, \`setor_id->setores\`, \`nome\`, \`semanas_no_ciclo\`, \`ativo\`, \`origem_escala_id\`
@@ -335,12 +335,12 @@ FKs visíveis (->): \`colaboradores.setor_id->setores\`, \`colaboradores.tipo_co
 
 ### Funcionário só pode de manhã (ou com horário limitado)
 1. \`buscar_colaborador({ nome })\` → encontrar a pessoa
-2. \`definir_janela_colaborador({ colaborador_id, inicio_max: "09:00", fim_max: "14:00" })\`
-   - Para fixar horário exato de entrada: \`inicio_min: "09:00", inicio_max: "09:00"\`
+2. \`salvar_regra_horario_colaborador({ colaborador_id, inicio: "08:00", fim: "14:00" })\`
+   - \`inicio\` = entrada fixa (motor força slot exato). \`fim\` = saída máxima (motor não aloca além).
    - Para override recorrente por dia da semana (ex: "toda quarta ela entra às 09:00"):
-     \`salvar_regra_horario_colaborador({ colaborador_id, dia_semana_regra: "QUA", inicio_min: "09:00", inicio_max: "09:00" })\`
-   - Para override pontual em data específica (ex: "dia 15/03 ela entra às 09:00"):
-     \`upsert_regra_excecao_data({ colaborador_id, data: "2026-03-15", inicio_min: "09:00", inicio_max: "09:00" })\`
+     \`salvar_regra_horario_colaborador({ colaborador_id, dia_semana_regra: "QUA", inicio: "09:00" })\`
+   - Para override pontual em data específica (ex: "dia 15/03 ela sai até 15:00"):
+     \`upsert_regra_excecao_data({ colaborador_id, data: "2026-03-15", fim: "15:00" })\`
 3. Confirmar: \`buscar_colaborador({ id: colaborador_id })\` (retorna regras no retrato completo)
 
 ### Por que deu INFEASIBLE

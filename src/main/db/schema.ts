@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS tipos_contrato (
     horas_semanais INTEGER NOT NULL,
     regime_escala TEXT NOT NULL DEFAULT '6X1' CHECK (regime_escala IN ('5X2', '6X1')),
     dias_trabalho INTEGER NOT NULL,
-    trabalha_domingo BOOLEAN NOT NULL DEFAULT TRUE,
     max_minutos_dia INTEGER NOT NULL DEFAULT 600
 );
 
@@ -155,12 +154,12 @@ CREATE TABLE IF NOT EXISTS contrato_perfis_horario (
     tipo_contrato_id INTEGER NOT NULL REFERENCES tipos_contrato(id),
     nome TEXT NOT NULL,
     ativo BOOLEAN NOT NULL DEFAULT TRUE,
-    inicio_min TEXT NOT NULL,
-    inicio_max TEXT NOT NULL,
-    fim_min TEXT NOT NULL,
-    fim_max TEXT NOT NULL,
+    inicio TEXT,
+    fim TEXT,
     preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
-    ordem INTEGER NOT NULL DEFAULT 0
+    ordem INTEGER NOT NULL DEFAULT 0,
+    horas_semanais INTEGER,
+    max_minutos_dia INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS colaborador_regra_horario (
@@ -169,10 +168,8 @@ CREATE TABLE IF NOT EXISTS colaborador_regra_horario (
     dia_semana_regra TEXT CHECK (dia_semana_regra IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR dia_semana_regra IS NULL),
     ativo BOOLEAN NOT NULL DEFAULT TRUE,
     perfil_horario_id INTEGER REFERENCES contrato_perfis_horario(id),
-    inicio_min TEXT,
-    inicio_max TEXT,
-    fim_min TEXT,
-    fim_max TEXT,
+    inicio TEXT,
+    fim TEXT,
     preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
     domingo_ciclo_trabalho INTEGER NOT NULL DEFAULT 2,
     domingo_ciclo_folga INTEGER NOT NULL DEFAULT 1,
@@ -184,10 +181,8 @@ CREATE TABLE IF NOT EXISTS colaborador_regra_horario_excecao_data (
     colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id) ON DELETE CASCADE,
     data TEXT NOT NULL,
     ativo BOOLEAN NOT NULL DEFAULT TRUE,
-    inicio_min TEXT,
-    inicio_max TEXT,
-    fim_min TEXT,
-    fim_max TEXT,
+    inicio TEXT,
+    fim TEXT,
     preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
     domingo_forcar_folga BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE(colaborador_id, data)
@@ -651,6 +646,37 @@ async function migrateSchema(): Promise<void> {
   await addColumnIfMissing('ia_memorias', 'origem', "TEXT NOT NULL DEFAULT 'manual'")
   await addColumnIfMissing('ia_memorias', 'embedding', 'vector(768)')
 
+  // --- v16: Simplificar horarios 4→2 campos (inicio/fim) ---
+  // contrato_perfis_horario
+  await addColumnIfMissing('contrato_perfis_horario', 'inicio', 'TEXT')
+  await addColumnIfMissing('contrato_perfis_horario', 'fim', 'TEXT')
+  await execute(`UPDATE contrato_perfis_horario SET inicio = inicio_min WHERE inicio IS NULL AND inicio_min IS NOT NULL`)
+  await execute(`UPDATE contrato_perfis_horario SET fim = fim_max WHERE fim IS NULL AND fim_max IS NOT NULL`)
+  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS inicio_min') } catch { /* PGlite may not support */ }
+  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS inicio_max') } catch { /* */ }
+  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS fim_min') } catch { /* */ }
+  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS fim_max') } catch { /* */ }
+
+  // colaborador_regra_horario
+  await addColumnIfMissing('colaborador_regra_horario', 'inicio', 'TEXT')
+  await addColumnIfMissing('colaborador_regra_horario', 'fim', 'TEXT')
+  await execute(`UPDATE colaborador_regra_horario SET inicio = inicio_min WHERE inicio IS NULL AND inicio_min IS NOT NULL`)
+  await execute(`UPDATE colaborador_regra_horario SET fim = fim_max WHERE fim IS NULL AND fim_max IS NOT NULL`)
+  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS inicio_min') } catch { /* */ }
+  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS inicio_max') } catch { /* */ }
+  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS fim_min') } catch { /* */ }
+  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS fim_max') } catch { /* */ }
+
+  // colaborador_regra_horario_excecao_data
+  await addColumnIfMissing('colaborador_regra_horario_excecao_data', 'inicio', 'TEXT')
+  await addColumnIfMissing('colaborador_regra_horario_excecao_data', 'fim', 'TEXT')
+  await execute(`UPDATE colaborador_regra_horario_excecao_data SET inicio = inicio_min WHERE inicio IS NULL AND inicio_min IS NOT NULL`)
+  await execute(`UPDATE colaborador_regra_horario_excecao_data SET fim = fim_max WHERE fim IS NULL AND fim_max IS NOT NULL`)
+  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS inicio_min') } catch { /* */ }
+  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS inicio_max') } catch { /* */ }
+  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS fim_min') } catch { /* */ }
+  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS fim_max') } catch { /* */ }
+
   // --- v9: dia_semana_regra em colaborador_regra_horario ---
   await addColumnIfMissing('colaborador_regra_horario', 'dia_semana_regra',
     "TEXT CHECK (dia_semana_regra IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR dia_semana_regra IS NULL) DEFAULT NULL")
@@ -663,6 +689,69 @@ async function migrateSchema(): Promise<void> {
     ON colaborador_regra_horario (colaborador_id) WHERE dia_semana_regra IS NULL`)
   await execDDL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_crh_colab_dia
     ON colaborador_regra_horario (colaborador_id, dia_semana_regra) WHERE dia_semana_regra IS NOT NULL`)
+
+  // --- v17: Fase 1 Limpeza de Contratos ---
+  // Drop trabalha_domingo (campo morto — controle de domingo vive em tipo_trabalhador/folga_fixa/domingo_ciclo)
+  try { await execDDL('ALTER TABLE tipos_contrato DROP COLUMN IF EXISTS trabalha_domingo') } catch { /* safe */ }
+
+  // Add horas_semanais/max_minutos_dia override em contrato_perfis_horario
+  await addColumnIfMissing('contrato_perfis_horario', 'horas_semanais', 'INTEGER')
+  await addColumnIfMissing('contrato_perfis_horario', 'max_minutos_dia', 'INTEGER')
+
+  // Unificar 3 estagiarios em 1 contrato "Estagiario" + perfis com override
+  const estManha = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'Estagiario Manha'`)
+  if (estManha) {
+    // Find/create the unified "Estagiario" contract
+    let estUnificadoId: number
+    const estExistente = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'Estagiario'`)
+    if (estExistente) {
+      estUnificadoId = estExistente.id
+    } else {
+      // Rename "Estagiario Manha" → "Estagiario" (reuse its id, update horas to 20)
+      await execute(`UPDATE tipos_contrato SET nome = 'Estagiario', horas_semanais = 20, max_minutos_dia = 360 WHERE id = ?`, estManha.id)
+      estUnificadoId = estManha.id
+    }
+
+    // Move colaboradores from the other 2 estagiario contracts to the unified one
+    const estTarde = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'Estagiario Tarde'`)
+    const estNoite = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'Estagiario Noite-Estudo'`)
+    for (const est of [estTarde, estNoite]) {
+      if (est && est.id !== estUnificadoId) {
+        await execute('UPDATE colaboradores SET tipo_contrato_id = ? WHERE tipo_contrato_id = ?', estUnificadoId, est.id)
+        await execute('UPDATE funcoes SET tipo_contrato_id = ? WHERE tipo_contrato_id = ?', estUnificadoId, est.id)
+        // Move perfis to unified contract
+        await execute('UPDATE contrato_perfis_horario SET tipo_contrato_id = ? WHERE tipo_contrato_id = ?', estUnificadoId, est.id)
+        // Delete empty contract
+        const remaining = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE tipo_contrato_id = ?', est.id)
+        if ((remaining?.count ?? 0) === 0) {
+          await execute('DELETE FROM tipos_contrato WHERE id = ?', est.id)
+        }
+      }
+    }
+    // Also handle if estManha was renamed but had id != estUnificadoId
+    if (estManha.id !== estUnificadoId) {
+      await execute('UPDATE colaboradores SET tipo_contrato_id = ? WHERE tipo_contrato_id = ?', estUnificadoId, estManha.id)
+      await execute('UPDATE funcoes SET tipo_contrato_id = ? WHERE tipo_contrato_id = ?', estUnificadoId, estManha.id)
+      await execute('UPDATE contrato_perfis_horario SET tipo_contrato_id = ? WHERE tipo_contrato_id = ?', estUnificadoId, estManha.id)
+      const remaining = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE tipo_contrato_id = ?', estManha.id)
+      if ((remaining?.count ?? 0) === 0) {
+        await execute('DELETE FROM tipos_contrato WHERE id = ?', estManha.id)
+      }
+    }
+
+    // Set horas_semanais/max_minutos_dia on existing perfis
+    await execute(`UPDATE contrato_perfis_horario SET horas_semanais = 20, max_minutos_dia = 240 WHERE nome = 'MANHA_08_12' AND horas_semanais IS NULL`)
+    await execute(`UPDATE contrato_perfis_horario SET horas_semanais = 30, max_minutos_dia = 360 WHERE nome = 'TARDE_1330_PLUS' AND horas_semanais IS NULL`)
+    await execute(`UPDATE contrato_perfis_horario SET horas_semanais = 30, max_minutos_dia = 360 WHERE nome = 'ESTUDA_NOITE_08_14' AND horas_semanais IS NULL`)
+  }
+
+  // Insert "Intermitente" contract if not exists
+  const intermitente = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'Intermitente'`)
+  if (!intermitente) {
+    await execute(
+      `INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia) VALUES ('Intermitente', 0, '6X1', 6, 585)`
+    )
+  }
 }
 
 // ============================================================================
@@ -679,5 +768,5 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_V8_MEMORIAS)
   await execDDL(DDL_V7_KNOWLEDGE)
   await migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v15 + Memórias + Knowledge Layer + Graph)')
+  console.log('[DB] Tabelas criadas com sucesso (v17 + Limpeza Contratos)')
 }

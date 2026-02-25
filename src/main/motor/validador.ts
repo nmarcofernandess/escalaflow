@@ -52,7 +52,6 @@ interface ColabComContrato {
   sexo: string
   horas_semanais: number
   dias_trabalho: number
-  trabalha_domingo: boolean | number
   max_minutos_dia: number
   rank: number | null
   prefere_turno: string | null
@@ -123,7 +122,7 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
   const demandas = await queryAll<Demanda>('SELECT * FROM demandas WHERE setor_id = ?', escala.setor_id)
 
   const colaboradoresRaw = await queryAll<ColabComContrato>(
-    `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.trabalha_domingo, tc.max_minutos_dia
+    `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.max_minutos_dia
      FROM colaboradores c
      JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
      WHERE c.setor_id = ? AND c.ativo = true
@@ -159,7 +158,6 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     tipo_trabalhador: c.tipo_trabalhador ?? 'CLT',
     horas_semanais: c.horas_semanais,
     dias_trabalho: c.dias_trabalho,
-    trabalha_domingo: Boolean(c.trabalha_domingo),
     max_minutos_dia: c.max_minutos_dia,
     rank: c.rank ?? 5,
     prefere_turno: c.prefere_turno ?? null,

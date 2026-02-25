@@ -5,9 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { FileText, Plus, Edit, Trash2, Info, Search, Clock, Calendar, Timer, Settings2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -61,10 +59,9 @@ import type { TipoContrato, PerfilHorarioContrato } from '@shared/index'
 
 const contratoSchema = z.object({
   nome: z.string().min(1, 'Nome e obrigatorio'),
-  horas_semanais: z.coerce.number().min(1, 'Minimo 1h').max(44, 'Maximo 44h'),
+  horas_semanais: z.coerce.number().min(0, 'Minimo 0h').max(44, 'Maximo 44h'),
   regime_escala: z.enum(['5X2', '6X1']),
   max_minutos_dia: z.coerce.number().min(60, 'Minimo 60 min').max(600, 'Maximo 600 min'),
-  trabalha_domingo: z.boolean(),
 })
 
 type ContratoFormInput = z.input<typeof contratoSchema>
@@ -75,7 +72,6 @@ const DEFAULTS: ContratoFormInput = {
   horas_semanais: 44,
   regime_escala: '6X1',
   max_minutos_dia: 570,
-  trabalha_domingo: true,
 }
 
 export function ContratoLista() {
@@ -101,10 +97,8 @@ export function ContratoLista() {
   const [perfilSalvando, setPerfilSalvando] = useState(false)
   const [perfilForm, setPerfilForm] = useState({
     nome: '',
-    inicio_min: '06:00',
-    inicio_max: '08:00',
-    fim_min: '14:00',
-    fim_max: '18:00',
+    inicio: '08:00',
+    fim: '18:00',
     preferencia_turno_soft: '' as string,
     ordem: 0,
   })
@@ -133,10 +127,8 @@ export function ContratoLista() {
     setEditingPerfilId(null)
     setPerfilForm({
       nome: '',
-      inicio_min: '06:00',
-      inicio_max: '08:00',
-      fim_min: '14:00',
-      fim_max: '18:00',
+      inicio: '08:00',
+      fim: '18:00',
       preferencia_turno_soft: '',
       ordem: perfis.length,
     })
@@ -147,10 +139,8 @@ export function ContratoLista() {
     setEditingPerfilId(p.id)
     setPerfilForm({
       nome: p.nome,
-      inicio_min: p.inicio_min,
-      inicio_max: p.inicio_max,
-      fim_min: p.fim_min,
-      fim_max: p.fim_max,
+      inicio: p.inicio ?? '',
+      fim: p.fim ?? '',
       preferencia_turno_soft: p.preferencia_turno_soft ?? '',
       ordem: p.ordem,
     })
@@ -213,7 +203,6 @@ export function ContratoLista() {
       horas_semanais: tc.horas_semanais,
       regime_escala: tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1'),
       max_minutos_dia: tc.max_minutos_dia,
-      trabalha_domingo: tc.trabalha_domingo,
     })
     setShowDialog(true)
   }
@@ -334,7 +323,6 @@ export function ContratoLista() {
                   <TableHead>Regime</TableHead>
                   <TableHead>Dias</TableHead>
                   <TableHead>Max/dia</TableHead>
-                  <TableHead>Domingo</TableHead>
                   <TableHead className="w-[100px] text-right pr-4" />
                 </TableRow>
               </TableHeader>
@@ -346,14 +334,6 @@ export function ContratoLista() {
                     <TableCell>{tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1')}</TableCell>
                     <TableCell>{tc.dias_trabalho} dias</TableCell>
                     <TableCell>{formatarMinutos(tc.max_minutos_dia)}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={tc.trabalha_domingo ? 'default' : 'secondary'}
-                        className="text-[10px]"
-                      >
-                        {tc.trabalha_domingo ? 'Sim' : 'Nao'}
-                      </Badge>
-                    </TableCell>
                     <TableCell className="text-right pr-4">
                       <div className="flex items-center justify-end gap-1">
                         <Button
@@ -407,12 +387,6 @@ export function ContratoLista() {
                         </div>
                         <h3 className="text-sm font-semibold text-foreground">{tc.nome}</h3>
                       </div>
-                      <Badge
-                        variant={tc.trabalha_domingo ? 'default' : 'secondary'}
-                        className="shrink-0 text-[10px]"
-                      >
-                        Dom: {tc.trabalha_domingo ? 'Sim' : 'Nao'}
-                      </Badge>
                     </div>
                     <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
@@ -567,24 +541,6 @@ export function ContratoLista() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="trabalha_domingo"
-                render={({ field }) => (
-                  <FormItem className="flex items-center space-x-2 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormLabel className="cursor-pointer font-normal">
-                      Trabalha aos domingos
-                    </FormLabel>
-                  </FormItem>
-                )}
-              />
-
               <DialogFooter>
                 <Button variant="outline" type="button" onClick={() => setShowDialog(false)}>
                   Cancelar
@@ -643,35 +599,19 @@ export function ContratoLista() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium">Inicio mais cedo</label>
+                  <label className="text-xs font-medium">Inicio</label>
                   <Input
                     type="time"
-                    value={perfilForm.inicio_min}
-                    onChange={(e) => setPerfilForm({ ...perfilForm, inicio_min: e.target.value })}
+                    value={perfilForm.inicio}
+                    onChange={(e) => setPerfilForm({ ...perfilForm, inicio: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium">Inicio mais tarde</label>
+                  <label className="text-xs font-medium">Fim</label>
                   <Input
                     type="time"
-                    value={perfilForm.inicio_max}
-                    onChange={(e) => setPerfilForm({ ...perfilForm, inicio_max: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Fim mais cedo</label>
-                  <Input
-                    type="time"
-                    value={perfilForm.fim_min}
-                    onChange={(e) => setPerfilForm({ ...perfilForm, fim_min: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Fim mais tarde</label>
-                  <Input
-                    type="time"
-                    value={perfilForm.fim_max}
-                    onChange={(e) => setPerfilForm({ ...perfilForm, fim_max: e.target.value })}
+                    value={perfilForm.fim}
+                    onChange={(e) => setPerfilForm({ ...perfilForm, fim: e.target.value })}
                   />
                 </div>
               </div>
@@ -713,7 +653,7 @@ export function ContratoLista() {
                       <div>
                         <div className="text-sm font-medium">{p.nome}</div>
                         <div className="text-xs text-muted-foreground">
-                          Inicio: {p.inicio_min} - {p.inicio_max} | Fim: {p.fim_min} - {p.fim_max}
+                          {p.inicio} → {p.fim}
                           {p.preferencia_turno_soft && ` | ${p.preferencia_turno_soft}`}
                         </div>
                       </div>

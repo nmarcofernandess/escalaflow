@@ -130,14 +130,12 @@ function setupOnda1Mocks(state: {
         dia_semana_regra: params[1] ?? null,
         ativo: params[2] ?? 1,
         perfil_horario_id: params[3] ?? null,
-        inicio_min: params[4] ?? null,
-        inicio_max: params[5] ?? null,
-        fim_min: params[6] ?? null,
-        fim_max: params[7] ?? null,
-        preferencia_turno_soft: params[8] ?? null,
-        domingo_ciclo_trabalho: params[9] ?? 2,
-        domingo_ciclo_folga: params[10] ?? 1,
-        folga_fixa_dia_semana: params[11] ?? null,
+        inicio: params[4] ?? null,
+        fim: params[5] ?? null,
+        preferencia_turno_soft: params[6] ?? null,
+        domingo_ciclo_trabalho: params[7] ?? 2,
+        domingo_ciclo_folga: params[8] ?? 1,
+        folga_fixa_dia_semana: params[9] ?? null,
       }
       regras.push(newRegra)
       return { changes: 1 }
@@ -196,7 +194,7 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
       data_fim: '2026-03-01',
       empresa: { tolerancia_semanal_min: 60, min_intervalo_almoco_min: 60, hora_abertura: '08:00', hora_fechamento: '22:00' },
       demanda: [{ dia_semana: 'DOM', min_pessoas: 2, hora_inicio: '08:00', hora_fim: '12:00' }],
-      colaboradores: [{ id: 10, nome: 'Ana', trabalha_domingo: false, horas_semanais: 44, dias_trabalho: 6, max_minutos_dia: 480 }],
+      colaboradores: [{ id: 10, nome: 'Ana', tipo_trabalhador: 'ESTAGIARIO', horas_semanais: 44, dias_trabalho: 6, max_minutos_dia: 480 }],
       excecoes: [],
       feriados: [],
       regras_colaborador_dia: [],
@@ -225,8 +223,8 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
 
     const result = await executeTool('salvar_regra_horario_colaborador', {
       colaborador_id: 11,
-      inicio_min: '07:00',
-      fim_max: '15:00',
+      inicio: '07:00',
+      fim: '15:00',
       folga_fixa_dia_semana: 'DOM',
     })
 
@@ -236,33 +234,11 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
     expect(result.regra).toEqual(
       expect.objectContaining({
         colaborador_id: 11,
-        inicio_min: '07:00',
-        fim_max: '15:00',
+        inicio: '07:00',
+        fim: '15:00',
         folga_fixa_dia_semana: 'DOM',
       }),
     )
-  })
-
-  it('definir_janela_colaborador usa wrapper semântico e retorna janela_definida', async () => {
-    setupOnda1Mocks({
-      colaboradores: [{ id: 12, nome: 'João', setor_id: 1, ativo: 1 }],
-    })
-
-    const result = await executeTool('definir_janela_colaborador', {
-      colaborador_id: 12,
-      inicio_min: '08:00',
-      fim_max: '12:00',
-    })
-
-    expect(result.status).toBe('ok')
-    expect(result.janela_definida).toEqual(
-      expect.objectContaining({
-        inicio_min: '08:00',
-        fim_max: '12:00',
-        ativo: true,
-      }),
-    )
-    expect(result._meta).toEqual(expect.objectContaining({ action: 'set-collaborator-window' }))
   })
 
   it('ajustar_horario atualiza horários e minutos da alocação', async () => {

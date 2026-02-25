@@ -35,7 +35,6 @@ export interface TipoContrato {
   horas_semanais: number
   regime_escala: RegimeEscala
   dias_trabalho: number
-  trabalha_domingo: boolean
   max_minutos_dia: number
 }
 
@@ -189,12 +188,12 @@ export interface PerfilHorarioContrato {
   tipo_contrato_id: number
   nome: string
   ativo: boolean
-  inicio_min: string              // HH:MM (mais cedo que pode comecar)
-  inicio_max: string              // HH:MM (mais tarde que pode comecar)
-  fim_min: string                 // HH:MM (mais cedo que pode sair)
-  fim_max: string                 // HH:MM (mais tarde que pode sair)
+  inicio: string | null           // HH:MM — entrada fixa (motor forca slot exato)
+  fim: string | null              // HH:MM — saida maxima (motor nao aloca alem)
   preferencia_turno_soft: Turno | null
   ordem: number
+  horas_semanais: number | null   // override de horas do contrato (ex: perfis estagiario)
+  max_minutos_dia: number | null  // override de max diario do contrato
 }
 
 export interface RegraHorarioColaborador {
@@ -203,10 +202,8 @@ export interface RegraHorarioColaborador {
   dia_semana_regra: DiaSemana | null  // null = padrão (todos os dias), 'SEG'..'DOM' = dia específico
   ativo: boolean
   perfil_horario_id: number | null
-  inicio_min: string | null       // override do perfil
-  inicio_max: string | null
-  fim_min: string | null
-  fim_max: string | null
+  inicio: string | null           // HH:MM — entrada fixa
+  fim: string | null              // HH:MM — saida maxima
   preferencia_turno_soft: Turno | null
   domingo_ciclo_trabalho: number  // default 2 (só na regra padrão)
   domingo_ciclo_folga: number     // default 1 (só na regra padrão)
@@ -218,10 +215,8 @@ export interface RegraHorarioColaboradorExcecaoData {
   colaborador_id: number
   data: string
   ativo: boolean
-  inicio_min: string | null
-  inicio_max: string | null
-  fim_min: string | null
-  fim_max: string | null
+  inicio: string | null           // HH:MM — entrada fixa nesta data
+  fim: string | null              // HH:MM — saida maxima nesta data
   preferencia_turno_soft: Turno | null
   domingo_forcar_folga: boolean
 }
@@ -505,7 +500,6 @@ export interface SolverInputColab {
   regime_escala?: RegimeEscala
   dias_trabalho: number
   max_minutos_dia: number
-  trabalha_domingo: boolean
   tipo_trabalhador: string
   sexo: string
   funcao_id: number | null
@@ -730,6 +724,7 @@ export type IaStreamEvent =
   | { type: 'text-delta'; stream_id: string; delta: string }
   | { type: 'tool-call-start'; stream_id: string; tool_call_id: string; tool_name: string; args: Record<string, unknown>; estimated_seconds?: number }
   | { type: 'tool-result'; stream_id: string; tool_call_id: string; tool_name: string; result: unknown }
+  | { type: 'start-step'; stream_id: string; step_index: number }
   | { type: 'step-finish'; stream_id: string; step_index: number }
   | { type: 'follow-up-start'; stream_id: string }
   | { type: 'finish'; stream_id: string; resposta: string; acoes: ToolCall[] }

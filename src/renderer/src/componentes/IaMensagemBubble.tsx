@@ -49,11 +49,11 @@ export function IaMensagemBubble({ msg, onEdit, onRegenerate, showActions = true
           {msg.conteudo}
         </div>
       ) : (
-        <div className="max-w-[88%] leading-relaxed prose prose-sm dark:prose-invert max-w-none
+        <div className="max-w-[88%] leading-relaxed prose prose-sm dark:prose-invert
           prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
           prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-sm
           prose-table:text-xs prose-th:px-2 prose-td:px-2
-          prose-code:text-xs prose-pre:my-2">
+          prose-code:text-xs prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:max-w-full">
           <ReactMarkdown>{msg.conteudo}</ReactMarkdown>
         </div>
       )}

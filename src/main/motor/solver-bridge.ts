@@ -197,10 +197,10 @@ export async function buildSolverInput(
     prefere_turno: string | null; evitar_dia_semana: string | null;
     tipo_trabalhador: string | null; funcao_id: number | null;
     regime_escala: '5X2' | '6X1' | null;
-    dias_trabalho: number; max_minutos_dia: number; trabalha_domingo: number;
+    dias_trabalho: number; max_minutos_dia: number;
   }>(`
     SELECT c.id, c.nome, c.sexo, c.horas_semanais, c.rank, c.prefere_turno, c.evitar_dia_semana,
-           c.tipo_trabalhador, c.funcao_id, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia, tc.trabalha_domingo
+           c.tipo_trabalhador, c.funcao_id, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia
     FROM colaboradores c
     JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
     WHERE c.setor_id = ? AND c.ativo = true
@@ -217,7 +217,6 @@ export async function buildSolverInput(
       regime_escala: regimeEfetivo,
       dias_trabalho: diasTrabalhoEfetivo,
       max_minutos_dia: r.max_minutos_dia,
-      trabalha_domingo: Boolean(r.trabalha_domingo),
       tipo_trabalhador: r.tipo_trabalhador || 'CLT',
       sexo: r.sexo,
       funcao_id: r.funcao_id,
@@ -262,27 +261,24 @@ export async function buildSolverInput(
     WHERE data_inicio <= ? AND data_fim >= ?
   `, dataFim, dataInicio)
 
-  // v4: Regras de horario por colaborador (v9: múltiplas regras por dia da semana)
+  // v4: Regras de horario por colaborador (v16: simplificado 2 campos inicio/fim)
   type RegraHorarioRow = {
     colaborador_id: number; ativo: number; perfil_horario_id: number | null;
     dia_semana_regra: string | null;
-    inicio_min: string | null; inicio_max: string | null;
-    fim_min: string | null; fim_max: string | null;
+    inicio: string | null; fim: string | null;
     preferencia_turno_soft: string | null;
     domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
     folga_fixa_dia_semana: string | null;
-    p_inicio_min: string | null; p_inicio_max: string | null;
-    p_fim_min: string | null; p_fim_max: string | null;
+    p_inicio: string | null; p_fim: string | null;
     p_preferencia_turno_soft: string | null;
   }
   const regraHorarioRows = await queryAll<RegraHorarioRow>(`
     SELECT r.colaborador_id, r.ativo, r.perfil_horario_id,
            r.dia_semana_regra,
-           r.inicio_min, r.inicio_max, r.fim_min, r.fim_max,
+           r.inicio, r.fim,
            r.preferencia_turno_soft, r.domingo_ciclo_trabalho, r.domingo_ciclo_folga,
            r.folga_fixa_dia_semana,
-           p.inicio_min AS p_inicio_min, p.inicio_max AS p_inicio_max,
-           p.fim_min AS p_fim_min, p.fim_max AS p_fim_max,
+           p.inicio AS p_inicio, p.fim AS p_fim,
            p.preferencia_turno_soft AS p_preferencia_turno_soft
     FROM colaborador_regra_horario r
     LEFT JOIN contrato_perfis_horario p ON p.id = r.perfil_horario_id AND p.ativo = true
@@ -300,14 +296,13 @@ export async function buildSolverInput(
     else g.dias.set(r.dia_semana_regra, r)
   }
 
-  // v4: Excecoes de horario por data
+  // v4: Excecoes de horario por data (v16: 2 campos inicio/fim)
   const excecaoDataRows = await queryAll<{
     colaborador_id: number; data: string; ativo: number;
-    inicio_min: string | null; inicio_max: string | null;
-    fim_min: string | null; fim_max: string | null;
+    inicio: string | null; fim: string | null;
     preferencia_turno_soft: string | null; domingo_forcar_folga: number;
   }>(`
-    SELECT colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max,
+    SELECT colaborador_id, data, ativo, inicio, fim,
            preferencia_turno_soft, domingo_forcar_folga
     FROM colaborador_regra_horario_excecao_data
     WHERE ativo = true
@@ -350,27 +345,22 @@ export async function buildSolverInput(
         // Precedencia: excecao_data > regra_dia_especifico > regra_padrao > perfil_contrato > sem regra
         const regra = group?.dias.get(diaSemana) ?? group?.padrao ?? null
 
-        let inicio_min: string | null = null
-        let inicio_max: string | null = null
-        let fim_min: string | null = null
-        let fim_max: string | null = null
+        // v16: Resolve 2 campos (inicio, fim) e traduz para 4 campos que o Python espera
+        let efetivo_inicio: string | null = null
+        let efetivo_fim: string | null = null
         let pref_turno: string | null = null
         let dom_forcar_folga = false
         let folga_fixa = false
 
         if (excecaoData) {
-          inicio_min = excecaoData.inicio_min
-          inicio_max = excecaoData.inicio_max
-          fim_min = excecaoData.fim_min
-          fim_max = excecaoData.fim_max
+          efetivo_inicio = excecaoData.inicio
+          efetivo_fim = excecaoData.fim
           pref_turno = excecaoData.preferencia_turno_soft
           dom_forcar_folga = Boolean(excecaoData.domingo_forcar_folga)
         } else if (regra) {
           // Regra individual sobrescreve perfil (campos nao-null)
-          inicio_min = regra.inicio_min ?? regra.p_inicio_min
-          inicio_max = regra.inicio_max ?? regra.p_inicio_max
-          fim_min = regra.fim_min ?? regra.p_fim_min
-          fim_max = regra.fim_max ?? regra.p_fim_max
+          efetivo_inicio = regra.inicio ?? regra.p_inicio
+          efetivo_fim = regra.fim ?? regra.p_fim
           pref_turno = regra.preferencia_turno_soft ?? regra.p_preferencia_turno_soft
         }
 
@@ -378,6 +368,12 @@ export async function buildSolverInput(
         if (group?.padrao?.folga_fixa_dia_semana && group.padrao.folga_fixa_dia_semana === diaSemana) {
           folga_fixa = true
         }
+
+        // Traduz 2→4: inicio fixo = inicio_min==inicio_max, fim = fim_max (fim_min=null)
+        const inicio_min = efetivo_inicio
+        const inicio_max = efetivo_inicio  // solver forca slot exato
+        const fim_max = efetivo_fim        // teto de saida
+        const fim_min: string | null = null // dead code no solver
 
         // Só inclui se tem alguma regra efetiva
         if (inicio_min || inicio_max || fim_min || fim_max || pref_turno || dom_forcar_folga || folga_fixa) {
@@ -547,7 +543,6 @@ export function computeSolverScenarioHash(input: SolverInput): string {
         regime_escala: c.regime_escala ?? (c.dias_trabalho <= 5 ? '5X2' : '6X1'),
         dias_trabalho: c.dias_trabalho,
         max_minutos_dia: c.max_minutos_dia,
-        trabalha_domingo: c.trabalha_domingo,
         tipo_trabalhador: c.tipo_trabalhador,
         sexo: c.sexo,
         domingo_ciclo_trabalho: c.domingo_ciclo_trabalho ?? 2,

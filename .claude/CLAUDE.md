@@ -231,7 +231,7 @@ renderer → IPC (ia.chat) → cliente.ts → Vercel AI SDK generateText()
 **CRUD genérico:** criar, atualizar, deletar, cadastrar_lote
 **Escalas:** gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala
 **Validação:** preflight, preflight_completo, diagnosticar_escala, diagnosticar_infeasible, explicar_violacao
-**Regras:** editar_regra, salvar_regra_horario_colaborador, definir_janela_colaborador, upsert_regra_excecao_data, resetar_regras_empresa
+**Regras:** editar_regra, salvar_regra_horario_colaborador, upsert_regra_excecao_data, resetar_regras_empresa
 **Config:** configurar_horario_funcionamento, salvar_perfil_horario, deletar_perfil_horario
 **KPI:** resumir_horas_setor
 **Demanda:** salvar_demanda_excecao_data

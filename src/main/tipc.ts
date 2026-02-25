@@ -155,7 +155,7 @@ function enrichPreflightWithCapacityChecks(
     if (dayDemand.length === 0) continue
 
     const label = dayLabel(day)
-    if (label === 'DOM' && input.colaboradores.every((c) => !c.trabalha_domingo)) {
+    if (label === 'DOM' && input.colaboradores.every((c) => (c.domingo_ciclo_trabalho ?? 0) <= 0)) {
       blockers.push({
         codigo: 'DOMINGO_SEM_COLABORADORES',
         severidade: 'BLOCKER',
@@ -178,7 +178,7 @@ function enrichPreflightWithCapacityChecks(
     const peakDemand = dayDemand.reduce((acc, d) => Math.max(acc, d.min_pessoas), 0)
     const requiredMin = peakDemand
     const availableCount = input.colaboradores.filter((c) => {
-      if (label === 'DOM' && !c.trabalha_domingo) return false
+      if (label === 'DOM' && (c.domingo_ciclo_trabalho ?? 0) <= 0) return false
       if (holidayForbidden.has(day)) return false
       return !input.excecoes.some((e) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
     }).length
@@ -216,7 +216,7 @@ function enrichPreflightWithCapacityChecks(
   }
 
   // v4: Validar limite de capacidade individual por colaborador
-  // Verifica se a janela (fim_max - inicio_min) de cada dia multiplicada pelos dias de trabalho
+  // Verifica se a janela (fim - inicio) de cada dia multiplicada pelos dias de trabalho
   // e apos deducao do intervalo de almoco obrigatorio nao torna a meta de horas matematicamente impossivel.
   for (const c of input.colaboradores) {
     if (c.tipo_trabalhador === 'ESTAGIARIO') continue;
@@ -405,16 +405,15 @@ const tiposContratoCriar = t.procedure
     horas_semanais: number
     regime_escala?: '5X2' | '6X1'
     dias_trabalho?: number
-    trabalha_domingo: boolean
     max_minutos_dia: number
   }>()
   .action(async ({ input }) => {
     const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
     const diasTrabalho = regime === '5X2' ? 5 : 6
     const id = await insertReturningId(`
-      INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, trabalha_domingo, max_minutos_dia)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo, input.max_minutos_dia)
+      INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia)
+      VALUES (?, ?, ?, ?, ?)
+    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia)
 
     return await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', id)
   })
@@ -426,7 +425,6 @@ const tiposContratoAtualizar = t.procedure
     horas_semanais: number
     regime_escala?: '5X2' | '6X1'
     dias_trabalho?: number
-    trabalha_domingo: boolean
     max_minutos_dia: number
   }>()
   .action(async ({ input }) => {
@@ -434,8 +432,8 @@ const tiposContratoAtualizar = t.procedure
     const diasTrabalho = regime === '5X2' ? 5 : 6
     await execute(`
       UPDATE tipos_contrato SET nome = ?, horas_semanais = ?, regime_escala = ?, dias_trabalho = ?,
-      trabalha_domingo = ?, max_minutos_dia = ? WHERE id = ?
-    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.trabalha_domingo, input.max_minutos_dia, input.id)
+      max_minutos_dia = ? WHERE id = ?
+    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia, input.id)
 
     return await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', input.id)
   })
@@ -465,21 +463,22 @@ const tiposContratoCriarPerfilHorario = t.procedure
   .input<{
     tipo_contrato_id: number
     nome: string
-    inicio_min: string
-    inicio_max: string
-    fim_min: string
-    fim_max: string
+    inicio?: string | null
+    fim?: string | null
     preferencia_turno_soft?: string | null
     ordem?: number
+    horas_semanais?: number | null
+    max_minutos_dia?: number | null
   }>()
   .action(async ({ input }) => {
     const id = await insertReturningId(`
-      INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem)
+      INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio, fim, preferencia_turno_soft, ordem, horas_semanais, max_minutos_dia)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
       input.tipo_contrato_id, input.nome,
-      input.inicio_min, input.inicio_max, input.fim_min, input.fim_max,
-      input.preferencia_turno_soft ?? null, input.ordem ?? 0
+      input.inicio ?? null, input.fim ?? null,
+      input.preferencia_turno_soft ?? null, input.ordem ?? 0,
+      input.horas_semanais ?? null, input.max_minutos_dia ?? null
     )
     return await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
   })
@@ -489,12 +488,12 @@ const tiposContratoAtualizarPerfilHorario = t.procedure
     id: number
     nome?: string
     ativo?: boolean
-    inicio_min?: string
-    inicio_max?: string
-    fim_min?: string
-    fim_max?: string
+    inicio?: string | null
+    fim?: string | null
     preferencia_turno_soft?: string | null
     ordem?: number
+    horas_semanais?: number | null
+    max_minutos_dia?: number | null
   }>()
   .action(async ({ input }) => {
     const { id, ...rest } = input
@@ -502,12 +501,12 @@ const tiposContratoAtualizarPerfilHorario = t.procedure
     const values: unknown[] = []
     if (rest.nome !== undefined) { fields.push('nome = ?'); values.push(rest.nome) }
     if (rest.ativo !== undefined) { fields.push('ativo = ?'); values.push(rest.ativo) }
-    if (rest.inicio_min !== undefined) { fields.push('inicio_min = ?'); values.push(rest.inicio_min) }
-    if (rest.inicio_max !== undefined) { fields.push('inicio_max = ?'); values.push(rest.inicio_max) }
-    if (rest.fim_min !== undefined) { fields.push('fim_min = ?'); values.push(rest.fim_min) }
-    if (rest.fim_max !== undefined) { fields.push('fim_max = ?'); values.push(rest.fim_max) }
+    if ('inicio' in rest) { fields.push('inicio = ?'); values.push(rest.inicio ?? null) }
+    if ('fim' in rest) { fields.push('fim = ?'); values.push(rest.fim ?? null) }
     if ('preferencia_turno_soft' in rest) { fields.push('preferencia_turno_soft = ?'); values.push(rest.preferencia_turno_soft ?? null) }
     if (rest.ordem !== undefined) { fields.push('ordem = ?'); values.push(rest.ordem) }
+    if ('horas_semanais' in rest) { fields.push('horas_semanais = ?'); values.push(rest.horas_semanais ?? null) }
+    if ('max_minutos_dia' in rest) { fields.push('max_minutos_dia = ?'); values.push(rest.max_minutos_dia ?? null) }
     if (fields.length > 0) {
       values.push(id)
       await execute(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`, ...values)
@@ -1860,10 +1859,8 @@ const colaboradoresSalvarRegraHorario = t.procedure
     dia_semana_regra?: string | null
     ativo?: boolean
     perfil_horario_id?: number | null
-    inicio_min?: string | null
-    inicio_max?: string | null
-    fim_min?: string | null
-    fim_max?: string | null
+    inicio?: string | null
+    fim?: string | null
     preferencia_turno_soft?: string | null
     domingo_ciclo_trabalho?: number
     domingo_ciclo_folga?: number
@@ -1888,7 +1885,7 @@ const colaboradoresSalvarRegraHorario = t.procedure
         UPDATE colaborador_regra_horario SET
           ativo = COALESCE(?, ativo),
           perfil_horario_id = ?,
-          inicio_min = ?, inicio_max = ?, fim_min = ?, fim_max = ?,
+          inicio = ?, fim = ?,
           preferencia_turno_soft = ?,
           domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
           domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
@@ -1897,7 +1894,7 @@ const colaboradoresSalvarRegraHorario = t.procedure
       `,
         input.ativo !== undefined ? input.ativo : null,
         input.perfil_horario_id ?? null,
-        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.inicio ?? null, input.fim ?? null,
         input.preferencia_turno_soft ?? null,
         domCicloTrabalho,
         domCicloFolga,
@@ -1908,14 +1905,14 @@ const colaboradoresSalvarRegraHorario = t.procedure
     } else {
       const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario
-          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         input.colaborador_id,
         diaSemana,
         input.ativo !== undefined ? input.ativo : true,
         input.perfil_horario_id ?? null,
-        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.inicio ?? null, input.fim ?? null,
         input.preferencia_turno_soft ?? null,
         domCicloTrabalho,
         domCicloFolga,
@@ -1943,10 +1940,8 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
     colaborador_id: number
     data: string
     ativo?: boolean
-    inicio_min?: string | null
-    inicio_max?: string | null
-    fim_min?: string | null
-    fim_max?: string | null
+    inicio?: string | null
+    fim?: string | null
     preferencia_turno_soft?: string | null
     domingo_forcar_folga?: boolean
   }>()
@@ -1957,13 +1952,13 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
       await execute(`
         UPDATE colaborador_regra_horario_excecao_data SET
           ativo = COALESCE(?, ativo),
-          inicio_min = ?, inicio_max = ?, fim_min = ?, fim_max = ?,
+          inicio = ?, fim = ?,
           preferencia_turno_soft = ?,
           domingo_forcar_folga = COALESCE(?, domingo_forcar_folga)
         WHERE id = ?
       `,
         input.ativo !== undefined ? input.ativo : null,
-        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.inicio ?? null, input.fim ?? null,
         input.preferencia_turno_soft ?? null,
         input.domingo_forcar_folga !== undefined ? input.domingo_forcar_folga : null,
         existe.id
@@ -1972,12 +1967,12 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
     } else {
       const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario_excecao_data
-          (colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_forcar_folga)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (colaborador_id, data, ativo, inicio, fim, preferencia_turno_soft, domingo_forcar_folga)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
         input.colaborador_id, input.data,
         input.ativo !== undefined ? input.ativo : true,
-        input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
+        input.inicio ?? null, input.fim ?? null,
         input.preferencia_turno_soft ?? null,
         input.domingo_forcar_folga ?? false
       )

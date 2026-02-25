@@ -32,10 +32,8 @@ export const colaboradoresService = {
     dia_semana_regra?: DiaSemana | null
     ativo?: boolean
     perfil_horario_id?: number | null
-    inicio_min?: string | null
-    inicio_max?: string | null
-    fim_min?: string | null
-    fim_max?: string | null
+    inicio?: string | null
+    fim?: string | null
     preferencia_turno_soft?: string | null
     domingo_ciclo_trabalho?: number
     domingo_ciclo_folga?: number
@@ -53,10 +51,8 @@ export const colaboradoresService = {
     colaborador_id: number
     data: string
     ativo?: boolean
-    inicio_min?: string | null
-    inicio_max?: string | null
-    fim_min?: string | null
-    fim_max?: string | null
+    inicio?: string | null
+    fim?: string | null
     preferencia_turno_soft?: string | null
     domingo_forcar_folga?: boolean
   }) =>

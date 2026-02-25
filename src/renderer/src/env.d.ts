@@ -14,7 +14,7 @@ interface Window {
   electron: {
     ipcRenderer: {
       invoke(channel: string, ...args: any[]): Promise<any>
-      on(channel: string, callback: (...args: any[]) => void): void
+      on(channel: string, callback: (...args: any[]) => void): (() => void) | void
       removeAllListeners(channel: string): void
     }
   }

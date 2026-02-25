@@ -104,7 +104,7 @@ export const SEVERIDADES = ['HARD', 'SOFT'] as const
 export type Severidade = (typeof SEVERIDADES)[number]
 
 // --- Tipos de trabalhador (v3) ---
-export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'APRENDIZ'] as const
+export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'APRENDIZ', 'INTERMITENTE'] as const
 export type TipoTrabalhador = (typeof TIPOS_TRABALHADOR)[number]
 
 // --- Regimes de escala por contrato ---

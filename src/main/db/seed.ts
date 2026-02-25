@@ -18,23 +18,22 @@ export async function seedData(): Promise<void> {
   // -- 1. Tipos de Contrato --
   const tiposExistem = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM tipos_contrato')
   if ((tiposExistem?.count ?? 0) === 0) {
-    const tipos: [string, number, string, number, boolean, number][] = [
-      ['CLT 44h', 44, '5X2', 5, true, 585],
-      ['CLT 36h', 36, '5X2', 5, true, 585],
-      ['Estagiario Manha', 20, '5X2', 5, false, 240],
-      ['Estagiario Tarde', 30, '5X2', 5, false, 360],
-      ['Estagiario Noite-Estudo', 30, '5X2', 5, false, 360],
+    const tipos: [string, number, string, number, number][] = [
+      ['CLT 44h', 44, '5X2', 5, 585],
+      ['CLT 36h', 36, '5X2', 5, 585],
+      ['Estagiario', 20, '5X2', 5, 360],
+      ['Intermitente', 0, '6X1', 6, 585],
     ]
 
     await transaction(async () => {
       for (const tipo of tipos) {
         await execute(
-          'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, trabalha_domingo, max_minutos_dia) VALUES ($1, $2, $3, $4, $5, $6)',
+          'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia) VALUES ($1, $2, $3, $4, $5)',
           ...tipo,
         )
       }
     })
-    console.log('[SEED] 5 tipos de contrato criados (CLT 44h, CLT 36h, 3x Estagiario)')
+    console.log('[SEED] 4 tipos de contrato criados (CLT 44h, CLT 36h, Estagiario, Intermitente)')
   }
 
   // -- 2. Perfis de Horario por Contrato --
@@ -45,22 +44,22 @@ export async function seedData(): Promise<void> {
 
     const perfis = [
       {
-        contrato: 'Estagiario Manha', nome: 'MANHA_08_12',
-        inicio_min: '08:00', inicio_max: '08:00',
-        fim_min: '12:00', fim_max: '12:00',
+        contrato: 'Estagiario', nome: 'MANHA_08_12',
+        inicio: '08:00', fim: '12:00',
         turno: 'MANHA', ordem: 1,
+        horas_semanais: 20, max_minutos_dia: 240,
       },
       {
-        contrato: 'Estagiario Tarde', nome: 'TARDE_1330_PLUS',
-        inicio_min: '13:30', inicio_max: '17:00',
-        fim_min: '19:00', fim_max: '20:00',
+        contrato: 'Estagiario', nome: 'TARDE_1330_PLUS',
+        inicio: '13:30', fim: '20:00',
         turno: 'TARDE', ordem: 2,
+        horas_semanais: 30, max_minutos_dia: 360,
       },
       {
-        contrato: 'Estagiario Noite-Estudo', nome: 'ESTUDA_NOITE_08_14',
-        inicio_min: '08:00', inicio_max: '08:00',
-        fim_min: '14:00', fim_max: '14:00',
+        contrato: 'Estagiario', nome: 'ESTUDA_NOITE_08_14',
+        inicio: '08:00', fim: '14:00',
         turno: 'MANHA', ordem: 3,
+        horas_semanais: 30, max_minutos_dia: 360,
       },
     ] as const
 
@@ -72,8 +71,8 @@ export async function seedData(): Promise<void> {
           continue
         }
         await execute(
-          'INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-          tipoId, p.nome, true, p.inicio_min, p.inicio_max, p.fim_min, p.fim_max, p.turno, p.ordem,
+          'INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, ativo, inicio, fim, preferencia_turno_soft, ordem, horas_semanais, max_minutos_dia) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+          tipoId, p.nome, true, p.inicio, p.fim, p.turno, p.ordem, p.horas_semanais, p.max_minutos_dia,
         )
       }
     })

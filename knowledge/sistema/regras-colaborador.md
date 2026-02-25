@@ -1,4 +1,4 @@
-<!-- quando_usar: regras individuais colaborador, janela horario, definir_janela, folga fixa, ciclo domingos, excecao por data, upsert_regra_excecao, hierarquia precedencia, inicio_min fim_max -->
+<!-- quando_usar: regras individuais colaborador, janela horario, folga fixa, ciclo domingos, excecao por data, upsert_regra_excecao, hierarquia precedencia, inicio fim -->
 # Regras Individuais de Colaborador no EscalaFlow
 
 ## O que são regras individuais
@@ -17,55 +17,20 @@ Exemplos de uso:
 Exceção por data > Regra individual > Perfil do contrato > Padrão do contrato
 ```
 
-Exemplo: Se o contrato padrão é CLT 44h (08:00–18:00) e a Maria tem regra individual `início_máx: 09:00`, o motor usa 09:00 para ela. Se na segunda-feira específica tem uma exceção de data `início: 10:00`, prevalece o 10:00.
+Exemplo: Se o contrato padrão é CLT 44h (08:00–18:00) e a Maria tem regra individual `início: 09:00`, o motor usa 09:00 para ela. Se na segunda-feira específica tem uma exceção de data `início: 10:00`, prevalece o 10:00.
 
 ---
 
-## Janela de Horário (recorrente)
+## Regra Individual de Horário (recorrente)
 
-Limita quando o colaborador pode iniciar e terminar, em todos os dias úteis.
-
-### Tool: `definir_janela_colaborador`
-
-Wrapper semântico para definir limites de horário. Mais simples que `salvar_regra_horario_colaborador`.
-
-**Campos disponíveis:**
-- `inicio_min` — mais cedo que pode começar (HH:MM)
-- `inicio_max` — mais tarde que pode começar (HH:MM)
-- `fim_min` — mais cedo que pode terminar (HH:MM)
-- `fim_max` — mais tarde que pode terminar (HH:MM)
-- `ativo` — ativa a regra ao salvar (padrão: true)
-
-Pelo menos um dos quatro campos de limite é obrigatório.
-
-**Exemplos:**
-
-"Só pode de manhã":
-```
-definir_janela_colaborador({ colaborador_id: 5, inicio_max: "09:00", fim_max: "14:00" })
-```
-
-"Entra às 09:00 em ponto todos os dias":
-```
-definir_janela_colaborador({ colaborador_id: 5, inicio_min: "09:00", inicio_max: "09:00" })
-```
-
-"Não pode ficar até tarde":
-```
-definir_janela_colaborador({ colaborador_id: 5, fim_max: "16:00" })
-```
-
----
-
-## Regra Completa Individual (recorrente)
-
-Quando precisa configurar janela + ciclo de domingo + folga fixa tudo junto, use `salvar_regra_horario_colaborador`.
+Configura horário fixo de entrada/saída, ciclo de domingo e folga fixa. Use `salvar_regra_horario_colaborador`.
 
 ### Tool: `salvar_regra_horario_colaborador`
 
 **Campos disponíveis:**
 - `colaborador_id` — obrigatório
-- `inicio_min`, `inicio_max`, `fim_min`, `fim_max` — janela de horário
+- `inicio` — horário fixo de entrada (HH:MM)
+- `fim` — horário máximo de saída (HH:MM)
 - `domingo_ciclo_trabalho` — quantos domingos seguidos trabalha (0–10)
 - `domingo_ciclo_folga` — quantos domingos seguidos folga (0–10)
 - `folga_fixa_dia_semana` — folga fixa semanal: SEG, TER, QUA, QUI, SEX, SAB, DOM
@@ -79,8 +44,8 @@ Funcionária que só trabalha de manhã e tem folga fixa na quarta:
 ```
 salvar_regra_horario_colaborador({
   colaborador_id: 5,
-  inicio_max: "09:00",
-  fim_max: "14:00",
+  inicio: "09:00",
+  fim: "14:00",
   folga_fixa_dia_semana: "QUA"
 })
 ```
@@ -111,8 +76,7 @@ Diferença crítica em relação à janela recorrente: esta regra só vale no di
 upsert_regra_excecao_data({
   colaborador_id: 5,
   data: "2026-02-25",
-  inicio_min: "09:00",
-  inicio_max: "09:00"
+  inicio: "09:00"
 })
 ```
 
@@ -121,7 +85,7 @@ upsert_regra_excecao_data({
 upsert_regra_excecao_data({
   colaborador_id: 8,
   data: "2026-02-27",
-  fim_max: "15:00"
+  fim: "15:00"
 })
 ```
 
@@ -167,7 +131,7 @@ Retorna a regra individual ativa (se existir) e o perfil de horário vinculado (
 
 | Situação | Tool correta |
 |----------|-------------|
-| "A Maria só pode de manhã" (recorrente) | `definir_janela_colaborador` |
+| "A Maria só pode de manhã" (recorrente) | `salvar_regra_horario_colaborador` com `fim: "14:00"` |
 | "O João folga toda quarta" (recorrente) | `salvar_regra_horario_colaborador` com `folga_fixa_dia_semana` |
 | "Ciclo de domingos do Pedro é 2:1" | `salvar_regra_horario_colaborador` com `domingo_ciclo_*` |
 | "Na quinta-feira específica ela entra às 10h" (pontual) | `upsert_regra_excecao_data` com `data` |

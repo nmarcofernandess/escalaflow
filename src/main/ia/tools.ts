@@ -138,7 +138,7 @@ function enrichPreflightWithCapacityChecksForTool(
 
     if (dayDemand.length === 0) continue
 
-    if (label === 'DOM' && (solverInput.colaboradores ?? []).every((c: any) => !c.trabalha_domingo)) {
+    if (label === 'DOM' && (solverInput.colaboradores ?? []).every((c: any) => ['ESTAGIARIO', 'APRENDIZ'].includes(c.tipo_trabalhador ?? 'CLT'))) {
       blockers.push({
         codigo: 'DOMINGO_SEM_COLABORADORES',
         severidade: 'BLOCKER',
@@ -160,7 +160,7 @@ function enrichPreflightWithCapacityChecksForTool(
 
     const peakDemand = dayDemand.reduce((acc: number, d: any) => Math.max(acc, d.min_pessoas ?? 0), 0)
     const availableCount = (solverInput.colaboradores ?? []).filter((c: any) => {
-      if (label === 'DOM' && !c.trabalha_domingo) return false
+      if (label === 'DOM' && ['ESTAGIARIO', 'APRENDIZ'].includes(c.tipo_trabalhador ?? 'CLT')) return false
       if (holidayForbidden.has(day)) return false
       return !(solverInput.excecoes ?? []).some((e: any) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
     }).length
@@ -268,26 +268,14 @@ const SalvarRegraHorarioColaboradorSchema = z.object({
   dia_semana_regra: DiaSemanaSchema.nullable().optional().describe('Dia da semana específico (SEG..DOM). NULL ou omitido = regra padrão (todos os dias). Ex: "QUA" = só quartas.'),
   ativo: z.boolean().optional().describe('Se a regra individual fica ativa. Padrão do backend: true ao criar.'),
   perfil_horario_id: z.number().int().positive().nullable().optional().describe('ID de perfil de horário do contrato (ou null para remover vínculo).'),
-  inicio_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início mínimo permitido (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
-  inicio_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início máximo permitido (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
-  fim_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim mínimo permitido (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
-  fim_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim máximo permitido (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
+  inicio: z.string().regex(HORA_HHMM_REGEX).nullable().optional()
+    .describe('Horário fixo de entrada (HH:MM). Motor força início exato. NULL = motor livre.'),
+  fim: z.string().regex(HORA_HHMM_REGEX).nullable().optional()
+    .describe('Horário máximo de saída (HH:MM). Motor não aloca além. NULL = motor livre.'),
   preferencia_turno_soft: z.string().nullable().optional().describe('Preferência soft de turno (ex: MANHA/TARDE/NOITE, conforme convenção local).'),
   domingo_ciclo_trabalho: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de trabalho no ciclo (só na regra padrão).'),
   domingo_ciclo_folga: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de folga no ciclo (só na regra padrão).'),
   folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover (só na regra padrão).'),
-})
-
-const DefinirJanelaColaboradorSchema = z.object({
-  colaborador_id: z.number().int().positive().describe('ID do colaborador.'),
-  dia_semana_regra: DiaSemanaSchema.nullable().optional().describe('Dia da semana específico (SEG..DOM). NULL ou omitido = regra padrão (todos os dias). Ex: "QUA" = só quartas.'),
-  inicio_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode iniciar (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
-  inicio_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode iniciar (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
-  fim_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode sair (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
-  fim_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode sair (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
-  ativo: z.boolean().optional().describe('Ativa a regra ao salvar. Padrão: true.'),
-}).refine((v) => v.inicio_min || v.inicio_max || v.fim_min || v.fim_max, {
-  message: 'Informe pelo menos um limite de janela (inicio_min/inicio_max/fim_min/fim_max).',
 })
 
 // criar colaborador — validação específica para colaboradores
@@ -418,10 +406,10 @@ const UpsertRegraExcecaoDataSchema = z.object({
   colaborador_id: z.number().int().positive().describe('ID do colaborador. Resolva via buscar_colaborador ou consultar.'),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data do override pontual (YYYY-MM-DD).'),
   ativo: z.boolean().optional().describe('Se a exceção fica ativa. Padrão: true.'),
-  inicio_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início mínimo permitido neste dia (HH:MM) ou null.'),
-  inicio_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início máximo permitido neste dia (HH:MM) ou null.'),
-  fim_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim mínimo permitido neste dia (HH:MM) ou null.'),
-  fim_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim máximo permitido neste dia (HH:MM) ou null.'),
+  inicio: z.string().regex(HORA_HHMM_REGEX).nullable().optional()
+    .describe('Horário fixo de entrada neste dia (HH:MM). Motor força início exato. NULL = motor livre.'),
+  fim: z.string().regex(HORA_HHMM_REGEX).nullable().optional()
+    .describe('Horário máximo de saída neste dia (HH:MM). Motor não aloca além. NULL = motor livre.'),
   preferencia_turno_soft: z.enum(['MANHA', 'TARDE']).nullable().optional().describe('Preferência de turno para este dia (MANHA/TARDE) ou null.'),
   domingo_forcar_folga: z.boolean().optional().describe('Se true, força folga neste dia. Padrão: false.'),
 })
@@ -449,10 +437,8 @@ const SalvarPerfilHorarioSchema = z.object({
   id: z.number().int().positive().optional().describe('ID do perfil para atualizar. Se omitido, cria um novo.'),
   tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato (obrigatório para criação).'),
   nome: z.string().min(1).optional().describe('Nome do perfil (ex: "MANHA_08_12", "TARDE_13_20"). Obrigatório para criação.'),
-  inicio_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário mínimo de entrada (HH:MM).'),
-  inicio_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário máximo de entrada (HH:MM).'),
-  fim_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário mínimo de saída (HH:MM).'),
-  fim_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Horário máximo de saída (HH:MM).'),
+  inicio: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Horário de entrada do perfil (HH:MM) ou null.'),
+  fim: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Horário de saída do perfil (HH:MM) ou null.'),
   preferencia_turno_soft: z.enum(['MANHA', 'TARDE']).nullable().optional().describe('Preferência de turno (MANHA/TARDE) ou null.'),
   ordem: z.number().int().min(0).optional().describe('Ordem de exibição.'),
   ativo: z.boolean().optional().describe('Se false, desativa o perfil (soft delete).'),
@@ -606,11 +592,6 @@ export const IA_TOOLS = [
         parameters: toJsonSchema(SalvarRegraHorarioColaboradorSchema)
     },
     {
-        name: 'definir_janela_colaborador',
-        description: 'Wrapper semântico para definir limites de horário de um colaborador (ex.: "só pode de manhã", "toda quarta entra 09:00"). Com dia_semana_regra cria regra específica para aquele dia. Usa salvar_regra_horario_colaborador por baixo.',
-        parameters: toJsonSchema(DefinirJanelaColaboradorSchema)
-    },
-    {
         name: 'salvar_demanda_excecao_data',
         description: 'Cria demanda excepcional por data (ex: Black Friday precisa de 8 pessoas). Insere na tabela demandas_excecao_data.',
         parameters: toJsonSchema(SalvarDemandaExcecaoDataSchema)
@@ -727,7 +708,7 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   ]),
   tipos_contrato: new Set([
     'id', 'nome', 'horas_semanais', 'regime_escala', 'dias_trabalho',
-    'trabalha_domingo', 'max_minutos_dia'
+    'max_minutos_dia'
   ]),
   empresa: new Set([
     'id', 'nome', 'cnpj', 'telefone', 'corte_semanal', 'tolerancia_semanal_min'
@@ -748,12 +729,12 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
     'id', 'setor_id', 'data', 'hora_inicio', 'hora_fim', 'min_pessoas', 'override'
   ]),
   colaborador_regra_horario_excecao_data: new Set([
-    'id', 'colaborador_id', 'data', 'ativo', 'inicio_min', 'inicio_max',
-    'fim_min', 'fim_max', 'preferencia_turno_soft', 'domingo_forcar_folga'
+    'id', 'colaborador_id', 'data', 'ativo', 'inicio', 'fim',
+    'preferencia_turno_soft', 'domingo_forcar_folga'
   ]),
   contrato_perfis_horario: new Set([
-    'id', 'tipo_contrato_id', 'nome', 'inicio_min', 'inicio_max',
-    'fim_min', 'fim_max', 'preferencia_turno_soft', 'ativo', 'ordem'
+    'id', 'tipo_contrato_id', 'nome', 'inicio', 'fim',
+    'preferencia_turno_soft', 'ativo', 'ordem', 'horas_semanais', 'max_minutos_dia'
   ]),
   empresa_horario_semana: new Set([
     'id', 'dia_semana', 'ativo', 'hora_abertura', 'hora_fechamento'
@@ -765,8 +746,8 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
     'id', 'setor_id', 'nome', 'semanas_no_ciclo', 'ativo', 'origem_escala_id'
   ]),
   colaborador_regra_horario: new Set([
-    'colaborador_id', 'dia_semana_regra', 'inicio_min', 'inicio_max',
-    'fim_min', 'fim_max', 'folga_fixa_dia_semana', 'domingo_ciclo_trabalho',
+    'colaborador_id', 'dia_semana_regra', 'inicio', 'fim',
+    'folga_fixa_dia_semana', 'domingo_ciclo_trabalho',
     'domingo_ciclo_folga', 'perfil_horario_id', 'ativo'
   ]),
 }
@@ -798,7 +779,7 @@ function getConsultarRelatedTools(entidade: string): string[] {
     regra_empresa: ['editar_regra', 'consultar'],
     demandas_excecao_data: ['salvar_demanda_excecao_data', 'consultar'],
     colaborador_regra_horario_excecao_data: ['upsert_regra_excecao_data', 'consultar'],
-    colaborador_regra_horario: ['salvar_regra_horario_colaborador', 'definir_janela_colaborador', 'consultar'],
+    colaborador_regra_horario: ['salvar_regra_horario_colaborador', 'consultar'],
   }
   return mapa[entidade] ?? ['consultar']
 }
@@ -943,7 +924,6 @@ const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   diagnosticar_infeasible: DiagnosticarInfeasibleSchema,
   cadastrar_lote: CadastrarLoteSchema,
   salvar_regra_horario_colaborador: SalvarRegraHorarioColaboradorSchema,
-  definir_janela_colaborador: DefinirJanelaColaboradorSchema,
   salvar_demanda_excecao_data: SalvarDemandaExcecaoDataSchema,
   upsert_regra_excecao_data: UpsertRegraExcecaoDataSchema,
   resumir_horas_setor: ResumirHorasSetorSchema,
@@ -1040,7 +1020,7 @@ async function enrichColaboradorSingle(colaborador: Record<string, any>) {
   let perfil_horario = null
   if (padrao?.perfil_horario_id) {
     perfil_horario = await queryOne<Record<string, any>>(
-      'SELECT id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft FROM contrato_perfis_horario WHERE id = ? AND ativo = true',
+      'SELECT id, nome, inicio, fim, preferencia_turno_soft FROM contrato_perfis_horario WHERE id = ? AND ativo = true',
       padrao.perfil_horario_id
     )
   }
@@ -1197,7 +1177,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     tool_kind: 'discovery',
                     entidade: 'colaboradores',
                     resolution: 'single',
-                    ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador', 'definir_janela_colaborador'],
+                    ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador'],
                   }
                 }
               )
@@ -1301,7 +1281,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   entidade: 'colaboradores',
                   resolution: 'single',
                   nome_busca: nomeBusca,
-                  ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador', 'definir_janela_colaborador'],
+                  ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador'],
                 }
               }
             )
@@ -2579,10 +2559,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           dia_semana_regra,
           ativo,
           perfil_horario_id,
-          inicio_min,
-          inicio_max,
-          fim_min,
-          fim_max,
+          inicio,
+          fim,
           preferencia_turno_soft,
           domingo_ciclo_trabalho,
           domingo_ciclo_folga,
@@ -2605,13 +2583,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           )
         }
 
-        const timePairs: Array<[string, unknown]> = [
-          ['inicio_min', inicio_min],
-          ['inicio_max', inicio_max],
-          ['fim_min', fim_min],
-          ['fim_max', fim_max],
-        ]
-        for (const [label, value] of timePairs) {
+        // Validar formato HH:MM
+        for (const [label, value] of [['inicio', inicio], ['fim', fim]] as const) {
           if (value !== undefined && value !== null && (typeof value !== 'string' || !HORA_HHMM_REGEX.test(value))) {
             return toolError(
               'SALVAR_REGRA_HORARIO_COLABORADOR_HORA_INVALIDA',
@@ -2623,28 +2596,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
           }
         }
-
-        const comparePair = (aLabel: string, aVal: unknown, bLabel: string, bVal: unknown) => {
-          if (typeof aVal === 'string' && typeof bVal === 'string') {
-            if (minutesBetweenTimes(aVal, bVal) <= 0) {
-              return toolError(
-                'SALVAR_REGRA_HORARIO_COLABORADOR_JANELA_INVALIDA',
-                `Intervalo inválido em ${aLabel}/${bLabel}: ${aVal} -> ${bVal}.`,
-                {
-                  correction: `Garanta que ${bLabel} seja maior que ${aLabel} no mesmo dia.`,
-                  meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id, aLabel, bLabel }
-                }
-              )
-            }
-          }
-          return null
-        }
-
-        const invalidPair =
-          comparePair('inicio_min', inicio_min, 'inicio_max', inicio_max) ??
-          comparePair('fim_min', fim_min, 'fim_max', fim_max) ??
-          comparePair('inicio_min', inicio_min, 'fim_max', fim_max)
-        if (invalidPair) return invalidPair
 
         try {
           // Para regras de dia específico, forçar defaults em campos nível-colaborador
@@ -2662,7 +2613,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               UPDATE colaborador_regra_horario SET
                 ativo = COALESCE(?, ativo),
                 perfil_horario_id = ?,
-                inicio_min = ?, inicio_max = ?, fim_min = ?, fim_max = ?,
+                inicio = ?, fim = ?,
                 preferencia_turno_soft = ?,
                 domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
                 domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
@@ -2671,10 +2622,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             `,
               ativo !== undefined ? ativo : null,
               perfil_horario_id ?? null,
-              inicio_min ?? null,
-              inicio_max ?? null,
-              fim_min ?? null,
-              fim_max ?? null,
+              inicio ?? null,
+              fim ?? null,
               preferencia_turno_soft ?? null,
               domCicloTrabalho,
               domCicloFolga,
@@ -2684,17 +2633,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           } else {
             await execute(`
               INSERT INTO colaborador_regra_horario
-                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
               colaborador_id,
               diaSemana,
               ativo !== undefined ? ativo : true,
               perfil_horario_id ?? null,
-              inicio_min ?? null,
-              inicio_max ?? null,
-              fim_min ?? null,
-              fim_max ?? null,
+              inicio ?? null,
+              fim ?? null,
               preferencia_turno_soft ?? null,
               domCicloTrabalho,
               domCicloFolga,
@@ -2717,7 +2664,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 tool_kind: 'action',
                 action: 'save-collaborator-rule',
                 colaborador_id: colab.id,
-                ids_usaveis_em: ['buscar_colaborador', 'definir_janela_colaborador', 'gerar_escala', 'preflight_completo'],
+                ids_usaveis_em: ['buscar_colaborador', 'salvar_regra_horario_colaborador', 'gerar_escala', 'preflight_completo'],
               }
             }
           )
@@ -2731,65 +2678,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
           )
         }
-    }
-
-    if (name === 'definir_janela_colaborador') {
-        const {
-          colaborador_id,
-          dia_semana_regra,
-          inicio_min,
-          inicio_max,
-          fim_min,
-          fim_max,
-        } = args
-        const ativo = args.ativo !== false
-
-        const base = await executeTool('salvar_regra_horario_colaborador', {
-          colaborador_id,
-          dia_semana_regra: dia_semana_regra ?? null,
-          ativo,
-          inicio_min,
-          inicio_max,
-          fim_min,
-          fim_max,
-        })
-
-        if (base?.status !== 'ok') {
-          return {
-            ...base,
-            _meta: {
-              ...(base?._meta ?? {}),
-              semantic_wrapper: 'definir_janela_colaborador',
-              wrapped_tool: 'salvar_regra_horario_colaborador',
-            },
-          }
-        }
-
-        const partes = [
-          inicio_min ? `início >= ${inicio_min}` : null,
-          inicio_max ? `início <= ${inicio_max}` : null,
-          fim_min ? `fim >= ${fim_min}` : null,
-          fim_max ? `fim <= ${fim_max}` : null,
-        ].filter(Boolean)
-
-        return toolOk(
-          {
-            sucesso: true,
-            colaborador: base.colaborador,
-            regra: base.regra,
-            janela_definida: { inicio_min, inicio_max, fim_min, fim_max, ativo },
-          },
-          {
-            summary: `Janela de horário definida para ${base.colaborador?.nome ?? `colaborador ${colaborador_id}`}: ${partes.join(', ')}.`,
-            meta: {
-              tool_kind: 'action',
-              action: 'set-collaborator-window',
-              colaborador_id,
-              wrapped_tool: 'salvar_regra_horario_colaborador',
-              next_tools_hint: ['buscar_colaborador', 'preflight_completo', 'gerar_escala'],
-            }
-          }
-        )
     }
 
     if (name === 'explicar_violacao') {
@@ -2915,7 +2803,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
-            const timeFields = ['inicio_min', 'inicio_max', 'fim_min', 'fim_max'] as const
+            const timeFields = ['inicio', 'fim'] as const
             for (const field of timeFields) {
                 const val = args[field]
                 if (val !== undefined && val !== null && (typeof val !== 'string' || !HORA_HHMM_REGEX.test(val))) {
@@ -2942,19 +2830,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 await execute(`
                   UPDATE colaborador_regra_horario_excecao_data SET
                     ativo = ?,
-                    inicio_min = COALESCE(?, inicio_min),
-                    inicio_max = COALESCE(?, inicio_max),
-                    fim_min = COALESCE(?, fim_min),
-                    fim_max = COALESCE(?, fim_max),
+                    inicio = COALESCE(?, inicio),
+                    fim = COALESCE(?, fim),
                     preferencia_turno_soft = COALESCE(?, preferencia_turno_soft),
                     domingo_forcar_folga = ?
                   WHERE id = ?
                 `,
                   ativo,
-                  args.inicio_min ?? null,
-                  args.inicio_max ?? null,
-                  args.fim_min ?? null,
-                  args.fim_max ?? null,
+                  args.inicio ?? null,
+                  args.fim ?? null,
                   args.preferencia_turno_soft ?? null,
                   domingo_forcar_folga,
                   existing.id,
@@ -2962,16 +2846,14 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             } else {
                 await execute(`
                   INSERT INTO colaborador_regra_horario_excecao_data
-                    (colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_forcar_folga)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (colaborador_id, data, ativo, inicio, fim, preferencia_turno_soft, domingo_forcar_folga)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
                 `,
                   colaborador_id,
                   data,
                   ativo,
-                  args.inicio_min ?? null,
-                  args.inicio_max ?? null,
-                  args.fim_min ?? null,
-                  args.fim_max ?? null,
+                  args.inicio ?? null,
+                  args.fim ?? null,
                   args.preferencia_turno_soft ?? null,
                   domingo_forcar_folga,
                 )
@@ -3177,7 +3059,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
     // ==================== salvar_perfil_horario ====================
     if (name === 'salvar_perfil_horario') {
-        const { id, tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem, ativo } = args
+        const { id, tipo_contrato_id, nome, inicio, fim, preferencia_turno_soft, ordem, ativo } = args
         try {
             if (id) {
                 // UPDATE
@@ -3188,15 +3070,13 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 const fields: string[] = []
                 const values: unknown[] = []
                 if (nome !== undefined) { fields.push('nome = ?'); values.push(nome) }
-                if (inicio_min !== undefined) { fields.push('inicio_min = ?'); values.push(inicio_min) }
-                if (inicio_max !== undefined) { fields.push('inicio_max = ?'); values.push(inicio_max) }
-                if (fim_min !== undefined) { fields.push('fim_min = ?'); values.push(fim_min) }
-                if (fim_max !== undefined) { fields.push('fim_max = ?'); values.push(fim_max) }
+                if (inicio !== undefined) { fields.push('inicio = ?'); values.push(inicio) }
+                if (fim !== undefined) { fields.push('fim = ?'); values.push(fim) }
                 if (preferencia_turno_soft !== undefined) { fields.push('preferencia_turno_soft = ?'); values.push(preferencia_turno_soft) }
                 if (ordem !== undefined) { fields.push('ordem = ?'); values.push(ordem) }
                 if (ativo !== undefined) { fields.push('ativo = ?'); values.push(ativo) }
                 if (fields.length === 0) {
-                    return toolError('PERFIL_NADA_PARA_ATUALIZAR', 'Nenhum campo informado para atualizar.', { correction: 'Informe ao menos um campo: nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem ou ativo.', meta: { tool_kind: 'action' } })
+                    return toolError('PERFIL_NADA_PARA_ATUALIZAR', 'Nenhum campo informado para atualizar.', { correction: 'Informe ao menos um campo: nome, inicio, fim, preferencia_turno_soft, ordem ou ativo.', meta: { tool_kind: 'action' } })
                 }
                 values.push(id)
                 await execute(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`, ...values)
@@ -3207,13 +3087,13 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             } else {
                 // CREATE
-                if (!tipo_contrato_id || !nome || !inicio_min || !inicio_max || !fim_min || !fim_max) {
-                    return toolError('PERFIL_CAMPOS_OBRIGATORIOS', 'Para criar: tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max são obrigatórios.', { correction: 'Inclua todos os campos obrigatórios. Horários no formato HH:MM (ex: "08:00").', meta: { tool_kind: 'action' } })
+                if (!tipo_contrato_id || !nome) {
+                    return toolError('PERFIL_CAMPOS_OBRIGATORIOS', 'Para criar: tipo_contrato_id e nome são obrigatórios.', { correction: 'Inclua tipo_contrato_id e nome. Horários (inicio/fim) no formato HH:MM (ex: "08:00").', meta: { tool_kind: 'action' } })
                 }
                 const newId = await insertReturningId(`
-                  INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, ordem)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                `, tipo_contrato_id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft ?? null, ordem ?? 0)
+                  INSERT INTO contrato_perfis_horario (tipo_contrato_id, nome, inicio, fim, preferencia_turno_soft, ordem)
+                  VALUES (?, ?, ?, ?, ?, ?)
+                `, tipo_contrato_id, nome, inicio ?? null, fim ?? null, preferencia_turno_soft ?? null, ordem ?? 0)
                 const created = await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', newId)
                 return toolOk(
                   { perfil: created, operacao: 'criado' },

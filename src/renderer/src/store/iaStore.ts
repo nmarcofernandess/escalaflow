@@ -140,8 +140,15 @@ export const useIaStore = create<IaStore>((set, get) => ({
         set({ texto_parcial: '' })
         break
 
+      case 'start-step':
+        // New step starting — reset text so intermediate step text doesn't bleed into the next step.
+        // This mirrors how the SDK's useChat resets activeTextParts on step boundaries.
+        if (event.step_index > 0) {
+          set({ texto_parcial: '' })
+        }
+        break
+
       case 'step-finish':
-        // Informational — no state change needed
         break
 
       case 'finish':

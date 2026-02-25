@@ -165,10 +165,10 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
     const regrasSetor = await queryAll<{
         colab_nome: string; colaborador_id: number;
         dia_semana_regra: string | null; folga_fixa_dia_semana: string | null;
-        inicio_min: string | null; fim_max: string | null;
+        inicio: string | null; fim: string | null;
     }>(`
         SELECT c.nome as colab_nome, r.colaborador_id, r.dia_semana_regra,
-               r.folga_fixa_dia_semana, r.inicio_min, r.fim_max
+               r.folga_fixa_dia_semana, r.inicio, r.fim
         FROM colaborador_regra_horario r
         JOIN colaboradores c ON c.id = r.colaborador_id
         WHERE c.setor_id = ? AND c.ativo = true AND r.ativo = true
@@ -186,7 +186,10 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
         for (const [, { nome, regras }] of porColab) {
             const partes = regras.map(r => {
                 const label = r.dia_semana_regra ?? 'padrão'
-                const janela = r.inicio_min || r.fim_max ? `${r.inicio_min ?? '?'}–${r.fim_max ?? '?'}` : ''
+                const parts: string[] = []
+                if (r.inicio) parts.push(`entrada:${r.inicio}`)
+                if (r.fim) parts.push(`saída:${r.fim}`)
+                const janela = parts.join(' ')
                 const folga = !r.dia_semana_regra && r.folga_fixa_dia_semana ? `folga ${r.folga_fixa_dia_semana}` : ''
                 return [label, janela, folga].filter(Boolean).join(' ')
             })
@@ -288,18 +291,19 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
 
     // Regras de horário (padrão + por dia da semana)
     const regrasHorario = await queryAll<{
-        dia_semana_regra: string | null; inicio_min: string | null; inicio_max: string | null;
-        fim_min: string | null; fim_max: string | null; folga_fixa_dia_semana: string | null;
+        dia_semana_regra: string | null; inicio: string | null; fim: string | null;
+        folga_fixa_dia_semana: string | null;
         domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
-    }>('SELECT dia_semana_regra, inicio_min, inicio_max, fim_min, fim_max, folga_fixa_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga FROM colaborador_regra_horario WHERE colaborador_id = ? AND ativo = true ORDER BY dia_semana_regra NULLS FIRST', colaborador_id)
+    }>('SELECT dia_semana_regra, inicio, fim, folga_fixa_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga FROM colaborador_regra_horario WHERE colaborador_id = ? AND ativo = true ORDER BY dia_semana_regra NULLS FIRST', colaborador_id)
 
     if (regrasHorario.length > 0) {
         lines.push(`\n#### Regras de horário:`)
         for (const r of regrasHorario) {
             const label = r.dia_semana_regra ?? 'PADRÃO'
-            const janela = [r.inicio_min, r.inicio_max, r.fim_min, r.fim_max].filter(Boolean).length > 0
-                ? `${r.inicio_min ?? '?'}-${r.inicio_max ?? '?'} / ${r.fim_min ?? '?'}-${r.fim_max ?? '?'}`
-                : 'sem janela'
+            const parts: string[] = []
+            if (r.inicio) parts.push(`entrada:${r.inicio}`)
+            if (r.fim) parts.push(`saída:${r.fim}`)
+            const janela = parts.length > 0 ? parts.join(' ') : 'sem restrição'
             const extras: string[] = []
             if (!r.dia_semana_regra) {
                 if (r.folga_fixa_dia_semana) extras.push(`folga fixa ${r.folga_fixa_dia_semana}`)

@@ -568,7 +568,15 @@ export function DemandaEditor({
     if (availableMinutes < DEMANDA_MIN_DURATION_MINUTES) return
     const defaultDuration = Math.min(240, availableMinutes)
     const snappedDuration = Math.max(DEMANDA_MIN_DURATION_MINUTES, Math.floor(defaultDuration / DEMANDA_SNAP_MINUTES) * DEMANDA_SNAP_MINUTES)
-    const midPoint = operationalOpenMin
+
+    // Novo segmento: depois da última faixa, ou alinhado à direita se não couber
+    const existingSegs = currentConfig.segmentosEditaveis
+    const lastEnd = existingSegs.length > 0
+      ? Math.max(...existingSegs.map((s) => toMinutes(s.hora_fim)))
+      : operationalOpenMin
+    const midPoint = lastEnd <= operationalCloseMin - DEMANDA_MIN_DURATION_MINUTES
+      ? Math.floor(lastEnd / DEMANDA_SNAP_MINUTES) * DEMANDA_SNAP_MINUTES
+      : Math.max(operationalOpenMin, Math.floor((operationalCloseMin - snappedDuration) / DEMANDA_SNAP_MINUTES) * DEMANDA_SNAP_MINUTES)
     const endPoint = Math.min(midPoint + snappedDuration, operationalCloseMin)
 
     setDraft((prev) => {
@@ -666,7 +674,7 @@ export function DemandaEditor({
   }
 
   const toDemandaList = useCallback((segments: SegmentoDraft[], dia: DiaSemana | null): Demanda[] => {
-    return [...segments].sort(sortByInicio).map((s) => toDemanda(s, setor.id, dia))
+    return segments.map((s) => toDemanda(s, setor.id, dia))
   }, [setor.id])
 
   const editableDemandas = useMemo(() => {

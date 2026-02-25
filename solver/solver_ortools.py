@@ -373,9 +373,9 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
             for d in holiday_all_indices:
                 blocked_days[c].add(d)
 
-    # trabalha_domingo = false
+    # Estagiario/Aprendiz — blocked from sundays
     for c in range(C):
-        if not colabs[c].get("trabalha_domingo", True):
+        if colabs[c].get("tipo_trabalhador") in ("ESTAGIARIO", "APRENDIZ"):
             for d in sunday_indices:
                 blocked_days[c].add(d)
 
@@ -1163,7 +1163,6 @@ def parse_from_db(db_path: str) -> dict:
             "regime_escala": regime,
             "max_minutos_dia": int(r["max_minutos_dia"]),
             "rank": r["rank"],
-            "trabalha_domingo": True,
             "tipo_trabalhador": "CLT",
         })
 

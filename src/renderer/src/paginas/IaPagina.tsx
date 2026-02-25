@@ -135,7 +135,7 @@ export function IaPagina() {
 
       <div className="flex flex-1 min-h-0">
         {sidebarAberta && (
-          <div className="w-[380px] shrink-0 flex flex-col border-r min-h-0 min-w-0 overflow-hidden">
+          <div className="w-[380px] shrink-0 flex flex-col border-r min-h-0">
             <IaHistoricoView />
           </div>
         )}

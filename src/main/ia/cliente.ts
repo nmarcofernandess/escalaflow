@@ -451,7 +451,9 @@ async function _callWithVercelAiSdkToolsStreaming(
             // Re-emit the first part
             if (!first.done) {
                 const part = first.value
-                if (part.type === 'text-delta') {
+                if (part.type === 'start-step') {
+                    emitStream({ type: 'start-step', stream_id: streamId, step_index: stepIndex })
+                } else if (part.type === 'text-delta') {
                     emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
                 } else if (part.type === 'tool-call') {
                     const est = part.toolName === 'gerar_escala' ? 30 : part.toolName === 'preflight_completo' ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
@@ -491,7 +493,9 @@ async function _callWithVercelAiSdkToolsStreaming(
         }
 
         for await (const part of result.fullStream) {
-            if (part.type === 'text-delta') {
+            if (part.type === 'start-step') {
+                emitStream({ type: 'start-step', stream_id: streamId, step_index: stepIndex })
+            } else if (part.type === 'text-delta') {
                 emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
             } else if (part.type === 'tool-call') {
                 // Estimativa de tempo: gerar_escala usa 60s timeout no solver
@@ -561,7 +565,9 @@ async function _callWithVercelAiSdkToolsStreaming(
             })
 
             for await (const part of followUp.fullStream) {
-                if (part.type === 'text-delta') {
+                if (part.type === 'start-step') {
+                    emitStream({ type: 'start-step', stream_id: streamId, step_index: stepIndex })
+                } else if (part.type === 'text-delta') {
                     emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
                 } else if (part.type === 'tool-call') {
                     const estF = part.toolName === 'gerar_escala' ? 30 : part.toolName === 'preflight_completo' ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined

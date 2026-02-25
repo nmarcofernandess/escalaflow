@@ -25,10 +25,9 @@ export interface ColabMotor {
   id: number
   nome: string
   sexo: 'M' | 'F'
-  tipo_trabalhador: string                // 'CLT' | 'ESTAGIARIO' | 'APRENDIZ'
+  tipo_trabalhador: string                // 'CLT' | 'ESTAGIARIO' | 'APRENDIZ' | 'INTERMITENTE'
   horas_semanais: number
   dias_trabalho: number
-  trabalha_domingo: boolean
   max_minutos_dia: number
   rank: number
   prefere_turno: string | null
@@ -1061,17 +1060,15 @@ export function checkH19(
 export interface RegraHorarioDiaResolvida {
   colaborador_id: number
   data: string
-  inicio_min: string | null
-  inicio_max: string | null
-  fim_min: string | null
-  fim_max: string | null
+  inicio: string | null
+  fim: string | null
   domingo_forcar_folga: boolean
   folga_fixa: boolean
 }
 
 /**
  * checkHardJanelaColaborador — Valida que ajuste manual respeita janela de horario.
- * Se colaborador tem regra ativa com inicio_min/fim_max, a celula deve estar dentro.
+ * Se colaborador tem regra ativa com inicio/fim, a celula deve estar dentro.
  * Violacao HARD (nao pode oficializar).
  */
 export function checkHardJanelaColaborador(
@@ -1095,31 +1092,31 @@ export function checkHardJanelaColaborador(
     const celInicioMin = timeToMin(cel.hora_inicio)
     const celFimMin = timeToMin(cel.hora_fim)
 
-    // Inicio nao pode ser antes do inicio_min
-    if (regra.inicio_min) {
-      const limiteMin = timeToMin(regra.inicio_min)
+    // Inicio nao pode ser antes do inicio
+    if (regra.inicio) {
+      const limiteMin = timeToMin(regra.inicio)
       if (celInicioMin < limiteMin) {
         violacoes.push({
           severidade: 'HARD',
           regra: 'JANELA_COLABORADOR_INICIO',
           colaborador_id: c.id,
           colaborador_nome: c.nome,
-          mensagem: `${c.nome} inicia as ${cel.hora_inicio} em ${data} mas a regra individual permite inicio a partir de ${regra.inicio_min}`,
+          mensagem: `${c.nome} inicia as ${cel.hora_inicio} em ${data} mas a regra individual permite inicio a partir de ${regra.inicio}`,
           data,
         })
       }
     }
 
-    // Fim nao pode ser depois do fim_max
-    if (regra.fim_max) {
-      const limiteMax = timeToMin(regra.fim_max)
+    // Fim nao pode ser depois do fim
+    if (regra.fim) {
+      const limiteMax = timeToMin(regra.fim)
       if (celFimMin > limiteMax) {
         violacoes.push({
           severidade: 'HARD',
           regra: 'JANELA_COLABORADOR_FIM',
           colaborador_id: c.id,
           colaborador_nome: c.nome,
-          mensagem: `${c.nome} sai as ${cel.hora_fim} em ${data} mas a regra individual permite saida ate ${regra.fim_max}`,
+          mensagem: `${c.nome} sai as ${cel.hora_fim} em ${data} mas a regra individual permite saida ate ${regra.fim}`,
           data,
         })
       }

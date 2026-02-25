@@ -65,9 +65,9 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 |----------|--------|-----------------|-------|
 | **EmpresaHorarioSemana** | `empresa_horario_semana` | `dia_semana`, `ativo`, `hora_abertura`, `hora_fechamento` | Horario de funcionamento da empresa por dia da semana. Fallback global quando setor nao tem horario proprio. UNIQUE(dia_semana). Seed: SEG-SEX 08-22, SAB 08-20, DOM 08-14. |
 | **SetorHorarioSemana** | `setor_horario_semana` | `setor_id`, `dia_semana`, `ativo`, `usa_padrao`, `hora_abertura`, `hora_fechamento` | Override do horario da empresa para um setor especifico. `usa_padrao=1` herda da empresa. UNIQUE(setor_id, dia_semana). |
-| **PerfilHorarioContrato** | `contrato_perfis_horario` | `tipo_contrato_id`, `nome`, `inicio_min/max`, `fim_min/max`, `preferencia_turno_soft` | Janelas de entrada/saida por tipo de contrato. Seed: 3 perfis de estagiario (Manha 08-12, Tarde 13:30-20, Noite-Estudo 08-14). CLT nao tem perfil (usa janela do setor). |
-| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id` (UNIQUE), `perfil_horario_id`, `inicio_min/max`, `fim_min/max`, `domingo_ciclo_trabalho/folga`, `folga_fixa_dia_semana` | Regra individual 1:1. Override dos campos do perfil. Ciclo domingo default: 2 trabalho / 1 folga. Folga fixa = dia da semana que SEMPRE folga. |
-| **ExcecaoDataColaborador** | `colaborador_regra_horario_excecao_data` | `colaborador_id`, `data`, `inicio_min/max`, `fim_min/max`, `domingo_forcar_folga` | Override pontual por data. Ex: "dia 15/03, Cleunice so pode 08-12". Maior precedencia na hierarquia. UNIQUE(colaborador_id, data). |
+| **PerfilHorarioContrato** | `contrato_perfis_horario` | `tipo_contrato_id`, `nome`, `inicio`, `fim`, `preferencia_turno_soft` | Horario de entrada/saida por tipo de contrato. Seed: 3 perfis de estagiario (Manha 08-12, Tarde 13:30-20, Noite-Estudo 08-14). CLT nao tem perfil (usa janela do setor). |
+| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id` (UNIQUE), `perfil_horario_id`, `inicio`, `fim`, `domingo_ciclo_trabalho/folga`, `folga_fixa_dia_semana` | Regra individual 1:1. Override dos campos do perfil. Ciclo domingo default: 2 trabalho / 1 folga. Folga fixa = dia da semana que SEMPRE folga. |
+| **ExcecaoDataColaborador** | `colaborador_regra_horario_excecao_data` | `colaborador_id`, `data`, `inicio`, `fim`, `domingo_forcar_folga` | Override pontual por data. Ex: "dia 15/03, Cleunice so pode 08-12". Maior precedencia na hierarquia. UNIQUE(colaborador_id, data). |
 | **DemandaExcecaoData** | `demandas_excecao_data` | `setor_id`, `data`, `hora_inicio`, `hora_fim`, `min_pessoas`, `override` | Override de demanda por data especifica (Black Friday, vespera de feriado). Substitui a demanda semanal padrao naquele dia. |
 
 #### Camada 3 — Escala (output do motor)
@@ -173,9 +173,9 @@ ativo=1 (normal) ──[desativar]──→ ativo=0 (invisivel no sidebar, motor
 
 | Contrato | Perfil | Entrada | Saida | Turno |
 |----------|--------|---------|-------|-------|
-| Estagiario Manha | MANHA_08_12 | 08:00-08:00 (fixo) | 12:00-12:00 (fixo) | MANHA |
-| Estagiario Tarde | TARDE_1330_PLUS | 13:30-17:00 (janela) | 19:00-20:00 (janela) | TARDE |
-| Estagiario Noite-Estudo | ESTUDA_NOITE_08_14 | 08:00-08:00 (fixo) | 14:00-14:00 (fixo) | MANHA |
+| Estagiario Manha | MANHA_08_12 | Início: 08:00 | Fim: 12:00 | MANHA |
+| Estagiario Tarde | TARDE_1330_PLUS | Início: 13:30 | Fim: 20:00 | TARDE |
+| Estagiario Noite-Estudo | ESTUDA_NOITE_08_14 | Início: 08:00 | Fim: 14:00 | MANHA |
 
 CLT 44h e 36h **nao tem perfis seed** — usam a janela do setor inteira.
 
@@ -290,7 +290,7 @@ CLT.GRID_MINUTOS               = 15    // quantizacao universal
 - `funcoes` — via tools genericas `criar`, `atualizar`, `deletar`
 - `feriados` — via tools genericas `criar`, `deletar`
 - `setores` — via tools genericas `criar`, `atualizar`
-- `colaborador_regra_horario` — via tools `salvar_regra_horario_colaborador`, `definir_janela_colaborador`
+- `colaborador_regra_horario` — via tool `salvar_regra_horario_colaborador`
 - `colaborador_regra_horario_excecao_data` — via tool `upsert_regra_excecao_data`
 - `demandas_excecao_data` — via tool `salvar_demanda_excecao_data`
 - `contrato_perfis_horario` — via tools `salvar_perfil_horario`, `deletar_perfil_horario`
@@ -943,8 +943,8 @@ nivel 4: sem regra                               (janela do setor/empresa inteir
 |-------|------|-------------|
 | `colaborador_id` | UNIQUE | 1 regra por colaborador |
 | `perfil_horario_id` | FK nullable | Herda campos do perfil (contrato_perfis_horario) |
-| `inicio_min` / `inicio_max` | TIME | Janela de entrada permitida |
-| `fim_min` / `fim_max` | TIME | Janela de saida permitida |
+| `inicio` | TIME | Horario fixo de entrada |
+| `fim` | TIME | Horario maximo de saida |
 | `preferencia_turno_soft` | TEXT | MANHA, TARDE ou null |
 | `domingo_ciclo_trabalho` | INT | Domingos consecutivos de TRABALHO no ciclo (default 2) |
 | `domingo_ciclo_folga` | INT | Domingos consecutivos de FOLGA no ciclo (default 1) |
@@ -955,7 +955,7 @@ nivel 4: sem regra                               (janela do setor/empresa inteir
 | Campo | Tipo | Significado |
 |-------|------|-------------|
 | `colaborador_id` + `data` | UNIQUE | Override pontual por data |
-| `inicio_min/max`, `fim_min/max` | TIME | Janela daquele dia especifico |
+| `inicio`, `fim` | TIME | Horario daquele dia especifico |
 | `preferencia_turno_soft` | TEXT | Turno daquele dia |
 | `domingo_forcar_folga` | BOOL | Forca folga nesse dia (mesmo se nao e domingo) |
 
@@ -964,9 +964,9 @@ nivel 4: sem regra                               (janela do setor/empresa inteir
 | Handler | Input | O que faz |
 |---------|-------|-----------|
 | `colaboradores.buscarRegraHorario` | `{colaborador_id}` | Busca regra 1:1 do colab (ou null) |
-| `colaboradores.salvarRegraHorario` | `{colaborador_id, perfil_horario_id?, inicio_min?, ...}` | UPSERT (INSERT ou UPDATE) na regra |
+| `colaboradores.salvarRegraHorario` | `{colaborador_id, perfil_horario_id?, inicio?, ...}` | UPSERT (INSERT ou UPDATE) na regra |
 | `colaboradores.listarRegrasExcecaoData` | `{colaborador_id}` | Lista excecoes pontuais ORDER BY data |
-| `colaboradores.upsertRegraExcecaoData` | `{colaborador_id, data, inicio_min?, ...}` | UPSERT por (colab, data) |
+| `colaboradores.upsertRegraExcecaoData` | `{colaborador_id, data, inicio?, ...}` | UPSERT por (colab, data) |
 | `colaboradores.deletarRegraExcecaoData` | `{id}` | DELETE (hard delete — excecao e descartavel) |
 
 ### 4.3 Perfis de Horario (Contrato)
@@ -979,8 +979,8 @@ Templates reutilizaveis de janela horaria por tipo de contrato. Nao sao obrigato
 |-------|------|-------------|
 | `tipo_contrato_id` | FK | Qual contrato usa esse perfil |
 | `nome` | TEXT | Ex: "MANHA_08_12", "TARDE_1330_PLUS" |
-| `inicio_min` / `inicio_max` | TIME | Janela de entrada |
-| `fim_min` / `fim_max` | TIME | Janela de saida |
+| `inicio` | TIME | Horario de entrada |
+| `fim` | TIME | Horario de saida |
 | `preferencia_turno_soft` | TEXT | MANHA ou TARDE |
 | `ordem` | INT | Ordenacao na UI |
 
@@ -989,8 +989,8 @@ Templates reutilizaveis de janela horaria por tipo de contrato. Nao sao obrigato
 | Handler | Input | O que faz |
 |---------|-------|-----------|
 | `perfisHorario.listar` | `{tipo_contrato_id}` | Lista perfis do contrato |
-| `perfisHorario.criar` | `{tipo_contrato_id, nome, inicio_min, ...}` | Cria perfil, retorna o criado |
-| `perfisHorario.atualizar` | `{id, nome?, inicio_min?, ...}` | UPDATE parcial (so campos enviados) |
+| `perfisHorario.criar` | `{tipo_contrato_id, nome, inicio, ...}` | Cria perfil, retorna o criado |
+| `perfisHorario.atualizar` | `{id, nome?, inicio?, ...}` | UPDATE parcial (so campos enviados) |
 | `perfisHorario.deletar` | `{id}` | DELETE (hard delete) |
 
 ### 4.4 Demanda Excecao por Data
@@ -1084,7 +1084,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
   │       b. Se nao achou: busca regra_horario do colab
   │       c. Se regra tem perfil_horario_id: busca perfil
   │       d. Merge: excecao > regra > perfil > sem regra
-  │       → Resultado: inicio_min/max, fim_min/max, turno, folga_fixa, domingo_forcar_folga
+  │       → Resultado: inicio, fim, turno, folga_fixa, domingo_forcar_folga
   │
   ├─ [7] Warm-start hints (ultima escala do mesmo periodo)
   ├─ [8] Rules config: buildRulesConfig(db, rulesOverride)
@@ -1101,7 +1101,6 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 
 **A IA TAMBÉM PODE (tools especializadas — 34 tools no total):**
 - Criar/editar regras de horario por colaborador → `salvar_regra_horario_colaborador`
-- Criar/editar janelas de horario → `definir_janela_colaborador`
 - Criar/editar excecoes de horario por data → `upsert_regra_excecao_data`
 - Criar/editar perfis de horario por contrato → `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario`
 - Criar/editar demandas excecao por data → `salvar_demanda_excecao_data`
@@ -1143,8 +1142,8 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `tiposContrato.atualizar` | `{id, nome, horas_semanais, ...}` | `TipoContrato` atualizado | |
 | `tiposContrato.deletar` | `{id}` | void | Throws se tem colabs usando |
 | `tiposContrato.listarPerfisHorario` | `{tipo_contrato_id}` | `PerfilHorario[]` | ORDER BY ordem, id |
-| `tiposContrato.criarPerfilHorario` | `{tipo_contrato_id, nome, inicio_min, inicio_max, ...}` | `PerfilHorario` criado | |
-| `tiposContrato.atualizarPerfilHorario` | `{id, nome?, inicio_min?, ...}` | `PerfilHorario` atualizado | UPDATE parcial (so campos enviados) |
+| `tiposContrato.criarPerfilHorario` | `{tipo_contrato_id, nome, inicio, fim, ...}` | `PerfilHorario` criado | |
+| `tiposContrato.atualizarPerfilHorario` | `{id, nome?, inicio?, ...}` | `PerfilHorario` atualizado | UPDATE parcial (so campos enviados) |
 | `tiposContrato.deletarPerfilHorario` | `{id}` | void | Hard DELETE |
 
 #### Setores (16 handlers)
@@ -1196,9 +1195,9 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `colaboradores.atualizar` | `{id, nome?, setor_id?, tipo_contrato_id?, ...}` | `Colaborador` atualizado | |
 | `colaboradores.deletar` | `{id}` | void | Soft delete (ativo=0) |
 | `colaboradores.buscarRegraHorario` | `{colaborador_id}` | `RegraHorario \| null` | 1:1 regra individual |
-| `colaboradores.salvarRegraHorario` | `{colaborador_id, perfil_horario_id?, inicio_min?, ...}` | `RegraHorario` | UPSERT |
+| `colaboradores.salvarRegraHorario` | `{colaborador_id, perfil_horario_id?, inicio?, ...}` | `RegraHorario` | UPSERT |
 | `colaboradores.listarRegrasExcecaoData` | `{colaborador_id}` | `ExcecaoData[]` | ORDER BY data |
-| `colaboradores.upsertRegraExcecaoData` | `{colaborador_id, data, inicio_min?, ...}` | `ExcecaoData` | UPSERT por (colab,data) |
+| `colaboradores.upsertRegraExcecaoData` | `{colaborador_id, data, inicio?, ...}` | `ExcecaoData` | UPSERT por (colab,data) |
 | `colaboradores.deletarRegraExcecaoData` | `{id}` | void | Hard DELETE |
 
 #### Excecoes (5 handlers)
@@ -1339,7 +1338,7 @@ A IA tem **34 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
 | Preflight | `preflight`, `preflight_completo` | escalas.preflight |
 | Diagnostico | `diagnosticar_escala`, `explicar_violacao`, **`diagnosticar_infeasible`** | validarEscalaV3 + multi-solve |
 | Regras do motor | `editar_regra`, `resetar_regras_empresa` | regras.atualizar/resetar |
-| Regras por colaborador | `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data` | colaboradores.*RegraHorario |
+| Regras por colaborador | `salvar_regra_horario_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data` | colaboradores.*RegraHorario |
 | Perfis de horario | `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario` | perfisHorario.* |
 | Horario funcionamento | `configurar_horario_funcionamento` | empresa.horarios / setores.horarios |
 | Demanda excecao | `salvar_demanda_excecao_data` | setores.salvarDemandaExcecaoData |
@@ -1511,7 +1510,7 @@ O prompt organiza as tools por INTENCAO (nao por nome tecnico):
 - Ajuste: `ajustar_alocacao`, `ajustar_horario`, `oficializar_escala`
 - Diagnostico: `diagnosticar_escala`, `explicar_violacao`, **`diagnosticar_infeasible`**
 - Regras motor: `editar_regra`, `resetar_regras_empresa`
-- Regras colaborador: `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data`
+- Regras colaborador: `salvar_regra_horario_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data`
 - KPI: `resumir_horas_setor`
 - Perfis: `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario`
 - Horarios: `configurar_horario_funcionamento`
@@ -1605,10 +1604,9 @@ Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemin
 
 | # | Tool | Schema | O que faz |
 |---|------|--------|-----------|
-| 20 | `salvar_regra_horario_colaborador` | `{colaborador_id, ...}` | UPSERT regra 1:1 (perfil, janela, ciclo domingo, folga fixa). |
-| 21 | `definir_janela_colaborador` | `{colaborador_id, inicio, fim}` | Wrapper simplificado: define janela de horario por nome natural. |
-| 22 | `upsert_regra_excecao_data` | `{colaborador_id, data, ...}` | Override pontual por data (inicio/fim, turno, forcar folga). |
-| 23 | `salvar_demanda_excecao_data` | `{setor_id, data, ...}` | Override de demanda por data (Black Friday, vespera feriado). |
+| 20 | `salvar_regra_horario_colaborador` | `{colaborador_id, ...}` | UPSERT regra 1:1 (perfil, horario, ciclo domingo, folga fixa). |
+| 21 | `upsert_regra_excecao_data` | `{colaborador_id, data, ...}` | Override pontual por data (inicio/fim, turno, forcar folga). |
+| 22 | `salvar_demanda_excecao_data` | `{setor_id, data, ...}` | Override de demanda por data (Black Friday, vespera feriado). |
 
 #### Perfis e horarios (4 tools)
 
@@ -1968,7 +1966,7 @@ html (height: 100%)
 | 3 | Consultar quem trabalha tal dia | Diaria | `consultar(alocacoes, {data, escala_id})` com enrichment | ✅ Completo |
 | 4 | Colocar funcionario de ferias | Mensal | `criar(excecoes, {tipo:'FERIAS', ...})` | ✅ Completo |
 | 5 | Ajustar horario de alguem | Semanal | `ajustar_horario` (hora_inicio/hora_fim + revalidacao) | ✅ Completo |
-| 6 | Definir regra individual ("so de manha") | Eventual | `definir_janela_colaborador` ou `salvar_regra_horario_colaborador` | ✅ Completo |
+| 6 | Definir regra individual ("so de manha") | Eventual | `salvar_regra_horario_colaborador` | ✅ Completo |
 | 7 | Oficializar escala | Mensal | `oficializar_escala` (valida violacoes_hard=0) | ✅ Completo |
 | 8 | Ver resumo de horas do setor | Semanal | `resumir_horas_setor` (KPIs agregados por pessoa/periodo) | ✅ Completo |
 | 9 | Entender por que deu INFEASIBLE | Quando ocorre | `diagnosticar_escala` + `explicar_violacao` + diagnostico do solver | ✅ Completo |
@@ -2074,7 +2072,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 | Ajustar escala | Entender violacoes | `explicar_violacao` existe, mas nao e proativo |
 | Regras | Entender impacto de mudar regra | IA poderia simular: "se mudar H1 pra SOFT, a escala ficaria assim" |
 | Demanda | Configurar faixas horarias | `salvar_demanda_excecao_data` cobre excecoes por data. Demanda regular: IA pode orientar |
-| Colaborador | Configurar regras individuais | `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `upsert_regra_excecao_data` cobrem 100% |
+| Colaborador | Configurar regras individuais | `salvar_regra_horario_colaborador`, `upsert_regra_excecao_data` cobrem 100% |
 | Export | Gerar PDF | Sem tool — acesso a filesystem |
 
 ---
@@ -2255,12 +2253,11 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | `editar_regra` | codigo, status | Altera status de regra (HARD/SOFT/OFF/ON). Valida editavel=1 | INSERT OR REPLACE regra_empresa |
 | `resetar_regras_empresa` | confirmacao | Deleta TODOS os overrides de regra_empresa (volta ao default) | DELETE FROM regra_empresa |
 
-### C.6 Regras por colaborador (4 tools)
+### C.6 Regras por colaborador (3 tools)
 
 | Tool | Parametros | O que faz | Efeito |
 |------|-----------|-----------|--------|
-| `salvar_regra_horario_colaborador` | colaborador_id, campos | Salva/atualiza regra individual (janela, folga fixa, ciclo domingo) | UPSERT colaborador_regra_horario |
-| `definir_janela_colaborador` | colaborador_id, hora_inicio_min, hora_fim_max | Atalho: define janela de trabalho | UPSERT colaborador_regra_horario |
+| `salvar_regra_horario_colaborador` | colaborador_id, campos | Salva/atualiza regra individual (horario, folga fixa, ciclo domingo) | UPSERT colaborador_regra_horario |
 | `upsert_regra_excecao_data` | colaborador_id, data, campos | Override pontual por data (ex: "dia 15/03 so pode tarde") | UPSERT colaborador_regra_horario_excecao_data |
 | `salvar_demanda_excecao_data` | setor_id, data, faixas | Demanda excepcional por data (ex: Black Friday) | INSERT demandas_excecao_data |
 
@@ -2340,11 +2337,8 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 { codigo: string, status: 'HARD'|'SOFT'|'OFF'|'ON' }
 
 // SalvarRegraHorarioColaboradorSchema
-{ colaborador_id: number, hora_inicio_min?: 'HH:MM', hora_fim_max?: 'HH:MM',
+{ colaborador_id: number, inicio?: 'HH:MM', fim?: 'HH:MM',
   ciclo_domingo_padrao?: string, folga_fixa_dia?: number, ... }
-
-// DefinirJanelaColaboradorSchema
-{ colaborador_id: number, hora_inicio_min: 'HH:MM', hora_fim_max: 'HH:MM' }
 
 // SalvarDemandaExcecaoDataSchema
 { setor_id: number, data: 'YYYY-MM-DD', faixas: [{hora_inicio, hora_fim, minimo}] }

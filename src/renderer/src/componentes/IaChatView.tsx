@@ -86,6 +86,7 @@ export function IaChatView() {
   const {
     mensagens, carregando, conversa_ativa_id, adicionarMensagem,
     texto_parcial, tool_calls_parciais, tools_em_andamento,
+    stream_id_ativo,
     iniciarStream, processarStreamEvent, finalizarStream, cancelarStream,
     editarEReenviar,
   } = useIaStore()
@@ -107,6 +108,14 @@ export function IaChatView() {
   // Timeout banner
   const [lastEventAt, setLastEventAt] = useState(Date.now())
   const [showTimeoutBanner, setShowTimeoutBanner] = useState(false)
+
+  // Safety: if carregando is stuck without an active stream, reset it.
+  // This can happen if a stream event was lost during re-render.
+  useEffect(() => {
+    if (carregando && !stream_id_ativo) {
+      cancelarStream()
+    }
+  }, [carregando, stream_id_ativo, cancelarStream])
 
   // Check if IA is configured
   useEffect(() => {
@@ -148,8 +157,9 @@ export function IaChatView() {
       const event = args[0] as IaStreamEvent
       if (event) processarStreamEventStable(event)
     }
-    window.electron.ipcRenderer.on('ia:stream', handler)
-    return () => window.electron.ipcRenderer.removeAllListeners('ia:stream')
+    // .on() returns a disposer that removes only THIS handler (not all listeners)
+    const dispose = window.electron.ipcRenderer.on('ia:stream', handler)
+    return () => { dispose?.() }
   }, [processarStreamEventStable])
 
   // Reset lastEventAt on any stream activity
@@ -389,11 +399,14 @@ export function IaChatView() {
                 </div>
               )}
 
-              {/* Texto parcial — bubble com cursor pulsante */}
+              {/* Texto parcial — mesma aparência do IaMensagemBubble + cursor pulsante */}
               {texto_parcial.length > 0 && (
-                <div className="px-3 py-2 rounded-2xl rounded-bl-sm bg-muted border text-sm max-w-[85%]">
-                  <div className="prose prose-sm dark:prose-invert max-w-none
-                    prose-p:my-1 prose-ul:my-1 prose-ol:my-1">
+                <div className="max-w-[88%] leading-relaxed text-sm">
+                  <div className="prose prose-sm dark:prose-invert
+                    prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
+                    prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-sm
+                    prose-table:text-xs prose-th:px-2 prose-td:px-2
+                    prose-code:text-xs prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:max-w-full">
                     <ReactMarkdown>{texto_parcial}</ReactMarkdown>
                   </div>
                   <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse rounded-sm align-text-bottom" />

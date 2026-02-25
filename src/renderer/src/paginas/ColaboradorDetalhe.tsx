@@ -63,13 +63,11 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { excecoesService } from '@/servicos/excecoes'
 import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
-import { formatarData, toMinutes } from '@/lib/formatadores'
-import { HorarioBarTimeline } from '@/componentes/HorarioBarTimeline'
+import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
 import type {
   Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana, Funcao,
   RegraHorarioColaborador, RegraHorarioColaboradorExcecaoData, PerfilHorarioContrato,
-  SetorHorarioSemana,
 } from '@shared/index'
 
 const DIAS_SEMANA_OPTIONS = [
@@ -81,6 +79,8 @@ const DIAS_SEMANA_OPTIONS = [
   { value: 'SAB', label: 'Sabado' },
   { value: 'DOM', label: 'Domingo' },
 ]
+
+type TipoRestricao = 'nenhum' | 'entrada' | 'saida'
 
 function ExcecaoIcon({ tipo }: { tipo: string }) {
   switch (tipo) {
@@ -95,6 +95,63 @@ function ExcecaoIcon({ tipo }: { tipo: string }) {
   }
 }
 
+// Helper: converte tipo_restricao + horario -> { inicio, fim }
+function restricaoParaInicioFim(tipo_restricao: TipoRestricao, horario: string): { inicio: string | null; fim: string | null } {
+  if (tipo_restricao === 'entrada') return { inicio: horario || null, fim: null }
+  if (tipo_restricao === 'saida') return { inicio: null, fim: horario || null }
+  return { inicio: null, fim: null }
+}
+
+// Helper: converte inicio/fim -> tipo_restricao + horario
+function inicioFimParaRestricao(inicio: string | null, fim: string | null): { tipo_restricao: TipoRestricao; horario: string } {
+  if (inicio) return { tipo_restricao: 'entrada', horario: inicio }
+  if (fim) return { tipo_restricao: 'saida', horario: fim }
+  return { tipo_restricao: 'nenhum', horario: '' }
+}
+
+// Componente inline de Radio para tipo de restricao
+function RestricaoRadio({
+  value,
+  onChange,
+  horario,
+  onHorarioChange,
+}: {
+  value: TipoRestricao
+  onChange: (v: TipoRestricao) => void
+  horario: string
+  onHorarioChange: (v: string) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-4">
+        {([
+          { v: 'nenhum', label: 'Sem restricao' },
+          { v: 'entrada', label: 'Entrada fixa' },
+          { v: 'saida', label: 'Saida maxima' },
+        ] as { v: TipoRestricao; label: string }[]).map(opt => (
+          <label key={opt.v} className="flex cursor-pointer items-center gap-1.5 text-sm">
+            <input
+              type="radio"
+              className="accent-primary"
+              checked={value === opt.v}
+              onChange={() => onChange(opt.v)}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+      {value !== 'nenhum' && (
+        <Input
+          type="time"
+          value={horario}
+          onChange={e => onHorarioChange(e.target.value)}
+          className="w-36"
+        />
+      )}
+    </div>
+  )
+}
+
 const colabSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
   sexo: z.enum(['M', 'F'], { message: 'Selecione o sexo' }),
@@ -103,7 +160,7 @@ const colabSchema = z.object({
   horas_semanais: z.coerce.number().min(1, 'Minimo 1 hora').max(44, 'Maximo 44 horas'),
   prefere_turno: z.enum(['none', 'MANHA', 'TARDE']),
   evitar_dia_semana: z.enum(['none', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']),
-  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'APRENDIZ']),
+  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'APRENDIZ', 'INTERMITENTE']),
   funcao_id: z.string(),
 })
 
@@ -134,51 +191,45 @@ export function ColaboradorDetalhe() {
   const [novaExcecaoObs, setNovaExcecaoObs] = useState('')
   const [criandoExcecao, setCriandoExcecao] = useState(false)
 
-  // Regra de horario state (v9: múltiplas regras por dia da semana)
+  // Seccao A: Regra padrao state
   const [regrasHorario, setRegrasHorario] = useState<RegraHorarioColaborador[]>([])
   const [perfisHorario, setPerfisHorario] = useState<PerfilHorarioContrato[]>([])
   const [regraSalvando, setRegraSalvando] = useState(false)
   const [regraForm, setRegraForm] = useState({
     perfil_horario_id: 'none' as string,
-    inicio_min: '',
-    inicio_max: '',
-    fim_min: '',
-    fim_max: '',
+    tipo_restricao: 'nenhum' as TipoRestricao,
+    horario: '',
     preferencia_turno_soft: 'none' as string,
     domingo_ciclo_trabalho: 2,
     domingo_ciclo_folga: 1,
     folga_fixa_dia_semana: 'none' as string,
   })
 
-  // Regras por dia da semana (Seção B)
+  // Seccao B: Regras por dia da semana
   type RegraDiaForm = {
     enabled: boolean
     id: number | null
-    inicio_min: string
-    inicio_max: string
-    fim_min: string
-    fim_max: string
+    tipo_restricao: TipoRestricao
+    horario: string
   }
-  const REGRA_DIA_DEFAULT: RegraDiaForm = { enabled: false, id: null, inicio_min: '', inicio_max: '', fim_min: '', fim_max: '' }
+  const REGRA_DIA_DEFAULT: RegraDiaForm = { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' }
   const [regrasDiaForm, setRegrasDiaForm] = useState<Record<string, RegraDiaForm>>({
     SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
     QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
     DOM: { ...REGRA_DIA_DEFAULT },
   })
 
-  // Derivados: regra padrão
+  // Derivados: regra padrao
   const regraPadrao = regrasHorario.find(r => r.dia_semana_regra === null) ?? null
 
-  // Excecoes por data
+  // Seccao C: Excecoes por data
   const [excecoesPorData, setExcecoesPorData] = useState<RegraHorarioColaboradorExcecaoData[]>([])
   const [showExcDataDialog, setShowExcDataDialog] = useState(false)
   const [excDataSalvando, setExcDataSalvando] = useState(false)
   const [excDataForm, setExcDataForm] = useState({
     data: '',
-    inicio_min: '',
-    inicio_max: '',
-    fim_min: '',
-    fim_max: '',
+    tipo_restricao: 'nenhum' as TipoRestricao,
+    horario: '',
     preferencia_turno_soft: 'none' as string,
     domingo_forcar_folga: false,
   })
@@ -212,36 +263,10 @@ export function ColaboradorDetalhe() {
     [setorIdNum],
   )
 
-  // Horarios por dia do setor (para eixo da timeline)
-  const { data: setorHorarioSemana } = useApiData<SetorHorarioSemana[]>(
-    () => setorIdNum > 0 ? setoresService.listarHorarioSemana(setorIdNum) : Promise.resolve([]),
-    [setorIdNum],
-  )
-
   const setoresList = setores ?? []
   const contratosList = tiposContrato ?? []
   const excecoesList = excecoes ?? []
   const funcoesList = funcoes ?? []
-
-  // Derive axis from setor for timeline bars — per day, falling back to setor defaults
-  const selectedSetor = setoresList.find(s => s.id === setorIdNum) ?? null
-  const setorDefaultOpen = selectedSetor?.hora_abertura ?? '06:00'
-  const setorDefaultClose = selectedSetor?.hora_fechamento ?? '23:00'
-  const setorHorarioMap = new Map<string, SetorHorarioSemana>()
-  for (const h of (setorHorarioSemana ?? [])) {
-    if (h.ativo && !h.usa_padrao) setorHorarioMap.set(h.dia_semana, h)
-  }
-  function getAxisForDay(dia: string): { openMin: number; closeMin: number; defaultStart: string; defaultEnd: string } {
-    const override = setorHorarioMap.get(dia)
-    const open = override?.hora_abertura ?? setorDefaultOpen
-    const close = override?.hora_fechamento ?? setorDefaultClose
-    return {
-      openMin: toMinutes(open),
-      closeMin: toMinutes(close),
-      defaultStart: open,
-      defaultEnd: close,
-    }
-  }
 
   // Find selected contrato for template info
   const watchedContratoId = colabForm.watch('tipo_contrato_id')
@@ -269,35 +294,35 @@ export function ColaboradorDetalhe() {
     if (!colabId) return
     colaboradoresService.buscarRegraHorario(colabId).then((regras) => {
       setRegrasHorario(regras)
-      // Popular form da regra padrão
+
+      // Seccao A: Popular form da regra padrao
       const padrao = regras.find(r => r.dia_semana_regra === null)
       if (padrao) {
+        const { tipo_restricao, horario } = inicioFimParaRestricao(padrao.inicio, padrao.fim)
         setRegraForm({
           perfil_horario_id: padrao.perfil_horario_id != null ? String(padrao.perfil_horario_id) : 'none',
-          inicio_min: padrao.inicio_min ?? '',
-          inicio_max: padrao.inicio_max ?? '',
-          fim_min: padrao.fim_min ?? '',
-          fim_max: padrao.fim_max ?? '',
+          tipo_restricao,
+          horario,
           preferencia_turno_soft: padrao.preferencia_turno_soft ?? 'none',
           domingo_ciclo_trabalho: padrao.domingo_ciclo_trabalho,
           domingo_ciclo_folga: padrao.domingo_ciclo_folga,
           folga_fixa_dia_semana: padrao.folga_fixa_dia_semana ?? 'none',
         })
       }
-      // Popular form das regras por dia
+
+      // Seccao B: Popular form das regras por dia
       const diaDefaults: Record<string, RegraDiaForm> = {
         SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
         QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
         DOM: { ...REGRA_DIA_DEFAULT },
       }
       for (const r of regras.filter(r => r.dia_semana_regra !== null)) {
+        const { tipo_restricao, horario } = inicioFimParaRestricao(r.inicio, r.fim)
         diaDefaults[r.dia_semana_regra!] = {
           enabled: true,
           id: r.id,
-          inicio_min: r.inicio_min ?? '',
-          inicio_max: r.inicio_max ?? '',
-          fim_min: r.fim_min ?? '',
-          fim_max: r.fim_max ?? '',
+          tipo_restricao,
+          horario,
         }
       }
       setRegrasDiaForm(diaDefaults)
@@ -381,20 +406,19 @@ export function ColaboradorDetalhe() {
     }
   }
 
-  // --- Regra de horario handlers ---
+  // Regra de horario handlers
   const handleSalvarRegra = async () => {
     setRegraSalvando(true)
     try {
-      // 1. Salvar regra padrão (dia_semana_regra = null)
+      // 1. Salvar regra padrao (dia_semana_regra = null)
+      const { inicio, fim } = restricaoParaInicioFim(regraForm.tipo_restricao, regraForm.horario)
       const payload = {
         colaborador_id: colabId,
         dia_semana_regra: null as string | null,
         ativo: true,
         perfil_horario_id: regraForm.perfil_horario_id === 'none' ? null : parseInt(regraForm.perfil_horario_id),
-        inicio_min: regraForm.inicio_min || null,
-        inicio_max: regraForm.inicio_max || null,
-        fim_min: regraForm.fim_min || null,
-        fim_max: regraForm.fim_max || null,
+        inicio,
+        fim,
         preferencia_turno_soft: regraForm.preferencia_turno_soft === 'none' ? null : regraForm.preferencia_turno_soft,
         domingo_ciclo_trabalho: regraForm.domingo_ciclo_trabalho,
         domingo_ciclo_folga: regraForm.domingo_ciclo_folga,
@@ -406,17 +430,16 @@ export function ColaboradorDetalhe() {
       for (const dia of DIAS_SEMANA_OPTIONS) {
         const diaForm = regrasDiaForm[dia.value]
         if (diaForm.enabled) {
+          const { inicio: diaInicio, fim: diaFim } = restricaoParaInicioFim(diaForm.tipo_restricao, diaForm.horario)
           await colaboradoresService.salvarRegraHorario({
             colaborador_id: colabId,
             dia_semana_regra: dia.value as any,
             ativo: true,
-            inicio_min: diaForm.inicio_min || null,
-            inicio_max: diaForm.inicio_max || null,
-            fim_min: diaForm.fim_min || null,
-            fim_max: diaForm.fim_max || null,
+            inicio: diaInicio,
+            fim: diaFim,
           })
         } else if (diaForm.id) {
-          // Toggle OFF com row no DB → deletar
+          // Toggle OFF com row no DB -> deletar
           await colaboradoresService.deletarRegraHorario(diaForm.id)
         }
       }
@@ -430,13 +453,12 @@ export function ColaboradorDetalhe() {
         DOM: { ...REGRA_DIA_DEFAULT },
       }
       for (const r of regras.filter(r => r.dia_semana_regra !== null)) {
+        const { tipo_restricao, horario } = inicioFimParaRestricao(r.inicio, r.fim)
         diaDefaults[r.dia_semana_regra!] = {
           enabled: true,
           id: r.id,
-          inicio_min: r.inicio_min ?? '',
-          inicio_max: r.inicio_max ?? '',
-          fim_min: r.fim_min ?? '',
-          fim_max: r.fim_max ?? '',
+          tipo_restricao,
+          horario,
         }
       }
       setRegrasDiaForm(diaDefaults)
@@ -454,13 +476,12 @@ export function ColaboradorDetalhe() {
     if (perfilId !== 'none') {
       const perfil = perfisHorario.find(p => p.id === parseInt(perfilId))
       if (perfil) {
+        const { tipo_restricao, horario } = inicioFimParaRestricao(perfil.inicio, perfil.fim)
         setRegraForm(f => ({
           ...f,
           perfil_horario_id: perfilId,
-          inicio_min: perfil.inicio_min,
-          inicio_max: perfil.inicio_max,
-          fim_min: perfil.fim_min,
-          fim_max: perfil.fim_max,
+          tipo_restricao,
+          horario,
           preferencia_turno_soft: perfil.preferencia_turno_soft ?? 'none',
         }))
       }
@@ -471,20 +492,19 @@ export function ColaboradorDetalhe() {
     if (!excDataForm.data) return
     setExcDataSalvando(true)
     try {
+      const { inicio, fim } = restricaoParaInicioFim(excDataForm.tipo_restricao, excDataForm.horario)
       await colaboradoresService.upsertRegraExcecaoData({
         colaborador_id: colabId,
         data: excDataForm.data,
         ativo: true,
-        inicio_min: excDataForm.inicio_min || null,
-        inicio_max: excDataForm.inicio_max || null,
-        fim_min: excDataForm.fim_min || null,
-        fim_max: excDataForm.fim_max || null,
+        inicio,
+        fim,
         preferencia_turno_soft: excDataForm.preferencia_turno_soft === 'none' ? null : excDataForm.preferencia_turno_soft,
         domingo_forcar_folga: excDataForm.domingo_forcar_folga,
       } as any)
       toast.success('Excecao por data salva')
       setShowExcDataDialog(false)
-      setExcDataForm({ data: '', inicio_min: '', inicio_max: '', fim_min: '', fim_max: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
+      setExcDataForm({ data: '', tipo_restricao: 'nenhum', horario: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
       colaboradoresService.listarRegrasExcecaoData(colabId).then(setExcecoesPorData).catch(() => {})
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar excecao')
@@ -744,8 +764,7 @@ export function ColaboradorDetalhe() {
                 <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
                   Template:{' '}
                   <strong>{selectedContrato.nome}</strong> | {selectedContrato.dias_trabalho} dias/semana |
-                  Max {selectedContrato.max_minutos_dia}min/dia |
-                  Domingo: {selectedContrato.trabalha_domingo ? 'Sim' : 'Nao'}
+                  Max {selectedContrato.max_minutos_dia}min/dia
                 </div>
               )}
             </CardContent>
@@ -852,60 +871,28 @@ export function ColaboradorDetalhe() {
                     <SelectItem value="none">Sem perfil (manual)</SelectItem>
                     {perfisHorario.filter(p => p.ativo).map(p => (
                       <SelectItem key={p.id} value={String(p.id)}>
-                        {p.nome} ({p.inicio_min}-{p.fim_max})
+                        {p.nome} ({p.inicio}-{p.fim})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-[0.75rem] text-muted-foreground">
-                  Selecionar um perfil preenche a janela automaticamente. Voce pode sobrescrever depois.
+                  Selecionar um perfil preenche o horario automaticamente. Voce pode sobrescrever depois.
                 </p>
               </div>
             )}
 
-            {/* Janela de horario */}
+            {/* Seccao A: Restricao de horario padrao */}
             <div>
-              <Label className="mb-2 block">Janela de horario (hard constraint)</Label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Inicio mais cedo</Label>
-                  <Input
-                    type="time"
-                    value={regraForm.inicio_min}
-                    onChange={e => setRegraForm(f => ({ ...f, inicio_min: e.target.value }))}
-                    placeholder="07:00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Inicio mais tarde</Label>
-                  <Input
-                    type="time"
-                    value={regraForm.inicio_max}
-                    onChange={e => setRegraForm(f => ({ ...f, inicio_max: e.target.value }))}
-                    placeholder="09:00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Saida mais cedo</Label>
-                  <Input
-                    type="time"
-                    value={regraForm.fim_min}
-                    onChange={e => setRegraForm(f => ({ ...f, fim_min: e.target.value }))}
-                    placeholder="16:00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Saida mais tarde</Label>
-                  <Input
-                    type="time"
-                    value={regraForm.fim_max}
-                    onChange={e => setRegraForm(f => ({ ...f, fim_max: e.target.value }))}
-                    placeholder="18:00"
-                  />
-                </div>
-              </div>
-              <p className="mt-1 text-[0.75rem] text-muted-foreground">
-                Se inicio_min = inicio_max, o motor forca horario fixo. Deixe vazio para sem restricao.
+              <Label className="mb-2 block">Restricao de horario (hard constraint)</Label>
+              <RestricaoRadio
+                value={regraForm.tipo_restricao}
+                onChange={v => setRegraForm(f => ({ ...f, tipo_restricao: v }))}
+                horario={regraForm.horario}
+                onHorarioChange={v => setRegraForm(f => ({ ...f, horario: v }))}
+              />
+              <p className="mt-2 text-[0.75rem] text-muted-foreground">
+                Sem restricao = motor decide livremente. Entrada fixa = entrada no horario exato. Saida maxima = nao aloca alem deste horario.
               </p>
             </div>
 
@@ -973,65 +960,48 @@ export function ColaboradorDetalhe() {
               </div>
             </div>
 
-            {/* Seção B — Horários por Dia da Semana (Timeline Bars) */}
+            {/* Seccao B - Horarios por Dia da Semana */}
             <div className="border-t pt-4">
               <div className="mb-3">
                 <Label className="text-sm font-medium">Horarios por dia da semana</Label>
                 <p className="text-[0.75rem] text-muted-foreground">
-                  Ative um dia e arraste a barra para definir horario especifico.
+                  Ative um dia para definir restricao de horario especifica naquele dia.
                 </p>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {DIAS_SEMANA_OPTIONS.map(dia => {
                   const diaForm = regrasDiaForm[dia.value]
-                  const axis = getAxisForDay(dia.value)
                   return (
-                    <div key={dia.value} className="flex items-center gap-3">
+                    <div key={dia.value} className="flex items-start gap-3">
                       <Switch
                         checked={diaForm.enabled}
                         onCheckedChange={(checked) => {
-                          const dayAxis = getAxisForDay(dia.value)
                           setRegrasDiaForm(prev => ({
                             ...prev,
                             [dia.value]: {
                               ...prev[dia.value],
                               enabled: checked,
-                              ...(checked
-                                ? {
-                                    inicio_min: prev[dia.value].inicio_min || dayAxis.defaultStart,
-                                    inicio_max: prev[dia.value].inicio_max || dayAxis.defaultStart,
-                                    fim_min: prev[dia.value].fim_min || dayAxis.defaultEnd,
-                                    fim_max: prev[dia.value].fim_max || dayAxis.defaultEnd,
-                                  }
-                                : { inicio_min: '', inicio_max: '', fim_min: '', fim_max: '' }),
+                              ...(!checked ? { tipo_restricao: 'nenhum' as TipoRestricao, horario: '' } : {}),
                             },
                           }))
                         }}
                       />
-                      <span className="w-10 shrink-0 text-sm font-medium">{dia.value}</span>
+                      <span className="mt-0.5 w-10 shrink-0 text-sm font-medium">{dia.value}</span>
                       {diaForm.enabled ? (
-                        <div className="flex-1 pt-4">
-                          <HorarioBarTimeline
-                            startTime={diaForm.inicio_min || axis.defaultStart}
-                            endTime={diaForm.fim_max || axis.defaultEnd}
-                            axisOpenMin={axis.openMin}
-                            axisCloseMin={axis.closeMin}
-                            onChange={(start, end) => {
-                              setRegrasDiaForm(prev => ({
-                                ...prev,
-                                [dia.value]: {
-                                  ...prev[dia.value],
-                                  inicio_min: start,
-                                  inicio_max: start,
-                                  fim_min: end,
-                                  fim_max: end,
-                                },
-                              }))
-                            }}
-                          />
-                        </div>
+                        <RestricaoRadio
+                          value={diaForm.tipo_restricao}
+                          onChange={v => setRegrasDiaForm(prev => ({
+                            ...prev,
+                            [dia.value]: { ...prev[dia.value], tipo_restricao: v },
+                          }))}
+                          horario={diaForm.horario}
+                          onHorarioChange={v => setRegrasDiaForm(prev => ({
+                            ...prev,
+                            [dia.value]: { ...prev[dia.value], horario: v },
+                          }))}
+                        />
                       ) : (
-                        <span className="text-xs text-muted-foreground">Usando padrao</span>
+                        <span className="mt-0.5 text-xs text-muted-foreground">Usando padrao</span>
                       )}
                     </div>
                   )
@@ -1051,7 +1021,7 @@ export function ColaboradorDetalhe() {
               </CardTitle>
             </div>
             <Button variant="outline" size="sm" onClick={() => {
-              setExcDataForm({ data: '', inicio_min: '', inicio_max: '', fim_min: '', fim_max: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
+              setExcDataForm({ data: '', tipo_restricao: 'nenhum', horario: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
               setShowExcDataDialog(true)
             }}>
               <Plus className="mr-1 size-3.5" /> Nova Excecao
@@ -1074,8 +1044,8 @@ export function ColaboradorDetalhe() {
                         {exc.domingo_forcar_folga && (
                           <Badge variant="destructive" className="text-[0.65rem]">Folga forcada</Badge>
                         )}
-                        {exc.inicio_min && <span>Inicio: {exc.inicio_min}-{exc.inicio_max}</span>}
-                        {exc.fim_min && <span>Saida: {exc.fim_min}-{exc.fim_max}</span>}
+                        {exc.inicio && <span>Entrada: {exc.inicio}</span>}
+                        {exc.fim && <span>Saida max: {exc.fim}</span>}
                         {exc.preferencia_turno_soft && <span>Turno: {exc.preferencia_turno_soft}</span>}
                       </div>
                     </div>
@@ -1204,39 +1174,14 @@ export function ColaboradorDetalhe() {
             </div>
             {!excDataForm.domingo_forcar_folga && (
               <>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Inicio mais cedo</Label>
-                    <Input
-                      type="time"
-                      value={excDataForm.inicio_min}
-                      onChange={e => setExcDataForm(f => ({ ...f, inicio_min: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Inicio mais tarde</Label>
-                    <Input
-                      type="time"
-                      value={excDataForm.inicio_max}
-                      onChange={e => setExcDataForm(f => ({ ...f, inicio_max: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Saida mais cedo</Label>
-                    <Input
-                      type="time"
-                      value={excDataForm.fim_min}
-                      onChange={e => setExcDataForm(f => ({ ...f, fim_min: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Saida mais tarde</Label>
-                    <Input
-                      type="time"
-                      value={excDataForm.fim_max}
-                      onChange={e => setExcDataForm(f => ({ ...f, fim_max: e.target.value }))}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Restricao de horario</Label>
+                  <RestricaoRadio
+                    value={excDataForm.tipo_restricao}
+                    onChange={v => setExcDataForm(f => ({ ...f, tipo_restricao: v }))}
+                    horario={excDataForm.horario}
+                    onHorarioChange={v => setExcDataForm(f => ({ ...f, horario: v }))}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Turno preferido</Label>
