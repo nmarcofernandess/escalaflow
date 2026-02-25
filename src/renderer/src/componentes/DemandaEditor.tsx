@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { toMinutes, minutesToTime, formatarMinutos } from '@/lib/formatadores'
 import {
@@ -180,6 +181,7 @@ interface DemandaEditorProps {
   setor: Setor
   demandas: Demanda[]
   horariosSemana: SetorHorarioSemana[]
+  totalColaboradores: number
   onSalvar: (dados: SalvarTimelineDiaInput[]) => Promise<void>
 }
 
@@ -215,6 +217,7 @@ export function DemandaEditor({
   setor,
   demandas,
   horariosSemana,
+  totalColaboradores,
   onSalvar,
 }: DemandaEditorProps) {
   const [activeTab, setActiveTab] = useState<'padrao' | DiaSemana>('padrao')
@@ -603,14 +606,16 @@ export function DemandaEditor({
     })
   }
 
+  const maxPessoas = Math.max(1, totalColaboradores)
+
   const handleUpdatePessoas = useCallback((id: number, delta: number) => {
     updateEditableSegmentos((prev) =>
       prev.map((d) => {
         if (d.id !== id) return d
-        return { ...d, min_pessoas: Math.max(1, d.min_pessoas + delta) }
+        return { ...d, min_pessoas: Math.min(maxPessoas, Math.max(1, d.min_pessoas + delta)) }
       }),
     )
-  }, [updateEditableSegmentos])
+  }, [updateEditableSegmentos, maxPessoas])
 
   const handleUpdateTimes = (id: number, hora_inicio: string, hora_fim: string) => {
     const normalized = normalizeTimelineInterval({
@@ -698,6 +703,16 @@ export function DemandaEditor({
   }, [clampSegmentosToWindow, draft, setor.id])
 
   const handleSalvar = async () => {
+    // Warning se cobertura acumulada excede total de colaboradores em algum slot
+    if (maxPessoas > 0) {
+      const picoAcumulado = Math.max(...coverageData, 0)
+      if (picoAcumulado > maxPessoas) {
+        toast.warning(
+          `Cobertura acumulada (${picoAcumulado}) excede o total de ${maxPessoas} colaborador${maxPessoas !== 1 ? 'es' : ''} do setor. O motor pode retornar INFEASIBLE.`,
+        )
+      }
+    }
+
     setSaving(true)
     try {
       const payloads = DIAS_SEMANA.map((dia) => buildPayloadDia(dia))
@@ -855,6 +870,7 @@ export function DemandaEditor({
                   e.stopPropagation()
                   handleUpdatePessoas(dem.id, 1)
                 }}
+                disabled={dem.min_pessoas >= maxPessoas}
               >
                 <Plus className="size-3" />
               </Button>
@@ -1135,6 +1151,7 @@ export function DemandaEditor({
                 onDelete={handleDelete}
                 onUpdatePessoas={handleUpdatePessoas}
                 onUpdateTimes={handleUpdateTimes}
+                maxPessoas={maxPessoas}
               />
             ))
           )}

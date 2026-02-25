@@ -63,11 +63,13 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { excecoesService } from '@/servicos/excecoes'
 import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
-import { formatarData } from '@/lib/formatadores'
+import { formatarData, toMinutes } from '@/lib/formatadores'
+import { HorarioBarTimeline } from '@/componentes/HorarioBarTimeline'
 import { toast } from 'sonner'
 import type {
   Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana, Funcao,
   RegraHorarioColaborador, RegraHorarioColaboradorExcecaoData, PerfilHorarioContrato,
+  SetorHorarioSemana,
 } from '@shared/index'
 
 const DIAS_SEMANA_OPTIONS = [
@@ -132,8 +134,8 @@ export function ColaboradorDetalhe() {
   const [novaExcecaoObs, setNovaExcecaoObs] = useState('')
   const [criandoExcecao, setCriandoExcecao] = useState(false)
 
-  // Regra de horario state
-  const [regraHorario, setRegraHorario] = useState<RegraHorarioColaborador | null>(null)
+  // Regra de horario state (v9: múltiplas regras por dia da semana)
+  const [regrasHorario, setRegrasHorario] = useState<RegraHorarioColaborador[]>([])
   const [perfisHorario, setPerfisHorario] = useState<PerfilHorarioContrato[]>([])
   const [regraSalvando, setRegraSalvando] = useState(false)
   const [regraForm, setRegraForm] = useState({
@@ -147,6 +149,25 @@ export function ColaboradorDetalhe() {
     domingo_ciclo_folga: 1,
     folga_fixa_dia_semana: 'none' as string,
   })
+
+  // Regras por dia da semana (Seção B)
+  type RegraDiaForm = {
+    enabled: boolean
+    id: number | null
+    inicio_min: string
+    inicio_max: string
+    fim_min: string
+    fim_max: string
+  }
+  const REGRA_DIA_DEFAULT: RegraDiaForm = { enabled: false, id: null, inicio_min: '', inicio_max: '', fim_min: '', fim_max: '' }
+  const [regrasDiaForm, setRegrasDiaForm] = useState<Record<string, RegraDiaForm>>({
+    SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
+    QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
+    DOM: { ...REGRA_DIA_DEFAULT },
+  })
+
+  // Derivados: regra padrão
+  const regraPadrao = regrasHorario.find(r => r.dia_semana_regra === null) ?? null
 
   // Excecoes por data
   const [excecoesPorData, setExcecoesPorData] = useState<RegraHorarioColaboradorExcecaoData[]>([])
@@ -191,10 +212,36 @@ export function ColaboradorDetalhe() {
     [setorIdNum],
   )
 
+  // Horarios por dia do setor (para eixo da timeline)
+  const { data: setorHorarioSemana } = useApiData<SetorHorarioSemana[]>(
+    () => setorIdNum > 0 ? setoresService.listarHorarioSemana(setorIdNum) : Promise.resolve([]),
+    [setorIdNum],
+  )
+
   const setoresList = setores ?? []
   const contratosList = tiposContrato ?? []
   const excecoesList = excecoes ?? []
   const funcoesList = funcoes ?? []
+
+  // Derive axis from setor for timeline bars — per day, falling back to setor defaults
+  const selectedSetor = setoresList.find(s => s.id === setorIdNum) ?? null
+  const setorDefaultOpen = selectedSetor?.hora_abertura ?? '06:00'
+  const setorDefaultClose = selectedSetor?.hora_fechamento ?? '23:00'
+  const setorHorarioMap = new Map<string, SetorHorarioSemana>()
+  for (const h of (setorHorarioSemana ?? [])) {
+    if (h.ativo && !h.usa_padrao) setorHorarioMap.set(h.dia_semana, h)
+  }
+  function getAxisForDay(dia: string): { openMin: number; closeMin: number; defaultStart: string; defaultEnd: string } {
+    const override = setorHorarioMap.get(dia)
+    const open = override?.hora_abertura ?? setorDefaultOpen
+    const close = override?.hora_fechamento ?? setorDefaultClose
+    return {
+      openMin: toMinutes(open),
+      closeMin: toMinutes(close),
+      defaultStart: open,
+      defaultEnd: close,
+    }
+  }
 
   // Find selected contrato for template info
   const watchedContratoId = colabForm.watch('tipo_contrato_id')
@@ -217,24 +264,43 @@ export function ColaboradorDetalhe() {
     }
   }, [colab, colabForm])
 
-  // Carregar regra de horario + excecoes por data
+  // Carregar regras de horario + excecoes por data
   useEffect(() => {
     if (!colabId) return
-    colaboradoresService.buscarRegraHorario(colabId).then((r) => {
-      setRegraHorario(r)
-      if (r) {
+    colaboradoresService.buscarRegraHorario(colabId).then((regras) => {
+      setRegrasHorario(regras)
+      // Popular form da regra padrão
+      const padrao = regras.find(r => r.dia_semana_regra === null)
+      if (padrao) {
         setRegraForm({
-          perfil_horario_id: r.perfil_horario_id != null ? String(r.perfil_horario_id) : 'none',
+          perfil_horario_id: padrao.perfil_horario_id != null ? String(padrao.perfil_horario_id) : 'none',
+          inicio_min: padrao.inicio_min ?? '',
+          inicio_max: padrao.inicio_max ?? '',
+          fim_min: padrao.fim_min ?? '',
+          fim_max: padrao.fim_max ?? '',
+          preferencia_turno_soft: padrao.preferencia_turno_soft ?? 'none',
+          domingo_ciclo_trabalho: padrao.domingo_ciclo_trabalho,
+          domingo_ciclo_folga: padrao.domingo_ciclo_folga,
+          folga_fixa_dia_semana: padrao.folga_fixa_dia_semana ?? 'none',
+        })
+      }
+      // Popular form das regras por dia
+      const diaDefaults: Record<string, RegraDiaForm> = {
+        SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
+        QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
+        DOM: { ...REGRA_DIA_DEFAULT },
+      }
+      for (const r of regras.filter(r => r.dia_semana_regra !== null)) {
+        diaDefaults[r.dia_semana_regra!] = {
+          enabled: true,
+          id: r.id,
           inicio_min: r.inicio_min ?? '',
           inicio_max: r.inicio_max ?? '',
           fim_min: r.fim_min ?? '',
           fim_max: r.fim_max ?? '',
-          preferencia_turno_soft: r.preferencia_turno_soft ?? 'none',
-          domingo_ciclo_trabalho: r.domingo_ciclo_trabalho,
-          domingo_ciclo_folga: r.domingo_ciclo_folga,
-          folga_fixa_dia_semana: r.folga_fixa_dia_semana ?? 'none',
-        })
+        }
       }
+      setRegrasDiaForm(diaDefaults)
     }).catch(() => {})
     colaboradoresService.listarRegrasExcecaoData(colabId).then(setExcecoesPorData).catch(() => {})
   }, [colabId])
@@ -319,8 +385,10 @@ export function ColaboradorDetalhe() {
   const handleSalvarRegra = async () => {
     setRegraSalvando(true)
     try {
+      // 1. Salvar regra padrão (dia_semana_regra = null)
       const payload = {
         colaborador_id: colabId,
+        dia_semana_regra: null as string | null,
         ativo: true,
         perfil_horario_id: regraForm.perfil_horario_id === 'none' ? null : parseInt(regraForm.perfil_horario_id),
         inicio_min: regraForm.inicio_min || null,
@@ -332,8 +400,47 @@ export function ColaboradorDetalhe() {
         domingo_ciclo_folga: regraForm.domingo_ciclo_folga,
         folga_fixa_dia_semana: regraForm.folga_fixa_dia_semana === 'none' ? null : regraForm.folga_fixa_dia_semana,
       }
-      const saved = await colaboradoresService.salvarRegraHorario(payload as any)
-      setRegraHorario(saved)
+      await colaboradoresService.salvarRegraHorario(payload as any)
+
+      // 2. Salvar/deletar regras por dia da semana
+      for (const dia of DIAS_SEMANA_OPTIONS) {
+        const diaForm = regrasDiaForm[dia.value]
+        if (diaForm.enabled) {
+          await colaboradoresService.salvarRegraHorario({
+            colaborador_id: colabId,
+            dia_semana_regra: dia.value as any,
+            ativo: true,
+            inicio_min: diaForm.inicio_min || null,
+            inicio_max: diaForm.inicio_max || null,
+            fim_min: diaForm.fim_min || null,
+            fim_max: diaForm.fim_max || null,
+          })
+        } else if (diaForm.id) {
+          // Toggle OFF com row no DB → deletar
+          await colaboradoresService.deletarRegraHorario(diaForm.id)
+        }
+      }
+
+      // 3. Reload
+      const regras = await colaboradoresService.buscarRegraHorario(colabId)
+      setRegrasHorario(regras)
+      const diaDefaults: Record<string, RegraDiaForm> = {
+        SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
+        QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
+        DOM: { ...REGRA_DIA_DEFAULT },
+      }
+      for (const r of regras.filter(r => r.dia_semana_regra !== null)) {
+        diaDefaults[r.dia_semana_regra!] = {
+          enabled: true,
+          id: r.id,
+          inicio_min: r.inicio_min ?? '',
+          inicio_max: r.inicio_max ?? '',
+          fim_min: r.fim_min ?? '',
+          fim_max: r.fim_max ?? '',
+        }
+      }
+      setRegrasDiaForm(diaDefaults)
+
       toast.success('Regra de horario salva')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar regra')
@@ -720,7 +827,7 @@ export function ColaboradorDetalhe() {
               <CardTitle className="text-base font-semibold">
                 Regras de Horario
               </CardTitle>
-              {regraHorario && (
+              {regraPadrao && (
                 <Badge variant="outline" className="text-xs">Configurado</Badge>
               )}
             </div>
@@ -863,6 +970,72 @@ export function ColaboradorDetalhe() {
                     <SelectItem value="TARDE">Tarde</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            {/* Seção B — Horários por Dia da Semana (Timeline Bars) */}
+            <div className="border-t pt-4">
+              <div className="mb-3">
+                <Label className="text-sm font-medium">Horarios por dia da semana</Label>
+                <p className="text-[0.75rem] text-muted-foreground">
+                  Ative um dia e arraste a barra para definir horario especifico.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {DIAS_SEMANA_OPTIONS.map(dia => {
+                  const diaForm = regrasDiaForm[dia.value]
+                  const axis = getAxisForDay(dia.value)
+                  return (
+                    <div key={dia.value} className="flex items-center gap-3">
+                      <Switch
+                        checked={diaForm.enabled}
+                        onCheckedChange={(checked) => {
+                          const dayAxis = getAxisForDay(dia.value)
+                          setRegrasDiaForm(prev => ({
+                            ...prev,
+                            [dia.value]: {
+                              ...prev[dia.value],
+                              enabled: checked,
+                              ...(checked
+                                ? {
+                                    inicio_min: prev[dia.value].inicio_min || dayAxis.defaultStart,
+                                    inicio_max: prev[dia.value].inicio_max || dayAxis.defaultStart,
+                                    fim_min: prev[dia.value].fim_min || dayAxis.defaultEnd,
+                                    fim_max: prev[dia.value].fim_max || dayAxis.defaultEnd,
+                                  }
+                                : { inicio_min: '', inicio_max: '', fim_min: '', fim_max: '' }),
+                            },
+                          }))
+                        }}
+                      />
+                      <span className="w-10 shrink-0 text-sm font-medium">{dia.value}</span>
+                      {diaForm.enabled ? (
+                        <div className="flex-1 pt-4">
+                          <HorarioBarTimeline
+                            startTime={diaForm.inicio_min || axis.defaultStart}
+                            endTime={diaForm.fim_max || axis.defaultEnd}
+                            axisOpenMin={axis.openMin}
+                            axisCloseMin={axis.closeMin}
+                            onChange={(start, end) => {
+                              setRegrasDiaForm(prev => ({
+                                ...prev,
+                                [dia.value]: {
+                                  ...prev[dia.value],
+                                  inicio_min: start,
+                                  inicio_max: start,
+                                  fim_min: end,
+                                  fim_max: end,
+                                },
+                              }))
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Usando padrao</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </CardContent>

@@ -1,7 +1,8 @@
 import { queryOne, queryAll, execute, insertReturningId } from '../db/query'
 import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenarioHash } from '../motor/solver-bridge'
+import { coreAlerts } from './discovery'
 import { validarEscalaV3 } from '../motor/validador'
-import { searchKnowledge } from '../knowledge/search'
+import { searchKnowledge, exploreRelations } from '../knowledge/search'
 import { ingestKnowledge } from '../knowledge/ingest'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
@@ -245,7 +246,8 @@ const ConsultarSchema = z.object({
     'colaboradores', 'setores', 'escalas', 'alocacoes', 'excecoes',
     'demandas', 'tipos_contrato', 'empresa', 'feriados', 'funcoes',
     'regra_definicao', 'regra_empresa',
-    'demandas_excecao_data', 'colaborador_regra_horario_excecao_data'
+    'demandas_excecao_data', 'colaborador_regra_horario_excecao_data',
+    'colaborador_regra_horario'
   ]).describe('Entidade do banco a consultar. Use os nomes exatamente como no enum (ex: "colaboradores", "setores", "escalas").'),
   filtros: z.record(z.string(), z.any()).optional().describe('Filtros por igualdade (campo -> valor). Use apenas campos válidos da entidade; strings são comparadas sem diferenciar maiúsculas/minúsculas.')
 })
@@ -261,31 +263,28 @@ const BuscarColaboradorSchema = z.object({
   message: 'Informe `id` ou `nome` para buscar colaborador.',
 })
 
-// regras de horário por colaborador (semântica)
-const ObterRegraHorarioColaboradorSchema = z.object({
-  colaborador_id: z.number().int().positive().describe('ID do colaborador. Resolva via buscar_colaborador.')
-})
-
 const SalvarRegraHorarioColaboradorSchema = z.object({
   colaborador_id: z.number().int().positive().describe('ID do colaborador que receberá a regra.'),
+  dia_semana_regra: DiaSemanaSchema.nullable().optional().describe('Dia da semana específico (SEG..DOM). NULL ou omitido = regra padrão (todos os dias). Ex: "QUA" = só quartas.'),
   ativo: z.boolean().optional().describe('Se a regra individual fica ativa. Padrão do backend: true ao criar.'),
   perfil_horario_id: z.number().int().positive().nullable().optional().describe('ID de perfil de horário do contrato (ou null para remover vínculo).'),
-  inicio_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início mínimo permitido (HH:MM).'),
-  inicio_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início máximo permitido (HH:MM).'),
-  fim_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim mínimo permitido (HH:MM).'),
-  fim_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim máximo permitido (HH:MM).'),
+  inicio_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início mínimo permitido (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
+  inicio_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início máximo permitido (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
+  fim_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim mínimo permitido (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
+  fim_max: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Fim máximo permitido (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
   preferencia_turno_soft: z.string().nullable().optional().describe('Preferência soft de turno (ex: MANHA/TARDE/NOITE, conforme convenção local).'),
-  domingo_ciclo_trabalho: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de trabalho no ciclo.'),
-  domingo_ciclo_folga: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de folga no ciclo.'),
-  folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover.'),
+  domingo_ciclo_trabalho: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de trabalho no ciclo (só na regra padrão).'),
+  domingo_ciclo_folga: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de folga no ciclo (só na regra padrão).'),
+  folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover (só na regra padrão).'),
 })
 
 const DefinirJanelaColaboradorSchema = z.object({
   colaborador_id: z.number().int().positive().describe('ID do colaborador.'),
-  inicio_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode iniciar (HH:MM).'),
-  inicio_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode iniciar (HH:MM).'),
-  fim_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode sair (HH:MM).'),
-  fim_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode sair (HH:MM).'),
+  dia_semana_regra: DiaSemanaSchema.nullable().optional().describe('Dia da semana específico (SEG..DOM). NULL ou omitido = regra padrão (todos os dias). Ex: "QUA" = só quartas.'),
+  inicio_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode iniciar (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
+  inicio_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode iniciar (HH:MM). Para horário fixo de entrada, defina inicio_min=inicio_max.'),
+  fim_min: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais cedo que pode sair (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
+  fim_max: z.string().regex(HORA_HHMM_REGEX).optional().describe('Mais tarde que pode sair (HH:MM). Para horário fixo de saída, defina fim_min=fim_max.'),
   ativo: z.boolean().optional().describe('Ativa a regra ao salvar. Padrão: true.'),
 }).refine((v) => v.inicio_min || v.inicio_max || v.fim_min || v.fim_max, {
   message: 'Informe pelo menos um limite de janela (inicio_min/inicio_max/fim_min/fim_max).',
@@ -294,8 +293,8 @@ const DefinirJanelaColaboradorSchema = z.object({
 // criar colaborador — validação específica para colaboradores
 const CriarColaboradorSchema = z.object({
   nome: z.string().min(1).describe('Nome completo do colaborador.'),
-  setor_id: z.number().int().positive().describe('ID do setor. Extraia do get_context() pelo nome do setor.'),
-  tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato. Extraia de get_context().tipos_contrato pelo nome (ex: CLT 44h).'),
+  setor_id: z.number().int().positive().describe('ID do setor. Use o contexto automático injetado pelo sistema.'),
+  tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato. Contexto automático disponibiliza contratos. Default: CLT 44h (id=1).'),
   sexo: z.enum(['M', 'F']).optional().describe('Sexo do colaborador: "M" ou "F".'),
   data_nascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Data de nascimento no formato YYYY-MM-DD.'),
   tipo_trabalhador: z.string().optional().describe('Tipo de trabalhador (ex: regular, aprendiz, estagiario).'),
@@ -310,13 +309,13 @@ const CriarSchema = z.object({
     'colaboradores', 'excecoes', 'demandas', 'tipos_contrato',
     'setores', 'feriados', 'funcoes'
   ]).describe('Entidade para criação. Prefira tools semânticas quando existirem; use esta como fallback.'),
-  dados: z.record(z.string(), z.any()).describe('Objeto com campos da entidade escolhida. IDs devem ser resolvidos via get_context().')
+  dados: z.record(z.string(), z.any()).describe('Objeto com campos da entidade escolhida. IDs são resolvidos via contexto automático ou consultar.')
 })
 
 // atualizar
 const AtualizarSchema = z.object({
-  entidade: z.enum(['colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas']).describe('Entidade a atualizar.'),
-  id: z.number().int().positive().describe('ID do registro a atualizar. Resolva via get_context() ou consulta prévia.'),
+  entidade: z.enum(['colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas', 'excecoes']).describe('Entidade a atualizar.'),
+  id: z.number().int().positive().describe('ID do registro a atualizar. Resolva via contexto automático ou consultar.'),
   dados: z.record(z.string(), z.any()).describe('Campos a atualizar (parcial).')
 })
 
@@ -334,9 +333,10 @@ const EditarRegraSchema = z.object({
 
 // gerar_escala
 const GerarEscalaSchema = z.object({
-  setor_id: z.number().int().positive().describe('ID do setor. Extraia do get_context() a partir do nome citado pelo usuário.'),
+  setor_id: z.number().int().positive().describe('ID do setor. Use o contexto automático injetado pelo sistema.'),
   data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial da escala no formato YYYY-MM-DD.'),
   data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final da escala no formato YYYY-MM-DD.'),
+  solve_mode: z.enum(['rapido', 'otimizado']).optional().describe('Modo de resolução: "rapido" (30s, bom) ou "otimizado" (120s, melhor possível). Padrão: rapido.'),
   rules_override: z.record(z.string(), z.string()).optional().describe('Overrides opcionais de regras (codigo -> status), ex: {"H1":"SOFT"}')
 })
 
@@ -365,7 +365,7 @@ const OficializarEscalaSchema = z.object({
 
 // preflight
 const PreflightSchema = z.object({
-  setor_id: z.number().int().positive().describe('ID do setor para validar viabilidade. Resolva via get_context() pelo nome do setor.'),
+  setor_id: z.number().int().positive().describe('ID do setor para validar viabilidade. Resolva via contexto automático ou consultar.'),
   data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial do período no formato YYYY-MM-DD.'),
   data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final do período no formato YYYY-MM-DD.')
 })
@@ -378,13 +378,20 @@ const PreflightCompletoSchema = z.object({
 })
 
 const DiagnosticarEscalaSchema = z.object({
-  escala_id: z.number().int().positive().describe('ID da escala (normalmente obtido via get_context/consultar).'),
+  escala_id: z.number().int().positive().describe('ID da escala (normalmente obtido via contexto automático ou consultar).'),
   incluir_amostras: z.boolean().optional().describe('Se true, inclui amostras de violações/antipadrões no retorno. Padrão: true.')
 })
 
 // explicar_violacao
 const ExplicarViolacaoSchema = z.object({
   codigo_regra: z.string().describe('Código da regra/violação para explicar (ex: H1, H14, S_DEFICIT, AP3).')
+})
+
+// diagnosticar_infeasible
+const DiagnosticarInfeasibleSchema = z.object({
+  setor_id: z.number().int().positive().describe('ID do setor que deu INFEASIBLE.'),
+  data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial do período (YYYY-MM-DD).'),
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final do período (YYYY-MM-DD).'),
 })
 
 // cadastrar_lote
@@ -398,7 +405,7 @@ const CadastrarLoteSchema = z.object({
 
 // salvar_demanda_excecao_data
 const SalvarDemandaExcecaoDataSchema = z.object({
-  setor_id: z.number().int().positive().describe('ID do setor. Resolva via get_context() pelo nome.'),
+  setor_id: z.number().int().positive().describe('ID do setor. Resolva via contexto automático ou consultar.'),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data da demanda excepcional (YYYY-MM-DD). Ex: Black Friday, evento especial.'),
   hora_inicio: z.string().regex(HORA_HHMM_REGEX).describe('Início da faixa horária (HH:MM).'),
   hora_fim: z.string().regex(HORA_HHMM_REGEX).describe('Fim da faixa horária (HH:MM).'),
@@ -408,7 +415,7 @@ const SalvarDemandaExcecaoDataSchema = z.object({
 
 // upsert_regra_excecao_data
 const UpsertRegraExcecaoDataSchema = z.object({
-  colaborador_id: z.number().int().positive().describe('ID do colaborador. Resolva via buscar_colaborador ou get_context().'),
+  colaborador_id: z.number().int().positive().describe('ID do colaborador. Resolva via buscar_colaborador ou consultar.'),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data do override pontual (YYYY-MM-DD).'),
   ativo: z.boolean().optional().describe('Se a exceção fica ativa. Padrão: true.'),
   inicio_min: z.string().regex(HORA_HHMM_REGEX).nullable().optional().describe('Início mínimo permitido neste dia (HH:MM) ou null.'),
@@ -421,7 +428,7 @@ const UpsertRegraExcecaoDataSchema = z.object({
 
 // resumir_horas_setor
 const ResumirHorasSetorSchema = z.object({
-  setor_id: z.number().int().positive().describe('ID do setor. Resolva via get_context().'),
+  setor_id: z.number().int().positive().describe('ID do setor. Resolva via contexto automático ou consultar.'),
   data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Início do período (YYYY-MM-DD).'),
   data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fim do período (YYYY-MM-DD).'),
   escala_id: z.number().int().positive().optional().describe('Opcional: restringe a uma escala específica.'),
@@ -434,7 +441,7 @@ const ResetarRegrasEmpresaSchema = z.object({
 
 // listar_perfis_horario
 const ListarPerfisHorarioSchema = z.object({
-  tipo_contrato_id: z.number().int().positive().describe('ID do tipo de contrato. Resolva via get_context() ou consultar("tipos_contrato").'),
+  tipo_contrato_id: z.number().int().positive().describe('ID do tipo de contrato. Resolva via contexto automático ou consultar("tipos_contrato").'),
 })
 
 // salvar_perfil_horario
@@ -474,7 +481,7 @@ const ObterAlertasSchema = z.object({
 
 // buscar_conhecimento
 const BuscarConhecimentoSchema = z.object({
-  consulta: z.string().min(1).describe('Pergunta ou termo de busca na base de conhecimento.'),
+  consulta: z.string().min(1).describe('Texto da pergunta ou termos para buscar na base de conhecimento.'),
   limite: z.number().int().min(1).max(10).default(5).describe('Máximo de resultados.'),
 })
 
@@ -491,30 +498,36 @@ const ListarConhecimentoSchema = z.object({
   limite: z.number().int().min(1).max(50).default(20).describe('Máximo de fontes.'),
 })
 
+// explorar_relacoes
+const ExplorarRelacoesSchema = z.object({
+  entidade: z.string().min(1).describe('Nome da entidade a explorar no knowledge graph (ex: "Cleunice", "CLT 44h").'),
+  profundidade: z.number().int().min(1).max(3).default(2).describe('Profundidade do traversal no grafo (1-3). Padrão: 2.'),
+})
+
+// ==================== MEMÓRIAS IA ====================
+
+const SalvarMemoriaSchema = z.object({
+  conteudo: z.string().min(1).describe('Fato curto a memorizar (ex: "Cleunice nunca troca turno", "Black Friday precisa de 8 no Caixa").'),
+  id: z.number().int().positive().optional().describe('ID da memória a atualizar. Se omitido, cria nova.'),
+})
+
+const ListarMemoriasSchema = z.object({})
+
+const RemoverMemoriaSchema = z.object({
+  id: z.number().int().positive().describe('ID da memória a remover.'),
+})
+
 // ==================== IA_TOOLS (Gemini API Format) ====================
 
 export const IA_TOOLS = [
     {
-        name: 'get_context',
-        description: '🚨 CRITICAL: ALWAYS call this FIRST before answering ANY question or calling other tools. Returns complete structured context with ALL setores (IDs + names), colaboradores (IDs + names + setor), and escalas. This is your discovery tool — it gives you the full map of the system so you NEVER need to ask the user for IDs or names. Call this, extract the IDs you need, then use other tools.',
-        parameters: {
-            type: 'object',
-            properties: {}
-        }
-    },
-    {
         name: 'buscar_colaborador',
-        description: 'Resolve colaborador por ID ou nome (case-insensitive) e retorna dados úteis + setor/contrato. Prefira esta tool antes de consultar("colaboradores").',
+        description: 'Resolve colaborador por ID ou nome (case-insensitive). Match único retorna retrato completo: perfil, contrato, regras de horário (padrão + por dia), exceções por data, férias/atestados ativos, perfil de horário. Múltiplos candidatos retorna lista resumida para refinamento.',
         parameters: toJsonSchema(BuscarColaboradorSchema)
     },
     {
-        name: 'obter_regra_horario_colaborador',
-        description: 'Lê a regra individual de horário de um colaborador (janela, ciclo de domingo, folga fixa, etc). Use para confirmar estado antes de alterar.',
-        parameters: toJsonSchema(ObterRegraHorarioColaboradorSchema)
-    },
-    {
         name: 'consultar',
-        description: 'Consulta dados do banco de dados. Use quando precisar de informação DETALHADA que não está no get_context. Nunca pergunte ao usuário — busque aqui. Exemplos: consultar("alocacoes", {"escala_id": 15}) para ver alocações de uma escala, consultar("excecoes", {"colaborador_id": 5}) para exceções de uma pessoa. Filtros de texto são case-insensitive.',
+        description: 'Consulta dados do banco de dados. Use para informação detalhada com filtros. Nunca pergunte ao usuário — busque aqui. Exemplos: consultar("alocacoes", {"escala_id": 15}) para ver alocações de uma escala, consultar("excecoes", {"colaborador_id": 5}) para exceções de uma pessoa. Filtros de texto são case-insensitive.',
         parameters: toJsonSchema(ConsultarSchema)
     },
     {
@@ -539,7 +552,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'gerar_escala',
-        description: 'Roda o motor OR-Tools CP-SAT para gerar uma escala. Salva como RASCUNHO. IMPORTANTE: Chame get_context() PRIMEIRO para descobrir o setor_id pelo nome. Exemplo: get_context() → encontra setor "Caixa" com id=3 → gerar_escala({"setor_id": 3, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}). Retorna escala_id, indicadores e diagnostico.',
+        description: 'Roda o motor OR-Tools CP-SAT para gerar uma escala. Salva como RASCUNHO. Use o setor_id do contexto automático. Exemplo: gerar_escala({"setor_id": 3, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}). Retorna escala_id, indicadores e diagnostico.',
         parameters: toJsonSchema(GerarEscalaSchema)
     },
     {
@@ -559,7 +572,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'preflight',
-        description: 'Verifica viabilidade ANTES de gerar escala. Retorna blockers e warnings. IMPORTANTE: Chame get_context() PRIMEIRO para descobrir o setor_id pelo nome. Exemplo: get_context() → encontra setor "Açougue" com id=5 → preflight({"setor_id": 5, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}).',
+        description: 'Verifica viabilidade ANTES de gerar escala. Retorna blockers e warnings. Use o setor_id do contexto automático. Exemplo: preflight({"setor_id": 5, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}).',
         parameters: toJsonSchema(PreflightSchema)
     },
     {
@@ -578,18 +591,23 @@ export const IA_TOOLS = [
         parameters: toJsonSchema(ExplicarViolacaoSchema)
     },
     {
+        name: 'diagnosticar_infeasible',
+        description: 'Investiga POR QUE uma geração de escala deu INFEASIBLE. Roda o solver múltiplas vezes desligando regras relaxáveis uma a uma para identificar qual combinação causa o conflito. Use após gerar_escala retornar INFEASIBLE. Retorna capacidade vs demanda e a lista de regras culpadas.',
+        parameters: toJsonSchema(DiagnosticarInfeasibleSchema)
+    },
+    {
         name: 'cadastrar_lote',
         description: 'Cadastra MÚLTIPLOS registros de uma vez (batch INSERT). Use quando o usuário cola uma lista, planilha ou CSV com vários itens. Muito mais eficiente que chamar "criar" várias vezes. Aceita até 200 registros por chamada. Cada registro segue as mesmas regras e defaults da tool "criar" (ex: colaboradores recebem defaults inteligentes de sexo, contrato, etc). Retorna resumo com total criado e eventuais erros individuais.',
         parameters: toJsonSchema(CadastrarLoteSchema)
     },
     {
         name: 'salvar_regra_horario_colaborador',
-        description: 'Cria/atualiza a regra individual de horário de um colaborador (janela, ciclo de domingo, folga fixa, preferências).',
+        description: 'Cria/atualiza regra de horário individual. Pode ser padrão (dia_semana_regra omitido = todos os dias) ou específica de um dia (ex: dia_semana_regra="QUA" para só quartas). Campos de ciclo domingo e folga fixa só se aplicam à regra padrão.',
         parameters: toJsonSchema(SalvarRegraHorarioColaboradorSchema)
     },
     {
         name: 'definir_janela_colaborador',
-        description: 'Wrapper semântico para definir limites de horário de um colaborador (ex.: "só pode de manhã"). Usa salvar_regra_horario_colaborador por baixo.',
+        description: 'Wrapper semântico para definir limites de horário de um colaborador (ex.: "só pode de manhã", "toda quarta entra 09:00"). Com dia_semana_regra cria regra específica para aquele dia. Usa salvar_regra_horario_colaborador por baixo.',
         parameters: toJsonSchema(DefinirJanelaColaboradorSchema)
     },
     {
@@ -651,6 +669,26 @@ export const IA_TOOLS = [
         name: 'listar_conhecimento',
         description: 'Lista fontes de conhecimento salvas com estatísticas (chunks, entidades, último acesso). Use para "o que temos salvo?", "quantas fontes temos?". Filtrável por tipo (manual/auto_capture).',
         parameters: toJsonSchema(ListarConhecimentoSchema)
+    },
+    {
+        name: 'explorar_relacoes',
+        description: 'Explora relações no knowledge graph a partir de uma entidade. O graph precisa ter sido gerado (via botão "Organizar Memória" na página de Memória). Se retornar vazio, o graph ainda não foi populado.',
+        parameters: toJsonSchema(ExplorarRelacoesSchema)
+    },
+    {
+        name: 'salvar_memoria',
+        description: 'Salva uma memória curta do RH (max 20). Use quando o usuário diz "lembra que...", "anota que...", "registra que...". Para atualizar, passe o id.',
+        parameters: toJsonSchema(SalvarMemoriaSchema)
+    },
+    {
+        name: 'listar_memorias',
+        description: 'Lista todas as memórias do RH salvas (max 20). Use para "o que eu pedi pra lembrar?", "quais anotações temos?".',
+        parameters: toJsonSchema(ListarMemoriasSchema)
+    },
+    {
+        name: 'remover_memoria',
+        description: 'Remove uma memória do RH por id. Use quando o usuário diz "esquece que...", "remove aquela anotação sobre...".',
+        parameters: toJsonSchema(RemoverMemoriaSchema)
     }
 ]
 
@@ -660,7 +698,7 @@ const ENTIDADES_LEITURA_PERMITIDAS = new Set([
     'regra_definicao', 'regra_empresa',
     'demandas_excecao_data', 'colaborador_regra_horario_excecao_data',
     'contrato_perfis_horario', 'empresa_horario_semana', 'setor_horario_semana',
-    'escala_ciclo_modelos',
+    'escala_ciclo_modelos', 'colaborador_regra_horario',
 ])
 
 // Mapa de campos válidos por entidade (protege contra SQL injection e erros de campo inexistente)
@@ -726,6 +764,11 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   escala_ciclo_modelos: new Set([
     'id', 'setor_id', 'nome', 'semanas_no_ciclo', 'ativo', 'origem_escala_id'
   ]),
+  colaborador_regra_horario: new Set([
+    'colaborador_id', 'dia_semana_regra', 'inicio_min', 'inicio_max',
+    'fim_min', 'fim_max', 'folga_fixa_dia_semana', 'domingo_ciclo_trabalho',
+    'domingo_ciclo_folga', 'perfil_horario_id', 'ativo'
+  ]),
 }
 
 const ENTIDADES_CRIACAO_PERMITIDAS = new Set([
@@ -733,7 +776,7 @@ const ENTIDADES_CRIACAO_PERMITIDAS = new Set([
 ])
 
 const ENTIDADES_ATUALIZACAO_PERMITIDAS = new Set([
-    'colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas',
+    'colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas', 'excecoes',
 ])
 
 const ENTIDADES_DELECAO_PERMITIDAS = new Set([
@@ -755,6 +798,7 @@ function getConsultarRelatedTools(entidade: string): string[] {
     regra_empresa: ['editar_regra', 'consultar'],
     demandas_excecao_data: ['salvar_demanda_excecao_data', 'consultar'],
     colaborador_regra_horario_excecao_data: ['upsert_regra_excecao_data', 'consultar'],
+    colaborador_regra_horario: ['salvar_regra_horario_colaborador', 'definir_janela_colaborador', 'consultar'],
   }
   return mapa[entidade] ?? ['consultar']
 }
@@ -867,6 +911,13 @@ async function enrichConsultarRows(entidade: string, rows: Array<Record<string, 
       continue
     }
 
+    if (entidade === 'colaborador_regra_horario') {
+      const colaboradorNome = await getColaboradorNome(row.colaborador_id)
+      if (colaboradorNome && !('colaborador_nome' in enriched)) enriched.colaborador_nome = colaboradorNome
+      enrichedRows.push(enriched)
+      continue
+    }
+
     enrichedRows.push(enriched)
   }
   return enrichedRows
@@ -875,9 +926,7 @@ async function enrichConsultarRows(entidade: string, rows: Array<Record<string, 
 // ==================== VALIDAÇÃO RUNTIME (Zod) ====================
 
 const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
-  get_context: null, // Sem parâmetros
   buscar_colaborador: BuscarColaboradorSchema,
-  obter_regra_horario_colaborador: ObterRegraHorarioColaboradorSchema,
   consultar: ConsultarSchema,
   criar: CriarSchema,
   atualizar: AtualizarSchema,
@@ -891,6 +940,7 @@ const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   preflight_completo: PreflightCompletoSchema,
   diagnosticar_escala: DiagnosticarEscalaSchema,
   explicar_violacao: ExplicarViolacaoSchema,
+  diagnosticar_infeasible: DiagnosticarInfeasibleSchema,
   cadastrar_lote: CadastrarLoteSchema,
   salvar_regra_horario_colaborador: SalvarRegraHorarioColaboradorSchema,
   definir_janela_colaborador: DefinirJanelaColaboradorSchema,
@@ -906,6 +956,10 @@ const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   buscar_conhecimento: BuscarConhecimentoSchema,
   salvar_conhecimento: SalvarConhecimentoSchema,
   listar_conhecimento: ListarConhecimentoSchema,
+  explorar_relacoes: ExplorarRelacoesSchema,
+  salvar_memoria: SalvarMemoriaSchema,
+  listar_memorias: ListarMemoriasSchema,
+  remover_memoria: RemoverMemoriaSchema,
 }
 
 const DICIONARIO_VIOLACOES: Record<string, string> = {
@@ -960,6 +1014,115 @@ export function getVercelAiTools() {
     return tools
 }
 
+// ==================== HELPERS: Enrichment de Colaborador (Single Match) ====================
+
+async function enrichColaboradorSingle(colaborador: Record<string, any>) {
+  const colabId = colaborador.id
+
+  const [regras, excecoesPorData, excecoesGerais] = await Promise.all([
+    queryAll<Record<string, any>>(
+      'SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND ativo = true ORDER BY dia_semana_regra NULLS FIRST',
+      colabId
+    ),
+    queryAll<Record<string, any>>(
+      "SELECT * FROM colaborador_regra_horario_excecao_data WHERE colaborador_id = ? AND ativo = true AND data::date >= CURRENT_DATE ORDER BY data",
+      colabId
+    ),
+    queryAll<Record<string, any>>(
+      "SELECT * FROM excecoes WHERE colaborador_id = ? AND data_fim::date >= CURRENT_DATE ORDER BY data_inicio",
+      colabId
+    ),
+  ])
+
+  const padrao = regras.find((r) => r.dia_semana_regra === null) ?? null
+  const por_dia = regras.filter((r) => r.dia_semana_regra !== null)
+
+  let perfil_horario = null
+  if (padrao?.perfil_horario_id) {
+    perfil_horario = await queryOne<Record<string, any>>(
+      'SELECT id, nome, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft FROM contrato_perfis_horario WHERE id = ? AND ativo = true',
+      padrao.perfil_horario_id
+    )
+  }
+
+  return {
+    regras_horario: { configurada: regras.length > 0, padrao, por_dia },
+    excecoes_data: excecoesPorData,
+    excecoes_gerais: excecoesGerais,
+    perfil_horario,
+  }
+}
+
+function buildColaboradorSummary(
+  colab: Record<string, any>,
+  enrich: Awaited<ReturnType<typeof enrichColaboradorSingle>>
+): string {
+  const parts: string[] = []
+  parts.push(`${colab.nome} (id ${colab.id}, ${colab.tipo_contrato_nome ?? '?'}, setor ${colab.setor_nome ?? '?'})`)
+
+  const { regras_horario } = enrich
+  if (regras_horario.configurada) {
+    const rParts: string[] = []
+    if (regras_horario.padrao) rParts.push('1 padrão')
+    if (regras_horario.por_dia.length > 0) {
+      rParts.push(`${regras_horario.por_dia.length} por dia (${regras_horario.por_dia.map((r) => r.dia_semana_regra).join(', ')})`)
+    }
+    parts.push(rParts.join(' + '))
+  } else {
+    parts.push('sem regra individual')
+  }
+
+  if (enrich.excecoes_data.length > 0) {
+    parts.push(`${enrich.excecoes_data.length} exceção(ões) data`)
+  }
+
+  for (const exc of enrich.excecoes_gerais) {
+    parts.push(`${exc.tipo} ${exc.data_inicio}–${exc.data_fim}`)
+  }
+
+  return parts.join('. ') + '.'
+}
+
+function buildConsultarSummary(entidade: string, rows: any[], total: number): string {
+    if (total === 0) return `Nenhum registro encontrado em ${entidade}.`
+    if (entidade === 'alocacoes') {
+        const byStatus = new Map<string, number>()
+        for (const r of rows) byStatus.set(r.status ?? '?', (byStatus.get(r.status ?? '?') ?? 0) + 1)
+        return `${total} alocações: ${[...byStatus.entries()].map(([s, c]) => `${c} ${s}`).join(', ')}`
+    }
+    if (entidade === 'colaboradores') {
+        const byContrato = new Map<string, number>()
+        for (const r of rows) byContrato.set(r.tipo_contrato_nome ?? '?', (byContrato.get(r.tipo_contrato_nome ?? '?') ?? 0) + 1)
+        return `${total} colaboradores: ${[...byContrato.entries()].map(([t, c]) => `${c} ${t}`).join(', ')}`
+    }
+    if (entidade === 'excecoes') {
+        const byTipo = new Map<string, number>()
+        for (const r of rows) byTipo.set(r.tipo ?? '?', (byTipo.get(r.tipo ?? '?') ?? 0) + 1)
+        return `${total} exceções: ${[...byTipo.entries()].map(([t, c]) => `${c} ${t}`).join(', ')}`
+    }
+    return `${total} registro(s) de ${entidade}`
+}
+
+async function applyColaboradorDefaults(
+    dados: Record<string, any>,
+    setor?: { hora_abertura?: string; hora_fechamento?: string } | null
+): Promise<Record<string, any>> {
+    if (!dados.sexo) dados.sexo = 'M'
+    if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1
+    if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'regular'
+    if (!dados.data_nascimento) {
+        const age = Math.floor(Math.random() * 16) + 25
+        const year = new Date().getFullYear() - age
+        dados.data_nascimento = `${year}-01-01`
+    }
+    if (setor) {
+        if (!dados.hora_inicio_min && setor.hora_abertura) dados.hora_inicio_min = setor.hora_abertura
+        if (!dados.hora_fim_max && setor.hora_fechamento) dados.hora_fim_max = setor.hora_fechamento
+    }
+    if (dados.ativo === undefined) dados.ativo = true
+    return dados
+}
+
 export async function executeTool(name: string, args: Record<string, any>): Promise<any> {
     // ==================== VALIDAÇÃO ZOD RUNTIME ====================
     const schema = TOOL_SCHEMAS[name]
@@ -984,159 +1147,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     }
 
     // ==================== HANDLERS ====================
-
-    if (name === 'get_context') {
-        // DISCOVERY TOOL — retorna contexto completo estruturado
-        try {
-            // Setores com contagens
-            const setores = await queryAll<{
-                id: number
-                nome: string
-                hora_abertura: string
-                hora_fechamento: string
-                ativo: boolean
-                colaboradores_count: number
-                escalas_count: number
-            }>(`
-                SELECT
-                    s.id,
-                    s.nome,
-                    s.hora_abertura,
-                    s.hora_fechamento,
-                    s.ativo,
-                    COUNT(DISTINCT c.id) as colaboradores_count,
-                    COUNT(DISTINCT e.id) as escalas_count
-                FROM setores s
-                LEFT JOIN colaboradores c ON c.setor_id = s.id AND c.ativo = true
-                LEFT JOIN escalas e ON e.setor_id = s.id AND e.status IN ('RASCUNHO', 'OFICIAL')
-                WHERE s.ativo = true
-                GROUP BY s.id, s.nome, s.hora_abertura, s.hora_fechamento, s.ativo
-                ORDER BY s.nome
-            `)
-
-            // Colaboradores ativos com setor e contrato
-            const colaboradores = await queryAll<{
-                id: number
-                nome: string
-                setor_id: number
-                setor_nome: string
-                tipo_contrato_id: number
-                contrato_nome: string
-                horas_semanais: number
-                tipo_trabalhador: string
-            }>(`
-                SELECT
-                    c.id,
-                    c.nome,
-                    c.setor_id,
-                    s.nome as setor_nome,
-                    c.tipo_contrato_id,
-                    t.nome as contrato_nome,
-                    t.horas_semanais,
-                    c.tipo_trabalhador
-                FROM colaboradores c
-                JOIN setores s ON c.setor_id = s.id
-                JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
-                WHERE c.ativo = true
-                ORDER BY s.nome, c.nome
-            `)
-
-            // Tipos de contrato disponíveis (Fase 2: Discovery explícito)
-            const tipos_contrato = await queryAll<{
-                id: number
-                nome: string
-                horas_semanais: number
-                regime_escala: string
-                dias_trabalho: number
-                trabalha_domingo: boolean
-                max_minutos_dia: number
-            }>(`
-                SELECT
-                    id,
-                    nome,
-                    horas_semanais,
-                    regime_escala,
-                    dias_trabalho,
-                    trabalha_domingo,
-                    max_minutos_dia
-                FROM tipos_contrato
-                ORDER BY horas_semanais DESC
-            `)
-
-            // Escalas ativas (RASCUNHO ou OFICIAL)
-            const escalas = await queryAll<{
-                id: number
-                setor_id: number
-                setor_nome: string
-                status: string
-                data_inicio: string
-                data_fim: string
-                pontuacao: number
-                cobertura_percent: number
-                violacoes_hard: number
-                violacoes_soft: number
-            }>(`
-                SELECT
-                    e.id,
-                    e.setor_id,
-                    s.nome as setor_nome,
-                    e.status,
-                    e.data_inicio,
-                    e.data_fim,
-                    e.pontuacao,
-                    e.cobertura_percent,
-                    e.violacoes_hard,
-                    e.violacoes_soft
-                FROM escalas e
-                JOIN setores s ON e.setor_id = s.id
-                WHERE e.status IN ('RASCUNHO', 'OFICIAL')
-                ORDER BY
-                    CASE e.status
-                        WHEN 'RASCUNHO' THEN 0
-                        WHEN 'OFICIAL' THEN 1
-                        ELSE 2
-                    END,
-                    e.id DESC
-            `)
-
-            // Resumo estatístico
-            const stats = {
-                setores_ativos: setores.length,
-                colaboradores_ativos: colaboradores.length,
-                escalas_rascunho: escalas.filter(e => e.status === 'RASCUNHO').length,
-                escalas_oficiais: escalas.filter(e => e.status === 'OFICIAL').length,
-            }
-            const timestamp = new Date().toISOString()
-            return toolOk({
-                version: '1.0',
-                timestamp,
-                stats,
-                setores,
-                colaboradores,
-                tipos_contrato,  // FASE 2: Discovery explícito
-                escalas,
-                // Compat/transição: ainda útil enquanto o prompt continua orientado ao get_context.
-                instructions: 'Use this structured data to resolve names to IDs. NEVER ask the user for IDs - extract them from this context. Example: user says "Caixa" → find setor with nome="Caixa" → use its id in other tool calls. For tipo_contrato_id, find the contract in tipos_contrato array by name.',
-            }, {
-                summary: `Contexto carregado com ${stats.setores_ativos} setor(es), ${stats.colaboradores_ativos} colaborador(es) ativo(s) e ${escalas.length} escala(s) ativa(s).`,
-                meta: {
-                  tool_kind: 'discovery',
-                  next_tools_hint: ['consultar', 'preflight', 'gerar_escala', 'atualizar', 'criar', 'cadastrar_lote'],
-                  ids_resolvable: ['setores.id', 'colaboradores.id', 'tipos_contrato.id', 'escalas.id'],
-                  refreshed_at: timestamp,
-                }
-            })
-        } catch (e: any) {
-            return toolError(
-              'GET_CONTEXT_FAILED',
-              `Erro ao buscar contexto: ${e.message}`,
-              {
-                correction: 'Verifique o banco local e tente novamente. Se o problema persistir, use uma tool mais específica para diagnosticar.',
-                meta: { tool_kind: 'discovery' }
-              }
-            )
-        }
-    }
 
     if (name === 'buscar_colaborador') {
         try {
@@ -1171,22 +1181,23 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   'BUSCAR_COLABORADOR_NAO_ENCONTRADO',
                   `Colaborador ${args.id} não encontrado${ativoApenas ? ' (ativo)' : ''}.`,
                   {
-                    correction: 'Use get_context()/buscar_colaborador por nome para resolver um ID válido.',
+                    correction: 'Use o contexto automático ou buscar_colaborador por nome para resolver um ID válido.',
                     meta: { tool_kind: 'discovery', entidade: 'colaboradores', lookup: 'id', id: args.id }
                   }
                 )
               }
 
               const colaborador = rows[0]
+              const enrich = await enrichColaboradorSingle(colaborador)
               return toolOk(
-                { colaborador, encontrado_por: 'id' },
+                { colaborador, encontrado_por: 'id', ...enrich },
                 {
-                  summary: `Colaborador encontrado: ${colaborador.nome} (id ${colaborador.id}).`,
+                  summary: buildColaboradorSummary(colaborador, enrich),
                   meta: {
                     tool_kind: 'discovery',
                     entidade: 'colaboradores',
                     resolution: 'single',
-                    ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador'],
+                    ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador', 'definir_janela_colaborador'],
                   }
                 }
               )
@@ -1280,16 +1291,17 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             const colaborador = rows[0]
+            const enrich = await enrichColaboradorSingle(colaborador)
             return toolOk(
-              { colaborador, encontrado_por: encontradoPor },
+              { colaborador, encontrado_por: encontradoPor, ...enrich },
               {
-                summary: `Colaborador encontrado: ${colaborador.nome} (id ${colaborador.id}).`,
+                summary: buildColaboradorSummary(colaborador, enrich),
                 meta: {
                   tool_kind: 'discovery',
                   entidade: 'colaboradores',
                   resolution: 'single',
                   nome_busca: nomeBusca,
-                    ids_usaveis_em: ['criar', 'ajustar_alocacao', 'atualizar', 'consultar', 'salvar_regra_horario_colaborador'],
+                  ids_usaveis_em: ['consultar', 'criar', 'ajustar_alocacao', 'atualizar', 'salvar_regra_horario_colaborador', 'definir_janela_colaborador'],
                 }
               }
             )
@@ -1300,66 +1312,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               {
                 correction: 'Tente novamente com ID ou um nome mais específico.',
                 meta: { tool_kind: 'discovery', entidade: 'colaboradores' }
-              }
-            )
-        }
-    }
-
-    if (name === 'obter_regra_horario_colaborador') {
-        try {
-            const { colaborador_id } = args
-            const colaborador = await queryOne<{
-              id: number
-              nome: string
-              ativo: boolean
-              setor_id: number
-              setor_nome?: string
-            }>(`
-              SELECT c.id, c.nome, c.ativo, c.setor_id, s.nome as setor_nome
-              FROM colaboradores c
-              LEFT JOIN setores s ON s.id = c.setor_id
-              WHERE c.id = ?
-            `, colaborador_id)
-
-            if (!colaborador) {
-              return toolError(
-                'OBTER_REGRA_HORARIO_COLABORADOR_NAO_ENCONTRADO',
-                `Colaborador ${colaborador_id} não encontrado.`,
-                {
-                  correction: 'Use buscar_colaborador para resolver um colaborador_id válido.',
-                  meta: { tool_kind: 'discovery', entidade: 'colaborador_regra_horario', colaborador_id }
-                }
-              )
-            }
-
-            const regra = await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', colaborador_id) ?? null
-
-            return toolOk(
-              {
-                colaborador,
-                regra,
-                configurada: Boolean(regra),
-              },
-              {
-                summary: regra
-                  ? `Regra de horário encontrada para ${colaborador.nome} (id ${colaborador.id}).`
-                  : `${colaborador.nome} (id ${colaborador.id}) não possui regra individual de horário cadastrada.`,
-                meta: {
-                  tool_kind: 'discovery',
-                  entidade: 'colaborador_regra_horario',
-                  colaborador_id,
-                  configurada: Boolean(regra),
-                  ids_usaveis_em: ['salvar_regra_horario_colaborador', 'definir_janela_colaborador'],
-                }
-              }
-            )
-        } catch (e: any) {
-            return toolError(
-              'OBTER_REGRA_HORARIO_COLABORADOR_FALHOU',
-              `Erro ao buscar regra de horário do colaborador: ${e.message}`,
-              {
-                correction: 'Tente novamente. Se persistir, confirme o colaborador_id com buscar_colaborador.',
-                meta: { tool_kind: 'discovery', entidade: 'colaborador_regra_horario' }
               }
             )
         }
@@ -1382,7 +1334,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 'DIAGNOSTICAR_ESCALA_NAO_ENCONTRADA',
                 `Escala ${escala_id} não encontrada.`,
                 {
-                  correction: 'Use get_context ou consultar("escalas") para localizar uma escala válida.',
+                  correction: 'Use o contexto automático ou consultar("escalas") para localizar uma escala válida.',
                   meta: { tool_kind: 'diagnostic', entidade: 'escalas', escala_id }
                 }
               )
@@ -1454,6 +1406,118 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 correction: 'Confirme o escala_id e tente novamente. Se necessário, recarregue contexto/escala.',
                 meta: { tool_kind: 'diagnostic', entidade: 'escalas' }
               }
+            )
+        }
+    }
+
+    if (name === 'diagnosticar_infeasible') {
+        const { setor_id, data_inicio, data_fim } = args
+
+        try {
+            // Regras relaxáveis (HARD product rules que podem causar INFEASIBLE)
+            const RELAXABLE_RULES = ['H1', 'H6', 'H10', 'DIAS_TRABALHO', 'MIN_DIARIO'] as const
+
+            // 1. Capacidade vs demanda
+            const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim)
+            const colabs = solverInput.colaboradores
+            const totalDias = Math.ceil(
+                (new Date(data_fim + 'T00:00:00').getTime() - new Date(data_inicio + 'T00:00:00').getTime()) / 86400000
+            ) + 1
+            const gridMin = solverInput.empresa.grid_minutos
+            const capacidadeMaxMinutos = colabs.reduce((sum, c) => {
+                return sum + c.max_minutos_dia * totalDias
+            }, 0)
+            const demandaTotalSlots = solverInput.demanda.reduce((sum, d) => {
+                const faixaSlots = (
+                    (parseInt(d.hora_fim.split(':')[0]) * 60 + parseInt(d.hora_fim.split(':')[1]))
+                    - (parseInt(d.hora_inicio.split(':')[0]) * 60 + parseInt(d.hora_inicio.split(':')[1]))
+                ) / gridMin
+                const diasAplicaveis = d.dia_semana ? Math.ceil(totalDias / 7) : totalDias
+                return sum + d.min_pessoas * faixaSlots * diasAplicaveis
+            }, 0)
+
+            // 2. Testar desligando cada regra individualmente
+            const resultadosTeste: Array<{
+                regra_desligada: string
+                status: string
+                resolveu: boolean
+                tempo_ms: number
+            }> = []
+
+            for (const regra of RELAXABLE_RULES) {
+                const override: Record<string, string> = { [regra]: 'OFF' }
+                const testInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
+                    solveMode: 'rapido',
+                    maxTimeSeconds: 10,
+                    rulesOverride: override,
+                })
+                const testResult = await runSolver(testInput, 15_000)
+                resultadosTeste.push({
+                    regra_desligada: regra,
+                    status: testResult.status,
+                    resolveu: testResult.sucesso,
+                    tempo_ms: testResult.solve_time_ms,
+                })
+            }
+
+            // 3. Testar com tudo relaxável OFF (identifica se é CLT puro ou demanda)
+            const allOff: Record<string, string> = {}
+            for (const r of RELAXABLE_RULES) allOff[r] = 'OFF'
+            const baseInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
+                solveMode: 'rapido',
+                maxTimeSeconds: 10,
+                rulesOverride: allOff,
+            })
+            const baseResult = await runSolver(baseInput, 15_000)
+
+            const regrasQueResolvem = resultadosTeste.filter(r => r.resolveu).map(r => r.regra_desligada)
+            const regrasQueNaoResolvem = resultadosTeste.filter(r => !r.resolveu).map(r => r.regra_desligada)
+
+            const analise: Record<string, any> = {
+                setor_id,
+                periodo: `${data_inicio} a ${data_fim}`,
+                total_dias: totalDias,
+                total_colaboradores: colabs.length,
+                capacidade_vs_demanda: {
+                    capacidade_max_minutos: capacidadeMaxMinutos,
+                    demanda_total_slots: Math.round(demandaTotalSlots),
+                    ratio_estimado: demandaTotalSlots > 0 ? +(capacidadeMaxMinutos / (demandaTotalSlots * gridMin)).toFixed(2) : 999,
+                },
+                teste_base_sem_product_rules: {
+                    status: baseResult.status,
+                    resolveu: baseResult.sucesso,
+                    conclusao: baseResult.sucesso
+                        ? 'O problema está nas regras de produto (não CLT). Relaxar regras resolve.'
+                        : 'Mesmo sem regras de produto, CLT puro falha. Faltam colaboradores ou há conflitos em exceções/pinned_cells.',
+                },
+                testes_individuais: resultadosTeste,
+                regras_que_resolvem_ao_desligar: regrasQueResolvem,
+                regras_que_nao_resolvem_ao_desligar: regrasQueNaoResolvem,
+                diagnostico_resumido: regrasQueResolvem.length > 0
+                    ? `Desligar ${regrasQueResolvem.join(' + ')} resolve o INFEASIBLE. Considere usar rules_override em gerar_escala ou ajustar a configuração dessas regras.`
+                    : baseResult.sucesso
+                        ? 'Nenhuma regra individual resolve sozinha, mas desligar todas as product rules resolve. É uma combinação de múltiplas regras apertadas.'
+                        : 'INFEASIBLE é causado por falta de capacidade (CLT). Aumente colaboradores, reduza demanda ou encurte o período.',
+            }
+
+            return toolOk(analise, {
+                summary: `Diagnóstico de INFEASIBLE: ${regrasQueResolvem.length > 0 ? `regras culpadas: ${regrasQueResolvem.join(', ')}` : baseResult.sucesso ? 'combinação de múltiplas regras' : 'falta de capacidade CLT'}`,
+                meta: {
+                    tool_kind: 'diagnostic',
+                    action: 'infeasible-analysis',
+                    setor_id,
+                    regras_culpadas: regrasQueResolvem,
+                    next_tools_hint: ['editar_regra', 'gerar_escala', 'explicar_violacao'],
+                },
+            })
+        } catch (e: any) {
+            return toolError(
+                'DIAGNOSTICAR_INFEASIBLE_FALHOU',
+                `Erro ao diagnosticar INFEASIBLE: ${e.message}`,
+                {
+                    correction: 'Verifique se o setor_id está correto e se o período é válido.',
+                    meta: { tool_kind: 'diagnostic', action: 'infeasible-analysis', setor_id },
+                }
             )
         }
     }
@@ -1537,7 +1601,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   dados,
                 },
                 {
-                  summary: `Consulta em ${entidade} retornou ${total} registro(s); exibindo os primeiros ${dados.length}.`,
+                  summary: buildConsultarSummary(entidade, dados, total),
                   meta: {
                     ...commonMeta,
                     suggested_next_step: 'Refine os filtros para reduzir o volume antes de decidir a próxima ação.',
@@ -1553,9 +1617,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 dados,
               },
               {
-                summary: total === 0
-                  ? `Nenhum registro encontrado em ${entidade} com os filtros informados.`
-                  : `Consulta em ${entidade} retornou ${total} registro(s).`,
+                summary: buildConsultarSummary(entidade, dados, total),
                 meta: commonMeta
               }
             )
@@ -1598,8 +1660,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             if (!dados.setor_id || typeof dados.setor_id !== 'number') {
                 return toolError(
                   'CRIAR_COLABORADOR_SETOR_ID_OBRIGATORIO',
-                  '❌ Campo obrigatório: "setor_id" (number). Use get_context() para descobrir o ID do setor pelo nome.',
-                  { correction: 'Resolva o setor via get_context() e envie `dados.setor_id`.' }
+                  '❌ Campo obrigatório: "setor_id" (number). Resolva via contexto automático ou consultar("setores").',
+                  { correction: 'Resolva o setor via contexto automático ou consultar e envie `dados.setor_id`.' }
                 )
             }
 
@@ -1608,28 +1670,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             if (!setor) {
                 return toolError(
                   'CRIAR_COLABORADOR_SETOR_INVALIDO',
-                  `❌ Setor ${dados.setor_id} não encontrado ou inativo. Use get_context() para ver setores disponíveis.`,
+                  `❌ Setor ${dados.setor_id} não encontrado ou inativo.`,
                   {
-                    correction: 'Escolha um setor ativo válido usando get_context().',
+                    correction: 'Escolha um setor ativo válido via contexto automático ou consultar("setores").',
                     meta: { setor_id: dados.setor_id }
                   }
                 )
             }
 
             // Defaults inteligentes para campos opcionais
-            if (!dados.sexo) dados.sexo = 'M'
-            if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1  // CLT 44h (6x1) — mais comum
-            if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'regular'
-            if (!dados.data_nascimento) {
-                // Gera idade aleatória entre 25-40 anos
-                const idadeAleatoria = 25 + Math.floor(Math.random() * 15)
-                const nascimento = new Date()
-                nascimento.setFullYear(nascimento.getFullYear() - idadeAleatoria)
-                dados.data_nascimento = nascimento.toISOString().split('T')[0]
-            }
-            if (!dados.hora_inicio_min) dados.hora_inicio_min = setor.hora_abertura
-            if (!dados.hora_fim_max) dados.hora_fim_max = setor.hora_fechamento
-            if (!dados.ativo) dados.ativo = true
+            await applyColaboradorDefaults(dados, setor)
         }
 
         if (entidade === 'excecoes') {
@@ -1637,8 +1687,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             if (!dados.colaborador_id) {
                 return toolError(
                   'CRIAR_EXCECAO_COLABORADOR_ID_OBRIGATORIO',
-                  '❌ Campo obrigatório: "colaborador_id" (number). Use get_context() para descobrir o ID pelo nome do colaborador.',
-                  { correction: 'Resolva o colaborador via get_context() e envie `dados.colaborador_id`.' }
+                  '❌ Campo obrigatório: "colaborador_id" (number). Resolva via buscar_colaborador pelo nome.',
+                  { correction: 'Resolva o colaborador via buscar_colaborador e envie `dados.colaborador_id`.' }
                 )
             }
             if (!dados.tipo) {
@@ -1673,6 +1723,18 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             if (!dados.observacao) dados.observacao = dados.tipo
         }
 
+        // Warning de capacidade para demandas
+        let avisoCapacidadeCriar: string | undefined
+        if (entidade === 'demandas' && dados.setor_id && dados.min_pessoas) {
+            const totalColabs = await queryOne<{ total: number }>(
+              'SELECT COUNT(*) as total FROM colaboradores WHERE setor_id = ? AND ativo = true', dados.setor_id
+            )
+            const totalNoSetor = totalColabs?.total ?? 0
+            if (dados.min_pessoas > totalNoSetor) {
+              avisoCapacidadeCriar = `⚠️ ATENÇÃO: min_pessoas (${dados.min_pessoas}) excede o total de colaboradores ativos no setor (${totalNoSetor}). O motor pode retornar INFEASIBLE.`
+            }
+        }
+
         const keys = Object.keys(dados)
         const placeholders = keys.map(() => '?').join(', ')
         const values = Object.values(dados)
@@ -1684,9 +1746,10 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 sucesso: true,
                 id: newId,
                 entidade,
+                ...(avisoCapacidadeCriar ? { aviso_capacidade: avisoCapacidadeCriar } : {}),
               },
               {
-                summary: `Registro criado em ${entidade} com sucesso (id: ${String(newId)}).`,
+                summary: `Registro criado em ${entidade} com sucesso (id: ${String(newId)}).${avisoCapacidadeCriar ? ` ${avisoCapacidadeCriar}` : ''}`,
                 meta: {
                   tool_kind: 'action',
                   action: 'create',
@@ -1724,7 +1787,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   'CRIAR_FOREIGN_KEY',
                   '❌ Referência inválida: um dos IDs fornecidos não existe no banco. Verifique setor_id, colaborador_id, etc.',
                   {
-                    correction: 'Resolva novamente os IDs via get_context() antes de criar.',
+                    correction: 'Resolva os IDs via contexto automático ou consultar antes de criar.',
                     meta: { entidade }
                   }
                 )
@@ -1903,13 +1966,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     }
 
     if (name === 'gerar_escala') {
-        const { setor_id, data_inicio, data_fim, rules_override } = args
+        const { setor_id, data_inicio, data_fim, solve_mode, rules_override } = args
 
         try {
             const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
+                solveMode: solve_mode ?? 'rapido',
                 rulesOverride: rules_override,
             })
-            const solverResult = await runSolver(solverInput, 60_000)
+            const timeoutMs = (solve_mode === 'otimizado') ? 180_000 : 60_000
+            const solverResult = await runSolver(solverInput, timeoutMs)
 
             if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
                 return toolError(
@@ -2296,7 +2361,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               `Erro ao executar preflight: ${e.message}`,
               {
                 correction: 'Verifique se o setor_id e o período estão corretos e tente novamente.',
-                meta: { tool_kind: 'validation', next_tools_hint: ['get_context'] }
+                meta: { tool_kind: 'validation', next_tools_hint: ['consultar'] }
               }
             )
         }
@@ -2372,7 +2437,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               `Erro ao executar preflight completo: ${e.message}`,
               {
                 correction: 'Verifique setor_id, período e overrides. Se necessário, rode `preflight` simples primeiro.',
-                meta: { tool_kind: 'validation', validation_level: 'completo', next_tools_hint: ['preflight', 'get_context'] }
+                meta: { tool_kind: 'validation', validation_level: 'completo', next_tools_hint: ['preflight', 'consultar'] }
               }
             )
         }
@@ -2427,18 +2492,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                         continue
                     }
 
-                    if (!dados.sexo) dados.sexo = 'M'
-                    if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1
-                    if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'regular'
-                    if (!dados.data_nascimento) {
-                        const idade = 25 + Math.floor(Math.random() * 15)
-                        const nasc = new Date()
-                        nasc.setFullYear(nasc.getFullYear() - idade)
-                        dados.data_nascimento = nasc.toISOString().split('T')[0]
-                    }
-                    if (!dados.hora_inicio_min) dados.hora_inicio_min = setor.hora_abertura
-                    if (!dados.hora_fim_max) dados.hora_fim_max = setor.hora_fechamento
-                    if (!dados.ativo) dados.ativo = true
+                    await applyColaboradorDefaults(dados, setor)
                     if (!dados.horas_semanais) {
                         const contrato = await queryOne<{ horas_semanais: number }>('SELECT horas_semanais FROM tipos_contrato WHERE id = ?', dados.tipo_contrato_id)
                         dados.horas_semanais = contrato?.horas_semanais ?? 44
@@ -2522,6 +2576,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'salvar_regra_horario_colaborador') {
         const {
           colaborador_id,
+          dia_semana_regra,
           ativo,
           perfil_horario_id,
           inicio_min,
@@ -2533,6 +2588,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           domingo_ciclo_folga,
           folga_fixa_dia_semana,
         } = args
+
+        const diaSemana = dia_semana_regra ?? null
+        const isDiaEspecifico = diaSemana !== null
 
         const colab = await queryOne<{ id: number; nome: string; setor_id: number; ativo: boolean }>('SELECT id, nome, setor_id, ativo FROM colaboradores WHERE id = ?', colaborador_id)
 
@@ -2589,7 +2647,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         if (invalidPair) return invalidPair
 
         try {
-          const existe = await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?', colaborador_id)
+          // Para regras de dia específico, forçar defaults em campos nível-colaborador
+          const domCicloTrabalho = isDiaEspecifico ? 2 : (domingo_ciclo_trabalho ?? 2)
+          const domCicloFolga = isDiaEspecifico ? 1 : (domingo_ciclo_folga ?? 1)
+          const folgaFixa = isDiaEspecifico ? null : (folga_fixa_dia_semana ?? null)
+
+          // Buscar existente com match exato de dia_semana_regra (NULL-safe)
+          const existe = diaSemana === null
+            ? await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', colaborador_id)
+            : await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', colaborador_id, diaSemana)
+
           if (existe) {
             await execute(`
               UPDATE colaborador_regra_horario SET
@@ -2600,7 +2667,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
                 domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
                 folga_fixa_dia_semana = ?
-              WHERE colaborador_id = ?
+              WHERE id = ?
             `,
               ativo !== undefined ? ativo : null,
               perfil_horario_id ?? null,
@@ -2609,18 +2676,19 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               fim_min ?? null,
               fim_max ?? null,
               preferencia_turno_soft ?? null,
-              domingo_ciclo_trabalho ?? null,
-              domingo_ciclo_folga ?? null,
-              folga_fixa_dia_semana ?? null,
-              colaborador_id,
+              domCicloTrabalho,
+              domCicloFolga,
+              folgaFixa,
+              existe.id,
             )
           } else {
             await execute(`
               INSERT INTO colaborador_regra_horario
-                (colaborador_id, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
               colaborador_id,
+              diaSemana,
               ativo !== undefined ? ativo : true,
               perfil_horario_id ?? null,
               inicio_min ?? null,
@@ -2628,13 +2696,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               fim_min ?? null,
               fim_max ?? null,
               preferencia_turno_soft ?? null,
-              domingo_ciclo_trabalho ?? 2,
-              domingo_ciclo_folga ?? 1,
-              folga_fixa_dia_semana ?? null,
+              domCicloTrabalho,
+              domCicloFolga,
+              folgaFixa,
             )
           }
 
-          const regra = await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', colaborador_id) ?? null
+          const regra = diaSemana === null
+            ? await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', colaborador_id)
+            : await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', colaborador_id, diaSemana)
           return toolOk(
             {
               sucesso: true,
@@ -2647,7 +2717,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 tool_kind: 'action',
                 action: 'save-collaborator-rule',
                 colaborador_id: colab.id,
-                ids_usaveis_em: ['obter_regra_horario_colaborador', 'definir_janela_colaborador', 'gerar_escala', 'preflight_completo'],
+                ids_usaveis_em: ['buscar_colaborador', 'definir_janela_colaborador', 'gerar_escala', 'preflight_completo'],
               }
             }
           )
@@ -2666,6 +2736,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'definir_janela_colaborador') {
         const {
           colaborador_id,
+          dia_semana_regra,
           inicio_min,
           inicio_max,
           fim_min,
@@ -2675,6 +2746,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         const base = await executeTool('salvar_regra_horario_colaborador', {
           colaborador_id,
+          dia_semana_regra: dia_semana_regra ?? null,
           ativo,
           inicio_min,
           inicio_max,
@@ -2714,7 +2786,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               action: 'set-collaborator-window',
               colaborador_id,
               wrapped_tool: 'salvar_regra_horario_colaborador',
-              next_tools_hint: ['obter_regra_horario_colaborador', 'preflight_completo', 'gerar_escala'],
+              next_tools_hint: ['buscar_colaborador', 'preflight_completo', 'gerar_escala'],
             }
           }
         )
@@ -2765,7 +2837,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   'SALVAR_DEMANDA_EXCECAO_SETOR_INVALIDO',
                   `Setor ${setor_id} não encontrado ou inativo.`,
                   {
-                    correction: 'Use get_context() para resolver o setor_id correto.',
+                    correction: 'Use o contexto automático ou consultar("setores") para resolver o setor_id correto.',
                     meta: { tool_kind: 'action', action: 'create-demand-exception', setor_id }
                   }
                 )
@@ -2782,6 +2854,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
+            // Check total colaboradores do setor para warning de viabilidade
+            const totalColabs = await queryOne<{ total: number }>(
+              'SELECT COUNT(*) as total FROM colaboradores WHERE setor_id = ? AND ativo = true', setor_id
+            )
+            const totalNoSetor = totalColabs?.total ?? 0
+            const avisoCapacidade = min_pessoas > totalNoSetor
+              ? `⚠️ ATENÇÃO: min_pessoas (${min_pessoas}) excede o total de colaboradores ativos no setor (${totalNoSetor}). O motor pode retornar INFEASIBLE.`
+              : undefined
+
             const newId = await insertReturningId(
               'INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override) VALUES (?, ?, ?, ?, ?, ?)',
               setor_id, data, hora_inicio, hora_fim, min_pessoas, override
@@ -2793,10 +2874,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               {
                 sucesso: true,
                 setor: { id: setor.id, nome: setor.nome },
+                total_colaboradores_setor: totalNoSetor,
+                ...(avisoCapacidade ? { aviso_capacidade: avisoCapacidade } : {}),
                 registro,
               },
               {
-                summary: `Demanda excepcional criada para ${setor.nome} em ${data}: ${min_pessoas} pessoa(s) das ${hora_inicio} às ${hora_fim}.`,
+                summary: `Demanda excepcional criada para ${setor.nome} em ${data}: ${min_pessoas} pessoa(s) das ${hora_inicio} às ${hora_fim}.${avisoCapacidade ? ` ${avisoCapacidade}` : ''}`,
                 meta: {
                   tool_kind: 'action',
                   action: 'create-demand-exception',
@@ -2826,7 +2909,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   'UPSERT_REGRA_EXCECAO_COLAB_NAO_ENCONTRADO',
                   `Colaborador ${colaborador_id} não encontrado.`,
                   {
-                    correction: 'Resolva o colaborador via buscar_colaborador ou get_context().',
+                    correction: 'Resolva o colaborador via buscar_colaborador ou consultar.',
                     meta: { tool_kind: 'action', action: 'upsert-date-exception-rule', colaborador_id }
                   }
                 )
@@ -2911,7 +2994,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 meta: {
                   tool_kind: 'action',
                   action: 'upsert-date-exception-rule',
-                  next_tools_hint: ['obter_regra_horario_colaborador', 'gerar_escala'],
+                  next_tools_hint: ['buscar_colaborador', 'gerar_escala'],
                 }
               }
             )
@@ -2937,7 +3020,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   'RESUMIR_HORAS_SETOR_INVALIDO',
                   `Setor ${setor_id} não encontrado ou inativo.`,
                   {
-                    correction: 'Use get_context() para resolver o setor_id correto.',
+                    correction: 'Use o contexto automático ou consultar("setores") para resolver o setor_id correto.',
                     meta: { tool_kind: 'discovery', action: 'summarize-hours', setor_id }
                   }
                 )
@@ -3078,7 +3161,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             const contrato = await queryOne<{ id: number; nome: string }>('SELECT id, nome FROM tipos_contrato WHERE id = ?', tipo_contrato_id)
             if (!contrato) {
                 return toolError('CONTRATO_NAO_ENCONTRADO', `Tipo de contrato ${tipo_contrato_id} não encontrado.`, {
-                  correction: 'Use get_context() ou consultar("tipos_contrato") para ver os IDs válidos.',
+                  correction: 'Use o contexto automático ou consultar("tipos_contrato") para ver os IDs válidos.',
                   meta: { tool_kind: 'discovery' }
                 })
             }
@@ -3218,75 +3301,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'obter_alertas') {
         const { setor_id: filtroSetorId } = args
         try {
-            const alertas: Array<{ tipo: string; severidade: string; setor_id?: number; setor_nome?: string; escala_id?: number; mensagem: string }> = []
-
-            // 1) Setores sem escala ou com poucos colaboradores
-            const setoresQ = filtroSetorId
-              ? await queryAll<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE ativo = true AND id = ?', filtroSetorId)
-              : await queryAll<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE ativo = true')
-
-            for (const s of setoresQ) {
-                const colabCount = (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id))!.c
-                if (colabCount < 2) {
-                    alertas.push({ tipo: 'POUCOS_COLABORADORES', severidade: 'WARNING', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: apenas ${colabCount} colaborador(es) ativo(s).` })
-                }
-
-                const temEscala = (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')", s.id))!
-                if (temEscala.c === 0) {
-                    alertas.push({ tipo: 'SEM_ESCALA', severidade: 'INFO', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: nenhuma escala gerada.` })
-                }
-            }
-
-            // 2) Escalas RASCUNHO com violações HARD
-            const rascunhosHard = filtroSetorId
-              ? await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?", filtroSetorId)
-              : await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0")
-
-            for (const e of rascunhosHard) {
-                alertas.push({ tipo: 'VIOLACOES_HARD_PENDENTES', severidade: 'CRITICAL', setor_id: e.setor_id, setor_nome: e.setor_nome, escala_id: e.id, mensagem: `${e.setor_nome}: escala ${e.data_inicio}–${e.data_fim} tem ${e.violacoes_hard} violação(ões) HARD — não pode oficializar.` })
-            }
-
-            // 3) Escalas desatualizadas (input_hash diverge dos dados atuais)
-            const rascunhos = filtroSetorId
-              ? await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL AND e.setor_id = ?", filtroSetorId)
-              : await queryAll<any>("SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.simulacao_config_json, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL")
-
-            for (const e of rascunhos) {
-                try {
-                    const currentInput = await buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
-                    const currentHash = computeSolverScenarioHash(currentInput)
-                    if (currentHash !== e.input_hash) {
-                        alertas.push({ tipo: 'ESCALA_DESATUALIZADA', severidade: 'WARNING', setor_id: e.setor_id, setor_nome: e.setor_nome, escala_id: e.id, mensagem: `${e.setor_nome}: escala ${e.data_inicio}–${e.data_fim} está desatualizada — dados mudaram desde a geração. Regere antes de oficializar.` })
-                    }
-                } catch { /* skip — build pode falhar se dados mudaram drasticamente */ }
-            }
-
-            // 4) Exceções prestes a expirar (próximos 7 dias)
-            const expirando = filtroSetorId
-              ? await queryAll<any>(`
-                SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
-                FROM excecoes e
-                JOIN colaboradores c ON e.colaborador_id = c.id
-                JOIN setores s ON c.setor_id = s.id
-                WHERE c.ativo = true AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days'
-                AND c.setor_id = ?
-                ORDER BY e.data_fim
-                LIMIT 10
-              `, filtroSetorId)
-              : await queryAll<any>(`
-                SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
-                FROM excecoes e
-                JOIN colaboradores c ON e.colaborador_id = c.id
-                JOIN setores s ON c.setor_id = s.id
-                WHERE c.ativo = true AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days'
-                ORDER BY e.data_fim
-                LIMIT 10
-              `)
-
-            for (const ex of expirando) {
-                alertas.push({ tipo: 'EXCECAO_EXPIRANDO', severidade: 'INFO', setor_id: ex.setor_id, setor_nome: ex.setor_nome, mensagem: `${ex.colab_nome} (${ex.setor_nome}): ${ex.tipo} termina em ${ex.data_fim}.` })
-            }
-
+            const alertas = await coreAlerts(filtroSetorId as number | undefined)
             return toolOk(
               { alertas, total: alertas.length },
               { summary: alertas.length > 0 ? `${alertas.length} alerta(s) ativo(s).` : 'Nenhum alerta ativo.', meta: { tool_kind: 'discovery' } }
@@ -3310,8 +3325,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
             return toolOk(
               {
-                chunks: result.chunks.map(c => ({ id: c.id, conteudo: c.conteudo.slice(0, 500), importance: c.importance, score: c.score })),
-                relations: result.relations.map(r => ({ from: r.from_nome, to: r.to_nome, tipo: r.tipo_relacao })),
+                total: result.chunks.length,
                 context_for_llm: result.context_for_llm,
               },
               { summary: `${result.chunks.length} resultado(s) encontrado(s).`, meta: { tool_kind: 'knowledge' } }
@@ -3363,6 +3377,109 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         } catch (e: any) {
             return toolError('LISTAR_CONHECIMENTO_FALHOU', `Erro: ${e.message}`, { correction: 'Tente sem filtro de tipo.', meta: { tool_kind: 'knowledge' } })
+        }
+    }
+
+    if (name === 'explorar_relacoes') {
+        const { entidade, profundidade } = args
+        try {
+            const result = await exploreRelations(entidade as string, (profundidade as number) ?? 2)
+            if (!result.entidade_raiz) {
+                return toolError('NOT_FOUND', `Entidade "${entidade}" não encontrada no knowledge graph.`, {
+                    correction: 'Verifique o nome exato. O graph só contém entidades extraídas de documentos indexados.',
+                    meta: { tool_kind: 'knowledge' }
+                })
+            }
+            return toolOk(
+              { entidade_raiz: result.entidade_raiz, entidades: result.entidades, relacoes: result.relacoes },
+              {
+                summary: `Grafo explorado para "${result.entidade_raiz}": ${result.entidades.length} entidade(s), ${result.relacoes.length} relação(ões).`,
+                meta: { tool_kind: 'knowledge' }
+              }
+            )
+        } catch (e: any) {
+            return toolError('EXPLORAR_RELACOES_FALHOU', `Erro ao explorar relações: ${e.message}`, {
+                correction: 'Verifique o nome da entidade e tente novamente.',
+                meta: { tool_kind: 'knowledge' }
+            })
+        }
+    }
+
+    // ==================== MEMÓRIAS IA ====================
+
+    if (name === 'salvar_memoria') {
+        const { conteudo, id } = args as { conteudo: string; id?: number }
+        try {
+            const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM ia_memorias')
+            const total = countRow?.c ?? 0
+
+            if (id) {
+                // Update
+                await execute('UPDATE ia_memorias SET conteudo = $1, atualizada_em = NOW() WHERE id = $2', conteudo, id)
+                return toolOk(
+                    { id, conteudo, total },
+                    { summary: `Memória #${id} atualizada.`, meta: { tool_kind: 'memoria' } }
+                )
+            }
+
+            // Create — check limit
+            if (total >= 20) {
+                return toolError('LIMITE_MEMORIAS', `Limite de 20 memórias atingido (${total}/20).`, {
+                    correction: 'Use listar_memorias para ver as existentes e remover_memoria para liberar espaço.',
+                    meta: { tool_kind: 'memoria' }
+                })
+            }
+
+            const newId = await insertReturningId('INSERT INTO ia_memorias (conteudo) VALUES ($1)', conteudo)
+            return toolOk(
+                { id: newId, conteudo, total: total + 1 },
+                { summary: `Memória salva (${total + 1}/20): "${conteudo.slice(0, 50)}..."`, meta: { tool_kind: 'memoria' } }
+            )
+        } catch (e: any) {
+            return toolError('SALVAR_MEMORIA_FALHOU', `Erro ao salvar memória: ${e.message}`, {
+                correction: 'Tente novamente.',
+                meta: { tool_kind: 'memoria' }
+            })
+        }
+    }
+
+    if (name === 'listar_memorias') {
+        try {
+            const rows = await queryAll<{ id: number; conteudo: string; criada_em: string; atualizada_em: string }>(
+                'SELECT * FROM ia_memorias ORDER BY atualizada_em DESC')
+            return toolOk(
+                { memorias: rows, total: rows.length, limite: 20 },
+                { summary: `${rows.length} memória(s) salva(s) (max 20).`, meta: { tool_kind: 'memoria' } }
+            )
+        } catch (e: any) {
+            return toolError('LISTAR_MEMORIAS_FALHOU', `Erro ao listar memórias: ${e.message}`, {
+                correction: 'Tente novamente.',
+                meta: { tool_kind: 'memoria' }
+            })
+        }
+    }
+
+    if (name === 'remover_memoria') {
+        const { id } = args as { id: number }
+        try {
+            const existe = await queryOne<{ id: number }>('SELECT id FROM ia_memorias WHERE id = $1', id)
+            if (!existe) {
+                return toolError('NOT_FOUND', `Memória #${id} não encontrada.`, {
+                    correction: 'Use listar_memorias para ver os IDs disponíveis.',
+                    meta: { tool_kind: 'memoria' }
+                })
+            }
+            await execute('DELETE FROM ia_memorias WHERE id = $1', id)
+            const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM ia_memorias')
+            return toolOk(
+                { id, total: countRow?.c ?? 0 },
+                { summary: `Memória #${id} removida.`, meta: { tool_kind: 'memoria' } }
+            )
+        } catch (e: any) {
+            return toolError('REMOVER_MEMORIA_FALHOU', `Erro ao remover memória: ${e.message}`, {
+                correction: 'Tente novamente.',
+                meta: { tool_kind: 'memoria' }
+            })
         }
     }
 

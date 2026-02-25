@@ -1,3 +1,4 @@
+<!-- quando_usar: perguntas frequentes, cobertura nao 100%, INFEASIBLE significado, violacoes HARD SOFT, compensacao 9h45, rank senioridade, resetar banco, o que IA pode fazer -->
 # Perguntas Frequentes - EscalaFlow
 
 ## Geracao de Escalas

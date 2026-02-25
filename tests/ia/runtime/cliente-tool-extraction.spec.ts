@@ -10,7 +10,7 @@ describe('cliente.ts tool step mapping', () => {
     expect(acoes).toHaveLength(2)
     expect(acoes[0]).toEqual({
       id: 'tc-1',
-      name: 'get_context',
+      name: 'consultar',
       args: {},
       result: null,
     })
@@ -106,7 +106,7 @@ describe('cliente.ts tool step mapping', () => {
   })
 
   it('trunca results grandes com safeCompactJson', () => {
-    const bigResult = { data: 'x'.repeat(1000) }
+    const bigResult = { data: 'x'.repeat(2000) }
     const messages = __iaClienteTestables.buildChatMessages(
       [
         { id: '1', papel: 'usuario', conteudo: 'Oi', timestamp: 't1' },
@@ -125,14 +125,14 @@ describe('cliente.ts tool step mapping', () => {
 
     const toolMsg = messages[2] as any
     expect(toolMsg.role).toBe('tool')
-    // Result text should be truncated (much shorter than the raw 1000+ chars)
+    // Result text should be truncated (TOOL_RESULT_MAX_CHARS = 1500, shorter than raw 2000+ chars of repeated data)
     const resultText = toolMsg.content[0].output.value as string
-    expect(resultText.length).toBeLessThan(500)
+    expect(resultText.length).toBeLessThan(1600)
     expect(resultText.endsWith('…')).toBe(true)
   })
 
-  it('usa o system prompt novo como fonte principal (sem overlay de runtime)', () => {
-    const full = __iaClienteTestables.buildFullSystemPrompt()
+  it('usa o system prompt novo como fonte principal (sem overlay de runtime)', async () => {
+    const full = await __iaClienteTestables.buildFullSystemPrompt()
 
     expect(full).not.toContain('ATUALIZACAO OPERACIONAL (FASE 3)')
     expect(full).toContain('## 2) O Motor e Como Ele Funciona')

@@ -1,3 +1,4 @@
+<!-- quando_usar: tipos de contrato, CLT 44h 36h 30h, estagiario, aprendiz, horas semanais, jornada maxima, compensacao 9h45, perfis de horario -->
 # Tipos de Contrato no EscalaFlow
 
 ## Visao geral

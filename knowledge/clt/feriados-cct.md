@@ -1,3 +1,4 @@
+<!-- quando_usar: feriado CCT FecomercioSP, Natal Ano Novo proibido trabalhar, aprendiz feriado, Black Friday demanda excepcional, Carnaval, domingos CCT -->
 # Feriados e CCT FecomercioSP no EscalaFlow
 
 ## CCT FecomercioSP — O que e

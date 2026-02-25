@@ -28,7 +28,16 @@ Consequencia pratica:
 
 - wrappers como `listar_setores`, `listar_colaboradores_do_setor`, `obter_escala_atual`, `criar_excecao` foram **removidos do registry/runtime**
 - varias linhas deste catalogo passam a ser **candidatas canceladas** (ou "so criar se provar que genericas nao resolvem")
-- target operacional deve permanecer **enxuto e abaixo do teto de 30 tools** (na pratica, hoje o runtime ja opera com 28 tools apos avancos da Onda 2 parcial)
+- target operacional deve permanecer **enxuto e abaixo do teto de 30 tools** (na pratica, hoje o runtime opera com 30 tools apos Cleanup v2 — 3 tools removidas, 4 knowledge tools adicionadas)
+
+### Cleanup v2 (2026-02-24)
+
+Três tools removidas por redundância com discovery automático + genéricas:
+- `get_context` → discovery auto injeta setores/colabs/escalas a cada request
+- `obter_regra_horario_colaborador` → `buscar_colaborador` single-match retorna regras completas
+- `obter_regras_horario_setor` → discovery do setor agora inclui regras + detecção de conflitos de folga
+
+Registry atual: **30 tools** (teto operacional atingido).
 
 ## Fontes usadas (double-check)
 
@@ -51,9 +60,10 @@ Nota de leitura:
 
 Hoje a IA tem (expostas no registry) o nucleo de:
 
-- discovery generico: `get_context`, `consultar`
+- discovery: `consultar`, `buscar_colaborador` (fuzzy search + enrichment)
 - CRUD generico: `criar`, `atualizar`, `deletar`, `cadastrar_lote`
 - regras/escala: `preflight`, `gerar_escala`, `ajustar_alocacao`, `oficializar_escala`, `editar_regra`, `explicar_violacao`
+- knowledge: `buscar_conhecimento`, `salvar_conhecimento`, `listar_conhecimento`, `explorar_relacoes`
 
 Observacao:
 
@@ -77,7 +87,7 @@ Objetivo: resolver nomes, IDs, estado atual e contexto sem depender de `consulta
 
 | Tool (target) | Status atual | Prioridade | Fase | Base no sistema | Motivo |
 |---|---|---:|---|---|---|
-| `get_context` | existente | P0 | ja existe | `tools.ts` | Discovery global / refresh |
+| `get_context` | **REMOVIDA** (Cleanup v2 — coberta por discovery auto + consultar + buscar_colaborador) | P0 | ja existe | `tools.ts` | Discovery global / refresh |
 | `listar_setores` | proposta antiga | P0 | Fase 4 | `setores.listar` | Reduz `consultar("setores")` |
 | `buscar_setor` | nova (double-check) | P1 | Fase 4/5 | `setores.buscar` | Nome/ID -> setor com detalhes |
 | `listar_colaboradores_do_setor` | nova (double-check) | P0 | Fase 4 | `colaboradores.listar` | Fluxo frequente de RH |
@@ -227,7 +237,7 @@ Objetivo: cobrir os gaps mais importantes apontados no doc canonico ("so pode de
 
 | Tool (target) | Status atual | Prioridade | Fase | Base no sistema | Motivo |
 |---|---|---:|---|---|---|
-| `obter_regra_horario_colaborador` | nova (double-check) | P0 | Fase 4/5 | `colaboradores.buscarRegraHorario` | Gap critico "so de manha" |
+| `obter_regra_horario_colaborador` | **REMOVIDA** — `buscar_colaborador` single-match enriquecido retorna regras + exceções | P0 | Fase 4/5 | `colaboradores.buscarRegraHorario` | Gap critico "so de manha" |
 | `salvar_regra_horario_colaborador` | nova (double-check) | P0 | Fase 4/5 | `colaboradores.salvarRegraHorario` | Gap critico |
 | `listar_regras_excecao_data_colaborador` | nova (double-check) | P1 | Fase 5 | `colaboradores.listarRegrasExcecaoData` | Overrides pontuais |
 | `upsert_regra_excecao_data_colaborador` | nova (double-check) | P1 | Fase 5 | `colaboradores.upsertRegraExcecaoData` | "No dia X so pode Y" |
@@ -304,7 +314,6 @@ Foco (revisado): resolver os pedidos mais comuns com **tools de logica propria**
 - `buscar_colaborador`
 - `preflight_completo`
 - `diagnosticar_escala`
-- `obter_regra_horario_colaborador`
 - `salvar_regra_horario_colaborador`
 - `definir_janela_colaborador`
 - `ajustar_horario` (ou ampliar `ajustar_alocacao`)
@@ -315,6 +324,7 @@ Usar genericas no lugar de wrappers canceladas:
 - `consultar("colaboradores", {setor_id})` em vez de `listar_colaboradores_do_setor`
 - `consultar("escalas", {setor_id})` em vez de `obter_escala_atual`
 - `criar("excecoes", ...)` em vez de `criar_excecao`
+- `get_context` removido — discovery auto cobre
 
 ### Onda 2 — P1 de operacao (Fase 5)
 

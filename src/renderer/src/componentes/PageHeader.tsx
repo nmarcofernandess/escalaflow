@@ -145,27 +145,31 @@ export function PageHeader({
       {/* Actions da página + Toggle IA */}
       <div className="flex items-center gap-2">
         {actions}
-        <Separator orientation="vertical" className="mx-1 !h-4" />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              id={TOUR_STEP_IDS.IA_TOGGLE}
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              onClick={toggleIa}
-            >
-              {iaStore.aberto ? (
-                <PanelRightClose className="size-4" />
-              ) : (
-                <BrainCircuit className="size-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {iaStore.aberto ? 'Fechar Assistente IA' : 'Abrir Assistente IA'}
-          </TooltipContent>
-        </Tooltip>
+        {location.pathname !== '/ia' && (
+          <>
+            <Separator orientation="vertical" className="mx-1 !h-4" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  id={TOUR_STEP_IDS.IA_TOGGLE}
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  onClick={toggleIa}
+                >
+                  {iaStore.aberto ? (
+                    <PanelRightClose className="size-4" />
+                  ) : (
+                    <BrainCircuit className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {iaStore.aberto ? 'Fechar Assistente IA' : 'Abrir Assistente IA'}
+              </TooltipContent>
+            </Tooltip>
+          </>
+        )}
       </div>
     </header>
   )

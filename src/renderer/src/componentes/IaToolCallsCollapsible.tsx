@@ -7,8 +7,8 @@ import { useState } from 'react'
 import type { ToolCall } from '@shared/index'
 
 const TOOL_ICONS: Record<string, string> = {
-  get_context: '🔍',
   consultar: '📊',
+  buscar_colaborador: '🔍',
   criar: '➕',
   atualizar: '✏️',
   deletar: '🗑️',
@@ -18,7 +18,7 @@ const TOOL_ICONS: Record<string, string> = {
   preflight: '🛫',
   editar_regra: '⚙️',
   explicar_violacao: '📖',
-  resumo_sistema: '📈',
+  obter_alertas: '📈',
 }
 
 interface Props {

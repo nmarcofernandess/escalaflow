@@ -9,18 +9,20 @@ App desktop offline para geração automática de escalas de trabalho em superme
 - Geração automática de escala otimizada por período (motor Python OR-Tools CP-SAT)
 - 20 regras CLT/CCT aplicadas automaticamente (HARD bloqueantes + SOFT alertas + antipatterns)
 - 35 regras configuráveis por empresa (Engine de Regras com override granular)
-- Assistente IA integrado (Gemini) com 28 tools — Chat RH contextual ao sistema
+- Assistente IA integrado (Gemini/OpenRouter) com 33 tools — Chat RH contextual ao sistema
+- Knowledge Layer com RAG: embeddings locais (ONNX), knowledge graph, memórias persistentes
 - Grid 15 minutos com simulação iterativa (click alterna TRABALHO/FOLGA, recalcula em tempo real)
 - Regras individuais por colaborador (janela horária, ciclo domingo, folga fixa, exceções por data)
 - Cores de posto/função na grid + legenda visual
 - Ciclo rotativo: detecção, salvamento e geração por modelo
 - Oficialização com bloqueio de violações críticas
 - Export HTML self-contained para impressão (A4 landscape, com almoço)
-- Histórico de conversas IA persistente (SQLite)
+- Backup seletivo em ZIP compactado (cadastros, conhecimento, histórico de chat — com toggles)
+- Histórico de conversas IA persistente com compaction de sessões longas
 - Auto-update via GitHub Releases
 - Tour guiado de 14 passos para novos usuários
 - Dark mode 100% funcional
-- 11 páginas, 80+ IPC handlers, 7 formulários com validação Zod
+- 13 páginas, 90+ IPC handlers, 7 formulários com validação Zod
 - **100% offline** — sem login, sem internet, sem servidor
 
 ---
@@ -32,9 +34,10 @@ App desktop offline para geração automática de escalas de trabalho em superme
 | Shell | Electron | 34 |
 | Build | electron-vite | 3 |
 | IPC | @egoist/tipc (type-safe) | 0.3 |
-| Database | SQLite via better-sqlite3 | 11 |
+| Database | PGlite (Postgres 17 WASM) + pgvector | 0.3 |
+| Embeddings | @huggingface/transformers (multilingual-e5-small) | local ONNX |
 | Motor | Python OR-Tools CP-SAT | via bridge TS → stdin/stdout JSON |
-| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 28 tools |
+| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 33 tools |
 | Frontend | React | 19 |
 | Estilo | Tailwind CSS + shadcn/ui | 3 / 24 components |
 | Estado | Zustand | 5 |
@@ -52,7 +55,7 @@ npm install    # instala dependências
 npm run dev    # abre o app Electron com hot reload
 ```
 
-O banco SQLite é criado automaticamente no primeiro run com seed de contratos CLT, feriados nacionais, perfis horário e 35 regras do motor.
+O banco PGlite (Postgres WASM) é criado automaticamente no primeiro run com seed de contratos CLT, feriados nacionais, perfis horário e 35 regras do motor.
 
 ---
 
@@ -197,7 +200,7 @@ Padrões operacionais indesejáveis detectados e penalizados pelo motor.
 
 ## Modelo de dados
 
-10 entidades, snake_case ponta a ponta:
+### Entidades operacionais (snake_case ponta a ponta)
 
 | Entidade | Tabela | Descrição |
 |----------|--------|-----------|
@@ -212,6 +215,18 @@ Padrões operacionais indesejáveis detectados e penalizados pelo motor.
 | Funcao | `funcoes` | Postos de trabalho (com cor na grid) |
 | Feriado | `feriados` | Feriados com flag `proibido_trabalhar` (CCT) |
 
+### IA e Knowledge Layer
+
+| Tabela | Descrição |
+|--------|-----------|
+| `ia_conversas` | Histórico de conversas IA (status, resumo compactado) |
+| `ia_mensagens` | Mensagens individuais (role, content, tool_calls, anexos) |
+| `ia_memorias` | Memórias curtas do RH (max 20, injetadas no discovery) |
+| `knowledge_sources` | Documentos importados (manual, session, auto_extract) |
+| `knowledge_chunks` | Chunks com embedding vector(768) + FTS português |
+| `knowledge_entities` | Entidades extraídas via LLM (pessoa, setor, regra…) |
+| `knowledge_relations` | Relações entre entidades (trabalha_em, regido_por…) |
+
 ---
 
 ## Estrutura do projeto
@@ -221,13 +236,14 @@ escalaflow/
 ├── src/
 │   ├── main/                    # Electron Main Process (Node.js)
 │   │   ├── index.ts             # bootstrap, BrowserWindow, auto-updater
-│   │   ├── tipc.ts              # 80+ IPC handlers type-safe (@egoist/tipc)
-│   │   ├── db/                  # SQLite: schema, seed, conexão
-│   │   ├── ia/                  # Chat RH: system-prompt, 28 tools, discovery, cliente
+│   │   ├── tipc.ts              # 90+ IPC handlers type-safe (@egoist/tipc)
+│   │   ├── db/                  # PGlite: schema, migrations, seed, conexão
+│   │   ├── ia/                  # Chat RH: system-prompt, 33 tools, discovery, cliente, session-processor
+│   │   ├── knowledge/           # RAG: embeddings (ONNX), ingest, search, graph
 │   │   └── motor/               # solver-bridge.ts (→ Python) + validador.ts
 │   │
 │   ├── preload/                 # contextBridge (IPC seguro)
-│   ├── renderer/src/            # React 19 + Vite (11 páginas, shadcn/ui, Zustand)
+│   ├── renderer/src/            # React 19 + Vite (13 páginas, shadcn/ui, Zustand)
 │   └── shared/                  # Types + constants compartilhados (main + renderer)
 │
 ├── solver/                      # Motor Python OR-Tools CP-SAT
@@ -249,10 +265,24 @@ escalaflow/
 
 ---
 
+## Backup e Restauração
+
+O sistema exporta dados como **ZIP compactado** com 3 categorias seletivas (toggles na tela de Configurações):
+
+| Categoria | Default | O que inclui |
+|-----------|---------|-------------|
+| Cadastros e escalas | ON | Empresa, setores, colaboradores, escalas, regras, feriados, config IA |
+| Conhecimento e memórias | ON | Documentos importados, memórias IA, knowledge graph |
+| Histórico de conversas | OFF | Todas as conversas com a assistente IA |
+
+O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui as categorias presentes no backup** — dados não incluídos permanecem intactos.
+
+---
+
 ## Troubleshooting
 
 - **App não abre:** `npm run build` primeiro, depois `npm run dev`
-- **Banco corrompido:** Delete `data/escalaflow.db` e reinicie. Seed roda automaticamente
+- **Banco corrompido:** Delete `data/pglite/` e reinicie. Seed roda automaticamente
 - **Typecheck falha:** `npm run typecheck` mostra erros separados por node e web
 - **Motor trava:** Timeout de 30s protege. Verifique dados do setor (demandas, colaboradores)
 - **Dark mode quebrado:** Cores usam tokens semânticos de `cores.ts`. Se adicionou cor nova, inclua `dark:` variant

@@ -315,6 +315,85 @@ def add_h10_meta_semanal(
     return total_minutes, weekly_minutes_by_colab
 
 
+def add_h10_meta_semanal_elastic(
+    model: cp_model.CpModel,
+    obj_terms: list,
+    work: SlotGrid,
+    colabs: List[dict],
+    C: int, D: int, S: int,
+    week_chunks: List[List[int]],
+    blocked_days: Dict[int, set] | None = None,
+    tolerance_min: int = 30,
+    grid_min: int = 30,
+    weight: int = 8000,
+) -> Tuple[List[cp_model.IntVar], List[List[cp_model.IntVar]]]:
+    """H10 ELASTIC: Horas semanais como SOFT constraint com slack variables.
+
+    Identical return signature to add_h10_meta_semanal() so dependent
+    constraints (H14, H15, H16) continue to work unchanged.
+
+    Instead of hard domain bounds [lo, hi] on the wm variable, this uses:
+      - wm domain: [0, max_capacity]  (no hard lower bound)
+      - slack_under >= lo - wm   (penalized: hours below target)
+      - slack_over  >= wm - hi   (penalized: hours above target)
+
+    Weight 8000 per minute of deviation — high enough to strongly prefer
+    meeting the target, but not HARD (which would cause INFEASIBLE).
+    """
+    total_minutes: list[cp_model.IntVar] = []
+    weekly_minutes_by_colab: list[list[cp_model.IntVar]] = []
+
+    for c in range(C):
+        blocked = blocked_days.get(c, set()) if blocked_days else set()
+        regime_days = _resolve_regime_days(colabs[c])
+        target_week_min = int(colabs[c]["horas_semanais"]) * 60
+        max_day_min = int(colabs[c].get("max_minutos_dia", 600))
+
+        chunk_vars: list[cp_model.IntVar] = []
+        for w_idx, chunk in enumerate(week_chunks):
+            chunk_days = len(chunk)
+            available_days = sum(1 for d in chunk if d not in blocked)
+
+            target = _prorata_weekly(target_week_min, chunk_days)
+            tol = _prorata_weekly(tolerance_min, chunk_days)
+
+            nominal_work_days = max(1, _prorata_weekly(regime_days, chunk_days))
+            capacity_factor = 1.0
+            if available_days < nominal_work_days:
+                capacity_factor = available_days / nominal_work_days
+
+            adjusted_target = int(round(target * capacity_factor))
+            adjusted_tol = int(round(tol * capacity_factor))
+            max_capacity = max(1, available_days * max_day_min)
+
+            lo = max(0, adjusted_target - adjusted_tol)
+            hi = min(max_capacity, adjusted_target + adjusted_tol)
+            if hi < lo:
+                lo = 0
+                hi = max_capacity
+
+            # Elastic: domain is [0, max_capacity], no hard bounds
+            wm = model.new_int_var(0, max_capacity, f"wm_{c}_{w_idx}")
+            model.add(
+                wm == sum(work[c, d, s] for d in chunk for s in range(S)) * grid_min
+            )
+            chunk_vars.append(wm)
+
+            # Penalty for deviation from [lo, hi] band
+            slack_under = model.new_int_var(0, max_capacity, f"h10e_under_{c}_{w_idx}")
+            slack_over = model.new_int_var(0, max_capacity, f"h10e_over_{c}_{w_idx}")
+            model.add(slack_under >= lo - wm)
+            model.add(slack_over >= wm - hi)
+            obj_terms.append(weight * slack_under)
+            obj_terms.append(weight * slack_over)
+
+        wt = model.new_int_var(0, D * S * grid_min, f"wm_total_{c}")
+        model.add(wt == sum(chunk_vars))
+        total_minutes.append(wt)
+        weekly_minutes_by_colab.append(chunk_vars)
+
+    return total_minutes, weekly_minutes_by_colab
+
 
 # ===================================================================
 # CAMADA 1 — PRODUCT RULES (Hard but adjustable by product owner)

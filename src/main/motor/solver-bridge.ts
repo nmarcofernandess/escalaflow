@@ -203,7 +203,7 @@ export async function buildSolverInput(
            c.tipo_trabalhador, c.funcao_id, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia, tc.trabalha_domingo
     FROM colaboradores c
     JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
-    WHERE c.setor_id = ? AND c.ativo = 1
+    WHERE c.setor_id = ? AND c.ativo = true
     ORDER BY c.rank DESC
   `, setorId)
 
@@ -262,9 +262,10 @@ export async function buildSolverInput(
     WHERE data_inicio <= ? AND data_fim >= ?
   `, dataFim, dataInicio)
 
-  // v4: Regras de horario por colaborador
-  const regraHorarioRows = await queryAll<{
+  // v4: Regras de horario por colaborador (v9: múltiplas regras por dia da semana)
+  type RegraHorarioRow = {
     colaborador_id: number; ativo: number; perfil_horario_id: number | null;
+    dia_semana_regra: string | null;
     inicio_min: string | null; inicio_max: string | null;
     fim_min: string | null; fim_max: string | null;
     preferencia_turno_soft: string | null;
@@ -273,8 +274,10 @@ export async function buildSolverInput(
     p_inicio_min: string | null; p_inicio_max: string | null;
     p_fim_min: string | null; p_fim_max: string | null;
     p_preferencia_turno_soft: string | null;
-  }>(`
+  }
+  const regraHorarioRows = await queryAll<RegraHorarioRow>(`
     SELECT r.colaborador_id, r.ativo, r.perfil_horario_id,
+           r.dia_semana_regra,
            r.inicio_min, r.inicio_max, r.fim_min, r.fim_max,
            r.preferencia_turno_soft, r.domingo_ciclo_trabalho, r.domingo_ciclo_folga,
            r.folga_fixa_dia_semana,
@@ -282,11 +285,20 @@ export async function buildSolverInput(
            p.fim_min AS p_fim_min, p.fim_max AS p_fim_max,
            p.preferencia_turno_soft AS p_preferencia_turno_soft
     FROM colaborador_regra_horario r
-    LEFT JOIN contrato_perfis_horario p ON p.id = r.perfil_horario_id AND p.ativo = 1
-    WHERE r.ativo = 1
-      AND r.colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
+    LEFT JOIN contrato_perfis_horario p ON p.id = r.perfil_horario_id AND p.ativo = true
+    WHERE r.ativo = true
+      AND r.colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = true)
   `, setorId)
-  const regraByColab = new Map(regraHorarioRows.map(r => [r.colaborador_id, r]))
+
+  // Agrupar regras: padrao (dia_semana_regra IS NULL) + por dia da semana
+  type RegraGroup = { padrao: RegraHorarioRow | null; dias: Map<string, RegraHorarioRow> }
+  const regraGroupByColab = new Map<number, RegraGroup>()
+  for (const r of regraHorarioRows) {
+    let g = regraGroupByColab.get(r.colaborador_id)
+    if (!g) { g = { padrao: null, dias: new Map() }; regraGroupByColab.set(r.colaborador_id, g) }
+    if (r.dia_semana_regra === null) g.padrao = r
+    else g.dias.set(r.dia_semana_regra, r)
+  }
 
   // v4: Excecoes de horario por data
   const excecaoDataRows = await queryAll<{
@@ -298,9 +310,9 @@ export async function buildSolverInput(
     SELECT colaborador_id, data, ativo, inicio_min, inicio_max, fim_min, fim_max,
            preferencia_turno_soft, domingo_forcar_folga
     FROM colaborador_regra_horario_excecao_data
-    WHERE ativo = 1
+    WHERE ativo = true
       AND data BETWEEN ? AND ?
-      AND colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
+      AND colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = true)
   `, dataInicio, dataFim, setorId)
   const excecaoDataMap = new Map<string, typeof excecaoDataRows[0]>()
   for (const ed of excecaoDataRows) {
@@ -327,7 +339,7 @@ export async function buildSolverInput(
     const start = new Date(dataInicio + 'T00:00:00')
     const end = new Date(dataFim + 'T00:00:00')
     for (const colab of colabRows) {
-      const regra = regraByColab.get(colab.id)
+      const group = regraGroupByColab.get(colab.id)
       const d = new Date(start)
       while (d <= end) {
         const isoDate = d.toISOString().slice(0, 10)
@@ -335,7 +347,9 @@ export async function buildSolverInput(
 
         const excecaoData = excecaoDataMap.get(`${colab.id}|${isoDate}`)
 
-        // Precedencia: excecao_data > regra_colaborador > perfil_contrato > sem regra
+        // Precedencia: excecao_data > regra_dia_especifico > regra_padrao > perfil_contrato > sem regra
+        const regra = group?.dias.get(diaSemana) ?? group?.padrao ?? null
+
         let inicio_min: string | null = null
         let inicio_max: string | null = null
         let fim_min: string | null = null
@@ -360,8 +374,8 @@ export async function buildSolverInput(
           pref_turno = regra.preferencia_turno_soft ?? regra.p_preferencia_turno_soft
         }
 
-        // Folga fixa: se dia da semana bate
-        if (regra?.folga_fixa_dia_semana && regra.folga_fixa_dia_semana === diaSemana) {
+        // Folga fixa: usar regra padrão (campo nível-colaborador, não nível-dia)
+        if (group?.padrao?.folga_fixa_dia_semana && group.padrao.folga_fixa_dia_semana === diaSemana) {
           folga_fixa = true
         }
 
@@ -385,13 +399,13 @@ export async function buildSolverInput(
     }
   }
 
-  // Enriquecer colaboradores com dados de regra individual
+  // Enriquecer colaboradores com dados de regra padrão (campos nível-colaborador)
   for (const c of colaboradores) {
-    const regra = regraByColab.get(c.id)
-    if (regra) {
-      c.domingo_ciclo_trabalho = regra.domingo_ciclo_trabalho
-      c.domingo_ciclo_folga = regra.domingo_ciclo_folga
-      c.folga_fixa_dia_semana = (regra.folga_fixa_dia_semana as DiaSemana | null) ?? null
+    const padrao = regraGroupByColab.get(c.id)?.padrao
+    if (padrao) {
+      c.domingo_ciclo_trabalho = padrao.domingo_ciclo_trabalho
+      c.domingo_ciclo_folga = padrao.domingo_ciclo_folga
+      c.folga_fixa_dia_semana = (padrao.folga_fixa_dia_semana as DiaSemana | null) ?? null
     }
   }
 

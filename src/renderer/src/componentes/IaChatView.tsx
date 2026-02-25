@@ -1,30 +1,32 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, Settings, Loader2 } from 'lucide-react'
+import { Bot, Settings, Loader2, FileText, ImageIcon } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
 import { useIaStore } from '@/store/iaStore'
+import { useIaModelConfig } from '@/hooks/useIaModelConfig'
 import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
 import { IaToolCallsCollapsible } from './IaToolCallsCollapsible'
-import type { IaMensagem, IaContexto, ToolCall, IaStreamEvent } from '@shared/index'
+import { toolLabel, toolEstimatedSeconds } from '@/lib/tool-labels'
+import type { IaMensagem, IaAnexo, IaContexto, ToolCall, IaStreamEvent } from '@shared/index'
 
-// We intentionally keep tool output only in the in-memory UI message.
-// Persisted chat history stores a sanitized version without `result` to avoid giant JSON payloads in SQLite.
-function stripToolCallResult(call: ToolCall): ToolCall {
-  const sanitized: ToolCall = {
-    id: call.id,
-    name: call.name,
+// Token estimation constants
+const CHARS_PER_TOKEN = 4
+const SYSTEM_PROMPT_TOKENS = 2500
+const TOOL_CALL_TOKENS = 350
+
+function estimarTokens(mensagens: IaMensagem[]): number {
+  let total = SYSTEM_PROMPT_TOKENS
+  for (const m of mensagens) {
+    total += Math.ceil(m.conteudo.length / CHARS_PER_TOKEN)
+    if (m.tool_calls) total += m.tool_calls.length * TOOL_CALL_TOKENS
   }
-
-  if (Object.prototype.hasOwnProperty.call(call, 'args')) {
-    sanitized.args = call.args
-  }
-
-  return sanitized
+  return total
 }
 
 function useIaContexto(): IaContexto {
@@ -49,9 +51,35 @@ function useIaContexto(): IaContexto {
     else if (path === '/feriados') pagina = 'feriados'
     else if (path === '/configuracoes') pagina = 'configuracoes'
     else if (path === '/regras') pagina = 'regras'
+    else if (path === '/ia') pagina = 'ia'
 
     return { rota: path, pagina, setor_id, colaborador_id }
   }, [location.pathname])
+}
+
+// Tool progress pill with countdown
+function ToolProgressPill({ info }: { info: { tool_name: string; estimated_seconds?: number; started_at: number } }) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - info.started_at) / 1000)), 1000)
+    return () => clearInterval(interval)
+  }, [info.started_at])
+
+  const label = toolLabel(info.tool_name)
+  const est = toolEstimatedSeconds(info.tool_name, info.estimated_seconds)
+
+  return (
+    <Badge variant="secondary" className="gap-1.5 text-xs animate-pulse py-1">
+      <Loader2 className="size-3 animate-spin" />
+      <span>{label}</span>
+      {est ? (
+        <span className="text-muted-foreground">({elapsed}s / ~{est}s)</span>
+      ) : elapsed > 0 ? (
+        <span className="text-muted-foreground">({elapsed}s)</span>
+      ) : null}
+    </Badge>
+  )
 }
 
 export function IaChatView() {
@@ -59,36 +87,54 @@ export function IaChatView() {
     mensagens, carregando, conversa_ativa_id, adicionarMensagem,
     texto_parcial, tool_calls_parciais, tools_em_andamento,
     iniciarStream, processarStreamEvent, finalizarStream, cancelarStream,
+    editarEReenviar,
   } = useIaStore()
   const [texto, setTexto] = useState('')
   const [configurado, setConfigurado] = useState<boolean | null>(null)
-  const [modeloAtivo, setModeloAtivo] = useState<string | null>(null)
+  const [anexos, setAnexos] = useState<IaAnexo[]>([])
   const msgEndRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const contexto = useIaContexto()
 
-  const refreshConfig = () => {
+  const modelConfig = useIaModelConfig()
+
+  const tokensEstimados = useMemo(() => estimarTokens(mensagens), [mensagens])
+
+  // Edit state
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+
+  // Timeout banner
+  const [lastEventAt, setLastEventAt] = useState(Date.now())
+  const [showTimeoutBanner, setShowTimeoutBanner] = useState(false)
+
+  // Check if IA is configured
+  useEffect(() => {
     window.electron.ipcRenderer.invoke('ia.configuracao.obter').then((config: any) => {
-      if (!config) {
-        setConfigurado(false)
-        setModeloAtivo(null)
-        return
-      }
+      if (!config) { setConfigurado(false); return }
       const temApiKey = !!config.api_key
       const providerConfigs = config.provider_configs ?? {}
       const temTokenEmAlgumProvider = Object.values(providerConfigs).some(
         (pc: any) => pc?.token?.trim()
       )
       setConfigurado(temApiKey || temTokenEmAlgumProvider)
-      setModeloAtivo(config.modelo || null)
     })
-  }
-
-  useEffect(() => { refreshConfig() }, [conversa_ativa_id])
+  }, [conversa_ativa_id])
 
   useEffect(() => {
-    window.addEventListener('ia-config-changed', refreshConfig)
-    return () => window.removeEventListener('ia-config-changed', refreshConfig)
+    const handler = () => {
+      window.electron.ipcRenderer.invoke('ia.configuracao.obter').then((config: any) => {
+        if (!config) { setConfigurado(false); return }
+        const temApiKey = !!config.api_key
+        const providerConfigs = config.provider_configs ?? {}
+        const temTokenEmAlgumProvider = Object.values(providerConfigs).some(
+          (pc: any) => pc?.token?.trim()
+        )
+        setConfigurado(temApiKey || temTokenEmAlgumProvider)
+      })
+    }
+    window.addEventListener('ia-config-changed', handler)
+    return () => window.removeEventListener('ia-config-changed', handler)
   }, [])
 
   // Stream event listener
@@ -106,6 +152,21 @@ export function IaChatView() {
     return () => window.electron.ipcRenderer.removeAllListeners('ia:stream')
   }, [processarStreamEventStable])
 
+  // Reset lastEventAt on any stream activity
+  useEffect(() => {
+    setLastEventAt(Date.now())
+    setShowTimeoutBanner(false)
+  }, [texto_parcial, tools_em_andamento, tool_calls_parciais])
+
+  // Timeout banner — 15s sem atividade
+  useEffect(() => {
+    if (!carregando) { setShowTimeoutBanner(false); return }
+    const timer = setInterval(() => {
+      if (Date.now() - lastEventAt > 15_000) setShowTimeoutBanner(true)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [carregando, lastEventAt])
+
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -116,28 +177,41 @@ export function IaChatView() {
     }
   }, [mensagens, carregando, texto_parcial])
 
-  const enviar = async () => {
-    if (!texto.trim() || carregando || !conversa_ativa_id) return
+  const enviar = async (conteudoOverride?: string) => {
+    const conteudo = conteudoOverride ?? texto
+    if ((!conteudo.trim() && anexos.length === 0) || carregando || !conversa_ativa_id) return
 
     const now = new Date().toISOString()
     const msg: IaMensagem = {
       id: crypto.randomUUID(),
       timestamp: now,
       papel: 'usuario',
-      conteudo: texto,
+      conteudo,
+      anexos: anexos.length > 0 ? anexos : undefined,
     }
-    await adicionarMensagem(msg)
-    setTexto('')
+
+    // Se e override (edit+reenviar), nao persiste de novo — ja foi feito pelo store
+    if (!conteudoOverride) {
+      await adicionarMensagem(msg)
+    }
+
+    const currentAnexos = conteudoOverride ? [] : [...anexos]
+    if (!conteudoOverride) {
+      setTexto('')
+      setAnexos([])
+    }
 
     const streamId = crypto.randomUUID()
     iniciarStream(streamId)
 
     try {
       const resp = await window.electron.ipcRenderer.invoke('ia.chat.enviar', {
-        mensagem: msg.conteudo,
-        historico: mensagens,
+        mensagem: conteudo,
+        historico: conteudoOverride ? useIaStore.getState().mensagens.slice(0, -1) : mensagens,
         contexto,
         stream_id: streamId,
+        conversa_id: conversa_ativa_id,
+        anexos: currentAnexos,
       })
       const toolCallsAoVivo = Array.isArray(resp?.acoes) ? (resp.acoes as ToolCall[]) : []
       const timestamp = new Date().toISOString()
@@ -151,15 +225,7 @@ export function IaChatView() {
         tool_calls: toolCallsAoVivo.length > 0 ? toolCallsAoVivo : undefined,
       }
 
-      const mensagemPersistida: IaMensagem = {
-        ...mensagemAssistente,
-        // Keep args for debugging/history context, drop result to keep DB rows compact.
-        tool_calls: toolCallsAoVivo.length > 0
-          ? toolCallsAoVivo.map(stripToolCallResult)
-          : undefined,
-      }
-
-      await adicionarMensagem(mensagemAssistente, { mensagemPersistida })
+      await adicionarMensagem(mensagemAssistente)
       finalizarStream()
     } catch (err: any) {
       await adicionarMensagem({
@@ -170,6 +236,28 @@ export function IaChatView() {
       })
       cancelarStream()
     }
+  }
+
+  // Edit handlers
+  const handleStartEdit = (msg: IaMensagem) => {
+    if (carregando) return
+    setEditingMsgId(msg.id)
+    setEditText(msg.conteudo)
+  }
+
+  const handleConfirmEdit = async () => {
+    if (!editingMsgId || !editText.trim() || carregando) return
+    const novoConteudo = await editarEReenviar(editingMsgId, editText.trim())
+    setEditingMsgId(null)
+    setEditText('')
+    if (novoConteudo) {
+      await enviar(novoConteudo)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingMsgId(null)
+    setEditText('')
   }
 
   if (configurado === false) {
@@ -213,7 +301,44 @@ export function IaChatView() {
             .filter((m) => m.papel !== 'tool_result')
             .map((m) => (
               <div key={m.id} className="min-w-0 max-w-full">
-                <IaMensagemBubble msg={m} />
+                {editingMsgId === m.id ? (
+                  <div className="flex flex-col gap-2 w-full max-w-[88%] ml-auto">
+                    <Textarea
+                      value={editText}
+                      onChange={e => setEditText(e.target.value)}
+                      className="resize-none text-sm"
+                      rows={3}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          handleConfirmEdit()
+                        }
+                        if (e.key === 'Escape') handleCancelEdit()
+                      }}
+                    />
+                    <div className="flex gap-1 justify-end">
+                      <Button size="sm" variant="ghost" onClick={handleCancelEdit}>Cancelar</Button>
+                      <Button size="sm" onClick={handleConfirmEdit} disabled={!editText.trim()}>Reenviar</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <IaMensagemBubble
+                    msg={m}
+                    onEdit={m.papel === 'usuario' ? handleStartEdit : undefined}
+                    showActions={!carregando}
+                  />
+                )}
+                {m.papel === 'usuario' && m.anexos && m.anexos.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1 justify-end">
+                    {m.anexos.map(a => (
+                      <Badge key={a.id} variant="secondary" className="text-[10px] gap-1">
+                        {a.tipo === 'image' ? <ImageIcon className="size-2.5" /> : <FileText className="size-2.5" />}
+                        {a.nome}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
                 {m.papel === 'assistente' && m.tool_calls && m.tool_calls.length > 0 && (
                   <div className="mt-2 min-w-0 max-w-full">
                     <IaToolCallsCollapsible toolCalls={m.tool_calls} />
@@ -224,14 +349,11 @@ export function IaChatView() {
 
           {carregando && (
             <div className="min-w-0 max-w-full space-y-2">
-              {/* Tools em andamento — pills animadas */}
+              {/* Tools em andamento — pills com countdown */}
               {toolsEmAndamentoEntries.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {toolsEmAndamentoEntries.map(([id, info]) => (
-                    <Badge key={id} variant="secondary" className="gap-1.5 text-xs animate-pulse">
-                      <Loader2 className="size-3 animate-spin" />
-                      {info.tool_name}
-                    </Badge>
+                    <ToolProgressPill key={id} info={info} />
                   ))}
                 </div>
               )}
@@ -254,8 +376,15 @@ export function IaChatView() {
                 </div>
               )}
 
+              {/* Timeout banner */}
+              {showTimeoutBanner && (
+                <div className="text-xs text-muted-foreground text-center py-1 animate-pulse">
+                  Ainda processando... A IA esta trabalhando na resposta.
+                </div>
+              )}
+
               {/* Fallback — bouncing dots quando nenhum indicador está ativo */}
-              {!hasStreamingContent && (
+              {!hasStreamingContent && !showTimeoutBanner && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-2xl rounded-bl-sm bg-muted border text-muted-foreground text-sm max-w-[70%]">
                   <div className="flex gap-1">
                     <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:0ms]" />
@@ -278,7 +407,18 @@ export function IaChatView() {
         onChange={setTexto}
         onEnviar={enviar}
         disabled={carregando || !conversa_ativa_id}
-        modelo={modeloAtivo}
+        conversaId={conversa_ativa_id}
+        provider={modelConfig.provider}
+        modelo={modelConfig.modelo}
+        modeloLabel={modelConfig.modeloLabel}
+        modelOptions={modelConfig.modelOptions}
+        onProviderChange={modelConfig.setProvider}
+        onModeloChange={modelConfig.setModelo}
+        tokensEstimados={tokensEstimados}
+        contextLength={modelConfig.contextLength}
+        supportsMultimodal={modelConfig.supportsMultimodal}
+        anexos={anexos}
+        onAnexosChange={setAnexos}
       />
     </div>
   )

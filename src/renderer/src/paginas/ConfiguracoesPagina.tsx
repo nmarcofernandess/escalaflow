@@ -20,6 +20,9 @@ import {
   Save,
   ExternalLink,
   HardDrive,
+  Database,
+  BookOpen,
+  MessageSquare,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -27,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -160,13 +164,26 @@ export function ConfiguracoesPagina() {
 
   const [backupLoading, setBackupLoading] = useState(false)
   const [restoreLoading, setRestoreLoading] = useState(false)
+  const [backupCadastros, setBackupCadastros] = useState(true)
+  const [backupConhecimento, setBackupConhecimento] = useState(true)
+  const [backupChat, setBackupChat] = useState(false)
 
   const handleExportar = async () => {
+    if (!backupCadastros && !backupConhecimento && !backupChat) {
+      toast.error('Selecione pelo menos uma categoria para exportar.')
+      return
+    }
     setBackupLoading(true)
     try {
-      const res = await window.electron.ipcRenderer.invoke('dados.exportar') as { filepath: string } | null
+      const res = await window.electron.ipcRenderer.invoke('dados.exportar', {
+        incluir_cadastros: backupCadastros,
+        incluir_conhecimento: backupConhecimento,
+        incluir_historico_chat: backupChat,
+      }) as { filepath: string; tamanho_mb: number } | null
       if (res) {
-        toast.success('Backup exportado com sucesso!', { description: res.filepath })
+        toast.success('Backup exportado com sucesso!', {
+          description: `${res.tamanho_mb} MB — ${res.filepath}`,
+        })
       }
     } catch (err: any) {
       toast.error('Erro ao exportar backup', { description: err?.message ?? 'Erro desconhecido' })
@@ -178,10 +195,13 @@ export function ConfiguracoesPagina() {
   const handleImportar = async () => {
     setRestoreLoading(true)
     try {
-      const res = await window.electron.ipcRenderer.invoke('dados.importar') as { tabelas: number; registros: number } | null
+      const res = await window.electron.ipcRenderer.invoke('dados.importar') as {
+        tabelas: number; registros: number; categorias: string[]
+      } | null
       if (res) {
+        const catLabel = res.categorias.join(', ')
         toast.success('Dados restaurados com sucesso!', {
-          description: `${res.tabelas} tabelas, ${res.registros} registros importados. Reinicie o app para garantir consistencia.`,
+          description: `${res.tabelas} tabelas, ${res.registros} registros (${catLabel}). Reinicie o app para garantir consistencia.`,
         })
       }
     } catch (err: any) {
@@ -770,22 +790,77 @@ export function ConfiguracoesPagina() {
               Backup e Restauracao
             </CardTitle>
             <CardDescription>
-              Exporte todos os dados do sistema para um arquivo JSON ou restaure a partir de um backup anterior.
+              Exporte os dados do sistema para um arquivo .zip compactado ou restaure a partir de um backup anterior.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Exportar dados</p>
-                <p className="text-xs text-muted-foreground">
-                  Salva empresa, setores, colaboradores, escalas, regras e configuracoes em um arquivo.
-                </p>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Exportar dados</p>
+              <p className="text-xs text-muted-foreground">
+                Escolha o que incluir no backup:
+              </p>
+            </div>
+
+            <div className="space-y-3 rounded-lg border p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Database className="size-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Cadastros e escalas</p>
+                    <p className="text-xs text-muted-foreground">
+                      Empresa, setores, colaboradores, escalas, regras, feriados
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={backupCadastros}
+                  onCheckedChange={setBackupCadastros}
+                />
               </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <BookOpen className="size-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Conhecimento e memorias</p>
+                    <p className="text-xs text-muted-foreground">
+                      Documentos importados, memorias da IA, grafo de relacoes
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={backupConhecimento}
+                  onCheckedChange={setBackupConhecimento}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <MessageSquare className="size-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Historico de conversas</p>
+                    <p className="text-xs text-muted-foreground">
+                      Todas as conversas com a assistente IA
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={backupChat}
+                  onCheckedChange={setBackupChat}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleExportar}
-                disabled={backupLoading}
+                disabled={backupLoading || (!backupCadastros && !backupConhecimento && !backupChat)}
               >
                 {backupLoading ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -795,12 +870,14 @@ export function ConfiguracoesPagina() {
                 Exportar backup
               </Button>
             </div>
+
             <Separator />
+
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-1">
                 <p className="text-sm font-medium">Restaurar dados</p>
                 <p className="text-xs text-muted-foreground">
-                  Substitui TODOS os dados atuais pelo conteudo do backup. Esta acao nao pode ser desfeita.
+                  Aceita .zip (novo) ou .json (legado). Substitui apenas as categorias presentes no backup.
                 </p>
               </div>
               <Button

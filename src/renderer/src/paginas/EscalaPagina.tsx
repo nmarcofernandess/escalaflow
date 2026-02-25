@@ -868,6 +868,7 @@ export function EscalaPagina() {
                 cicloDetecting={cicloDetecting}
                 cicloResult={cicloResult}
                 onSalvarCicloOpen={() => setShowCicloSaveDialog(true)}
+                horariosSemana={horariosSemana ?? undefined}
               />
             ) : (
               <Card>
@@ -977,6 +978,7 @@ export function EscalaPagina() {
                         dataFim={oficialEscala.escala.data_fim}
                         demandas={demandas ?? undefined}
                         tiposContrato={tiposContrato ?? undefined}
+                        horariosSemana={horariosSemana ?? undefined}
                         readOnly
                       />
                     )}
@@ -1087,6 +1089,7 @@ export function EscalaPagina() {
                                   dataFim={historicoDetail.escala.data_fim}
                                   demandas={demandas ?? undefined}
                                   tiposContrato={tiposContrato ?? undefined}
+                                  horariosSemana={horariosSemana ?? undefined}
                                   readOnly
                                 />
                               )}
@@ -1334,6 +1337,7 @@ interface SimulacaoResultProps {
     match_percent: number
   } | null
   onSalvarCicloOpen?: () => void
+  horariosSemana?: import('@shared/index').SetorHorarioSemana[]
 }
 
 function SimulacaoResult({
@@ -1365,6 +1369,7 @@ function SimulacaoResult({
   cicloDetecting = false,
   cicloResult = null,
   onSalvarCicloOpen,
+  horariosSemana,
 }: SimulacaoResultProps) {
   const indicators = getIndicators(escalaCompleta)
   const violacoes = escalaCompleta.violacoes
@@ -1489,6 +1494,7 @@ function SimulacaoResult({
               dataFim={escalaCompleta.escala.data_fim}
               demandas={demandas}
               tiposContrato={tiposContrato}
+              horariosSemana={horariosSemana ?? undefined}
               readOnly={false}
               onCelulaClick={onCelulaClick}
               loadingCell={ajustando ?? undefined}

@@ -1,3 +1,4 @@
+<!-- quando_usar: o que e EscalaFlow, como funciona, produto offline, grid 15min, ciclo vida escala, motor OR-Tools -->
 # EscalaFlow - Visao Geral do Sistema
 
 ## O que e o EscalaFlow

@@ -1,5 +1,6 @@
 import { queryOne, queryAll } from '../db/query'
 import { buildSolverInput, computeSolverScenarioHash } from '../motor/solver-bridge'
+import { searchKnowledge } from '../knowledge/search'
 import type { IaContexto } from '../../shared/types'
 
 /**
@@ -10,13 +11,23 @@ import type { IaContexto } from '../../shared/types'
  * O objetivo é que a IA NUNCA precise perguntar informações
  * básicas que já estão visíveis na tela do usuário.
  */
-export async function buildContextBriefing(contexto?: IaContexto): Promise<string> {
+export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuario?: string): Promise<string> {
     if (!contexto) return ''
 
     const sections: string[] = []
 
     sections.push(`## CONTEXTO AUTOMÁTICO — PÁGINA ATUAL DO USUÁRIO`)
     sections.push(`Rota: ${contexto.rota}`)
+
+    // ─── Memórias do RH (SEMPRE, todas) ────────────────────────────
+    const memorias = await _memorias()
+    if (memorias) sections.push(memorias)
+
+    // ─── Auto-RAG: busca semântica no knowledge ─────────────────────
+    if (mensagemUsuario && mensagemUsuario.trim().length > 10) {
+        const ragContext = await _autoRag(mensagemUsuario)
+        if (ragContext) sections.push(ragContext)
+    }
 
     // ─── Resumo global (sempre) ──────────────────────────────────────
     const resumo = await _resumoGlobal()
@@ -29,7 +40,7 @@ export async function buildContextBriefing(contexto?: IaContexto): Promise<strin
     const feriadosProximos = await queryAll<{ data: string; nome: string; proibido_trabalhar: boolean }>(`
         SELECT data, nome, proibido_trabalhar
         FROM feriados
-        WHERE data >= CURRENT_DATE AND data <= CURRENT_DATE + INTERVAL '30 days'
+        WHERE data::date >= CURRENT_DATE AND data::date <= CURRENT_DATE + INTERVAL '30 days'
         ORDER BY data
     `)
     if (feriadosProximos.length > 0) {
@@ -56,11 +67,11 @@ export async function buildContextBriefing(contexto?: IaContexto): Promise<strin
     }
 
     // ─── Lista de setores (sempre — são poucos) ──────────────────────
-    const setores = await queryAll<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string; ativo: boolean }>('SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores WHERE ativo = 1 ORDER BY nome')
+    const setores = await queryAll<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string; ativo: boolean }>('SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores WHERE ativo = true ORDER BY nome')
     if (setores.length > 0) {
         sections.push(`\n### Setores disponíveis`)
         for (const s of setores) {
-            const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = 1', s.id)
+            const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id)
             const numColabs = countRow?.c ?? 0
             sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.hora_abertura}–${s.hora_fechamento}, ${numColabs} colaboradores`)
         }
@@ -98,8 +109,8 @@ export async function buildContextBriefing(contexto?: IaContexto): Promise<strin
 
 async function _resumoGlobal() {
     return {
-        setores: (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM setores WHERE ativo = 1'))?.c ?? 0,
-        colaboradores: (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE ativo = 1'))?.c ?? 0,
+        setores: (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM setores WHERE ativo = true'))?.c ?? 0,
+        colaboradores: (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE ativo = true'))?.c ?? 0,
         rascunhos: (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM escalas WHERE status = 'RASCUNHO'"))?.c ?? 0,
         oficiais: (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM escalas WHERE status = 'OFICIAL'"))?.c ?? 0,
     }
@@ -119,7 +130,7 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
         SELECT c.id, c.nome, c.tipo_trabalhador, t.nome as contrato_nome, t.horas_semanais
         FROM colaboradores c
         JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
-        WHERE c.setor_id = ? AND c.ativo = 1
+        WHERE c.setor_id = ? AND c.ativo = true
         ORDER BY c.nome
     `, setor_id)
 
@@ -137,8 +148,8 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
         SELECT e.tipo, e.data_inicio, e.data_fim, c.nome as colab_nome
         FROM excecoes e
         JOIN colaboradores c ON e.colaborador_id = c.id
-        WHERE c.setor_id = ? AND c.ativo = 1
-          AND e.data_fim >= CURRENT_DATE
+        WHERE c.setor_id = ? AND c.ativo = true
+          AND e.data_fim::date >= CURRENT_DATE
         ORDER BY e.data_inicio
         LIMIT 10
     `, setor_id)
@@ -148,6 +159,60 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
         for (const e of excecoes) {
             lines.push(`- ${e.colab_nome}: ${e.tipo} ${e.data_inicio} a ${e.data_fim}`)
         }
+    }
+
+    // Regras de horário individuais do setor
+    const regrasSetor = await queryAll<{
+        colab_nome: string; colaborador_id: number;
+        dia_semana_regra: string | null; folga_fixa_dia_semana: string | null;
+        inicio_min: string | null; fim_max: string | null;
+    }>(`
+        SELECT c.nome as colab_nome, r.colaborador_id, r.dia_semana_regra,
+               r.folga_fixa_dia_semana, r.inicio_min, r.fim_max
+        FROM colaborador_regra_horario r
+        JOIN colaboradores c ON c.id = r.colaborador_id
+        WHERE c.setor_id = ? AND c.ativo = true AND r.ativo = true
+        ORDER BY c.nome, r.dia_semana_regra NULLS FIRST
+    `, setor_id)
+
+    if (regrasSetor.length > 0) {
+        lines.push(`\n#### Regras de horário individuais:`)
+        // Agrupar por colaborador
+        const porColab = new Map<number, { nome: string; regras: typeof regrasSetor }>()
+        for (const r of regrasSetor) {
+            if (!porColab.has(r.colaborador_id)) porColab.set(r.colaborador_id, { nome: r.colab_nome, regras: [] })
+            porColab.get(r.colaborador_id)!.regras.push(r)
+        }
+        for (const [, { nome, regras }] of porColab) {
+            const partes = regras.map(r => {
+                const label = r.dia_semana_regra ?? 'padrão'
+                const janela = r.inicio_min || r.fim_max ? `${r.inicio_min ?? '?'}–${r.fim_max ?? '?'}` : ''
+                const folga = !r.dia_semana_regra && r.folga_fixa_dia_semana ? `folga ${r.folga_fixa_dia_semana}` : ''
+                return [label, janela, folga].filter(Boolean).join(' ')
+            })
+            lines.push(`- ${nome}: ${partes.join(', ')}`)
+        }
+
+        // Detectar conflitos de folga fixa
+        const folgasPorDia = new Map<string, string[]>()
+        for (const r of regrasSetor) {
+            if (r.folga_fixa_dia_semana && !r.dia_semana_regra) {
+                const arr = folgasPorDia.get(r.folga_fixa_dia_semana) ?? []
+                arr.push(r.colab_nome)
+                folgasPorDia.set(r.folga_fixa_dia_semana, arr)
+            }
+        }
+        for (const [dia, nomes] of folgasPorDia) {
+            if (nomes.length > 1) {
+                lines.push(`- CONFLITO folga fixa ${dia}: ${nomes.join(', ')}`)
+            }
+        }
+    }
+
+    // Quem NÃO tem regra individual
+    const colabsSemRegra = colabs.filter(c => !regrasSetor.some(r => r.colaborador_id === c.id))
+    if (colabsSemRegra.length > 0 && regrasSetor.length > 0) {
+        lines.push(`- Sem regra individual: ${colabsSemRegra.map(c => c.nome).join(', ')}`)
     }
 
     // Demandas
@@ -221,10 +286,33 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
     lines.push(`- Tipo: ${colab.tipo_trabalhador}`)
     if (colab.prefere_turno) lines.push(`- Preferência turno: ${colab.prefere_turno}`)
 
+    // Regras de horário (padrão + por dia da semana)
+    const regrasHorario = await queryAll<{
+        dia_semana_regra: string | null; inicio_min: string | null; inicio_max: string | null;
+        fim_min: string | null; fim_max: string | null; folga_fixa_dia_semana: string | null;
+        domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
+    }>('SELECT dia_semana_regra, inicio_min, inicio_max, fim_min, fim_max, folga_fixa_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga FROM colaborador_regra_horario WHERE colaborador_id = ? AND ativo = true ORDER BY dia_semana_regra NULLS FIRST', colaborador_id)
+
+    if (regrasHorario.length > 0) {
+        lines.push(`\n#### Regras de horário:`)
+        for (const r of regrasHorario) {
+            const label = r.dia_semana_regra ?? 'PADRÃO'
+            const janela = [r.inicio_min, r.inicio_max, r.fim_min, r.fim_max].filter(Boolean).length > 0
+                ? `${r.inicio_min ?? '?'}-${r.inicio_max ?? '?'} / ${r.fim_min ?? '?'}-${r.fim_max ?? '?'}`
+                : 'sem janela'
+            const extras: string[] = []
+            if (!r.dia_semana_regra) {
+                if (r.folga_fixa_dia_semana) extras.push(`folga fixa ${r.folga_fixa_dia_semana}`)
+                extras.push(`ciclo dom ${r.domingo_ciclo_trabalho}/${r.domingo_ciclo_folga}`)
+            }
+            lines.push(`- ${label}: ${janela}${extras.length > 0 ? ` (${extras.join(', ')})` : ''}`)
+        }
+    }
+
     // Exceções ativas
     const excecoes = await queryAll<{ tipo: string; data_inicio: string; data_fim: string; observacao: string | null }>(`
         SELECT tipo, data_inicio, data_fim, observacao
-        FROM excecoes WHERE colaborador_id = ? AND data_fim >= CURRENT_DATE
+        FROM excecoes WHERE colaborador_id = ? AND data_fim::date >= CURRENT_DATE
         ORDER BY data_inicio
     `, colaborador_id)
 
@@ -238,21 +326,52 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
     return lines.join('\n')
 }
 
-async function _alertasProativos(setor_id?: number): Promise<string | null> {
-    const lines: string[] = []
+// =============================================================================
+// ALERTAS ESTRUTURADOS — exportados para uso em tools.ts (obter_alertas)
+// =============================================================================
 
-    // Escalas RASCUNHO com violações HARD (escopo: setor em foco ou todos)
-    const violQuery = setor_id
-        ? "SELECT e.id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?"
-        : "SELECT e.id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0"
-    const violacoes = setor_id
-        ? await queryAll<{ id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>(violQuery, setor_id)
-        : await queryAll<{ id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>(violQuery)
-    for (const v of violacoes) {
-        lines.push(`- CRITICAL: ${v.setor_nome} escala ${v.data_inicio}–${v.data_fim} tem ${v.violacoes_hard} violação(ões) HARD`)
+export interface AlertaCore {
+    tipo: string
+    severidade: 'CRITICAL' | 'WARNING' | 'INFO'
+    codigo?: string
+    mensagem: string
+    setor_id?: number
+    setor_nome?: string
+    escala_id?: number
+}
+
+export async function coreAlerts(setor_id?: number): Promise<AlertaCore[]> {
+    const alertas: AlertaCore[] = []
+
+    // 1) Setores com poucos colaboradores ou sem escala
+    const setoresQ = setor_id
+        ? await queryAll<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE ativo = true AND id = ?', setor_id)
+        : await queryAll<{ id: number; nome: string }>('SELECT id, nome FROM setores WHERE ativo = true')
+
+    for (const s of setoresQ) {
+        const colabCount = (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id))!.c
+        if (colabCount < 2) {
+            alertas.push({ tipo: 'POUCOS_COLABORADORES', severidade: 'WARNING', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: apenas ${colabCount} colaborador(es) ativo(s).` })
+        }
+
+        const temEscala = (await queryOne<{ c: number }>("SELECT COUNT(*)::int as c FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')", s.id))!
+        if (temEscala.c === 0) {
+            alertas.push({ tipo: 'SEM_ESCALA', severidade: 'INFO', setor_id: s.id, setor_nome: s.nome, mensagem: `${s.nome}: nenhuma escala gerada.` })
+        }
     }
 
-    // Escalas desatualizadas (input_hash diverge)
+    // 2) Escalas RASCUNHO com violações HARD
+    const violQuery = setor_id
+        ? "SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0 AND e.setor_id = ?"
+        : "SELECT e.id, e.setor_id, s.nome as setor_nome, e.violacoes_hard, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.violacoes_hard > 0"
+    const violacoes = setor_id
+        ? await queryAll<{ id: number; setor_id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>(violQuery, setor_id)
+        : await queryAll<{ id: number; setor_id: number; setor_nome: string; violacoes_hard: number; data_inicio: string; data_fim: string }>(violQuery)
+    for (const v of violacoes) {
+        alertas.push({ tipo: 'VIOLACOES_HARD_PENDENTES', severidade: 'CRITICAL', setor_id: v.setor_id, setor_nome: v.setor_nome, escala_id: v.id, mensagem: `${v.setor_nome}: escala ${v.data_inicio}–${v.data_fim} tem ${v.violacoes_hard} violação(ões) HARD — não pode oficializar.` })
+    }
+
+    // 3) Escalas desatualizadas (input_hash diverge)
     const hashQuery = setor_id
         ? "SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL AND e.setor_id = ?"
         : "SELECT e.id, e.setor_id, s.nome as setor_nome, e.input_hash, e.data_inicio, e.data_fim FROM escalas e JOIN setores s ON e.setor_id = s.id WHERE e.status = 'RASCUNHO' AND e.input_hash IS NOT NULL"
@@ -264,31 +383,79 @@ async function _alertasProativos(setor_id?: number): Promise<string | null> {
             const currentInput = await buildSolverInput(e.setor_id, e.data_inicio, e.data_fim)
             const currentHash = computeSolverScenarioHash(currentInput)
             if (currentHash !== e.input_hash) {
-                lines.push(`- WARNING: ${e.setor_nome} escala ${e.data_inicio}–${e.data_fim} está DESATUALIZADA — dados mudaram desde a geração`)
+                alertas.push({ tipo: 'ESCALA_DESATUALIZADA', severidade: 'WARNING', setor_id: e.setor_id, setor_nome: e.setor_nome, escala_id: e.id, mensagem: `${e.setor_nome}: escala ${e.data_inicio}–${e.data_fim} está desatualizada — dados mudaram desde a geração.` })
             }
-        } catch { /* skip — build pode falhar se dados mudaram drasticamente */ }
+        } catch { /* skip */ }
     }
 
-    // Exceções expirando em 7 dias
+    // 4) Exceções expirando em 7 dias
     const expQuery = setor_id
-        ? `SELECT e.tipo, e.data_fim, c.nome as colab_nome, s.nome as setor_nome
+        ? `SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
            FROM excecoes e JOIN colaboradores c ON e.colaborador_id = c.id JOIN setores s ON c.setor_id = s.id
-           WHERE c.ativo = 1 AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days' AND c.setor_id = ?
-           ORDER BY e.data_fim LIMIT 5`
-        : `SELECT e.tipo, e.data_fim, c.nome as colab_nome, s.nome as setor_nome
+           WHERE c.ativo = true AND e.data_fim::date >= CURRENT_DATE AND e.data_fim::date <= CURRENT_DATE + INTERVAL '7 days' AND c.setor_id = ?
+           ORDER BY e.data_fim LIMIT 10`
+        : `SELECT e.tipo, e.data_fim, c.nome as colab_nome, c.setor_id, s.nome as setor_nome
            FROM excecoes e JOIN colaboradores c ON e.colaborador_id = c.id JOIN setores s ON c.setor_id = s.id
-           WHERE c.ativo = 1 AND e.data_fim >= CURRENT_DATE AND e.data_fim <= CURRENT_DATE + INTERVAL '7 days'
-           ORDER BY e.data_fim LIMIT 5`
+           WHERE c.ativo = true AND e.data_fim::date >= CURRENT_DATE AND e.data_fim::date <= CURRENT_DATE + INTERVAL '7 days'
+           ORDER BY e.data_fim LIMIT 10`
     const expirando = setor_id
-        ? await queryAll<{ tipo: string; data_fim: string; colab_nome: string; setor_nome: string }>(expQuery, setor_id)
-        : await queryAll<{ tipo: string; data_fim: string; colab_nome: string; setor_nome: string }>(expQuery)
+        ? await queryAll<{ tipo: string; data_fim: string; colab_nome: string; setor_id: number; setor_nome: string }>(expQuery, setor_id)
+        : await queryAll<{ tipo: string; data_fim: string; colab_nome: string; setor_id: number; setor_nome: string }>(expQuery)
     for (const ex of expirando) {
-        lines.push(`- INFO: ${ex.colab_nome} (${ex.setor_nome}) — ${ex.tipo} termina em ${ex.data_fim}`)
+        alertas.push({ tipo: 'EXCECAO_EXPIRANDO', severidade: 'INFO', setor_id: ex.setor_id, setor_nome: ex.setor_nome, mensagem: `${ex.colab_nome} (${ex.setor_nome}): ${ex.tipo} termina em ${ex.data_fim}.` })
     }
 
-    if (lines.length === 0) return null
+    return alertas
+}
 
+async function _alertasProativos(setor_id?: number): Promise<string | null> {
+    const alertas = await coreAlerts(setor_id)
+    if (alertas.length === 0) return null
+
+    const lines = alertas.map(a => `- ${a.severidade}: ${a.mensagem}`)
     return `\n### Alertas ativos\n${lines.join('\n')}`
+}
+
+async function _autoRag(query: string): Promise<string | null> {
+    try {
+        const result = await searchKnowledge(query, { limite: 3 })
+        if (result.chunks.length === 0) return null
+
+        // Sobe pro nível da source: só título + context_hint (leve, ~300 chars total)
+        // O search roda nos chunks (onde moram embeddings), mas o prompt recebe só o ponteiro
+        const sourceIds = [...new Set(result.chunks.map(c => c.source_id))]
+        const sources = await queryAll<{ id: number; titulo: string; metadata: string }>(
+            `SELECT id, titulo, metadata::text as metadata FROM knowledge_sources WHERE id = ANY($1)`,
+            sourceIds,
+        )
+        if (sources.length === 0) return null
+
+        const lines = sources.map(s => {
+            let hint = ''
+            try {
+                const meta = JSON.parse(s.metadata)
+                hint = meta.context_hint ?? ''
+            } catch { /* */ }
+            return hint
+                ? `- **${s.titulo}**: ${hint}`
+                : `- **${s.titulo}**`
+        })
+
+        return `\n### Conhecimento relevante (use buscar_conhecimento para detalhes)\n${lines.join('\n')}`
+    } catch {
+        return null
+    }
+}
+
+async function _memorias(): Promise<string | null> {
+    try {
+        const rows = await queryAll<{ id: number; conteudo: string }>('SELECT id, conteudo FROM ia_memorias ORDER BY atualizada_em DESC LIMIT 20')
+        if (rows.length === 0) return null
+        const lines = rows.map(m => `- ${m.conteudo}`)
+        return `\n### Memórias do RH (${rows.length}/20)\n${lines.join('\n')}`
+    } catch {
+        return null
+    }
 }
 
 async function _statsKnowledge(): Promise<string | null> {
@@ -296,10 +463,8 @@ async function _statsKnowledge(): Promise<string | null> {
         const sources = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM knowledge_sources')
         if (!sources?.count) return null
         const chunks = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM knowledge_chunks')
-        const entities = await queryOne<{ count: number }>(
-            "SELECT COUNT(*)::int as count FROM knowledge_entities WHERE valid_to IS NULL"
-        )
-        return `\n### Base de Conhecimento\n- ${sources.count} fonte(s) | ${chunks?.count ?? 0} chunks indexados | ${entities?.count ?? 0} entidade(s) ativa(s)`
+        // Knowledge Graph não implementado (entities_count sempre 0) — não exibir para não confundir a IA
+        return `\n### Base de Conhecimento\n- ${sources.count} fonte(s) | ${chunks?.count ?? 0} chunks indexados`
     } catch {
         return null
     }

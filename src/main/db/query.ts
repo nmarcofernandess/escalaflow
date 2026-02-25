@@ -11,6 +11,21 @@ function convertPlaceholders(sql: string): string {
 }
 
 /**
+ * PGlite retorna colunas TIMESTAMPTZ/TIMESTAMP como Date objects JS.
+ * SQLite retornava strings. Normalizamos para string ISO aqui para
+ * não quebrar nenhuma lógica downstream que espera string.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeRow<T>(row: T): T {
+  if (!row || typeof row !== 'object') return row
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+    out[k] = v instanceof Date ? v.toISOString() : v
+  }
+  return out as T
+}
+
+/**
  * Substitui db.prepare(sql).get(...params)
  * Retorna a primeira row ou undefined.
  */
@@ -19,7 +34,8 @@ export async function queryOne<T = any>(sql: string, ...params: unknown[]): Prom
   const db = getDb()
   const pgSql = convertPlaceholders(sql)
   const result = await db.query<T>(pgSql, params)
-  return result.rows[0]
+  const row = result.rows[0]
+  return row !== undefined ? normalizeRow(row) : undefined
 }
 
 /**
@@ -31,7 +47,7 @@ export async function queryAll<T = any>(sql: string, ...params: unknown[]): Prom
   const db = getDb()
   const pgSql = convertPlaceholders(sql)
   const result = await db.query<T>(pgSql, params)
-  return result.rows
+  return result.rows.map(normalizeRow)
 }
 
 /**

@@ -40,6 +40,7 @@ import type {
   Colaborador,
   Demanda,
   TipoContrato,
+  SetorHorarioSemana,
 } from '@shared/index'
 
 export interface EscalaResumo {
@@ -75,21 +76,24 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [demandas, setDemandas] = useState<Demanda[]>([])
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([])
+  const [horariosSemana, setHorariosSemana] = useState<SetorHorarioSemana[]>([])
 
   async function loadDetail() {
     if (loaded || !escalaResumo) return
     setLoading(true)
     try {
-      const [ec, colabs, dems, tcs] = await Promise.all([
+      const [ec, colabs, dems, tcs, hs] = await Promise.all([
         escalasService.buscar(escalaResumo.id),
         colaboradoresService.listar({ setor_id: setor.id, ativo: true }),
         setoresService.listarDemandas(setor.id),
         tiposContratoService.listar(),
+        setoresService.listarHorarioSemana(setor.id),
       ])
       setEscalaCompleta(ec)
       setColaboradores(colabs)
       setDemandas(dems)
       setTiposContrato(tcs)
+      setHorariosSemana(hs)
       setLoaded(true)
     } catch {
       // Silently fail — user sees empty state
@@ -246,6 +250,7 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
               setor={setor}
               viewMode={viewMode}
               avisosCount={avisosCount}
+              horariosSemana={horariosSemana}
             />
           ) : (
             <div className="flex items-center justify-center py-8">
@@ -280,6 +285,7 @@ interface SectionTabsProps {
   setor: Setor
   viewMode: 'grid' | 'timeline'
   avisosCount: number
+  horariosSemana: SetorHorarioSemana[]
 }
 
 function SectionTabs({
@@ -290,6 +296,7 @@ function SectionTabs({
   setor,
   viewMode,
   avisosCount,
+  horariosSemana,
 }: SectionTabsProps) {
   // Count collaborators with problems (for badge)
   const problemCount = useMemo(() => {
@@ -359,6 +366,7 @@ function SectionTabs({
             dataFim={escalaCompleta.escala.data_fim}
             demandas={demandas}
             tiposContrato={tiposContrato}
+            horariosSemana={horariosSemana}
             readOnly
           />
         )}

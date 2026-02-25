@@ -165,7 +165,8 @@ CREATE TABLE IF NOT EXISTS contrato_perfis_horario (
 
 CREATE TABLE IF NOT EXISTS colaborador_regra_horario (
     id SERIAL PRIMARY KEY,
-    colaborador_id INTEGER NOT NULL UNIQUE REFERENCES colaboradores(id) ON DELETE CASCADE,
+    colaborador_id INTEGER NOT NULL REFERENCES colaboradores(id) ON DELETE CASCADE,
+    dia_semana_regra TEXT CHECK (dia_semana_regra IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR dia_semana_regra IS NULL),
     ativo BOOLEAN NOT NULL DEFAULT TRUE,
     perfil_horario_id INTEGER REFERENCES contrato_perfis_horario(id),
     inicio_min TEXT,
@@ -311,6 +312,19 @@ CREATE TABLE IF NOT EXISTS regra_empresa (
 `
 
 // ============================================================================
+// DDL — Memorias IA (v8): fatos curtos do RH, sempre injetados
+// ============================================================================
+
+const DDL_V8_MEMORIAS = `
+CREATE TABLE IF NOT EXISTS ia_memorias (
+  id SERIAL PRIMARY KEY,
+  conteudo TEXT NOT NULL,
+  criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  atualizada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+`
+
+// ============================================================================
 // DDL — Knowledge Layer (v7): RAG + Knowledge Graph
 // ============================================================================
 
@@ -324,6 +338,7 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
   metadata JSONB DEFAULT '{}',
   importance TEXT NOT NULL DEFAULT 'high'
     CHECK (importance IN ('high', 'low')),
+  ativo BOOLEAN NOT NULL DEFAULT TRUE,
   criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   atualizada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -332,7 +347,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
   id SERIAL PRIMARY KEY,
   source_id INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
   conteudo TEXT NOT NULL,
-  embedding vector(384),
+  embedding vector(768),
   search_tsv TSVECTOR,
   importance TEXT NOT NULL DEFAULT 'high'
     CHECK (importance IN ('high', 'low')),
@@ -347,7 +362,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entities (
   id SERIAL PRIMARY KEY,
   nome TEXT NOT NULL,
   tipo TEXT NOT NULL,
-  embedding vector(384),
+  embedding vector(768),
   valid_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   valid_to TIMESTAMPTZ DEFAULT NULL,
   criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -556,6 +571,82 @@ async function migrateSchema(): Promise<void> {
 
   // --- v8: IA sempre ativo ---
   await execute('UPDATE configuracao_ia SET ativo = TRUE WHERE ativo = FALSE')
+
+  // --- v10: Embedding migration e5-small(384) → e5-base(768) ---
+  // Detecta se embeddings antigos (384d) existem — se sim, limpa tudo pra re-seed
+  await addColumnIfMissing('knowledge_sources', 'ativo', 'BOOLEAN NOT NULL DEFAULT TRUE')
+  const hasOldEmbeddings = await queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int as count FROM knowledge_chunks WHERE embedding IS NOT NULL`
+  )
+  if ((hasOldEmbeddings?.count ?? 0) > 0) {
+    // Checa dimensão do primeiro embedding existente
+    const dimCheck = await queryOne<{ dims: number }>(
+      `SELECT vector_dims(embedding) as dims FROM knowledge_chunks WHERE embedding IS NOT NULL LIMIT 1`
+    )
+    if (dimCheck && dimCheck.dims !== 768) {
+      console.log('[DB] Migration v10: Limpando embeddings 384d → será re-seedado com 768d...')
+      await execute('DELETE FROM knowledge_relations')
+      await execute('DELETE FROM knowledge_entities')
+      await execute('DELETE FROM knowledge_chunks')
+      await execute('DELETE FROM knowledge_sources')
+      // Recria colunas com vector(768)
+      await execDDL('ALTER TABLE knowledge_chunks DROP COLUMN IF EXISTS embedding')
+      await execDDL('ALTER TABLE knowledge_chunks ADD COLUMN embedding vector(768)')
+      await execDDL('ALTER TABLE knowledge_entities DROP COLUMN IF EXISTS embedding')
+      await execDDL('ALTER TABLE knowledge_entities ADD COLUMN embedding vector(768)')
+    }
+  }
+
+  // --- v11: Re-seed knowledge com context hints ---
+  const hasHints = await queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int as count FROM knowledge_sources
+     WHERE metadata::text LIKE '%context_hint%'`
+  )
+  if ((hasHints?.count ?? 0) === 0) {
+    const hasKnowledge = await queryOne<{ count: number }>(
+      'SELECT COUNT(*)::int as count FROM knowledge_sources'
+    )
+    if ((hasKnowledge?.count ?? 0) > 0) {
+      console.log('[DB] Migration v11: Limpando knowledge para re-seed com context hints...')
+      await execute('DELETE FROM knowledge_relations')
+      await execute('DELETE FROM knowledge_entities')
+      await execute('DELETE FROM knowledge_chunks')
+      await execute('DELETE FROM knowledge_sources')
+    }
+  }
+
+  // --- v12: Phase 5 — Session Indexing + Compaction ---
+  await addColumnIfMissing('ia_conversas', 'resumo_compactado', 'TEXT')
+  await addColumnIfMissing('configuracao_ia', 'memoria_automatica', 'BOOLEAN NOT NULL DEFAULT TRUE')
+
+  // Expand knowledge_sources.tipo CHECK to include 'session' and 'auto_extract'
+  // PGlite: drop old constraint, add new one (CHECK constraints are named by convention)
+  try {
+    await execDDL(`ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_tipo_check`)
+    await execDDL(`ALTER TABLE knowledge_sources ADD CONSTRAINT knowledge_sources_tipo_check
+      CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario', 'session', 'auto_extract'))`)
+  } catch {
+    // Constraint may not exist or may already be updated — safe to ignore
+  }
+
+  // --- v13: Anexos metadata em ia_mensagens ---
+  await addColumnIfMissing('ia_mensagens', 'anexos_meta_json', 'TEXT')
+
+  // --- v14: Knowledge Graph origem (sistema vs usuario) ---
+  await addColumnIfMissing('knowledge_entities', 'origem', "TEXT NOT NULL DEFAULT 'usuario'")
+
+  // --- v9: dia_semana_regra em colaborador_regra_horario ---
+  await addColumnIfMissing('colaborador_regra_horario', 'dia_semana_regra',
+    "TEXT CHECK (dia_semana_regra IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR dia_semana_regra IS NULL) DEFAULT NULL")
+
+  // Drop o UNIQUE antigo (Postgres auto-name: {tabela}_{coluna}_key)
+  await execDDL(`ALTER TABLE colaborador_regra_horario DROP CONSTRAINT IF EXISTS colaborador_regra_horario_colaborador_id_key`)
+
+  // Partial indexes: max 1 default (NULL) + max 1 por dia específico por pessoa
+  await execDDL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_crh_colab_padrao
+    ON colaborador_regra_horario (colaborador_id) WHERE dia_semana_regra IS NULL`)
+  await execDDL(`CREATE UNIQUE INDEX IF NOT EXISTS idx_crh_colab_dia
+    ON colaborador_regra_horario (colaborador_id, dia_semana_regra) WHERE dia_semana_regra IS NOT NULL`)
 }
 
 // ============================================================================
@@ -569,7 +660,8 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_IA)
   await execDDL(DDL_IA_HISTORICO)
   await execDDL(DDL_V6_REGRAS)
+  await execDDL(DDL_V8_MEMORIAS)
   await execDDL(DDL_V7_KNOWLEDGE)
   await migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v7 + Knowledge Layer)')
+  console.log('[DB] Tabelas criadas com sucesso (v13 + Memórias + Knowledge Layer + Anexos)')
 }

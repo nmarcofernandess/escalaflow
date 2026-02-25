@@ -1,3 +1,4 @@
+<!-- quando_usar: regras CLT motor, HARD SOFT antipattern, H1 H2 H4 H5 H6, interjornada 11h, max 6 dias, almoco obrigatorio, clopening, AP1 AP2 AP3, DIAS_TRABALHO, configurar regras -->
 # Regras de Jornada CLT Aplicadas no EscalaFlow
 
 ## As 20 Regras do Motor

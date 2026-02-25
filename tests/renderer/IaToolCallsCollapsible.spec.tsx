@@ -13,7 +13,7 @@ describe('IaToolCallsCollapsible', () => {
         toolCalls={[
           {
             id: 'tc-1',
-            name: 'get_context',
+            name: 'consultar',
             args: {},
             result: null,
           },

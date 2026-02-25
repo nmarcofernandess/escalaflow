@@ -1,10 +1,12 @@
-# Tool Calling Playbook — De Zero a 28 Tools em Producao
+# Tool Calling Playbook — De Zero a 30 Tools em Producao
 
 > **Proposito:** Guia reproduzivel e definitivo. Leia este doc e replique toda a estrategia de tool calling do EscalaFlow — patterns, stack, discovery, testes, prompts — em qualquer projeto.
 >
-> **Baseado em:** Implementacao real com 28 tools, guia de estudo (tool-calling-guide-v3-2), e Vercel AI SDK v6.
+> **Baseado em:** Implementacao real com 30 tools, guia de estudo (tool-calling-guide-v3-2), e Vercel AI SDK v6.
 >
-> **Atualizado:** 2026-02-23
+> **Atualizado:** 2026-02-24
+>
+> **Cleanup v2 (2026-02-24):** 3 tools redundantes removidas (get_context, obter_regra_horario_colaborador, obter_regras_horario_setor). Discovery auto cobre. TOOL_RESULT_MAX_CHARS 400→1500. Follow-up com tools habilitado.
 
 ---
 
@@ -15,7 +17,7 @@
 3. [Zod como GPS — schemas que ensinam a IA](#3-zod-como-gps)
 4. [Discovery Design — a IA descobre aos poucos](#4-discovery-design)
 5. [Respostas ricas — o pattern 3-status](#5-respostas-ricas)
-6. [System prompt — arquitetura de 8 secoes](#6-system-prompt)
+6. [System prompt — arquitetura de 9 secoes](#6-system-prompt)
 7. [Auto-correcao — 3 mecanismos](#7-auto-correcao)
 8. [Historico e continuidade](#8-historico-e-continuidade)
 9. [Testes — 5 camadas de validacao](#9-testes)
@@ -58,7 +60,7 @@ Usuario (React) → IPC → Main Process (Node.js) → Vercel AI SDK generateTex
                                                     ↕ tools loop (max 10 steps)
                                                     → system-prompt.ts (prompt estático)
                                                     → discovery.ts (auto-contexto por request)
-                                                    → tools.ts (28 tools, schemas Zod + handlers)
+                                                    → tools.ts (30 tools, schemas Zod + handlers)
 ```
 
 O SDK orquestra o loop. Voce define as tools. A IA decide quais chamar e em que ordem.
@@ -234,7 +236,7 @@ z.object({
 // Cada campo tem .describe() — a IA sabe O QUE, DE ONDE, e COMO
 const GerarEscalaSchema = z.object({
   setor_id: z.number().int().positive()
-    .describe('ID do setor. Extraia do get_context() a partir do nome citado pelo usuario.'),
+    .describe('ID do setor. Extraia do discovery auto no prompt a partir do nome citado pelo usuario.'),
   data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
     .describe('Data inicial da escala no formato YYYY-MM-DD.'),
   data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -297,11 +299,13 @@ Tools de leitura que a IA chama quando precisa de mais contexto:
 ```
 consultar(entidade, filtros)        → SQL-like generico
 buscar_colaborador(nome/id)         → Busca semantica por pessoa
-obter_regra_horario_colaborador(id) → Regras individuais
+buscar_conhecimento(query)          → Busca hibrida na knowledge base (vector + FTS)
 listar_perfis_horario(contrato_id)  → Perfis por contrato
 obter_alertas()                     → Agregacao de problemas
 preflight(setor_id, datas)          → Viabilidade pre-geracao
 ```
+
+> **Nota (Cleanup v2):** `get_context` foi removida — o discovery auto (injetado no system prompt a cada request) cobre o mesmo papel sem gastar tool call. `obter_regra_horario_colaborador` e `obter_regras_horario_setor` tambem removidas — `consultar` com filtros resolve.
 
 **Quando usar:** Dados que nao estao no discovery automatico, ou que a IA precisa buscar sob demanda.
 
@@ -309,8 +313,9 @@ preflight(setor_id, datas)          → Viabilidade pre-geracao
 
 ```
 LAYER 1 — DISCOVERY (read-only, barata)
-  get_context, consultar, buscar_colaborador, obter_regra_horario, listar_perfis,
-  obter_alertas, resumir_horas_setor, preflight, diagnosticar_escala, explicar_violacao
+  discovery auto (injetado no prompt), consultar, buscar_colaborador, listar_perfis,
+  obter_alertas, resumir_horas_setor, preflight, diagnosticar_escala, explicar_violacao,
+  buscar_conhecimento, listar_conhecimento, explorar_relacoes
 
 LAYER 2 — VALIDACAO (regras de negocio)
   preflight_completo (capacity checks completos antes de gerar)
@@ -319,7 +324,7 @@ LAYER 3 — ACAO (write, com cuidado)
   criar, atualizar, deletar, cadastrar_lote,
   gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala,
   editar_regra, salvar_regra_horario, definir_janela, resetar_regras,
-  upsert_regra_excecao_data, salvar_demanda_excecao_data, ...
+  upsert_regra_excecao_data, salvar_demanda_excecao_data, salvar_conhecimento, ...
 ```
 
 ### Fluxo real de discovery
@@ -341,11 +346,11 @@ IA responde: "Escala gerada pro Acougue! Score 82/100, cobertura 87%. Quer ofici
 
 **Sem discovery no prompt**, o fluxo seria:
 ```
-Step 1: get_context() → busca tudo (1 tool call extra)
+Step 1: consultar({ entidade: 'setores' }) → busca tudo (1 tool call extra)
 Step 2: gerar_escala(...)
 ```
 
-> **Discovery automatico economiza 1+ tool calls por mensagem.** A IA ja recebe setores, colaboradores, escala atual, alertas — tudo pronto pra agir.
+> **Discovery automatico economiza 1+ tool calls por mensagem.** A IA ja recebe setores, colaboradores, escala atual, alertas — tudo pronto pra agir. Por isso `get_context` foi removida no Cleanup v2 — era redundante.
 
 ### O que o discovery injeta (implementacao real)
 
@@ -478,14 +483,14 @@ if (err.message?.includes('UNIQUE')) {
 }
 if (err.message?.includes('FOREIGN KEY')) {
   return toolError('FK_VIOLATION', 'ID referenciado nao existe.', {
-    correction: 'Consulte IDs validos com get_context() ou consultar().'
+    correction: 'Consulte IDs validos com consultar() ou buscar_colaborador().'
   })
 }
 ```
 
 ---
 
-## 6. System Prompt — Arquitetura de 8 Secoes
+## 6. System Prompt — Arquitetura de 9 Secoes
 
 ### Estrutura
 
@@ -495,9 +500,10 @@ if (err.message?.includes('FOREIGN KEY')) {
 | CLT/CCT | Contratos, regras legais, grid, precedencia | ~50 | Conhecimento de cor — nao precisa de tool |
 | Motor | Fluxo, INFEASIBLE, lifecycle, modos, diagnostico | ~40 | Entende o solver sem ver codigo |
 | Entidades | Modelo mental (nao lista de campos) | ~30 | Sabe o que e o que no dominio |
-| Tools por intencao | 28 tools organizadas por workflow | ~40 | Sabe QUANDO usar cada uma |
+| Tools por intencao | 30 tools organizadas por workflow | ~40 | Sabe QUANDO usar cada uma |
 | Schema de referencia | Tabelas com FKs explicitas | ~30 | Sabe WHERE/JOIN/FK sem adivinhar |
 | Workflows | 8 receitas prontas (gerar, ferias, INFEASIBLE, etc) | ~50 | Few-shot examples de resolucao |
+| Base de Conhecimento | Knowledge Layer: busca, salvar, explorar relacoes | ~20 | Memoria persistente CLT/CCT/procedimentos |
 | Conduta | Limitacoes, proibicoes | ~15 | Guardrails |
 
 ### Principios
@@ -693,7 +699,7 @@ describe('schema descriptions', () => {
   it('TOOL_SCHEMAS tem exatamente as mesmas keys que IA_TOOLS', () => {
     const toolNames = Object.keys(IA_TOOLS).sort()
     const schemaNames = Object.keys(TOOL_SCHEMAS).sort()
-    expect(schemaNames).toEqual(toolNames)  // 28 = 28
+    expect(schemaNames).toEqual(toolNames)  // 30 = 30
   })
 })
 ```
@@ -910,7 +916,7 @@ O segredo: os evals importam o runtime REAL da aplicacao, nao mocks.
 // run-evals.ts — carrega tudo do src/main/ia/ e src/main/db/
 async function loadRuntimeBits() {
   const [{ getVercelAiTools }, { SYSTEM_PROMPT }, { buildContextBriefing }, { getDb }] = await Promise.all([
-    import('../../../src/main/ia/tools'),        // 28 tools reais
+    import('../../../src/main/ia/tools'),        // 30 tools reais
     import('../../../src/main/ia/system-prompt'), // system prompt real
     import('../../../src/main/ia/discovery'),     // discovery real
     import('../../../src/main/db/database'),      // banco real (better-sqlite3)
@@ -986,7 +992,7 @@ tests/ia/live/ia-chat-cli.ts
 // Importa os 3 modulos do sistema de IA — MESMOS que o app usa
 async function loadRuntime() {
   const [{ getVercelAiTools }, { SYSTEM_PROMPT }, { buildContextBriefing }] = await Promise.all([
-    import('../../../src/main/ia/tools'),        // 28 tools reais
+    import('../../../src/main/ia/tools'),        // 30 tools reais
     import('../../../src/main/ia/system-prompt'), // prompt real
     import('../../../src/main/ia/discovery'),     // discovery real
   ])
@@ -1051,7 +1057,7 @@ O CLI detecta automaticamente qual API key usar:
 | Comando | Efeito |
 |---------|--------|
 | `/clear` | Limpa historico (novo contexto) |
-| `/tools` | Lista as 28 tools disponiveis |
+| `/tools` | Lista as 30 tools disponiveis |
 | `sair` | Encerra o CLI |
 
 #### Output colorido
@@ -1068,7 +1074,7 @@ O CLI detecta automaticamente qual API key usar:
 ║  sair    encerra                             ║
 ╚══════════════════════════════════════════════╝
 
-[OK] Runtime carregado — 28 tools
+[OK] Runtime carregado — 30 tools
 
 Voce > Quem trabalha no acougue?
   [TOOL] consultar {"entidade":"colaboradores","filtros":{"setor_id":2}}
@@ -1296,7 +1302,8 @@ consultar(entidade, filtros)  // IA precisa saber nomes de tabelas e campos
 ```typescript
 // ERRADO: injeta no prompt E manda "sempre chame get_context() primeiro"
 // Resultado: IA gasta 1 tool call buscando dados que ja tem
-// FIX: se discovery esta no prompt, get_context() e refresh/fallback, nao step obrigatorio
+// FIX: discovery auto no prompt cobre o contexto. get_context() foi removida (Cleanup v2).
+// Use consultar() com filtros quando precisar de deep-dive alem do discovery.
 ```
 
 ### 6. Schema sem .describe()
@@ -1305,7 +1312,7 @@ consultar(entidade, filtros)  // IA precisa saber nomes de tabelas e campos
 // ERRADO
 z.number().int().positive()  // IA sabe que e inteiro positivo, mas nao sabe de onde pegar
 // CERTO
-z.number().int().positive().describe('ID do setor. Extraia do discovery no prompt.')
+z.number().int().positive().describe('ID do setor. Extraia do discovery auto no prompt.')
 ```
 
 ### 7. Historico sem tool_results
@@ -1322,9 +1329,9 @@ messages.filter(m => m.papel !== 'tool_result')
 
 | Metrica | Valor |
 |---------|-------|
-| Tools totais | 28 |
-| Schemas Zod | 28 (todos com .describe() em cada campo) |
-| System prompt | ~408 linhas, 8 secoes |
+| Tools totais | 30 |
+| Schemas Zod | 30 (todos com .describe() em cada campo) |
+| System prompt | ~408 linhas, 9 secoes |
 | Discovery | ~9 secoes condicionais injetadas por request |
 | Eval dataset | 20+ casos |
 | Unit tests IA | 42+ |

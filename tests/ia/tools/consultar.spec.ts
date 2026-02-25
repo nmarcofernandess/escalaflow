@@ -1,99 +1,113 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  resetMockDbState,
+  seedTable,
+  onQueryAll,
+  onQueryOne,
+} from '../../setup/db-test-utils'
+
+// Mock query.ts at the module level — all tools.ts calls go through here
+const queryMocks = vi.hoisted(() => ({
+  queryOne: vi.fn(),
+  queryAll: vi.fn(),
+  execute: vi.fn(),
+  insertReturningId: vi.fn(),
+}))
+
+vi.mock('../../../src/main/db/query', () => queryMocks)
+
+// Mock knowledge search (not needed here)
+vi.mock('../../../src/main/knowledge/search', () => ({
+  searchKnowledge: vi.fn().mockResolvedValue([]),
+  exploreRelations: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('../../../src/main/knowledge/ingest', () => ({
+  ingestKnowledge: vi.fn().mockResolvedValue({ chunks_count: 0 }),
+}))
+
 import { executeTool } from '../../../src/main/ia/tools'
-import { clearMockDb, setMockDb } from '../../setup/db-test-utils'
 
 type Row = Record<string, any>
 
-function createConsultarMockDb() {
-  const state = {
-    colaboradores: [] as Row[],
-    setores: [] as Row[],
-    tipos_contrato: [] as Row[],
-  }
+function setupConsultarMocks(state: {
+  colaboradores?: Row[]
+  setores?: Row[]
+  tipos_contrato?: Row[]
+}) {
+  const colabs = state.colaboradores ?? []
+  const setores = state.setores ?? []
+  const tipos = state.tipos_contrato ?? []
 
-  return {
-    __seed: {
-      insert(table: keyof typeof state, row: Row) {
-        state[table].push({ ...row })
-      },
-    },
-    prepare(sql: string) {
-      const normalized = sql.replace(/\s+/g, ' ').trim()
+  queryMocks.queryAll.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-      return {
-        all: (...params: any[]) => {
-          if (normalized === 'SELECT * FROM colaboradores') {
-            return [...state.colaboradores]
-          }
-          if (normalized === 'SELECT * FROM setores') {
-            return [...state.setores]
-          }
-          if (normalized.startsWith('SELECT * FROM colaboradores WHERE ')) {
-            // Minimal parser for equality filters used by consultar().
-            const clauses = normalized
-              .split(' WHERE ')[1]
-              .split(' AND ')
-              .map((c) => c.replace(' = ? COLLATE NOCASE', '').replace(' = ?', '').trim())
+    if (n === 'SELECT * FROM colaboradores') {
+      return [...colabs]
+    }
+    if (n === 'SELECT * FROM setores') {
+      return [...setores]
+    }
+    if (n.startsWith('SELECT * FROM colaboradores WHERE')) {
+      // Simple equality filter parser
+      const wherePart = n.split(' WHERE ')[1]
+      const clauses = wherePart.split(' AND ').map(c => c.replace(/LOWER\((\w+)\) = LOWER\(\?\)/, '$1').replace(/ = \?/, '').trim())
 
-            return state.colaboradores.filter((row) => {
-              return clauses.every((field, idx) => {
-                const expected = params[idx]
-                const actual = row[field]
-                if (typeof expected === 'string' && typeof actual === 'string') {
-                  return actual.toLowerCase() === expected.toLowerCase()
-                }
-                return actual === expected
-              })
-            })
+      return colabs.filter(row => {
+        return clauses.every((field, idx) => {
+          const f = field.replace('LOWER(', '').replace(')', '')
+          const expected = params[idx]
+          const actual = row[f]
+          if (typeof expected === 'string' && typeof actual === 'string') {
+            return actual.toLowerCase() === expected.toLowerCase()
           }
-          throw new Error(`Mock consultar all() não suportado para query: ${normalized}`)
-        },
-        get: (...params: any[]) => {
-          if (normalized === 'SELECT id, nome FROM setores WHERE id = ?') {
-            return state.setores.find((r) => r.id === params[0])
-          }
-          if (normalized === 'SELECT id, nome FROM tipos_contrato WHERE id = ?') {
-            return state.tipos_contrato.find((r) => r.id === params[0])
-          }
-          if (normalized === 'SELECT id, nome FROM colaboradores WHERE id = ?') {
-            return state.colaboradores.find((r) => r.id === params[0])
-          }
-          if (normalized === 'SELECT codigo, nome FROM regra_definicao WHERE codigo = ?') {
-            return undefined
-          }
-          throw new Error(`Mock consultar get() não suportado para query: ${normalized}`)
-        },
-        run: () => {
-          throw new Error('run() não suportado no mock de consultar')
-        },
-      }
-    },
-    close() {},
-  }
+          return actual === expected
+        })
+      })
+    }
+
+    return []
+  })
+
+  queryMocks.queryOne.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
+
+    if (n === 'SELECT id, nome FROM setores WHERE id = $1' || n === 'SELECT id, nome FROM setores WHERE id = ?') {
+      return setores.find(r => r.id === params[0])
+    }
+    if (n === 'SELECT id, nome FROM tipos_contrato WHERE id = $1' || n === 'SELECT id, nome FROM tipos_contrato WHERE id = ?') {
+      return tipos.find(r => r.id === params[0])
+    }
+    if (n === 'SELECT id, nome FROM colaboradores WHERE id = $1' || n === 'SELECT id, nome FROM colaboradores WHERE id = ?') {
+      return colabs.find(r => r.id === params[0])
+    }
+    if (n.includes('SELECT codigo, nome FROM regra_definicao WHERE codigo')) {
+      return undefined
+    }
+    return undefined
+  })
 }
 
 describe('executeTool(consultar)', () => {
-  let db: ReturnType<typeof createConsultarMockDb>
-
   beforeEach(() => {
-    db = createConsultarMockDb()
-    setMockDb(db)
+    resetMockDbState()
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
-    clearMockDb()
-    db.close()
+    resetMockDbState()
   })
 
   it('retorna contrato rico + humanização de FKs para colaboradores', async () => {
-    db.__seed.insert('setores', { id: 2, nome: 'Açougue' })
-    db.__seed.insert('tipos_contrato', { id: 1, nome: 'CLT 44h' })
-    db.__seed.insert('colaboradores', {
-      id: 10,
-      nome: 'Cleunice',
-      setor_id: 2,
-      tipo_contrato_id: 1,
-      ativo: 1,
+    setupConsultarMocks({
+      setores: [{ id: 2, nome: 'Açougue' }],
+      tipos_contrato: [{ id: 1, nome: 'CLT 44h' }],
+      colaboradores: [{
+        id: 10,
+        nome: 'Cleunice',
+        setor_id: 2,
+        tipo_contrato_id: 1,
+        ativo: 1,
+      }],
     })
 
     const result = await executeTool('consultar', {
@@ -103,7 +117,7 @@ describe('executeTool(consultar)', () => {
     expect(result.status).toBe('ok')
     expect(result.entidade).toBe('colaboradores')
     expect(result.total).toBe(1)
-    expect(result.summary).toMatch(/retornou 1 registro/i)
+    expect(result.summary).toMatch(/1 colaboradores.*CLT 44h/i)
     expect(result._meta).toEqual(
       expect.objectContaining({
         tool_kind: 'discovery',
@@ -125,6 +139,8 @@ describe('executeTool(consultar)', () => {
   })
 
   it('retorna erro semântico com status/error quando campo do filtro é inválido', async () => {
+    setupConsultarMocks({})
+
     const result = await executeTool('consultar', {
       entidade: 'excecoes',
       filtros: { nome: 'Maria' },
@@ -143,10 +159,9 @@ describe('executeTool(consultar)', () => {
   })
 
   it('retorna status truncated quando consulta excede o limite de linhas', async () => {
-    db.__seed.insert('setores', { id: 1, nome: 'Caixa' })
-    db.__seed.insert('tipos_contrato', { id: 1, nome: 'CLT 44h' })
+    const manyColabs: Row[] = []
     for (let i = 1; i <= 55; i++) {
-      db.__seed.insert('colaboradores', {
+      manyColabs.push({
         id: i,
         nome: `Pessoa ${i}`,
         setor_id: 1,
@@ -154,6 +169,12 @@ describe('executeTool(consultar)', () => {
         ativo: 1,
       })
     }
+
+    setupConsultarMocks({
+      setores: [{ id: 1, nome: 'Caixa' }],
+      tipos_contrato: [{ id: 1, nome: 'CLT 44h' }],
+      colaboradores: manyColabs,
+    })
 
     const result = await executeTool('consultar', { entidade: 'colaboradores' })
 
@@ -169,4 +190,3 @@ describe('executeTool(consultar)', () => {
     )
   })
 })
-

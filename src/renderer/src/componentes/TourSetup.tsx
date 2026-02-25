@@ -99,7 +99,7 @@ const tourSteps: TourStep[] = [
         </p>
         <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
           <li>Registrar <strong>ferias e atestados</strong> como excecoes</li>
-          <li>Definir <strong>janela de horario</strong> preferida (ex: so de manha)</li>
+          <li>Definir <strong>horario de trabalho</strong> por dia da semana (arraste a barra)</li>
           <li>Configurar <strong>ciclo de domingo</strong> (1 a cada N semanas)</li>
           <li>Marcar <strong>folga fixa</strong> em dia especifico da semana</li>
           <li>Criar <strong>excecoes por data</strong> (overrides pontuais)</li>

@@ -34,7 +34,7 @@ interface IaStore {
   stream_id_ativo: string | null
   texto_parcial: string
   tool_calls_parciais: ToolCall[]
-  tools_em_andamento: Record<string, { tool_name: string; args?: Record<string, unknown> }>
+  tools_em_andamento: Record<string, { tool_name: string; args?: Record<string, unknown>; estimated_seconds?: number; started_at: number }>
 
   // Streaming actions
   iniciarStream: (streamId: string) => void
@@ -57,6 +57,7 @@ interface IaStore {
   renomearConversa: (id: string, titulo: string) => Promise<void>
   arquivarTodas: () => Promise<void>
   deletarArquivadas: () => Promise<void>
+  editarEReenviar: (msgId: string, novoConteudo: string) => Promise<string | null>
 }
 
 const ipc = window.electron.ipcRenderer
@@ -106,7 +107,12 @@ export const useIaStore = create<IaStore>((set, get) => ({
         set((s) => ({
           tools_em_andamento: {
             ...s.tools_em_andamento,
-            [event.tool_call_id]: { tool_name: event.tool_name, args: event.args },
+            [event.tool_call_id]: {
+              tool_name: event.tool_name,
+              args: event.args,
+              estimated_seconds: event.estimated_seconds,
+              started_at: Date.now(),
+            },
           },
         }))
         break
@@ -186,8 +192,13 @@ export const useIaStore = create<IaStore>((set, get) => ({
   },
 
   novaConversa: async () => {
-    // Limpa conversa vazia atual silenciosamente
+    // Process previous conversation in background (session indexing + extraction)
     const { conversa_ativa_id, mensagens } = get()
+    if (conversa_ativa_id && mensagens.length >= 2) {
+      ipc.invoke('ia.sessao.processar', { conversa_id: conversa_ativa_id }).catch(() => {})
+    }
+
+    // Limpa conversa vazia atual silenciosamente
     if (conversa_ativa_id && mensagens.length === 0) {
       await ipc.invoke('ia.conversas.deletar', { id: conversa_ativa_id }).catch(() => {})
     }
@@ -205,8 +216,13 @@ export const useIaStore = create<IaStore>((set, get) => ({
   },
 
   carregarConversa: async (id: string) => {
-    // Limpa conversa vazia atual silenciosamente
+    // Process previous conversation in background (session indexing + extraction)
     const { conversa_ativa_id, mensagens } = get()
+    if (conversa_ativa_id && conversa_ativa_id !== id && mensagens.length >= 2) {
+      ipc.invoke('ia.sessao.processar', { conversa_id: conversa_ativa_id }).catch(() => {})
+    }
+
+    // Limpa conversa vazia atual silenciosamente
     if (conversa_ativa_id && conversa_ativa_id !== id && mensagens.length === 0) {
       await ipc.invoke('ia.conversas.deletar', { id: conversa_ativa_id }).catch(() => {})
     }
@@ -306,5 +322,32 @@ export const useIaStore = create<IaStore>((set, get) => ({
   deletarArquivadas: async () => {
     await ipc.invoke('ia.conversas.deletarArquivadas')
     await get().listarConversas()
+  },
+
+  editarEReenviar: async (msgId: string, novoConteudo: string) => {
+    const { mensagens, conversa_ativa_id } = get()
+    const msgIndex = mensagens.findIndex(m => m.id === msgId)
+    if (msgIndex < 0 || !conversa_ativa_id) return null
+
+    const msg = mensagens[msgIndex]
+
+    // 1. Deletar msgs posteriores no DB
+    await ipc.invoke('ia.mensagens.deletarApos', {
+      conversa_id: conversa_ativa_id,
+      timestamp: msg.timestamp,
+    })
+
+    // 2. Atualizar conteudo da msg no DB
+    await ipc.invoke('ia.mensagens.atualizar', {
+      id: msgId,
+      conteudo: novoConteudo,
+    })
+
+    // 3. Atualizar state local — cortar mensagens e atualizar conteudo
+    const novasMensagens = mensagens.slice(0, msgIndex)
+    novasMensagens.push({ ...msg, conteudo: novoConteudo })
+    set({ mensagens: novasMensagens })
+
+    return novoConteudo
   },
 }))

@@ -42,6 +42,7 @@ from constraints import (
     add_human_blocks,
     add_human_blocks_soft_penalty,
     add_h10_meta_semanal,
+    add_h10_meta_semanal_elastic,
     add_h11_aprendiz_domingo,
     add_h12_aprendiz_feriado,
     add_h13_aprendiz_noturno,
@@ -212,7 +213,7 @@ def apply_warm_start_hints(
     return hints_applied
 
 
-def build_model(data: dict) -> Tuple[
+def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
     cp_model.CpModel,
     SlotGrid,
     WorksDay,
@@ -233,6 +234,7 @@ def build_model(data: dict) -> Tuple[
 ]:
     model = cp_model.CpModel()
     config = data.get("config", {})
+    relax = set(relaxations or [])
 
     colabs = data["colaboradores"]
     empresa = data["empresa"]
@@ -392,6 +394,16 @@ def build_model(data: dict) -> Tuple[
     nivel_rigor = config.get("nivel_rigor", "ALTO")
     rules = config.get("rules", {})
 
+    # Relaxation sets for multi-pass graceful degradation
+    is_emergency = "ALL_PRODUCT_RULES" in relax
+    force_h10_elastic = "H10_ELASTIC" in relax or is_emergency
+    force_h6_soft = "H6" in relax or is_emergency
+    force_dt_soft = "DIAS_TRABALHO" in relax or is_emergency
+    force_md_soft = "MIN_DIARIO" in relax or is_emergency
+    force_h1_soft = "H1" in relax or is_emergency
+    skip_time_window_hard = is_emergency
+    skip_folga_fixa = is_emergency
+
     def rule_is(codigo: str, default: str = 'HARD') -> str:
         """Retorna status da regra: HARD, SOFT, OFF, ON.
         Se rules dict presente e nao vazio, usa ele. Caso contrario, inferir de nivel_rigor."""
@@ -413,22 +425,31 @@ def build_model(data: dict) -> Tuple[
     obj_terms_list: list = []  # penalties das versoes SOFT das HARD rules
 
     # ---------------------------------------------------------------
-    # HARD constraints (CLT Legal)
+    # HARD constraints (CLT Legal — NEVER relaxed)
     # ---------------------------------------------------------------
     regras_dia = data.get("regras_colaborador_dia", [])
 
+    # H1: Max 6 dias consecutivos
     h1_status = rule_is('H1', 'HARD')
+    if force_h1_soft:
+        h1_status = 'SOFT'
     if h1_status == 'HARD':
         add_h1_max_dias_consecutivos(model, works_day, C, D)
     elif h1_status == 'SOFT':
         add_h1_soft_penalty(model, obj_terms_list, works_day, C, D)
 
+    # H2: ALWAYS HARD (safety — CLT Art. 66)
     add_h2_interjornada(model, work, C, D, S, grid_min=grid_min)
     # v4: H3 removido como hard — substitudo por domingo_ciclo_soft abaixo
+    # H4: ALWAYS HARD (safety — CLT Art. 59)
     add_h4_max_jornada_diaria(model, work, colabs, C, D, S, grid_min)
+    # H5: ALWAYS HARD (exceptions are physical absence)
     add_h5_excecoes(model, work, colabs, days, C, S, excecoes)
 
+    # H6: Human blocks (almoco)
     h6_status = rule_is('H6', 'HARD')
+    if force_h6_soft:
+        h6_status = 'SOFT'
     if h6_status == 'HARD':
         add_human_blocks(
             model,
@@ -463,18 +484,36 @@ def build_model(data: dict) -> Tuple[
             max_work_slots=360 // grid_min,
         )
 
-    weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal(
-        model,
-        work,
-        colabs,
-        C,
-        D,
-        S,
-        week_chunks=week_chunks,
-        blocked_days=blocked_days,
-        tolerance_min=tolerance,
-        grid_min=grid_min,
-    )
+    # H10: Meta semanal — can be elastic in degradation passes
+    if force_h10_elastic:
+        weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal_elastic(
+            model,
+            obj_terms_list,
+            work,
+            colabs,
+            C,
+            D,
+            S,
+            week_chunks=week_chunks,
+            blocked_days=blocked_days,
+            tolerance_min=tolerance,
+            grid_min=grid_min,
+        )
+    else:
+        weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal(
+            model,
+            work,
+            colabs,
+            C,
+            D,
+            S,
+            week_chunks=week_chunks,
+            blocked_days=blocked_days,
+            tolerance_min=tolerance,
+            grid_min=grid_min,
+        )
+
+    # CLT constraints that NEVER relax (aprendiz, estagiario, feriados proibidos)
     add_h11_aprendiz_domingo(model, works_day, colabs, C, sunday_indices)
     add_h12_aprendiz_feriado(model, works_day, colabs, C, holiday_all_indices)
     add_h13_aprendiz_noturno(model, work, colabs, C, D, S, base_h, grid_min)
@@ -494,22 +533,28 @@ def build_model(data: dict) -> Tuple[
     add_h17_h18_feriado_proibido(model, works_day, C, holiday_prohibited_indices)
     add_h19_folga_comp_domingo(model, works_day, C, D, sunday_indices)
 
-    # v4: Regra hard de janela por colaborador
-    add_colaborador_time_window_hard(
-        model, work, works_day, regras_dia, colabs, days, C, D, S, base_h, grid_min
-    )
+    # v4: Regra hard de janela por colaborador (skip in emergency pass)
+    if not skip_time_window_hard:
+        add_colaborador_time_window_hard(
+            model, work, works_day, regras_dia, colabs, days, C, D, S, base_h, grid_min
+        )
 
-    # v4: Folga fixa 5x2
-    add_folga_fixa_5x2(model, works_day, colabs, days, C, D)
+    # v4: Folga fixa 5x2 (product rule, skip in emergency pass)
+    if not skip_folga_fixa:
+        add_folga_fixa_5x2(model, works_day, colabs, days, C, D)
 
     # Product rules (with blocked_days awareness)
     dt_status = rule_is('DIAS_TRABALHO', 'HARD')
+    if force_dt_soft:
+        dt_status = 'SOFT'
     if dt_status == 'HARD':
         add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days)
     elif dt_status == 'SOFT':
         add_dias_trabalho_soft_penalty(model, obj_terms_list, works_day, colabs, C, D, week_chunks, blocked_days)
 
     md_status = rule_is('MIN_DIARIO', 'HARD')
+    if force_md_soft:
+        md_status = 'SOFT'
     if md_status == 'HARD':
         add_min_diario(model, work, works_day, C, D, S, min_slots=min_daily_slots)
     elif md_status == 'SOFT':
@@ -819,40 +864,85 @@ def extract_solution(
     }
 
 
-def solve(data: dict) -> dict:
-    """Main solve function. Takes parsed JSON input, returns result dict."""
+def _analyze_capacity(data: dict) -> dict:
+    """Pre-solve capacity analysis: estimate if demand is satisfiable.
+
+    Pure arithmetic — no CP-SAT. Compares theoretical max person-hours
+    against total demand. This is an ESTIMATE, not a tight bound.
+    """
     colabs = data.get("colaboradores", [])
-    if not colabs:
-        return {
-            "sucesso": False,
-            "status": "INFEASIBLE",
-            "solve_time_ms": 0,
-            "erro": {
-                "tipo": "PREFLIGHT",
-                "regra": "SEM_COLABORADORES",
-                "mensagem": "Nenhum colaborador ativo para gerar escala",
-                "sugestoes": ["Cadastre ao menos 1 colaborador no setor"],
-            },
-        }
+    days = build_days(data["data_inicio"], data["data_fim"])
+    empresa = data["empresa"]
+    grid_min = int(empresa.get("grid_minutos", 30))
+    base_h, _ = map(int, empresa["hora_abertura"].split(":"))
+    end_h, end_m = map(int, empresa["hora_fechamento"].split(":"))
+    S = ((end_h * 60 + end_m) - base_h * 60) // grid_min
+    D = len(days)
 
-    config = data.get("config", {})
-    solve_mode = config.get("solve_mode", "rapido")  # "rapido" | "otimizado"
-    num_workers = config.get("num_workers", 8)
+    # Build blocked days (same logic as build_model preprocessing)
+    feriados = data.get("feriados", [])
+    excecoes = data.get("excecoes", [])
 
-    # Profiles:
-    # rapido:    30s timeout, stop when gap < 5% (good-enough fast)
-    # otimizado: 120s timeout, run until OPTIMAL or timeout (best possible)
-    if solve_mode == "otimizado":
-        max_time = config.get("max_time_seconds", 120)
-        gap_limit = 0.0  # prove full optimality
-    else:
-        max_time = config.get("max_time_seconds", 30)
-        gap_limit = 0.05  # stop at 5% of optimal
+    holiday_prohibited_indices: list[int] = []
+    for fer in feriados:
+        for d, day in enumerate(days):
+            if day == fer["data"] and fer.get("proibido_trabalhar", False):
+                holiday_prohibited_indices.append(d)
 
-    log(
-        f"Building model: {len(colabs)} colabs, "
-        f"{data['data_inicio']} - {data['data_fim']}"
+    blocked_days: dict[int, set] = {c: set() for c in range(len(colabs))}
+    for d in holiday_prohibited_indices:
+        for c in range(len(colabs)):
+            blocked_days[c].add(d)
+
+    colab_id_to_c = {colabs[c]["id"]: c for c in range(len(colabs))}
+    for exc in excecoes:
+        c = colab_id_to_c.get(exc.get("colaborador_id"))
+        if c is not None:
+            exc_start = exc.get("data_inicio", "")
+            exc_end = exc.get("data_fim", "")
+            for d, day in enumerate(days):
+                if exc_start <= day <= exc_end:
+                    blocked_days[c].add(d)
+
+    # Theoretical capacity (person-slots available)
+    max_slots_disponiveis = 0
+    for c in range(len(colabs)):
+        available_days = sum(1 for d in range(D) if d not in blocked_days[c])
+        max_daily_slots = int(colabs[c].get("max_minutos_dia", 600)) // grid_min
+        max_slots_disponiveis += available_days * max_daily_slots
+
+    # Total demand (slots needed)
+    demand_by_slot, _ = parse_demand(
+        data["demanda"],
+        days=days,
+        base_hour=base_h,
+        grid_min=grid_min,
+        demanda_excecao_data=data.get("demanda_excecao_data"),
     )
+    total_slots_demanda = sum(demand_by_slot.values())
+
+    ratio = (max_slots_disponiveis / total_slots_demanda) if total_slots_demanda > 0 else 999.0
+
+    return {
+        "total_slots_demanda": total_slots_demanda,
+        "max_slots_disponiveis": max_slots_disponiveis,
+        "ratio_cobertura_max": round(ratio, 2),
+        "cobertura_matematicamente_possivel": ratio >= 1.0,
+    }
+
+
+def _solve_pass(
+    data: dict,
+    pass_num: int,
+    relaxations: List[str],
+    max_time: float,
+    gap_limit: float,
+    num_workers: int,
+) -> dict:
+    """Execute a single solve pass with optional constraint relaxations."""
+    config = data.get("config", {})
+
+    log(f"--- Pass {pass_num} (relaxations: {relaxations or 'none'}, max {max_time}s) ---")
 
     (
         model,
@@ -872,7 +962,7 @@ def solve(data: dict) -> dict:
         ap1_excess,
         base_h,
         grid_min,
-    ) = build_model(data)
+    ) = build_model(data, relaxations=relaxations)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max_time
@@ -882,7 +972,6 @@ def solve(data: dict) -> dict:
     if gap_limit > 0:
         solver.parameters.relative_gap_limit = gap_limit
 
-    log(f"Solving [{solve_mode}] (max {max_time}s, {num_workers} workers, gap {gap_limit*100:.0f}%)...")
     t0 = time.time()
     status = solver.solve(model)
     solve_time_ms = (time.time() - t0) * 1000
@@ -909,9 +998,118 @@ def solve(data: dict) -> dict:
     )
 
     log(
-        f"Done: {result.get('status', 'UNKNOWN')} in {solve_time_ms:.0f}ms | "
+        f"Pass {pass_num}: {result.get('status', 'UNKNOWN')} in {solve_time_ms:.0f}ms | "
         f"cobertura={result.get('indicadores', {}).get('cobertura_percent', '?')}%"
     )
+
+    return result
+
+
+def solve(data: dict) -> dict:
+    """Main solve function with multi-pass graceful degradation.
+
+    Pass 1: Normal solve with all configured rules.
+    Pass 2: Relax H10→elastic, DIAS_TRABALHO→SOFT, MIN_DIARIO→SOFT, H6→SOFT.
+    Pass 3: Emergency — strip to CLT-only (H2+H4+H5), all product rules SOFT.
+
+    Returns the result from the first pass that succeeds.
+    """
+    colabs = data.get("colaboradores", [])
+    if not colabs:
+        return {
+            "sucesso": False,
+            "status": "INFEASIBLE",
+            "solve_time_ms": 0,
+            "erro": {
+                "tipo": "PREFLIGHT",
+                "regra": "SEM_COLABORADORES",
+                "mensagem": "Nenhum colaborador ativo para gerar escala",
+                "sugestoes": ["Cadastre ao menos 1 colaborador no setor"],
+            },
+        }
+
+    config = data.get("config", {})
+    solve_mode = config.get("solve_mode", "rapido")  # "rapido" | "otimizado"
+    num_workers = config.get("num_workers", 8)
+
+    if solve_mode == "otimizado":
+        total_budget = config.get("max_time_seconds", 120)
+        gap_limit = 0.0
+    else:
+        total_budget = config.get("max_time_seconds", 30)
+        gap_limit = 0.05
+
+    # Divide time budget across passes (Pass 1 gets more, Pass 2/3 are fallback)
+    pass1_time = max(10, total_budget * 0.5)
+    pass2_time = max(10, total_budget * 0.3)
+    pass3_time = max(10, total_budget * 0.2)
+
+    log(
+        f"Solving [{solve_mode}]: {len(colabs)} colabs, "
+        f"{data['data_inicio']} - {data['data_fim']} "
+        f"(budget: {pass1_time:.0f}s/{pass2_time:.0f}s/{pass3_time:.0f}s)"
+    )
+
+    # Pre-analysis: capacity vs demand
+    capacidade_diag = _analyze_capacity(data)
+    log(
+        f"Capacity analysis: ratio={capacidade_diag['ratio_cobertura_max']}, "
+        f"demand={capacidade_diag['total_slots_demanda']} slots, "
+        f"capacity={capacidade_diag['max_slots_disponiveis']} slots"
+    )
+
+    # ---- Pass 1: Normal (original behavior) ----
+    result = _solve_pass(data, pass_num=1, relaxations=[], max_time=pass1_time, gap_limit=gap_limit, num_workers=num_workers)
+
+    if result.get("sucesso"):
+        diag = result.get("diagnostico", {})
+        diag["pass_usado"] = 1
+        diag["regras_relaxadas"] = []
+        diag["capacidade_vs_demanda"] = capacidade_diag
+        result["diagnostico"] = diag
+        return result
+
+    # ---- Pass 2: Relax product rules to SOFT ----
+    log("Pass 1 INFEASIBLE — tentando Pass 2 (relaxamento de regras product)")
+
+    pass2_relaxations = ["H10_ELASTIC", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
+    result = _solve_pass(data, pass_num=2, relaxations=pass2_relaxations, max_time=pass2_time, gap_limit=gap_limit, num_workers=num_workers)
+
+    if result.get("sucesso"):
+        diag = result.get("diagnostico", {})
+        diag["pass_usado"] = 2
+        diag["regras_relaxadas"] = ["H10", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
+        diag["capacidade_vs_demanda"] = capacidade_diag
+        result["diagnostico"] = diag
+        return result
+
+    # ---- Pass 3: Emergency — CLT skeleton only ----
+    log("Pass 2 INFEASIBLE — tentando Pass 3 (esqueleto CLT puro)")
+
+    pass3_relaxations = ["ALL_PRODUCT_RULES"]
+    result = _solve_pass(data, pass_num=3, relaxations=pass3_relaxations, max_time=pass3_time, gap_limit=gap_limit, num_workers=num_workers)
+
+    diag = result.get("diagnostico", {})
+    diag["pass_usado"] = 3
+    diag["regras_relaxadas"] = ["H1", "H6", "H10", "DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "TIME_WINDOW"]
+    diag["capacidade_vs_demanda"] = capacidade_diag
+    diag["modo_emergencia"] = True
+    result["diagnostico"] = diag
+
+    if not result.get("sucesso"):
+        # All 3 passes failed — truly impossible (e.g., 0 available colabs)
+        log("TODAS as 3 passes falharam — cenario genuinamente impossivel")
+        if "erro" not in result:
+            result["erro"] = {
+                "tipo": "CONSTRAINT",
+                "regra": "SOLVER",
+                "mensagem": "Impossivel gerar escala mesmo com relaxamento maximo de regras",
+                "sugestoes": [
+                    "Verifique se ha colaboradores suficientes e disponiveis no periodo",
+                    "Verifique excecoes (ferias/atestados) que podem estar bloqueando todos",
+                    "Tente um periodo menor",
+                ],
+            }
 
     return result
 

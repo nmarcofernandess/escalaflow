@@ -750,6 +750,7 @@ export function SetorDetalhe() {
               setor={setor}
               demandas={demandas ?? []}
               horariosSemana={horariosSemana ?? []}
+              totalColaboradores={colaboradores?.length ?? 0}
               onSalvar={handleSalvarTimeline}
             />
           </CardContent>

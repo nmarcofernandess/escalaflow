@@ -47,10 +47,10 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
   },
   {
     id: 'resumo-sistema',
-    label: 'Resumo do sistema (via get_context)',
+    label: 'Resumo do sistema (via contexto automático)',
     input: 'Me dá um resumo do sistema agora.',
     expected: {
-      shouldCallAnyOf: ['get_context', 'consultar'],
+      shouldCallAnyOf: ['consultar', 'obter_alertas'],
       shouldNotCallTools: ['gerar_escala'],
       maxSteps: 4,
     },
@@ -60,7 +60,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Listar setores usa genérica (não wrapper)',
     input: 'Quais setores existem no sistema?',
     expected: {
-      shouldCallAnyOf: ['get_context', 'consultar'],
+      shouldCallAnyOf: ['consultar'],
       shouldNotCallTools: ['gerar_escala', 'criar'],
       maxSteps: 4,
     },
@@ -70,7 +70,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Listar colaboradores de um setor usa genérica',
     input: 'Quem trabalha no setor 1?',
     expected: {
-      shouldCallAnyOf: ['get_context', 'consultar'],
+      shouldCallAnyOf: ['consultar'],
       shouldNotCallTools: ['gerar_escala'],
       maxSteps: 5,
     },
@@ -80,7 +80,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Consultar exceções de um colaborador',
     input: 'O colaborador 3 tem alguma exceção ativa?',
     expected: {
-      shouldCallAnyOf: ['consultar', 'get_context'],
+      shouldCallAnyOf: ['consultar', 'buscar_colaborador'],
       maxSteps: 5,
     },
   },
@@ -233,8 +233,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Consultar regra individual de horário',
     input: 'Qual a regra de horário do colaborador 4?',
     expected: {
-      shouldCallTool: 'obter_regra_horario_colaborador',
-      toolArgsMustInclude: { colaborador_id: 4 },
+      shouldCallAnyOf: ['buscar_colaborador', 'consultar'],
       maxSteps: 4,
     },
   },
@@ -245,7 +244,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Busca colaborador por nome fuzzy',
     input: 'Procura a Maria no sistema.',
     expected: {
-      shouldCallAnyOf: ['buscar_colaborador', 'get_context'],
+      shouldCallAnyOf: ['buscar_colaborador', 'consultar'],
       maxSteps: 5,
     },
   },
@@ -270,7 +269,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     input: 'Black Friday precisa de 8 pessoas no caixa das 8h às 18h dia 2026-11-27.',
     mutates: true,
     expected: {
-      shouldCallAnyOf: ['salvar_demanda_excecao_data', 'get_context'],
+      shouldCallAnyOf: ['salvar_demanda_excecao_data', 'consultar'],
       shouldNotCallTools: ['gerar_escala'],
       maxSteps: 8,
     },
@@ -281,7 +280,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     input: 'Segunda dia 2026-03-02 o colaborador 3 só pode entrar a partir das 10h.',
     mutates: true,
     expected: {
-      shouldCallAnyOf: ['upsert_regra_excecao_data', 'get_context'],
+      shouldCallAnyOf: ['upsert_regra_excecao_data', 'consultar'],
       shouldNotCallTools: ['gerar_escala'],
       maxSteps: 6,
     },
@@ -291,7 +290,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'KPIs de horas por colaborador no período',
     input: 'Quantas horas cada colaborador do setor 1 trabalhou em março de 2026?',
     expected: {
-      shouldCallAnyOf: ['resumir_horas_setor', 'get_context'],
+      shouldCallAnyOf: ['resumir_horas_setor', 'consultar'],
       shouldNotCallTools: ['gerar_escala'],
       maxSteps: 6,
     },

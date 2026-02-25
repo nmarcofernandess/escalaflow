@@ -103,6 +103,9 @@ export async function seedData(): Promise<void> {
   // -- 6. Knowledge base seed (docs de sistema) --
   await seedKnowledgeBase()
 
+  // -- 7. Graph seed (entidades pre-extraidas — sem LLM) --
+  await seedGraphSistema()
+
   console.log('[SEED] Seed sistema concluido')
 }
 
@@ -176,6 +179,36 @@ function findMdFiles(dir: string, prefix = ''): { relativePath: string; fullPath
     }
   }
   return files
+}
+
+// ============================================================================
+// Graph Seed — Entidades pre-extraidas do sistema (sem LLM)
+// ============================================================================
+
+async function seedGraphSistema(): Promise<void> {
+  try {
+    const { importGraphSeed } = await import('../knowledge/graph')
+    const path = await import('node:path')
+    const fs = await import('node:fs')
+
+    const knowledgeDir = resolveKnowledgeDir()
+    const seedPath = path.join(knowledgeDir, 'sistema', 'graph-seed.json')
+
+    if (!fs.existsSync(seedPath)) return
+
+    const raw = fs.readFileSync(seedPath, 'utf-8')
+    const seed = JSON.parse(raw) as {
+      entities: Array<{ nome: string; tipo: string }>
+      relations: Array<{ from_nome: string; to_nome: string; tipo_relacao: string; peso: number }>
+    }
+
+    if (seed.entities.length === 0) return
+
+    const result = await importGraphSeed(seed, 'sistema')
+    console.log(`[SEED] Graph sistema: ${result.entities_count} entidades, ${result.relations_count} relacoes`)
+  } catch (err) {
+    console.warn('[SEED] Graph seed ignorado (nao-critico):', (err as Error).message)
+  }
 }
 
 // ============================================================================

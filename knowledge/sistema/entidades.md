@@ -1,3 +1,4 @@
+<!-- quando_usar: entidades sistema, empresa setor colaborador contrato demanda excecao funcao escala alocacao feriado, campos schema, corte semanal -->
 # Entidades do Sistema EscalaFlow
 
 ## Empresa

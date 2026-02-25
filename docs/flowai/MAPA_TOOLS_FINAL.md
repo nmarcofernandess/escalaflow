@@ -1,6 +1,6 @@
 # Mapa Final de Tools da IA — EscalaFlow
 
-Data de referencia: `2026-02-23`
+Data de referencia: `2026-02-24`
 
 ## Principio
 
@@ -8,29 +8,27 @@ Data de referencia: `2026-02-23`
 - SIM → nao cria tool semantica
 - NAO → cria (logica propria, tabela fora do whitelist, agregacao, filesystem, IPC especial)
 
-Cap maximo: **30 tools**. Hoje: **28**. Slots livres: **2**.
+Cap maximo: **30 tools**. Hoje: **30**. Slots livres: **0**.
 
 ---
 
-## As 28 tools atuais (todas justificadas)
+## As 30 tools atuais (todas justificadas)
 
-### Genericas (6) — cobrem leitura de 18 entidades + CRUD parcial
+### Genericas (5) — cobrem leitura de 19 entidades + CRUD parcial
 
 | Tool | O que faz |
 |------|-----------|
-| `get_context` | Discovery completo (setores, colabs, escalas, contratos com JOINs) |
-| `consultar` | SELECT generico com enrichment de FKs (18 entidades no whitelist) |
+| `consultar` | SELECT generico com enrichment de FKs (19 entidades no whitelist) |
 | `criar` | INSERT generico com defaults inteligentes (7 entidades: colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes) |
-| `atualizar` | UPDATE generico (5 entidades: colaboradores, empresa, tipos_contrato, setores, demandas) |
+| `atualizar` | UPDATE generico (6 entidades: colaboradores, empresa, tipos_contrato, setores, demandas, excecoes) |
 | `deletar` | DELETE generico (4 entidades: excecoes, demandas, feriados, funcoes) |
 | `cadastrar_lote` | Batch INSERT ate 200 registros |
 
-### Discovery inteligente (2)
+### Discovery inteligente (1)
 
 | Tool | O que faz | Por que generica nao resolve |
 |------|-----------|------------------------------|
 | `buscar_colaborador` | Fuzzy search por nome, deteccao de ambiguidade | `consultar` nao faz LIKE case-insensitive + substring match |
-| `obter_regra_horario_colaborador` | Le regra individual de horario/janela | Tabela `colaborador_regra_horario` fora do whitelist generico |
 
 ### Motor/Solver (4)
 
@@ -85,23 +83,33 @@ Cap maximo: **30 tools**. Hoje: **28**. Slots livres: **2**.
 | `salvar_perfil_horario` | Cria/edita perfil com janelas e preferencia de turno | Tabela fora dos whitelists de escrita generica + validacao de payload |
 | `deletar_perfil_horario` | Remove perfil por ID | Tabela fora dos whitelists de delecao generica + guardrails de erro |
 
-### Configuracao operacional e alertas (2) — NOVO
+### Configuracao operacional e alertas (2)
 
 | Tool | O que faz | Por que generica nao resolve |
 |------|-----------|------------------------------|
 | `configurar_horario_funcionamento` | Configura horario por dia (empresa/setor) com heranca | Escreve em tabelas especializadas + regras de `nivel`/`usa_padrao` |
 | `obter_alertas` | Agrega alertas ativos (escalas desatualizadas, pendencias etc.) | Agregacao multi-entidade + heuristicas operacionais |
 
+### Knowledge Layer (4) — NOVO
+
+| Tool | O que faz | Por que generica nao resolve |
+|------|-----------|------------------------------|
+| `buscar_conhecimento` | Busca semantica na base de conhecimento (RAG) + knowledge graph | Busca vetorial + FTS hibrida, nao e SELECT em tabela |
+| `salvar_conhecimento` | Salva conhecimento (chunking + embedding + graph extraction) | Pipeline de ingestao (chunk, embed, extract entities/relations) |
+| `listar_conhecimento` | Lista fontes salvas com stats (chunks, entidades, ultimo acesso) | Agregacao multi-tabela knowledge_* |
+| `explorar_relacoes` | Explora relacoes no knowledge graph a partir de uma entidade | CTE recursivo com profundidade configuravel |
+
 ---
 
 ## Whitelists das genericas (referencia)
 
 ```
-LEITURA (consultar) — 18 entidades:
+LEITURA (consultar) — 19 entidades:
   colaboradores, setores, escalas, alocacoes, excecoes,
   demandas, tipos_contrato, empresa, feriados, funcoes,
   regra_definicao, regra_empresa,
   demandas_excecao_data, colaborador_regra_horario_excecao_data,
+  colaborador_regra_horario,
   contrato_perfis_horario, empresa_horario_semana, setor_horario_semana,
   escala_ciclo_modelos
 
@@ -109,7 +117,7 @@ CRIACAO (criar / cadastrar_lote):
   colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes
 
 ATUALIZACAO (atualizar):
-  colaboradores, empresa, tipos_contrato, setores, demandas
+  colaboradores, empresa, tipos_contrato, setores, demandas, excecoes
 
 DELECAO (deletar):
   excecoes, demandas, feriados, funcoes
@@ -117,7 +125,7 @@ DELECAO (deletar):
 
 ---
 
-## Cobertura do trabalho diario do RH (com as 28 atuais)
+## Cobertura do trabalho diario do RH (com as 30 atuais)
 
 | Operacao do dia a dia | Funciona? | Como |
 |---|---|---|
@@ -142,6 +150,9 @@ DELECAO (deletar):
 | Ajustar horario de funcionamento (empresa/setor) | SIM | `configurar_horario_funcionamento` |
 | Ver alertas operacionais do sistema | SIM | `obter_alertas` |
 | Consultar excecoes por data | SIM | `consultar("demandas_excecao_data")` / `consultar("colaborador_regra_horario_excecao_data")` |
+| Buscar conhecimento/regras salvas | SIM | `buscar_conhecimento` (RAG semantico + graph) |
+| Salvar anotacao/regra na base | SIM | `salvar_conhecimento` |
+| Explorar relacoes entre conceitos | SIM | `explorar_relacoes` |
 | Exportar escala (PDF/HTML) | NAO | Operacao de UI — orientar usuario a clicar Exportar na pagina |
 | Ciclo rotativo | NAO | P3 — avancado |
 
@@ -172,8 +183,8 @@ DELECAO (deletar):
 ## Proporcao final
 
 ```
-ATUAL (28 tools):  cobertura alta sem ultrapassar o teto
-CAP   (30 tools):  sobram 2 slots pra futuro (sem contar eventuais podas)
+ATUAL (30 tools):  cobertura alta, teto atingido
+CAP   (30 tools):  teto atingido — novas tools exigem poda de existentes
 ```
 
 ## Evals

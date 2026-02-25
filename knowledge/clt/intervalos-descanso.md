@@ -1,3 +1,4 @@
+<!-- quando_usar: intervalo almoco intrajornada interjornada, 11 horas descanso, DSR, 15 minutos, CCT almoco reduzido, Art 66 71 CLT, clopening, domingos ciclo genero -->
 # Intervalos e Descanso na CLT — Aplicacao no EscalaFlow
 
 ## Visao geral dos intervalos

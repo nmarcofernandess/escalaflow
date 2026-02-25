@@ -10,6 +10,7 @@ import {
   Settings,
   ShieldCheck,
   Brain,
+  BrainCircuit,
   ChevronsUpDown,
   Sun,
   Moon,
@@ -55,6 +56,7 @@ const mainNav = [
   { label: 'Setores', to: '/setores', icon: Building2 },
   { label: 'Colaboradores', to: '/colaboradores', icon: Users },
   { label: 'Escalas', to: '/escalas', icon: CalendarDays },
+  { label: 'Assistente IA', to: '/ia', icon: BrainCircuit },
 ]
 
 const configNav = [

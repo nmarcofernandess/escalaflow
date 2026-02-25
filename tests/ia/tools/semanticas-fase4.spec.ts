@@ -1,167 +1,148 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetMockDbState } from '../../setup/db-test-utils'
+
+const queryMocks = vi.hoisted(() => ({
+  queryOne: vi.fn(),
+  queryAll: vi.fn(),
+  execute: vi.fn(),
+  insertReturningId: vi.fn(),
+}))
+
+vi.mock('../../../src/main/db/query', () => queryMocks)
+vi.mock('../../../src/main/knowledge/search', () => ({
+  searchKnowledge: vi.fn().mockResolvedValue([]),
+  exploreRelations: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('../../../src/main/knowledge/ingest', () => ({
+  ingestKnowledge: vi.fn().mockResolvedValue({ chunks_count: 0 }),
+}))
+
 import { executeTool } from '../../../src/main/ia/tools'
-import { clearMockDb, setMockDb } from '../../setup/db-test-utils'
 
 type Row = Record<string, any>
 
-function createSemanticasMockDb() {
-  const state = {
-    setores: [] as Row[],
-    tipos_contrato: [] as Row[],
-    colaboradores: [] as Row[],
-    escalas: [] as Row[],
-    alocacoes: [] as Row[],
-    excecoes: [] as Row[],
-    seq: { excecoes: 100 },
-  }
+function setupSemanticasMocks(state: {
+  setores?: Row[]
+  tipos_contrato?: Row[]
+  colaboradores?: Row[]
+}) {
+  const setores = state.setores ?? []
+  const tipos = state.tipos_contrato ?? []
+  const colabs = state.colaboradores ?? []
 
-  const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim()
+  queryMocks.queryAll.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-  const withColaboradorJoins = (row: Row) => ({
-    ...row,
-    setor_nome: state.setores.find((s) => s.id === row.setor_id)?.nome,
-    tipo_contrato_nome: state.tipos_contrato.find((t) => t.id === row.tipo_contrato_id)?.nome,
+    // buscar_colaborador — SELECT c.*, s.nome, t.nome FROM colaboradores c LEFT JOIN setores s ... LEFT JOIN tipos_contrato t ...
+    if (n.includes('FROM colaboradores c') && n.includes('LEFT JOIN setores s') && n.includes('LEFT JOIN tipos_contrato t')) {
+      let filtered = [...colabs]
+
+      // Apply WHERE clauses
+      if (n.includes('c.ativo = true')) {
+        filtered = filtered.filter(c => Number(c.ativo) === 1 || c.ativo === true)
+      }
+
+      if (n.includes('c.id = ')) {
+        const id = params[0]
+        filtered = filtered.filter(c => Number(c.id) === Number(id))
+      }
+
+      if (n.includes('LOWER(c.nome) = LOWER(')) {
+        const name = String(params[n.includes('c.ativo') ? 0 : 0]).toLowerCase()
+        // Determine param index based on earlier params consumed
+        const paramIdx = n.includes('c.setor_id') ? 1 : 0
+        const nameVal = String(params[paramIdx]).toLowerCase()
+        filtered = filtered.filter(c => String(c.nome).toLowerCase() === nameVal)
+      }
+
+      if (n.includes('c.nome ILIKE')) {
+        const paramIdx = n.includes('c.setor_id') ? 1 : 0
+        const pattern = String(params[paramIdx]).replace(/%/g, '').toLowerCase()
+        filtered = filtered.filter(c => String(c.nome).toLowerCase().includes(pattern))
+      }
+
+      // Enrich with JOINs
+      return filtered.map(c => ({
+        ...c,
+        setor_nome: setores.find(s => Number(s.id) === Number(c.setor_id))?.nome,
+        tipo_contrato_nome: tipos.find(t => Number(t.id) === Number(c.tipo_contrato_id))?.nome,
+      })).sort((a, b) => {
+        const ativoDiff = Number(b.ativo ?? 0) - Number(a.ativo ?? 0)
+        if (ativoDiff !== 0) return ativoDiff
+        return String(a.nome).localeCompare(String(b.nome))
+      })
+    }
+
+    return []
   })
 
-  const filterColaboradoresByWhere = (normalizedSql: string, params: any[]) => {
-    const wherePart = normalizedSql.includes(' WHERE ')
-      ? normalizedSql.split(' WHERE ')[1].split(' ORDER BY ')[0]
-      : ''
-    const clauses = wherePart ? wherePart.split(' AND ') : []
-    return state.colaboradores.filter((raw) => {
-      let p = 0
-      return clauses.every((clause) => {
-        if (clause === 'c.ativo = 1') return Number(raw.ativo) === 1
+  queryMocks.queryOne.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-        if (clause === 'c.id = ?') {
-          const expected = Number(params[p++])
-          return Number(raw.id) === expected
-        }
+    // Enrichment queries for buscar_colaborador (enrichColaboradorSingle)
+    if (n.includes('FROM colaborador_regra_horario WHERE colaborador_id')) {
+      return null // No rule configured
+    }
 
-        if (clause === 'c.setor_id = ?') {
-          const expected = Number(params[p++])
-          return Number(raw.setor_id) === expected
-        }
+    if (n.includes('FROM colaborador_regra_horario_excecao_data WHERE colaborador_id')) {
+      return null
+    }
 
-        if (clause === 'c.nome = ? COLLATE NOCASE') {
-          const expected = String(params[p++]).toLowerCase()
-          return String(raw.nome).toLowerCase() === expected
-        }
+    if (n.includes('FROM excecoes WHERE colaborador_id')) {
+      return null
+    }
 
-        if (clause === 'c.nome LIKE ? COLLATE NOCASE') {
-          const rawPattern = String(params[p++]).toLowerCase()
-          const needle = rawPattern.replace(/^%/, '').replace(/%$/, '')
-          return String(raw.nome).toLowerCase().includes(needle)
-        }
+    return undefined
+  })
 
-        throw new Error(`Cláusula de colaborador não suportada no mock: ${clause}`)
-      })
-    })
-  }
+  queryMocks.queryAll.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-  return {
-    __seed: {
-      insert(table: keyof typeof state, row: Row) {
-        ;(state[table] as Row[]).push({ ...row })
-      },
-    },
-    prepare(sql: string) {
-      const normalizedSql = normalize(sql)
+    if (n.includes('FROM colaboradores c') && n.includes('LEFT JOIN setores s') && n.includes('LEFT JOIN tipos_contrato t')) {
+      let filtered = [...colabs]
 
-      return {
-        all: (...params: any[]) => {
-          if (normalizedSql === 'SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores WHERE ativo = 1 ORDER BY nome') {
-            return state.setores.filter((s) => Number(s.ativo) === 1).sort((a, b) => String(a.nome).localeCompare(String(b.nome)))
-          }
-
-          if (normalizedSql === 'SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores ORDER BY nome') {
-            return [...state.setores].sort((a, b) => String(a.nome).localeCompare(String(b.nome)))
-          }
-
-          if (normalizedSql.includes('FROM colaboradores c LEFT JOIN setores s ON s.id = c.setor_id LEFT JOIN tipos_contrato t ON t.id = c.tipo_contrato_id')) {
-            return filterColaboradoresByWhere(normalizedSql, params)
-              .map(withColaboradorJoins)
-              .sort((a, b) => {
-                const ativoDiff = Number(b.ativo ?? 0) - Number(a.ativo ?? 0)
-                if (ativoDiff !== 0) return ativoDiff
-                return String(a.nome).localeCompare(String(b.nome))
-              })
-          }
-
-          throw new Error(`Mock all() não suportado para query: ${normalizedSql}`)
-        },
-        get: (...params: any[]) => {
-          if (normalizedSql === 'SELECT id, nome, ativo FROM setores WHERE id = ?') {
-            const setorId = Number(params[0])
-            return state.setores.find((s) => Number(s.id) === setorId)
-          }
-
-          if (normalizedSql.includes("FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')")) {
-            const setorId = Number(params[0])
-            const candidates = state.escalas
-              .filter((e) => Number(e.setor_id) === setorId && ['RASCUNHO', 'OFICIAL'].includes(String(e.status)))
-              .sort((a, b) => {
-                const score = (status: string) => (status === 'OFICIAL' ? 2 : status === 'RASCUNHO' ? 1 : 0)
-                const byStatus = score(String(b.status)) - score(String(a.status))
-                if (byStatus !== 0) return byStatus
-                return Number(b.id) - Number(a.id)
-              })
-            return candidates[0]
-          }
-
-          if (normalizedSql.includes('FROM escalas WHERE setor_id = ? AND status = ?')) {
-            const setorId = Number(params[0])
-            const status = String(params[1])
-            const candidates = state.escalas
-              .filter((e) => Number(e.setor_id) === setorId && String(e.status) === status)
-              .sort((a, b) => Number(b.id) - Number(a.id))
-            return candidates[0]
-          }
-
-          if (normalizedSql.includes('FROM alocacoes WHERE escala_id = ?')) {
-            const escalaId = Number(params[0])
-            const rows = state.alocacoes.filter((a) => Number(a.escala_id) === escalaId)
-            return {
-              total: rows.length,
-              trabalho: rows.filter((a) => a.status === 'TRABALHO').length,
-              folga: rows.filter((a) => a.status === 'FOLGA').length,
-              indisponivel: rows.filter((a) => a.status === 'INDISPONIVEL').length,
-            }
-          }
-
-          throw new Error(`Mock get() não suportado para query: ${normalizedSql}`)
-        },
-        run: (...params: any[]) => {
-          if (normalizedSql.startsWith('INSERT INTO excecoes (')) {
-            const colsPart = normalizedSql.slice('INSERT INTO excecoes ('.length).split(') VALUES')[0]
-            const cols = colsPart.split(',').map((c) => c.trim())
-            const row: Row = { id: state.seq.excecoes++ }
-            cols.forEach((col, idx) => {
-              row[col] = params[idx]
-            })
-            state.excecoes.push(row)
-            return { lastInsertRowid: row.id, changes: 1 }
-          }
-
-          throw new Error(`Mock run() não suportado para query: ${normalizedSql}`)
-        },
+      if (n.includes('c.ativo = true')) {
+        filtered = filtered.filter(c => Number(c.ativo) === 1 || c.ativo === true)
       }
-    },
-    close() {},
-  }
+
+      if (n.includes('LOWER(c.nome) = LOWER(')) {
+        const nameParam = params.find(p => typeof p === 'string' && !String(p).includes('%'))
+        if (nameParam) {
+          filtered = filtered.filter(c => String(c.nome).toLowerCase() === String(nameParam).toLowerCase())
+        }
+      }
+
+      if (n.includes('c.nome ILIKE')) {
+        const likeParam = params.find(p => typeof p === 'string' && String(p).includes('%'))
+        if (likeParam) {
+          const pattern = String(likeParam).replace(/%/g, '').toLowerCase()
+          filtered = filtered.filter(c => String(c.nome).toLowerCase().includes(pattern))
+        }
+      }
+
+      return filtered.map(c => ({
+        ...c,
+        setor_nome: setores.find(s => Number(s.id) === Number(c.setor_id))?.nome,
+        tipo_contrato_nome: tipos.find(t => Number(t.id) === Number(c.tipo_contrato_id))?.nome,
+      })).sort((a, b) => {
+        const ativoDiff = Number(b.ativo ?? 0) - Number(a.ativo ?? 0)
+        if (ativoDiff !== 0) return ativoDiff
+        return String(a.nome).localeCompare(String(b.nome))
+      })
+    }
+
+    return []
+  })
 }
 
 describe('executeTool ferramentas semânticas (Fase 4 - início / poda)', () => {
-  let db: ReturnType<typeof createSemanticasMockDb>
-
   beforeEach(() => {
-    db = createSemanticasMockDb()
-    setMockDb(db)
+    resetMockDbState()
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
-    clearMockDb()
-    db.close()
+    resetMockDbState()
   })
 
   it('wrappers CRUD/de discovery removidos retornam UNKNOWN_TOOL', async () => {
@@ -173,9 +154,11 @@ describe('executeTool ferramentas semânticas (Fase 4 - início / poda)', () => 
   })
 
   it('buscar_colaborador resolve por nome com enriquecimento e retorna um único match', async () => {
-    db.__seed.insert('setores', { id: 1, nome: 'Açougue', ativo: 1 })
-    db.__seed.insert('tipos_contrato', { id: 2, nome: 'CLT 44h' })
-    db.__seed.insert('colaboradores', { id: 10, nome: 'Cleunice Souza', setor_id: 1, tipo_contrato_id: 2, ativo: 1 })
+    setupSemanticasMocks({
+      setores: [{ id: 1, nome: 'Açougue', ativo: 1 }],
+      tipos_contrato: [{ id: 2, nome: 'CLT 44h' }],
+      colaboradores: [{ id: 10, nome: 'Cleunice Souza', setor_id: 1, tipo_contrato_id: 2, ativo: 1 }],
+    })
 
     const result = await executeTool('buscar_colaborador', { nome: 'cleunice', modo: 'PARCIAL' })
 
@@ -198,10 +181,14 @@ describe('executeTool ferramentas semânticas (Fase 4 - início / poda)', () => 
   })
 
   it('buscar_colaborador retorna ambiguidade quando há múltiplos matches', async () => {
-    db.__seed.insert('setores', { id: 1, nome: 'Caixa', ativo: 1 })
-    db.__seed.insert('tipos_contrato', { id: 1, nome: 'CLT' })
-    db.__seed.insert('colaboradores', { id: 1, nome: 'Maria Silva', setor_id: 1, tipo_contrato_id: 1, ativo: 1 })
-    db.__seed.insert('colaboradores', { id: 2, nome: 'Maria Souza', setor_id: 1, tipo_contrato_id: 1, ativo: 1 })
+    setupSemanticasMocks({
+      setores: [{ id: 1, nome: 'Caixa', ativo: 1 }],
+      tipos_contrato: [{ id: 1, nome: 'CLT' }],
+      colaboradores: [
+        { id: 1, nome: 'Maria Silva', setor_id: 1, tipo_contrato_id: 1, ativo: 1 },
+        { id: 2, nome: 'Maria Souza', setor_id: 1, tipo_contrato_id: 1, ativo: 1 },
+      ],
+    })
 
     const result = await executeTool('buscar_colaborador', { nome: 'Maria', modo: 'PARCIAL' })
 
@@ -211,5 +198,4 @@ describe('executeTool ferramentas semânticas (Fase 4 - início / poda)', () => 
     expect(result.candidatos).toHaveLength(2)
     expect(result.summary).toMatch(/Refine o nome/i)
   })
-
 })

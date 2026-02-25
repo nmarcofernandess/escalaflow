@@ -1,3 +1,4 @@
+<!-- quando_usar: como gerar escala, passo a passo, preflight, modo rapido otimizado, rules override, ajustar escala, cadastrar ferias, INFEASIBLE, cadastrar lote, demanda excepcional, oficializar -->
 # Fluxos de Trabalho no EscalaFlow
 
 ## Fluxo 1: Gerar uma escala do mes

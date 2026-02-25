@@ -2,7 +2,7 @@
 
 > **Proposito:** Mapeamento completo do sistema para reescrita do system prompt, gap analysis de tools, e evolucao da IA.
 >
-> **Gerado em:** 2026-02-22 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
+> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-02-24 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
 
 ---
 
@@ -17,17 +17,18 @@
 | Camada | Tecnologia |
 |--------|-----------|
 | Shell | Electron 34 |
-| IPC | @egoist/tipc (~80 handlers) |
-| Database | better-sqlite3 (SQLite, arquivo local) |
-| Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) |
+| IPC | @egoist/tipc (~116 handlers) |
+| Database | PGlite (Postgres 17 WASM, pgvector, FTS portugues, pg_trgm) |
+| Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) — multi-pass graceful degradation |
 | Frontend | React 19 + Vite + Tailwind + shadcn/ui + Zustand |
-| IA | Gemini/OpenRouter via Vercel AI SDK (`generateText`) |
+| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) — 34 tools |
+| Knowledge | RAG local: embeddings ONNX (multilingual-e5-small) + pgvector + Knowledge Graph |
 
 ### Fluxo macro
 
 ```
 Usuario (React) → IPC (tipc.ts) → Main Process (Node.js)
-                                    ├── Database (better-sqlite3)
+                                    ├── Database (PGlite — Postgres WASM)
                                     ├── Motor Python (solver-bridge.ts → spawn solver)
                                     └── IA (cliente.ts → Gemini API)
 ```
@@ -279,7 +280,7 @@ CLT.GRID_MINUTOS               = 15    // quantizacao universal
 
 ### 2.11 O que a IA precisa saber para operar
 
-**Entidades que a IA MANIPULA (write) — 28 tools total:**
+**Entidades que a IA MANIPULA (write) — 34 tools total:**
 - `alocacoes` — via tools `ajustar_alocacao`, `ajustar_horario`
 - `escalas` — via tools `gerar_escala`, `oficializar_escala`
 - `regra_empresa` — via tools `editar_regra`, `resetar_regras_empresa`
@@ -343,9 +344,12 @@ UI (EscalaPagina)
   │     └── stderr: logs de progresso (streaming via onLog callback)
   │     └── Timeout default: 3.700s (wrapper), solver interno: 30s rapido / 120s otimizado
   │
-  ├─ [4] Python solver_ortools.py: solve(data)
+  ├─ [4] Python solver_ortools.py: solve(data) — MULTI-PASS GRACEFUL DEGRADATION
+  │     ├── _analyze_capacity(data) → analise pre-solve de capacidade vs demanda
   │     ├── parse_demand() → grid de demanda por (dia_idx, slot_idx)
-  │     ├── build_model() → cria modelo CP-SAT:
+  │     │
+  │     ├── Pass 1 (Normal — 50% do tempo):
+  │     │     ├── build_model() sem relaxations
   │     │     ├── Variaveis: work[c,d,s], works_day[c,d], block_starts[c,d,s]
   │     │     ├── Pinned cells → force work[c,d,s] = 0 ou 1
   │     │     ├── Warm-start hints → model.add_hint()
@@ -353,11 +357,23 @@ UI (EscalaPagina)
   │     │     ├── HARD constraints (H1-H19, DIAS_TRABALHO, MIN_DIARIO, janela, folga fixa)
   │     │     ├── SOFT penalties (deficit, surplus, domingo_ciclo, turno_pref, consistencia, spread, ap1_excess)
   │     │     └── model.minimize(sum(objective_terms))
-  │     ├── solver.solve(model) → CP-SAT resolve
+  │     │     Se OPTIMAL/FEASIBLE → retorna
+  │     │
+  │     ├── Pass 2 (Relaxed Product Rules — 30% do tempo):
+  │     │     ├── Relaxa: H10_ELASTIC, DIAS_TRABALHO, MIN_DIARIO, H6 → SOFT
+  │     │     ├── H2, H4, H5, H11-H18 permanecem HARD (CLT inviolavel)
+  │     │     └── Se resolver → retorna com diagnostico.pass_usado=2
+  │     │
+  │     ├── Pass 3 (Emergency CLT Skeleton — 20% do tempo):
+  │     │     ├── Relaxa: ALL_PRODUCT_RULES (tudo que nao e CLT core)
+  │     │     ├── Somente H2, H4, H5, H11-H18 ficam HARD
+  │     │     ├── Remove janela colab e folga fixa (hard → skip)
+  │     │     └── diagnostico.modo_emergencia=true
+  │     │
   │     └── extract_solution() → alocacoes, indicadores, decisoes, comparacao, diagnostico
   │
   ├─ [5] solver-bridge.ts: persistirSolverResult(setor_id, datas, result, hash)
-  │     └── Transacao SQLite:
+  │     └── Transacao PGlite:
   │         ├── INSERT escalas (status='RASCUNHO', indicadores)
   │         ├── INSERT alocacoes (1 por colab/dia)
   │         ├── INSERT escala_decisoes (explicabilidade)
@@ -399,6 +415,7 @@ Onde:
 | H5 | `add_h5_excecoes` | `constraints.py:469` | Ferias/atestado/bloqueio = work[c,d,s] = 0 em todos os slots do periodo. | Nao (sempre HARD) |
 | H6 | `add_human_blocks` | `constraints.py:156` | Estrutura jornada: <=6h → 1 bloco; >6h → 2 blocos + almoco [1h-2h] na janela [11h-15h]. Min 2h/bloco. Max 6h seguidas. | Sim (HARD/SOFT/OFF) |
 | H10 | `add_h10_meta_semanal` | `constraints.py:256` | Horas semanais ± tolerancia. Pro-rata em chunks parciais. Ajusta por dias disponiveis. | Sim (HARD/SOFT/OFF) |
+| H10 (elastic) | `add_h10_meta_semanal_elastic` | `constraints.py:315` | Variante elastic: dominio [0, max_capacity] com slack variables. Peso 8000/min desvio. Usada em Pass 2/3 da degradacao graciosa. | Auto (via multi-pass) |
 | H11 | `add_h11_aprendiz_domingo` | `constraints.py:493` | Aprendiz NUNCA domingo (Art. 432 CLT). | Nao (sempre HARD) |
 | H12 | `add_h12_aprendiz_feriado` | `constraints.py:507` | Aprendiz NUNCA feriado. | Nao (sempre HARD) |
 | H13 | `add_h13_aprendiz_noturno` | `constraints.py:521` | Aprendiz NUNCA slots >= 22h. Para janela 08-20h: zero clauses. | Nao (sempre HARD) |
@@ -456,7 +473,7 @@ deficit = add_demand_soft(model, work, demand_by_slot, C, D, S) \
 
 **Por que deficit e SOFT, nao HARD:**
 > Com 6 pessoas e constraints CLT, 100% cobertura e matematicamente impossivel (margem: 0.5%).
-> Rita (30+ anos de experiencia no supermercado) atinge ~85%. O solver faz o mesmo.
+> Na pratica, um RH experiente atinge ~85%. O solver faz o mesmo.
 > Forcar HARD = INFEASIBLE garantido. (comentario real do `constraints.py:387`)
 
 #### SOFT penalty wrappers (para regras configuraveis)
@@ -541,19 +558,31 @@ validarEscalaV3(escalaId, db)
 ### 3.6 Output do Solver
 
 ```typescript
+interface DiagnosticoSolver {
+  status_cp_sat: 'OPTIMAL' | 'FEASIBLE' | 'INFEASIBLE' | 'UNKNOWN'
+  solve_time_ms: number
+  regras_ativas: string[]           // codigos com status HARD/SOFT/ON
+  regras_off: string[]              // codigos com status OFF
+  motivo_infeasible?: string        // so no path INFEASIBLE
+  num_colaboradores: number
+  num_dias: number
+  // ↓ Graceful Degradation (multi-pass) ↓
+  pass_usado?: 1 | 2 | 3           // qual pass resolveu (1=normal, 2=relaxed, 3=emergency)
+  regras_relaxadas?: string[]       // quais regras foram relaxadas no pass bem-sucedido
+  capacidade_vs_demanda?: {         // analise pre-solve
+    total_slots_demanda: number
+    max_slots_disponiveis: number
+    ratio_cobertura_max: number
+    cobertura_matematicamente_possivel: boolean
+  }
+  modo_emergencia?: boolean         // true quando Pass 3 — revisao obrigatoria
+}
+
 interface SolverOutput {
   sucesso: boolean                    // true se OPTIMAL ou FEASIBLE
   status: string                      // 'OPTIMAL' | 'FEASIBLE' | 'INFEASIBLE' | 'UNKNOWN'
   solve_time_ms: number
-  diagnostico?: {
-    status_cp_sat: string
-    solve_time_ms: number
-    regras_ativas: string[]           // codigos com status HARD/SOFT/ON
-    regras_off: string[]              // codigos com status OFF
-    motivo_infeasible?: string        // so no path INFEASIBLE
-    num_colaboradores: number
-    num_dias: number
-  }
+  diagnostico?: DiagnosticoSolver
   alocacoes?: SolverOutputAlocacao[]  // 1 por (colab, dia)
   indicadores?: {
     cobertura_percent: number         // 0-100
@@ -580,12 +609,12 @@ interface SolverOutput {
 Bridge busca a ultima escala do mesmo setor/periodo no DB e passa como `hints[]`. O solver usa `model.add_hint()` — nao e constraint, e sugestao de ponto de partida pra acelerar convergencia.
 
 ```typescript
-// solver-bridge.ts:400-431
-const lastScale = db.prepare(`
+// solver-bridge.ts — busca ultima escala do mesmo setor/periodo
+const lastScale = await db.query(`
   SELECT id FROM escalas
-  WHERE setor_id = ? AND data_inicio = ? AND data_fim = ?
+  WHERE setor_id = $1 AND data_inicio = $2 AND data_fim = $3
   ORDER BY id DESC LIMIT 1
-`).get(setorId, dataInicio, dataFim)
+`, [setorId, dataInicio, dataFim])
 
 // Se existe escala anterior, busca alocacoes como hints
 hints = alocacoesAnteriores.map(h => ({
@@ -595,12 +624,25 @@ hints = alocacoesAnteriores.map(h => ({
 
 ### 3.8 Modos de Resolucao
 
-| Modo | Timeout | Gap Limit | Quando usar |
-|------|---------|-----------|-------------|
+| Modo | Timeout total | Gap Limit | Quando usar |
+|------|--------------|-----------|-------------|
 | `rapido` | 30s (default) | 5% | Geracao normal, feedback rapido |
 | `otimizado` | 120s | 0% (prove optimal) | Quando quer a melhor solucao possivel |
 
-Configuraveis via `SolverConfigDrawer` no frontend ou via tool `gerar_escala` da IA.
+Configuraveis via `SolverConfigDrawer` no frontend ou via tool `gerar_escala` da IA (parametro `solve_mode`).
+
+**Time budget splitting (multi-pass):**
+
+| Pass | Objetivo | Tempo alocado | Relaxations |
+|------|----------|---------------|-------------|
+| Pass 1 | Normal (todas regras conforme config) | 50% do timeout | Nenhuma |
+| Pass 2 | Relaxar product rules → SOFT | 30% do timeout | H10_ELASTIC, DIAS_TRABALHO, MIN_DIARIO, H6 |
+| Pass 3 | Emergency CLT skeleton | 20% do timeout | ALL_PRODUCT_RULES (so H2/H4/H5/H11-H18 ficam HARD) |
+
+**INFEASIBLE e provado em <1s** — dar mais tempo NAO resolve. Se o CP-SAT prova impossibilidade matematica, e instantaneo. O multi-pass tenta com regras relaxadas, nao com mais tempo.
+
+**Regras que NUNCA relaxam (CLT core):**
+H2 (interjornada 11h), H4 (max 10h/dia), H5 (excecoes), H11-H18 (aprendiz/estagiario/feriados proibidos)
 
 ### 3.9 Input Hash (Deteccao de Mudancas)
 
@@ -614,14 +656,24 @@ Campos incluidos no hash: setor_id, datas, empresa, colaboradores (ordenados por
 
 **Para gerar escala:**
 - Precisa de setor_id, data_inicio, data_fim (minimo)
-- Pode passar pinned_cells, solve_mode, max_time, rules_override
+- Pode passar `solve_mode` ('rapido' | 'otimizado'), `rules_override`
 - Tool `gerar_escala` ja faz tudo isso
+- INFEASIBLE e provado em <1s — dar mais tempo NAO resolve. Multi-pass resolve relaxando regras automaticamente.
 
-**Para entender falhas:**
-- `diagnostico.motivo_infeasible` explica o que deu errado
-- `diagnostico.regras_ativas/off` mostra o que estava ligado
+**Para entender falhas (graceful degradation):**
+- `diagnostico.pass_usado` indica qual pass resolveu (1=normal, 2=relaxed, 3=emergency)
+- `diagnostico.regras_relaxadas` lista quais regras foram afrouxadas
+- `diagnostico.capacidade_vs_demanda` mostra analise pre-solve de viabilidade
+- `diagnostico.modo_emergencia` indica Pass 3 (revisao obrigatoria pelo RH)
+- `diagnostico.motivo_infeasible` explica o que deu errado (se todos os 3 passes falharam)
 - `erro.sugestoes[]` tem dicas acionaveis
 - Tool `explicar_violacao` tem dicionario das 20+ regras
+
+**Para diagnosticar INFEASIBLE:**
+- Tool `diagnosticar_infeasible` roda o solver 6x (desligando H1, H6, H10, DIAS_TRABALHO, MIN_DIARIO individualmente + 1x com todos off)
+- Identifica qual regra (ou combinacao) esta causando o conflito
+- Retorna `regras_que_resolvem_ao_desligar` + `capacidade_vs_demanda`
+- Workflow recomendado: gerar_escala → INFEASIBLE → diagnosticar_infeasible → explicar ao RH
 
 **Para ajustar alocacao:**
 - Tool `ajustar_alocacao` faz UPDATE direto no DB
@@ -1047,7 +1099,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 - Resetar regras ao default (via `editar_regra` deletando a regra_empresa, ou orientando o usuario)
 - Gerar escalas com `rules_override` temporario (parametro do `gerar_escala`)
 
-**A IA TAMBÉM PODE (tools especializadas — 28 tools no total):**
+**A IA TAMBÉM PODE (tools especializadas — 34 tools no total):**
 - Criar/editar regras de horario por colaborador → `salvar_regra_horario_colaborador`
 - Criar/editar janelas de horario → `definir_janela_colaborador`
 - Criar/editar excecoes de horario por data → `upsert_regra_excecao_data`
@@ -1066,11 +1118,11 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 
 ## 5. API Interna — IPC Handlers (Fase 4)
 
-> **Arquivo fonte:** `src/main/tipc.ts` (~2850 linhas, ~80 handlers)
+> **Arquivo fonte:** `src/main/tipc.ts` (~3500 linhas, ~116 handlers)
 >
 > Todos os handlers seguem o padrao `@egoist/tipc`: `t.procedure.input<T>().action(async ({ input }) => { ... })`
 
-### 5.1 Mapa Completo — 80 handlers por dominio
+### 5.1 Mapa Completo — ~116 handlers por dominio
 
 #### Empresa (4 handlers)
 
@@ -1197,7 +1249,7 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 
 | `regras.listar` | `regras.atualizar` | `regras.resetarEmpresa` | `regras.resetarRegra` |
 
-#### IA (15 handlers)
+#### IA (15 handlers) + Memorias (4) + Knowledge (6) + Session (2)
 
 | Handler | Input | O que retorna | Notas |
 |---------|-------|---------------|-------|
@@ -1210,19 +1262,31 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 | `ia.conversas.obter` | `{id}` | `IaConversa + mensagens[]` | Conversa com historico |
 | `ia.conversas.criar` | `{titulo?}` | `IaConversa` | UUID como PK |
 | `ia.conversas.renomear` | `{id, titulo}` | void | |
-| `ia.conversas.arquivar` | `{id}` | void | status → 'arquivado' |
+| `ia.conversas.arquivar` | `{id}` | void | status → 'arquivado' + limpa anexos |
 | `ia.conversas.restaurar` | `{id}` | void | status → 'ativo' |
 | `ia.conversas.deletar` | `{id}` | void | Hard DELETE (CASCADE mensagens) |
-| `ia.conversas.arquivarTodas` | — | void | Arquiva todas as ativas |
+| `ia.conversas.arquivarTodas` | — | void | Arquiva todas as ativas + limpa anexos |
 | `ia.conversas.deletarArquivadas` | — | void | Deleta todas as arquivadas |
 | `ia.mensagens.salvar` | `{conversa_id, mensagem}` | void | Persiste mensagem no historico |
+| `ia.memorias.listar` | — | `IaMemoria[]` | Max 20 memorias do RH |
+| `ia.memorias.salvar` | `{conteudo}` | `IaMemoria` | INSERT com soft limit 20 |
+| `ia.memorias.remover` | `{id}` | void | Hard DELETE |
+| `ia.memorias.contar` | — | `{count}` | Contagem atual |
+| `ia.sessao.processar` | `{conversa_id}` | void | Sanitize + indexacao + compaction de sessao longa |
+| `ia.config.memoriaAutomatica` | `{ativa}` | void | Toggle extracao automatica de memorias |
+| `knowledge.importar` | `{titulo, conteudo, tipo?}` | `KnowledgeSource` | Ingestao de documento com chunking + embeddings |
+| `knowledge.listar` | — | `KnowledgeSource[]` | Lista documentos importados |
+| `knowledge.buscar` | `{query, limit?}` | `KnowledgeChunk[]` | Busca semantica (pgvector cosine) + FTS portugues |
+| `knowledge.deletar` | `{id}` | void | Deleta source + chunks |
+| `knowledge.rebuildGraph` | — | void | Reconstroi knowledge graph (LLM por chunk) |
+| `knowledge.graphStats` | — | `{entidades, relacoes, tipos}` | Contagens do graph |
 
 #### Backup/Restore (2 handlers)
 
 | Handler | Input | O que retorna | Notas |
 |---------|-------|---------------|-------|
-| `dados.exportar` | — | `{filepath} \| null` | Exporta todas as tabelas como JSON |
-| `dados.importar` | — | `{tabelas, registros} \| null` | Importa JSON, preserva ordem de dependencias |
+| `dados.exportar` | `{categorias}` | `{filepath} \| null` | Exporta ZIP com 3 categorias seletivas (cadastros, conhecimento, conversas) |
+| `dados.importar` | — | `{tabelas, registros} \| null` | Importa ZIP ou JSON legado, preserva ordem de FKs |
 
 ### 5.2 Funcoes de Suporte Importantes (nao sao IPC, mas afetam tudo)
 
@@ -1241,7 +1305,7 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 |---------|----------|----------------|----------------|
 | Empresa | 4 | 2 (atualizar, horarios.atualizar) | 2 |
 | Tipos Contrato | 9 | 4 (CRUD + perfis CRUD) | 5 |
-| Setores | 15 | 9 | 6 |
+| Setores | 16 | 9 | 7 |
 | Funcoes | 5 | 3 | 2 |
 | Feriados | 3 | 2 | 1 |
 | Colaboradores | 11 | 6 | 5 |
@@ -1250,33 +1314,38 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 | Dashboard | 1 | 0 | 1 |
 | Export | 4 | 0 | 4 (geram arquivos no filesystem) |
 | Regras | 4 | 3 | 1 |
-| IA | 16 | 8 | 8 |
+| IA (chat + config) | 15 | 8 | 7 |
+| IA (memorias) | 4 | 2 | 2 |
+| IA (session) | 2 | 2 | 0 |
+| Knowledge | 6 | 3 | 3 |
 | Backup | 2 | 1 | 1 |
-| **TOTAL** | **~93** | **47** | **46** |
+| **TOTAL** | **~116** | **~54** | **~51** |
 
-> **Nota:** A contagem exata pode variar ±2 dependendo de como sub-handlers sao agrupados. O grep de `t.procedure` retorna ~90 ocorrencias.
+> **Nota:** A contagem exata pode variar ±3 dependendo de como sub-handlers sao agrupados. O grep de `t.procedure` retorna ~116 ocorrencias.
 
 ### 5.4 O que a IA pode vs nao pode acessar
 
-A IA tem **28 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
+A IA tem **34 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
 
-**A IA EXECUTA DIRETAMENTE (via 28 tools):**
+**A IA EXECUTA DIRETAMENTE (via 34 tools):**
 
 | Capacidade | Tool(s) | IPC equivalente |
 |-----------|---------|-----------------|
 | Discovery completo | `get_context`, `consultar` (18 tabelas), `buscar_colaborador`, `obter_alertas` | Multiplos SELECT |
 | CRUD generico | `criar` (7 entidades), `atualizar` (5), `deletar` (4), `cadastrar_lote` | colaboradores/setores/excecoes/demandas/funcoes/feriados/tipos_contrato |
-| Gerar escala | `gerar_escala` | escalas.gerar |
+| Gerar escala | `gerar_escala` (com `solve_mode` e `rules_override`) | escalas.gerar |
 | Ajustar alocacao | `ajustar_alocacao`, `ajustar_horario` | escalas.ajustar |
 | Oficializar | `oficializar_escala` | escalas.oficializar |
 | Preflight | `preflight`, `preflight_completo` | escalas.preflight |
-| Diagnostico | `diagnosticar_escala`, `explicar_violacao` | validarEscalaV3 |
+| Diagnostico | `diagnosticar_escala`, `explicar_violacao`, **`diagnosticar_infeasible`** | validarEscalaV3 + multi-solve |
 | Regras do motor | `editar_regra`, `resetar_regras_empresa` | regras.atualizar/resetar |
 | Regras por colaborador | `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data` | colaboradores.*RegraHorario |
 | Perfis de horario | `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario` | perfisHorario.* |
 | Horario funcionamento | `configurar_horario_funcionamento` | empresa.horarios / setores.horarios |
 | Demanda excecao | `salvar_demanda_excecao_data` | setores.salvarDemandaExcecaoData |
 | KPIs | `resumir_horas_setor` | Queries agregadas |
+| Knowledge (RAG) | `buscar_conhecimento`, `salvar_conhecimento`, `listar_conhecimento`, `explorar_relacoes` | knowledge.* |
+| Memorias do RH | `salvar_memoria`, `listar_memorias`, `remover_memoria` | ia.memorias.* |
 
 **A IA NAO tem tools para:**
 - `escala_ciclo_modelos/itens` — pode LER via `consultar`, mas nao criar/editar ciclos (orientar a usar a UI)
@@ -1294,10 +1363,13 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
 ## 6. Sistema IA Atual (Fase 5)
 
 > **Arquivos fonte:**
-> - `src/main/ia/cliente.ts` (~550 linhas) — orquestrador com streaming
-> - `src/main/ia/tools.ts` (~3240 linhas) — 28 tools com Zod + handlers
-> - `src/main/ia/system-prompt.ts` (~408 linhas) — prompt com 8 secoes
-> - `src/main/ia/discovery.ts` (~300 linhas) — auto-contexto por pagina + alertas proativos
+> - `src/main/ia/cliente.ts` (~600 linhas) — orquestrador com streaming, compaction, conversa_id
+> - `src/main/ia/tools.ts` (~3800 linhas) — 34 tools com Zod + handlers
+> - `src/main/ia/system-prompt.ts` (~370 linhas) — prompt com 8 secoes (reescrito, inclui degradacao graciosa)
+> - `src/main/ia/discovery.ts` (~300 linhas) — auto-contexto por pagina + alertas proativos + memorias
+> - `src/main/ia/config.ts` — buildModelFactory (reutilizavel por knowledge graph, session-processor)
+> - `src/main/ia/session-processor.ts` — sanitize transcripts, indexacao, compaction de sessoes longas
+> - `src/main/knowledge/` — embeddings.ts, ingest.ts, search.ts, graph.ts (RAG + Knowledge Graph)
 
 ### 6.1 Arquitetura geral do fluxo IA
 
@@ -1316,7 +1388,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
     |                    = [{role,content}...] com tool_calls  |
     |                          |                              |
     |                    getVercelAiTools()                    |
-    |                    = 28 tools com Zod + execute()        |
+    |                    = 34 tools com Zod + execute()         |
     |                          |                              |
     |                    streamText({                          |
     |                      model, system, messages,            |
@@ -1347,7 +1419,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
 async function iaEnviarMensagemStream(config, currentMsg, historico, contexto) {
     const fullSystemPrompt = buildFullSystemPrompt(contexto)
     const messages = buildChatMessages(historico, currentMsg)  // inclui tool_calls
-    const tools = getVercelAiTools()                           // 28 tools com Zod
+    const tools = getVercelAiTools()                           // 34 tools com Zod
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
     const result = streamText({
@@ -1382,7 +1454,7 @@ Alguns modelos (Gemini em particular) executam tools mas nao geram texto ao fina
 
 | Provider | Factory | Modelo default | Pacote |
 |----------|---------|----------------|--------|
-| `gemini` | `createGoogleGenerativeAI({ apiKey })` | `gemini-2.5-flash` | `@ai-sdk/google` |
+| `gemini` | `createGoogleGenerativeAI({ apiKey })` | `gemini-3-flash-preview` | `@ai-sdk/google` |
 | `openrouter` | `createOpenRouter({ apiKey })` | `anthropic/claude-sonnet-4` | `@openrouter/ai-sdk-provider` |
 
 **Resolucao de API key (prioridade):**
@@ -1418,31 +1490,33 @@ IaMensagem { papel: 'assistente', conteudo: string, tool_calls_json: ToolCall[] 
 
 ### 6.4 System prompt — 8 secoes
 
-O `SYSTEM_PROMPT` em `system-prompt.ts` tem ~408 linhas com 8 secoes:
+O `SYSTEM_PROMPT` em `system-prompt.ts` tem ~370 linhas com 8 secoes:
 
 | # | Secao | Proposito |
 |---|-------|-----------|
-| 1 | **Conhecimento CLT/CCT** | Contratos, regras legais, grid 15min, precedencia horarios, deficit SOFT. Conhecimento de cor — nao precisa de tool |
-| 2 | **O Motor e Como Ele Funciona** | Fluxo solver, INFEASIBLE, lifecycle RASCUNHO→OFICIAL→ARQUIVADA, modos (30s/120s), rules_override, diagnostico |
-| 3 | **Entidades — O Modelo Mental** | Empresa, Setor, Colaborador, Demanda, Excecao, Funcao, Escala, 35 regras (16 CLT, 7 SOFT, 12 AP) |
-| 4 | **Tools — Guia de Uso Inteligente** | 28 tools organizadas por workflow (discovery, CRUD, geracao, validacao, regras, regras colab, KPI, perfis, horarios) |
-| 5 | **Schema de referencia** | Tabelas com FKs explicitas pra que a IA saiba WHERE/JOIN/filtros |
-| 6 | **Workflows Comuns — Receitas Prontas** | 8 receitas: gerar escala, ferias, INFEASIBLE, Black Friday, ajuste manual, ciclo rotativo, estagiarios, regras configuraveis |
-| 7 | **Formatacao de Respostas** | Sempre finalizar com texto, lidar com erros gracefully |
-| 8 | **Conduta, Limitacoes e Erros** | DOs/DONTs, protocolo de erros, persona |
+| 1 | **Identidade** | RH robotica do Supermercado Fernandes, tom profissional calorosa |
+| 2 | **Conhecimento CLT/CCT** | Contratos, regras legais, grid 15min, precedencia horarios, deficit SOFT |
+| 3 | **O Motor** | Fluxo solver, degradacao graciosa (multi-pass), solve_mode, INFEASIBLE + diagnosticar_infeasible |
+| 4 | **Entidades — O Modelo Mental** | Empresa, Setor, Colaborador, Demanda, Excecao, Funcao, Escala, 35 regras |
+| 5 | **Tools — Guia de Uso Inteligente** | 34 tools organizadas por workflow (discovery, CRUD, geracao, validacao, regras, knowledge, memorias) |
+| 6 | **Schema de referencia** | Tabelas com FKs explicitas |
+| 7 | **Workflows Comuns — Receitas Prontas** | 8+ receitas: gerar escala, ferias, INFEASIBLE (com diagnosticar_infeasible), Black Friday, etc |
+| 8 | **Memorias e Base de Conhecimento** | Memorias do RH (max 20, injetadas no discovery) + RAG + knowledge graph |
 
-**Detalhe da secao 4 — 28 tools por workflow:**
+**Detalhe da secao 5 — 34 tools por workflow:**
 O prompt organiza as tools por INTENCAO (nao por nome tecnico):
 - Discovery: `get_context`, `consultar`, `buscar_colaborador`, `obter_alertas`
 - CRUD: `criar`, `atualizar`, `deletar`, `cadastrar_lote`
-- Geracao: `preflight`, `preflight_completo`, `gerar_escala`
+- Geracao: `preflight`, `preflight_completo`, `gerar_escala` (com `solve_mode`)
 - Ajuste: `ajustar_alocacao`, `ajustar_horario`, `oficializar_escala`
-- Diagnostico: `diagnosticar_escala`, `explicar_violacao`
+- Diagnostico: `diagnosticar_escala`, `explicar_violacao`, **`diagnosticar_infeasible`**
 - Regras motor: `editar_regra`, `resetar_regras_empresa`
 - Regras colaborador: `salvar_regra_horario_colaborador`, `definir_janela_colaborador`, `obter_regra_horario_colaborador`, `upsert_regra_excecao_data`
 - KPI: `resumir_horas_setor`
 - Perfis: `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario`
 - Horarios: `configurar_horario_funcionamento`
+- Knowledge: `buscar_conhecimento`, `salvar_conhecimento`, `listar_conhecimento`, `explorar_relacoes`
+- Memorias: `salvar_memoria`, `listar_memorias`, `remover_memoria`
 
 **Detalhe da secao 5 — Schema reference:**
 O prompt lista TODAS as tabelas consultaveis com seus campos, para que a IA saiba quais filtros usar em `consultar()`. Inclui 18 tabelas.
@@ -1452,6 +1526,7 @@ O prompt lista TODAS as tabelas consultaveis com seus campos, para que a IA saib
 O `buildContextBriefing()` e chamado ANTES da requisicao ao LLM e monta uma string markdown que e concatenada ao final do system prompt. Nao custa tokens de tool call — e gratuito.
 
 **Conteudo SEMPRE injetado (independente da pagina):**
+- **Memorias do RH** (todas, max 20) — injetadas no INICIO do briefing
 - Resumo global: total setores ativos, colaboradores ativos, escalas RASCUNHO/OFICIAL
 - Lista de setores com contagem de colaboradores
 - Feriados proximos 30 dias (com flag `proibido_trabalhar`)
@@ -1476,12 +1551,16 @@ O `buildContextBriefing()` e chamado ANTES da requisicao ao LLM e monta uma stri
 1. `get_context()` tool — JSON estruturado, sempre mais confiavel
 2. Auto-contexto — String markdown, complementar (pode estar desatualizado se usuario navegou)
 
-### 6.6 As 28 tools — visao geral
+### 6.6 As 34 tools — visao geral
 
 Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemini API e convertidas para formato Vercel AI SDK via `getVercelAiTools()`. Cada tool tem:
 - Schema Zod para validacao runtime
 - Funcao `execute()` que chama `executeTool(name, args)`
 - Descricao detalhada com exemplos (para o LLM)
+
+**Organizacao por categoria (34 tools):**
+- Discovery: 7 | CRUD: 4 | Escalas: 6 | Validacao: 3 | Regras motor: 2
+- Regras colab: 4 | Perfis/horarios: 4 | KPI: 1 | Knowledge: 4 | Memorias: 3
 
 #### Discovery (7 tools — read-only)
 
@@ -1510,7 +1589,7 @@ Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemin
 |---|------|--------|-----------|
 | 12 | `preflight` | `{setor_id, datas}` | Verifica viabilidade rapida: setor ativo, colabs, demandas, feriados. |
 | 13 | `preflight_completo` | `{setor_id, datas}` | Versao completa: chama `buildEscalaPreflight()` com capacity checks por colab/dia. |
-| 14 | `gerar_escala` | `{setor_id, datas, rules_override?}` | buildSolverInput → runSolver(60s) → persistirSolverResult. Retorna escala RASCUNHO. |
+| 14 | `gerar_escala` | `{setor_id, datas, solve_mode?, rules_override?}` | buildSolverInput → runSolver (60s rapido / 180s otimizado) → multi-pass → persistirSolverResult. Retorna escala RASCUNHO com diagnostico (pass_usado, regras_relaxadas). |
 | 15 | `ajustar_alocacao` | `{escala_id, colab_id, data, status}` | UPDATE alocacoes.status (TRABALHO/FOLGA/INDISPONIVEL). |
 | 16 | `ajustar_horario` | `{escala_id, colab_id, data, hora_inicio, hora_fim}` | UPDATE hora_inicio/hora_fim em alocacoes. Revalida via validarEscalaV3(). |
 | 17 | `oficializar_escala` | `{escala_id}` | UPDATE status='OFICIAL'. Valida violacoes_hard=0 antes de permitir. |
@@ -1663,6 +1742,72 @@ Se `ESCALAFLOW_AI_DEVTOOLS=1` ou `NODE_ENV !== 'production'`:
 2. **Sem duplicacao de escala:** A IA pode GERAR nova, mas nao DUPLICAR existente com novo periodo.
 3. **Follow-up fragil:** O nudge pra texto vazio funciona mas adiciona latencia. Modelos melhores (Gemini 2.5 Flash) ja geram texto naturalmente.
 
+### 6.13 Knowledge Layer (RAG + Knowledge Graph)
+
+> **Arquivos fonte:**
+> - `src/main/knowledge/embeddings.ts` — @huggingface/transformers multilingual-e5-small (ONNX local, 384 dims)
+> - `src/main/knowledge/ingest.ts` — Chunking + ingestao de documentos
+> - `src/main/knowledge/search.ts` — Busca semantica (pgvector cosine) + FTS portugues + knowledge graph CTE
+> - `src/main/knowledge/graph.ts` — Extracao de entidades/relacoes via LLM + persist com embedding
+
+**Arquitetura:**
+```
+Documento importado
+    │
+    ├─ [1] ingest.ts: chunking (markdown-aware, ~500 tokens/chunk)
+    ├─ [2] embeddings.ts: embed cada chunk (multilingual-e5-small, ONNX local)
+    ├─ [3] INSERT knowledge_sources + knowledge_chunks (com embedding vector(768))
+    │
+    └─ [4] graph.ts (opcional, via "Analisar Relacoes"):
+          ├─ Para cada chunk: extractEntitiesFromChunk() via LLM (generateObject + Zod)
+          ├─ Merge dedup: entidades por (nome, tipo), relacoes por (from, to, tipo_relacao)
+          └─ persist: INSERT knowledge_entities + knowledge_relations (com embedding)
+```
+
+**Busca (search.ts):**
+1. **Semantica:** pgvector cosine similarity no embedding do query
+2. **FTS:** Full-text search portugues (ts_vector + ts_query)
+3. **Graph enrichment:** CTE recursivo expande entidades relacionadas
+
+**Tabelas:**
+- `knowledge_sources`: documentos importados (manual, session, auto_extract)
+- `knowledge_chunks`: chunks com embedding vector(768) + FTS portugues
+- `knowledge_entities`: entidades extraidas (pessoa, setor, regra, conceito...) com `origem` (sistema/usuario)
+- `knowledge_relations`: relacoes entre entidades (trabalha_em, regido_por, etc)
+
+**Graph sistema vs usuario:**
+- `origem='sistema'`: extraidas dos docs em `knowledge/` (CLT, regras). Pre-computadas pelo dev via `graph-seed.json`
+- `origem='usuario'`: extraidas dos docs importados pelo RH. Processadas via botao "Analisar Relacoes" na UI
+- IA ve TUDO (ambas origens) via `explorar_relacoes` e RAG enrichment
+
+**Tools IA (4):** `buscar_conhecimento`, `salvar_conhecimento`, `listar_conhecimento`, `explorar_relacoes`
+
+### 6.14 Memorias do RH
+
+Memorias curtas que o RH (ou a IA) salva para lembrar de contextos recorrentes.
+
+- **Tabela:** `ia_memorias` (id, conteudo, criada_em, atualizada_em)
+- **Soft limit:** 20 memorias (a UI mostra contagem, a IA avisa quando proximo do limite)
+- **Injecao:** Todas as memorias sao injetadas no discovery (buildContextBriefing) a cada request — ANTES do resumo global
+- **Tools IA (3):** `salvar_memoria`, `listar_memorias`, `remover_memoria`
+- **Extracao automatica:** `session-processor.ts` pode extrair memorias de sessoes longas (toggle na config)
+
+### 6.15 Session Processing
+
+> **Arquivo:** `src/main/ia/session-processor.ts`
+
+Processa sessoes de chat para manter o contexto gerenciavel:
+- **sanitizeTranscript:** Remove tool results extensos, gera marcadores `[Anexo: nome (mime)]` pra msgs sem texto
+- **estimateTokens:** Estimativa rapida de tokens (char/4)
+- **indexSession:** Salva sessao como knowledge source pra busca futura
+- **extractMemories:** Extrai fatos importantes da sessao como memorias persistentes
+- **maybeCompact:** Se sessao ultrapassa threshold, gera resumo compactado via LLM
+
+**Compaction no cliente.ts:**
+- `buildChatMessages()` usa `resumo_compactado` da conversa se disponivel
+- Mensagens antigas sao substituidas pelo resumo, mantendo as ultimas N mensagens completas
+- Permite conversas longas sem estourar contexto do LLM
+
 ---
 
 ## 7. Frontend e Jornadas (Fase 6)
@@ -1691,6 +1836,8 @@ Se `ESCALAFLOW_AI_DEVTOOLS=1` ou `NODE_ENV !== 'production'`:
 | `/feriados` | FeriadosPagina | FeriadosPagina.tsx | 8KB | CRUD feriados |
 | `/configuracoes` | ConfiguracoesPagina | ConfiguracoesPagina.tsx | 34KB | Config IA (providers, modelos, teste) |
 | `/regras` | RegrasPagina | RegrasPagina.tsx | 19KB | Engine regras (CLT/SOFT/AP) com toggles |
+| `/memoria` | MemoriaPagina | MemoriaPagina.tsx | 20KB | Docs importados, memorias IA, knowledge graph (tabs) |
+| `/ia` | IaPagina | IaPagina.tsx | 4KB | Chat IA em pagina inteira (alternativa ao painel lateral) |
 | `*` | NaoEncontrado | NaoEncontrado.tsx | 1KB | 404 |
 
 ### 7.2 Layout chain (como descrito no CLAUDE.md)
@@ -1939,11 +2086,11 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 ```
                      ┌─────────────────────────────────────────────┐
                      │            CAPACIDADES DO SISTEMA           │
-                     │                 (~90 IPC handlers)          │
+                     │                (~116 IPC handlers)          │
                      │                                             │
                      │  ┌─────────────────────────────────┐       │
                      │  │    CAPACIDADES DA IA             │       │
-                     │  │      (28 tools)                  │       │
+                     │  │      (34 tools)                  │       │
                      │  │                                  │       │
                      │  │  ✅ Discovery completo (18 tab)  │       │
                      │  │  ✅ CRUD generico (7 entidades)  │       │
@@ -1960,7 +2107,11 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
                      │  │  ✅ KPIs (resumir horas setor)   │       │
                      │  │  ✅ Alertas proativos            │       │
                      │  │  ✅ Diagnostico + explicacao     │       │
+                     │  │  ✅ Diagnosticar INFEASIBLE      │       │
                      │  │  ✅ Importacao em lote (CSV)     │       │
+                     │  │  ✅ Knowledge RAG (busca/salvar) │       │
+                     │  │  ✅ Knowledge Graph (explorar)   │       │
+                     │  │  ✅ Memorias do RH (CRUD)        │       │
                      │  └─────────────────────────────────┘       │
                      │                                             │
                      │  ❌ Ciclo rotativo (criar/editar)           │
@@ -1972,7 +2123,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
                      └─────────────────────────────────────────────┘
 ```
 
-**Cobertura: ~80% das operacoes do sistema sao acessiveis pela IA.** Os gaps restantes sao operacoes intrinsecamente visuais (timeline drag, export PDF) ou raramente necessarias via chat (ciclo rotativo, backup, tipos_contrato).
+**Cobertura: ~85% das operacoes do sistema sao acessiveis pela IA.** Os gaps restantes sao operacoes intrinsecamente visuais (timeline drag, export PDF) ou raramente necessarias via chat (ciclo rotativo, backup, tipos_contrato).
 
 ### 8.2 Tools futuras (backlog)
 
@@ -1988,7 +2139,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 |------|--------------------|
 | `consultar` | Offset/limit como parametros opcionais (hoje fixo em 50 rows) |
 | `gerar_escala` | Timeout configuravel (hoje fixo 60s) pra escalas grandes |
-| `cadastrar_lote` | Check de duplicatas por nome (`COLLATE NOCASE`) antes de INSERT |
+| `cadastrar_lote` | Check de duplicatas por nome (`ILIKE`) antes de INSERT |
 
 ### 8.4 Melhorias de arquitetura
 
@@ -2001,14 +2152,18 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 ### 8.5 Resumo executivo
 
 **O que esta BOM:**
-- 28 tools cobrem ~80% das operacoes: discovery, CRUD, geracao, ajuste, regras, regras colab, perfis, horarios, KPI, alertas
+- 34 tools cobrem ~85% das operacoes: discovery, CRUD, geracao, ajuste, regras, regras colab, perfis, horarios, KPI, alertas, knowledge, memorias
+- Motor com degradacao graciosa (multi-pass): tenta o melhor possivel antes de falhar
+- `diagnosticar_infeasible` permite debugar conflitos (roda solver 6x isolando regras)
+- Knowledge Layer: RAG local (embeddings ONNX + pgvector + FTS portugues + knowledge graph)
+- Memorias do RH (max 20) injetadas no discovery a cada request
 - Streaming em tempo real (`streamText`) com eventos IPC
 - Historico com tool calls preservados (`buildChatMessages` inclui tool-call + tool-result parts)
 - Validacao Zod runtime em TODAS as tools com `correction` em 100% dos toolError
 - Seguranca: whitelists por operacao (18 tabelas leitura, 7 criacao, 5 atualizacao, 4 delecao), campos validados, limit de rows
 - Auto-contexto por pagina com alertas proativos (violacoes, hash desatualizado, excecoes expirando)
 - Multi-provider (Gemini + OpenRouter) com mesma logica
-- Persistencia de conversas com SQLite + auto-titulo
+- Persistencia de conversas com PGlite + auto-titulo
 - Evals com SAVEPOINT/ROLLBACK protegendo o banco de dados
 - System prompt de 8 secoes com workflows prontos e schema completo
 
@@ -2028,7 +2183,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 |---|---------|---------|-------------------|
 | 1 | **Grid 15 minutos** (era 30min) | CLT Art. 71 §1 exige intervalo de 15min para jornadas 4-6h. Grid 30min nao representava isso. Constante unica `CLT.GRID_MINUTOS` em `constants.ts`. | Sim. Precisao necessaria. Trade-off: mais variaveis no solver (2x), mas tempo de solve permanece < 30s para setores tipicos. |
 | 2 | **H3 (domingo) → SOFT** | H3 como HARD causava INFEASIBLE em setores com poucos colabs. Rodizio de domingo e desejavel mas nao bloqueante. Substituido por `add_domingo_ciclo_soft` + `add_h3_rodizio_domingo` separados por sexo (mulher: max 1 consec, homem: max 2 — CLT Art. 386). | Sim. Funciona melhor como penalidade. |
-| 3 | **Deficit como SOFT, nao HARD** | Com 6 pessoas e constraints CLT, 100% cobertura e matematicamente impossivel. Rita (30+ anos) atinge ~85%. Deficit HARD = INFEASIBLE garantido. Peso 10.000 forca o solver a minimizar gaps sem tornar impossivel. (`constraints.py:387`) | Sim. Decisao fundamental. |
+| 3 | **Deficit como SOFT, nao HARD** | Com 6 pessoas e constraints CLT, 100% cobertura e matematicamente impossivel. Na pratica, um RH experiente atinge ~85%. Deficit HARD = INFEASIBLE garantido. Peso 10.000 forca o solver a minimizar gaps sem tornar impossivel. (`constraints.py:387`) | Sim. Decisao fundamental. |
 | 4 | **Feriados orientados por demanda** | So 25/12 e 01/01 sao proibidos por CCT. Outros feriados: trabalho permitido se houver demanda. Portaria MTE 3.665 (apos 01/03/2026) pode mudar isso. Flag `proibido_trabalhar` por feriado. | Sim, mas precisa revisao quando Portaria entrar em vigor. |
 | 5 | **Motor Python, nao TypeScript** | OR-Tools CP-SAT e ordens de magnitude mais eficiente que backtracking JS. Motor TS legado (`gerador.ts`) deletado. Trade-off: bridge via child_process stdin/stdout JSON adiciona ~200ms de overhead, mas solver roda em < 30s vs minutos no TS. | Sim. Insubstituivel. |
 | 6 | **snake_case ponta a ponta** | DB columns = IPC keys = TS interfaces = React props. Zero adaptadores. Reduz bugs de mapeamento em sistema com 80+ handlers. Convencao incomum em TS mas necessaria para produto com time de 1 pessoa. | Sim. Consistencia > convencao do ecossistema. |
@@ -2049,7 +2204,9 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 
 > Incluido na secao 2.9
 
-## Apendice C: Inventario de tools IA (28 tools)
+## Apendice C: Inventario de tools IA (34 tools)
+
+> **Atualizado em:** 2026-02-24 — inclui diagnosticar_infeasible, knowledge (4), memorias (3)
 
 ### C.1 Discovery (7 tools)
 
@@ -2076,19 +2233,20 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 
 | Tool | Parametros | O que faz | Efeito |
 |------|-----------|-----------|--------|
-| `gerar_escala` | setor_id, data_inicio, data_fim, rules_override? | Roda solver Python (OR-Tools CP-SAT). Retorna escala_id, indicadores, diagnostico | INSERT escala + alocacoes |
+| `gerar_escala` | setor_id, data_inicio, data_fim, solve_mode?, rules_override? | Roda solver Python (OR-Tools CP-SAT) com multi-pass graceful degradation. Retorna escala_id, indicadores, diagnostico (pass_usado, regras_relaxadas, capacidade_vs_demanda) | INSERT escala + alocacoes |
 | `ajustar_alocacao` | escala_id, colaborador_id, data, status | Muda status de uma alocacao (TRABALHO/FOLGA/INDISPONIVEL) | UPDATE alocacoes |
 | `ajustar_horario` | escala_id, colaborador_id, data, hora_inicio, hora_fim, almoco_inicio?, almoco_fim? | Altera horarios de uma alocacao especifica | UPDATE alocacoes |
 | `oficializar_escala` | escala_id | Valida violacoes_hard=0, muda status RASCUNHO→OFICIAL | UPDATE escalas |
 | `preflight` | setor_id, data_inicio, data_fim | Check rapido de viabilidade (colabs, demandas, blockers) | Read-only |
 | `preflight_completo` | setor_id, data_inicio, data_fim | Check extenso com capacity analysis e warnings detalhados | Read-only |
 
-### C.4 Validacao e referencia (2 tools)
+### C.4 Validacao e referencia (3 tools)
 
 | Tool | Parametros | O que faz | Efeito |
 |------|-----------|-----------|--------|
 | `diagnosticar_escala` | escala_id | Revalida escala existente contra PolicyEngine. Retorna violacoes atualizadas | Read-only |
 | `explicar_violacao` | codigo_regra | Dicionario de 20+ regras (H1-H18, SOFT, AP) com explicacao textual | Read-only |
+| `diagnosticar_infeasible` | setor_id, data_inicio, data_fim | Roda solver 6x desligando regras relaxaveis uma a uma (H1, H6, H10, DIAS_TRABALHO, MIN_DIARIO + todos off). Identifica regras culpadas. | Read-only (solver sem persistir) |
 
 ### C.5 Regras do motor (2 tools)
 
@@ -2106,7 +2264,24 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | `upsert_regra_excecao_data` | colaborador_id, data, campos | Override pontual por data (ex: "dia 15/03 so pode tarde") | UPSERT colaborador_regra_horario_excecao_data |
 | `salvar_demanda_excecao_data` | setor_id, data, faixas | Demanda excepcional por data (ex: Black Friday) | INSERT demandas_excecao_data |
 
-### C.7 Perfis e horarios (3 tools)
+### C.7 Knowledge (4 tools)
+
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `buscar_conhecimento` | query, limit? | Busca semantica (pgvector cosine) + FTS portugues na base de conhecimento | Read-only |
+| `salvar_conhecimento` | titulo, conteudo, tipo? | Importa documento com chunking + embeddings locais | INSERT knowledge_sources + chunks |
+| `listar_conhecimento` | nenhum | Lista documentos importados | Read-only |
+| `explorar_relacoes` | entidade?, tipo? | Navega knowledge graph (CTE recursivo): entidades, relacoes, conexoes | Read-only |
+
+### C.8 Memorias do RH (3 tools)
+
+| Tool | Parametros | O que faz | Efeito |
+|------|-----------|-----------|--------|
+| `salvar_memoria` | conteudo | Salva memoria curta do RH (max 20, injetada no discovery a cada request) | INSERT ia_memorias |
+| `listar_memorias` | nenhum | Lista todas as memorias ativas | Read-only |
+| `remover_memoria` | id | Remove memoria especifica | DELETE ia_memorias |
+
+### C.9 Perfis e horarios (3 tools)
 
 | Tool | Parametros | O que faz | Efeito |
 |------|-----------|-----------|--------|
@@ -2114,7 +2289,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | `deletar_perfil_horario` | id | Remove perfil de horario | DELETE contrato_perfis_horario |
 | `configurar_horario_funcionamento` | nivel (empresa/setor), campos | Configura horario de abertura/fechamento | UPDATE empresa_horario_semana ou UPSERT setor_horario_semana |
 
-### C.8 Whitelists por operacao
+### C.10 Whitelists por operacao
 
 | Operacao | Entidades permitidas (z.enum) |
 |----------|-------------------------------|
@@ -2123,7 +2298,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | **Atualizacao** (atualizar) | 5: colaboradores, setores, funcoes, feriados, demandas |
 | **Delecao** (deletar) | 4: excecoes, funcoes, feriados, demandas |
 
-### C.9 Schemas Zod (principais)
+### C.11 Schemas Zod (principais)
 
 ```typescript
 // ConsultarSchema
@@ -2140,7 +2315,11 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 
 // GerarEscalaSchema
 { setor_id: number, data_inicio: 'YYYY-MM-DD', data_fim: 'YYYY-MM-DD',
+  solve_mode?: 'rapido'|'otimizado',
   rules_override?: Record<string, string> }
+
+// DiagnosticarInfeasibleSchema
+{ setor_id: number, data_inicio: 'YYYY-MM-DD', data_fim: 'YYYY-MM-DD' }
 
 // AjustarAlocacaoSchema
 { escala_id: number, colaborador_id: number,

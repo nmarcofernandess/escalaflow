@@ -1,6 +1,10 @@
 import { resolve } from 'path'
+import { existsSync } from 'fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+
+const seedLocalPath = resolve('src/main/db/seed-local.ts')
+const hasSeedLocal = existsSync(seedLocalPath)
 
 export default defineConfig({
   main: {
@@ -9,6 +13,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
+          ...(hasSeedLocal ? { 'seed-local': seedLocalPath } : {}),
         },
         output: {
           entryFileNames: '[name].js',

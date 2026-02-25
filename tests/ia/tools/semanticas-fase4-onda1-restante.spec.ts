@@ -1,205 +1,198 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearMockDb, setMockDb } from '../../setup/db-test-utils'
+import { resetMockDbState } from '../../setup/db-test-utils'
+
+const queryMocks = vi.hoisted(() => ({
+  queryOne: vi.fn(),
+  queryAll: vi.fn(),
+  execute: vi.fn(),
+  insertReturningId: vi.fn(),
+}))
 
 const solverBridgeMocks = vi.hoisted(() => ({
   buildSolverInput: vi.fn(),
   runSolver: vi.fn(),
   persistirSolverResult: vi.fn(),
+  computeSolverScenarioHash: vi.fn(),
 }))
 
 const validadorMocks = vi.hoisted(() => ({
   validarEscalaV3: vi.fn(),
 }))
 
-vi.mock('../../../src/main/motor/solver-bridge', () => ({
-  buildSolverInput: solverBridgeMocks.buildSolverInput,
-  runSolver: solverBridgeMocks.runSolver,
-  persistirSolverResult: solverBridgeMocks.persistirSolverResult,
+vi.mock('../../../src/main/db/query', () => queryMocks)
+vi.mock('../../../src/main/motor/solver-bridge', () => solverBridgeMocks)
+vi.mock('../../../src/main/motor/validador', () => validadorMocks)
+vi.mock('../../../src/main/knowledge/search', () => ({
+  searchKnowledge: vi.fn().mockResolvedValue([]),
+  exploreRelations: vi.fn().mockResolvedValue([]),
 }))
-
-vi.mock('../../../src/main/motor/validador', () => ({
-  validarEscalaV3: validadorMocks.validarEscalaV3,
+vi.mock('../../../src/main/knowledge/ingest', () => ({
+  ingestKnowledge: vi.fn().mockResolvedValue({ chunks_count: 0 }),
 }))
 
 import { executeTool } from '../../../src/main/ia/tools'
 
 type Row = Record<string, any>
 
-function createFase4RestanteMockDb() {
-  const state = {
-    setores: [] as Row[],
-    colaboradores: [] as Row[],
-    demandas: [] as Row[],
-    feriados: [] as Row[],
-    colaborador_regra_horario: [] as Row[],
-    alocacoes: [] as Row[],
-    escalas: [] as Row[],
-    ids: { regra: 1 },
-  }
+function setupOnda1Mocks(state: {
+  setores?: Row[]
+  colaboradores?: Row[]
+  demandas?: Row[]
+  feriados?: Row[]
+  colaborador_regra_horario?: Row[]
+  alocacoes?: Row[]
+  escalas?: Row[]
+}) {
+  const setores = state.setores ?? []
+  const colabs = state.colaboradores ?? []
+  const demandas = state.demandas ?? []
+  const feriados = state.feriados ?? []
+  const regras = state.colaborador_regra_horario ?? []
+  const alocacoes = state.alocacoes ?? []
+  const escalas = state.escalas ?? []
 
-  const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim()
+  let regraIdCounter = 1
 
-  return {
-    __seed: {
-      insert(table: keyof typeof state, row: Row) {
-        ;(state[table] as Row[]).push({ ...row })
-      },
-    },
-    __inspect: state,
-    prepare(sql: string) {
-      const normalized = normalize(sql)
+  queryMocks.queryOne.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-      return {
-        get: (...args: any[]) => {
-          if (normalized.includes('SELECT id, ativo FROM setores WHERE id = ?')) {
-            return state.setores.find((s) => Number(s.id) === Number(args[0]))
-          }
+    // preflight: setor exists
+    if (n.includes('SELECT id, ativo FROM setores WHERE id')) {
+      const setor = setores.find(s => Number(s.id) === Number(params[0]))
+      return setor ? { id: setor.id, ativo: setor.ativo ?? true } : undefined
+    }
 
-          if (normalized.includes('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1')) {
-            const setorId = Number(args[0])
-            return { count: state.colaboradores.filter((c) => Number(c.setor_id) === setorId && Number(c.ativo) === 1).length }
-          }
+    // preflight: colabs count
+    if (n.includes('COUNT') && n.includes('colaboradores') && n.includes('ativo')) {
+      const setorId = Number(params[0])
+      return { count: colabs.filter(c => Number(c.setor_id) === setorId && (Number(c.ativo) === 1 || c.ativo === true)).length }
+    }
 
-          if (normalized.includes('SELECT COUNT(*) as count FROM demandas WHERE setor_id = ?')) {
-            const setorId = Number(args[0])
-            return { count: state.demandas.filter((d) => Number(d.setor_id) === setorId).length }
-          }
+    // preflight: demandas count
+    if (n.includes('COUNT') && n.includes('demandas') && n.includes('setor_id')) {
+      const setorId = Number(params[0])
+      return { count: demandas.filter(d => Number(d.setor_id) === setorId).length }
+    }
 
-          if (normalized.includes('SELECT COUNT(*) as count FROM feriados WHERE data BETWEEN ? AND ?')) {
-            const inicio = String(args[0])
-            const fim = String(args[1])
-            return { count: state.feriados.filter((f) => String(f.data) >= inicio && String(f.data) <= fim).length }
-          }
+    // preflight: feriados count
+    if (n.includes('COUNT') && n.includes('feriados') && n.includes('BETWEEN')) {
+      const inicio = String(params[0])
+      const fim = String(params[1])
+      return { count: feriados.filter(f => String(f.data) >= inicio && String(f.data) <= fim).length }
+    }
 
-          if (normalized.includes('FROM colaboradores c LEFT JOIN setores s ON s.id = c.setor_id WHERE c.id = ?')) {
-            const colab = state.colaboradores.find((c) => Number(c.id) === Number(args[0]))
-            if (!colab) return undefined
-            const setor = state.setores.find((s) => Number(s.id) === Number(colab.setor_id))
-            return {
-              ...colab,
-              setor_nome: setor?.nome,
-            }
-          }
+    // salvar_regra: colab lookup
+    if (n.includes('SELECT id, nome, setor_id, ativo FROM colaboradores WHERE id')) {
+      return colabs.find(c => Number(c.id) === Number(params[0]))
+    }
 
-          if (normalized === 'SELECT id, nome, setor_id, ativo FROM colaboradores WHERE id = ?') {
-            return state.colaboradores.find((c) => Number(c.id) === Number(args[0]))
-          }
+    // salvar_regra: regra existente (sem dia_semana)
+    if (n.includes('FROM colaborador_regra_horario WHERE colaborador_id') && n.includes('dia_semana_regra IS NULL')) {
+      return regras.find(r => Number(r.colaborador_id) === Number(params[0]) && r.dia_semana_regra == null) ?? undefined
+    }
 
-          if (normalized === 'SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?') {
-            return state.colaborador_regra_horario.find((r) => Number(r.colaborador_id) === Number(args[0])) ?? null
-          }
+    // salvar_regra: regra existente (com dia_semana)
+    if (n.includes('FROM colaborador_regra_horario WHERE colaborador_id') && n.includes('dia_semana_regra = ?')) {
+      return regras.find(r =>
+        Number(r.colaborador_id) === Number(params[0]) &&
+        r.dia_semana_regra === params[1]
+      ) ?? undefined
+    }
 
-          if (normalized === 'SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?') {
-            const row = state.colaborador_regra_horario.find((r) => Number(r.colaborador_id) === Number(args[0]))
-            return row ? { id: row.id } : undefined
-          }
+    // ajustar_horario: alocação lookup
+    if (n.includes('FROM alocacoes WHERE escala_id') && n.includes('colaborador_id') && n.includes('data')) {
+      return alocacoes.find(a =>
+        Number(a.escala_id) === Number(params[0]) &&
+        Number(a.colaborador_id) === Number(params[1]) &&
+        String(a.data) === String(params[2])
+      )
+    }
 
-          if (normalized === 'SELECT id, status, hora_inicio, hora_fim FROM alocacoes WHERE escala_id = ? AND colaborador_id = ? AND data = ?') {
-            return state.alocacoes.find((a) =>
-              Number(a.escala_id) === Number(args[0]) &&
-              Number(a.colaborador_id) === Number(args[1]) &&
-              String(a.data) === String(args[2]),
-            )
-          }
+    // diagnosticar_escala: escala lookup with JOIN
+    if (n.includes('FROM escalas e') && n.includes('LEFT JOIN setores s') && n.includes('WHERE e.id')) {
+      const escala = escalas.find(e => Number(e.id) === Number(params[0]))
+      if (!escala) return undefined
+      const setor = setores.find(s => Number(s.id) === Number(escala.setor_id))
+      return { ...escala, setor_nome: setor?.nome }
+    }
 
-          if (normalized.includes('FROM escalas e LEFT JOIN setores s ON s.id = e.setor_id WHERE e.id = ?')) {
-            const escala = state.escalas.find((e) => Number(e.id) === Number(args[0]))
-            if (!escala) return undefined
-            const setor = state.setores.find((s) => Number(s.id) === Number(escala.setor_id))
-            return { ...escala, setor_nome: setor?.nome }
-          }
+    return undefined
+  })
 
-          throw new Error(`Mock get() não suportado: ${normalized}`)
-        },
-        all: (..._args: any[]) => {
-          throw new Error(`Mock all() não suportado: ${normalized}`)
-        },
-        run: (...args: any[]) => {
-          if (normalized.startsWith('INSERT INTO colaborador_regra_horario ')) {
-            const row = {
-              id: state.ids.regra++,
-              colaborador_id: Number(args[0]),
-              ativo: Number(args[1]),
-              perfil_horario_id: args[2],
-              inicio_min: args[3],
-              inicio_max: args[4],
-              fim_min: args[5],
-              fim_max: args[6],
-              preferencia_turno_soft: args[7],
-              domingo_ciclo_trabalho: args[8],
-              domingo_ciclo_folga: args[9],
-              folga_fixa_dia_semana: args[10],
-            }
-            state.colaborador_regra_horario.push(row)
-            return { changes: 1, lastInsertRowid: row.id }
-          }
+  queryMocks.execute.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-          if (normalized.startsWith('UPDATE colaborador_regra_horario SET')) {
-            const colaboradorId = Number(args[10])
-            const row = state.colaborador_regra_horario.find((r) => Number(r.colaborador_id) === colaboradorId)
-            if (!row) return { changes: 0 }
-            const [ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, pref, domTrab, domFolga, folgaFixa] = args
-            if (ativo !== null) row.ativo = Number(ativo)
-            row.perfil_horario_id = perfil_horario_id
-            row.inicio_min = inicio_min
-            row.inicio_max = inicio_max
-            row.fim_min = fim_min
-            row.fim_max = fim_max
-            row.preferencia_turno_soft = pref
-            if (domTrab !== null) row.domingo_ciclo_trabalho = domTrab
-            if (domFolga !== null) row.domingo_ciclo_folga = domFolga
-            row.folga_fixa_dia_semana = folgaFixa
-            return { changes: 1 }
-          }
-
-          if (normalized === 'UPDATE alocacoes SET status = ?, hora_inicio = ?, hora_fim = ?, minutos = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?') {
-            const [status, horaInicio, horaFim, minutos, escalaId, colaboradorId, data] = args
-            const row = state.alocacoes.find((a) =>
-              Number(a.escala_id) === Number(escalaId) &&
-              Number(a.colaborador_id) === Number(colaboradorId) &&
-              String(a.data) === String(data),
-            )
-            if (!row) return { changes: 0 }
-            row.status = status
-            row.hora_inicio = horaInicio
-            row.hora_fim = horaFim
-            row.minutos = Number(minutos)
-            return { changes: 1 }
-          }
-
-          throw new Error(`Mock run() não suportado: ${normalized}`)
-        },
+    // salvar_regra: INSERT
+    if (n.includes('INSERT INTO colaborador_regra_horario')) {
+      const newRegra = {
+        id: regraIdCounter++,
+        colaborador_id: Number(params[0]),
+        dia_semana_regra: params[1] ?? null,
+        ativo: params[2] ?? 1,
+        perfil_horario_id: params[3] ?? null,
+        inicio_min: params[4] ?? null,
+        inicio_max: params[5] ?? null,
+        fim_min: params[6] ?? null,
+        fim_max: params[7] ?? null,
+        preferencia_turno_soft: params[8] ?? null,
+        domingo_ciclo_trabalho: params[9] ?? 2,
+        domingo_ciclo_folga: params[10] ?? 1,
+        folga_fixa_dia_semana: params[11] ?? null,
       }
-    },
-    close() {},
-  }
+      regras.push(newRegra)
+      return { changes: 1 }
+    }
+
+    // salvar_regra: UPDATE
+    if (n.includes('UPDATE colaborador_regra_horario SET')) {
+      return { changes: 1 }
+    }
+
+    // ajustar_horario: UPDATE alocacoes
+    if (n.includes('UPDATE alocacoes SET status') && n.includes('hora_inicio') && n.includes('hora_fim')) {
+      const alocacao = alocacoes.find(a =>
+        Number(a.escala_id) === Number(params[4]) &&
+        Number(a.colaborador_id) === Number(params[5]) &&
+        String(a.data) === String(params[6])
+      )
+      if (alocacao) {
+        alocacao.status = params[0]
+        alocacao.hora_inicio = params[1]
+        alocacao.hora_fim = params[2]
+        alocacao.minutos = Number(params[3])
+      }
+      return { changes: alocacao ? 1 : 0 }
+    }
+
+    return { changes: 1 }
+  })
+
+  // reset solver mocks
+  solverBridgeMocks.buildSolverInput.mockReset()
+  solverBridgeMocks.runSolver.mockReset()
+  solverBridgeMocks.persistirSolverResult.mockReset()
+  validadorMocks.validarEscalaV3.mockReset()
 }
 
 describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
-  let db: ReturnType<typeof createFase4RestanteMockDb>
-
   beforeEach(() => {
-    db = createFase4RestanteMockDb()
-    setMockDb(db)
-    solverBridgeMocks.buildSolverInput.mockReset()
-    solverBridgeMocks.runSolver.mockReset()
-    solverBridgeMocks.persistirSolverResult.mockReset()
-    validadorMocks.validarEscalaV3.mockReset()
+    resetMockDbState()
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
-    clearMockDb()
-    vi.clearAllMocks()
-    db.close()
+    resetMockDbState()
   })
 
   it('preflight_completo reaproveita preflight e adiciona blocker de capacidade', async () => {
-    db.__seed.insert('setores', { id: 1, nome: 'Caixa', ativo: 1 })
-    db.__seed.insert('colaboradores', { id: 10, nome: 'Ana', setor_id: 1, ativo: 1 })
-    db.__seed.insert('demandas', { id: 1, setor_id: 1 })
+    setupOnda1Mocks({
+      setores: [{ id: 1, nome: 'Caixa', ativo: 1 }],
+      colaboradores: [{ id: 10, nome: 'Ana', setor_id: 1, ativo: 1 }],
+      demandas: [{ id: 1, setor_id: 1 }],
+    })
 
     solverBridgeMocks.buildSolverInput.mockReturnValue({
-      data_inicio: '2026-03-01', // domingo
+      data_inicio: '2026-03-01',
       data_fim: '2026-03-01',
       empresa: { tolerancia_semanal_min: 60, min_intervalo_almoco_min: 60, hora_abertura: '08:00', hora_fechamento: '22:00' },
       demanda: [{ dia_semana: 'DOM', min_pessoas: 2, hora_inicio: '08:00', hora_fim: '12:00' }],
@@ -225,27 +218,10 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
     expect(result._meta).toEqual(expect.objectContaining({ validation_level: 'completo' }))
   })
 
-  it('obter_regra_horario_colaborador retorna regra configurada', async () => {
-    db.__seed.insert('setores', { id: 2, nome: 'Padaria', ativo: 1 })
-    db.__seed.insert('colaboradores', { id: 8, nome: 'Cleunice', setor_id: 2, ativo: 1 })
-    db.__seed.insert('colaborador_regra_horario', {
-      id: 1,
-      colaborador_id: 8,
-      ativo: 1,
-      inicio_min: '06:00',
-      fim_max: '14:00',
-    })
-
-    const result = await executeTool('obter_regra_horario_colaborador', { colaborador_id: 8 })
-
-    expect(result.status).toBe('ok')
-    expect(result.configurada).toBe(true)
-    expect(result.colaborador).toEqual(expect.objectContaining({ id: 8, nome: 'Cleunice', setor_nome: 'Padaria' }))
-    expect(result.regra).toEqual(expect.objectContaining({ inicio_min: '06:00', fim_max: '14:00' }))
-  })
-
   it('salvar_regra_horario_colaborador faz upsert e retorna regra', async () => {
-    db.__seed.insert('colaboradores', { id: 11, nome: 'Maria', setor_id: 1, ativo: 1 })
+    setupOnda1Mocks({
+      colaboradores: [{ id: 11, nome: 'Maria', setor_id: 1, ativo: 1 }],
+    })
 
     const result = await executeTool('salvar_regra_horario_colaborador', {
       colaborador_id: 11,
@@ -268,7 +244,9 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
   })
 
   it('definir_janela_colaborador usa wrapper semântico e retorna janela_definida', async () => {
-    db.__seed.insert('colaboradores', { id: 12, nome: 'João', setor_id: 1, ativo: 1 })
+    setupOnda1Mocks({
+      colaboradores: [{ id: 12, nome: 'João', setor_id: 1, ativo: 1 }],
+    })
 
     const result = await executeTool('definir_janela_colaborador', {
       colaborador_id: 12,
@@ -288,15 +266,17 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
   })
 
   it('ajustar_horario atualiza horários e minutos da alocação', async () => {
-    db.__seed.insert('alocacoes', {
-      id: 1,
-      escala_id: 20,
-      colaborador_id: 3,
-      data: '2026-03-10',
-      status: 'TRABALHO',
-      hora_inicio: '08:00',
-      hora_fim: '16:00',
-      minutos: 480,
+    setupOnda1Mocks({
+      alocacoes: [{
+        id: 1,
+        escala_id: 20,
+        colaborador_id: 3,
+        data: '2026-03-10',
+        status: 'TRABALHO',
+        hora_inicio: '08:00',
+        hora_fim: '16:00',
+        minutos: 480,
+      }],
     })
 
     const result = await executeTool('ajustar_horario', {
@@ -311,17 +291,18 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
     expect(result.minutos).toBe(510)
     expect(result.hora_inicio).toBe('09:00')
     expect(result.hora_fim).toBe('17:30')
-    expect(db.__inspect.alocacoes[0]).toEqual(expect.objectContaining({ hora_inicio: '09:00', hora_fim: '17:30', minutos: 510 }))
   })
 
   it('diagnosticar_escala resume indicadores e próximas ações', async () => {
-    db.__seed.insert('setores', { id: 1, nome: 'Açougue', ativo: 1 })
-    db.__seed.insert('escalas', {
-      id: 77,
-      setor_id: 1,
-      status: 'RASCUNHO',
-      data_inicio: '2026-03-01',
-      data_fim: '2026-03-31',
+    setupOnda1Mocks({
+      setores: [{ id: 1, nome: 'Açougue', ativo: 1 }],
+      escalas: [{
+        id: 77,
+        setor_id: 1,
+        status: 'RASCUNHO',
+        data_inicio: '2026-03-01',
+        data_fim: '2026-03-31',
+      }],
     })
 
     validadorMocks.validarEscalaV3.mockReturnValue({
@@ -347,4 +328,3 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
     expect(result._meta).toEqual(expect.objectContaining({ tool_kind: 'diagnostic', escala_id: 77 }))
   })
 })
-

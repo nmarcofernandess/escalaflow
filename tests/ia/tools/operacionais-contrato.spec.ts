@@ -1,157 +1,130 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearMockDb, setMockDb } from '../../setup/db-test-utils'
+import { resetMockDbState } from '../../setup/db-test-utils'
+
+const queryMocks = vi.hoisted(() => ({
+  queryOne: vi.fn(),
+  queryAll: vi.fn(),
+  execute: vi.fn(),
+  insertReturningId: vi.fn(),
+}))
 
 const solverBridgeMocks = vi.hoisted(() => ({
   buildSolverInput: vi.fn(),
   runSolver: vi.fn(),
   persistirSolverResult: vi.fn(),
+  computeSolverScenarioHash: vi.fn(),
 }))
 
-vi.mock('../../../src/main/motor/solver-bridge', () => ({
-  buildSolverInput: solverBridgeMocks.buildSolverInput,
-  runSolver: solverBridgeMocks.runSolver,
-  persistirSolverResult: solverBridgeMocks.persistirSolverResult,
+vi.mock('../../../src/main/db/query', () => queryMocks)
+vi.mock('../../../src/main/motor/solver-bridge', () => solverBridgeMocks)
+vi.mock('../../../src/main/knowledge/search', () => ({
+  searchKnowledge: vi.fn().mockResolvedValue([]),
+  exploreRelations: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('../../../src/main/knowledge/ingest', () => ({
+  ingestKnowledge: vi.fn().mockResolvedValue({ chunks_count: 0 }),
 }))
 
 import { executeTool } from '../../../src/main/ia/tools'
 
-type RegraDef = { codigo: string; nome: string; editavel: number; descricao?: string }
-type EscalaRow = { id: number; status: string; violacoes_hard: number }
+type RegraDef = { codigo: string; nome: string; editavel: boolean; descricao?: string }
 
-function createOpsMockDb(options?: {
+function setupOpsMocks(options?: {
   deleteChanges?: number
   regraDefs?: RegraDef[]
   alocacaoExiste?: boolean
-  escalaById?: EscalaRow[]
-  resumoCounts?: {
-    colaboradores_ativos: number
-    setores_ativos: number
-    escalas_rascunho: number
-    escalas_oficiais: number
-    regras_customizadas_pela_empresa: number
-  }
+  escalaById?: Map<number, { id: number; status: string; violacoes_hard: number }>
 }) {
-  const state = {
-    deleteChanges: options?.deleteChanges ?? 1,
-    regraDefs: new Map<string, RegraDef>((options?.regraDefs ?? []).map((r) => [r.codigo, r])),
-    alocacaoExiste: options?.alocacaoExiste ?? true,
-    escalaById: new Map<number, EscalaRow>((options?.escalaById ?? [{ id: 1, status: 'RASCUNHO', violacoes_hard: 0 }]).map((e) => [e.id, e])),
-    resumoCounts: options?.resumoCounts ?? {
-      colaboradores_ativos: 12,
-      setores_ativos: 3,
-      escalas_rascunho: 2,
-      escalas_oficiais: 5,
-      regras_customizadas_pela_empresa: 7,
-    },
-    regraEmpresaUpserts: [] as Array<{ codigo: string; status: string }>,
-    alocacaoUpdates: [] as Array<{ status: string; escala_id: number; colaborador_id: number; data: string }>,
-    oficializacoes: [] as number[],
-  }
+  const deleteChanges = options?.deleteChanges ?? 1
+  const regraDefs = new Map((options?.regraDefs ?? []).map(r => [r.codigo, r]))
+  const alocacaoExiste = options?.alocacaoExiste ?? true
+  const escalaById = options?.escalaById ??
+    new Map([[1, { id: 1, status: 'RASCUNHO', violacoes_hard: 0 }]])
 
-  return {
-    prepare(sql: string) {
-      const normalized = sql.replace(/\s+/g, ' ').trim()
+  const regraEmpresaUpserts: Array<{ codigo: string; status: string }> = []
+  const alocacaoUpdates: Array<{ status: string; escala_id: number; colaborador_id: number; data: string }> = []
+  const oficializacoes: number[] = []
 
-      return {
-        get: (...args: any[]) => {
-          if (normalized.startsWith('SELECT codigo, nome, editavel FROM regra_definicao WHERE codigo = ?')) {
-            return state.regraDefs.get(String(args[0]))
-          }
+  queryMocks.queryOne.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-          if (normalized.startsWith('SELECT nome, descricao FROM regra_definicao WHERE codigo = ?')) {
-            const regra = state.regraDefs.get(String(args[0]))
-            if (!regra || !regra.descricao) return undefined
-            return { nome: regra.nome, descricao: regra.descricao }
-          }
+    if (n.includes('SELECT codigo, nome, editavel FROM regra_definicao WHERE codigo')) {
+      return regraDefs.get(String(params[0]))
+    }
 
-          if (normalized.startsWith('SELECT id FROM alocacoes WHERE escala_id = ? AND colaborador_id = ? AND data = ?')) {
-            return state.alocacaoExiste ? { id: 99 } : undefined
-          }
+    if (n.includes('SELECT nome, descricao FROM regra_definicao WHERE codigo')) {
+      const regra = regraDefs.get(String(params[0]))
+      if (!regra?.descricao) return undefined
+      return { nome: regra.nome, descricao: regra.descricao }
+    }
 
-          if (normalized.startsWith('SELECT id, status, violacoes_hard FROM escalas WHERE id = ?')) {
-            return state.escalaById.get(Number(args[0]))
-          }
+    if (n.includes('SELECT id FROM alocacoes WHERE escala_id') && n.includes('colaborador_id') && n.includes('data')) {
+      return alocacaoExiste ? { id: 99 } : undefined
+    }
 
-          if (normalized === 'SELECT count(*) as c FROM colaboradores WHERE ativo = 1') {
-            return { c: state.resumoCounts.colaboradores_ativos }
-          }
-          if (normalized === 'SELECT count(*) as c FROM setores WHERE ativo = 1') {
-            return { c: state.resumoCounts.setores_ativos }
-          }
-          if (normalized === "SELECT count(*) as c FROM escalas WHERE status = 'RASCUNHO'") {
-            return { c: state.resumoCounts.escalas_rascunho }
-          }
-          if (normalized === "SELECT count(*) as c FROM escalas WHERE status = 'OFICIAL'") {
-            return { c: state.resumoCounts.escalas_oficiais }
-          }
-          if (normalized === 'SELECT count(*) as c FROM regra_empresa') {
-            return { c: state.resumoCounts.regras_customizadas_pela_empresa }
-          }
+    if (n.includes('SELECT id, status, violacoes_hard FROM escalas WHERE id')) {
+      return escalaById.get(Number(params[0]))
+    }
 
-          throw new Error(`Mock get() não suportado: ${normalized}`)
-        },
-        all: (..._args: any[]) => {
-          throw new Error(`Mock all() não suportado: ${normalized}`)
-        },
-        run: (...args: any[]) => {
-          if (normalized.startsWith('DELETE FROM ')) {
-            return { changes: state.deleteChanges }
-          }
+    return undefined
+  })
 
-          if (normalized.startsWith('INSERT OR REPLACE INTO regra_empresa')) {
-            state.regraEmpresaUpserts.push({ codigo: String(args[0]), status: String(args[1]) })
-            return { changes: 1 }
-          }
+  queryMocks.execute.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
 
-          if (normalized.startsWith('UPDATE alocacoes SET status = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?')) {
-            state.alocacaoUpdates.push({
-              status: String(args[0]),
-              escala_id: Number(args[1]),
-              colaborador_id: Number(args[2]),
-              data: String(args[3]),
-            })
-            return { changes: 1 }
-          }
+    if (n.startsWith('DELETE FROM')) {
+      return { changes: deleteChanges }
+    }
 
-          if (normalized.startsWith("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?")) {
-            const escalaId = Number(args[0])
-            state.oficializacoes.push(escalaId)
-            const escala = state.escalaById.get(escalaId)
-            if (escala) {
-              escala.status = 'OFICIAL'
-            }
-            return { changes: 1 }
-          }
+    if (n.includes('INSERT INTO regra_empresa') || n.includes('ON CONFLICT')) {
+      regraEmpresaUpserts.push({ codigo: String(params[0]), status: String(params[1]) })
+      return { changes: 1 }
+    }
 
-          throw new Error(`Mock run() não suportado: ${normalized}`)
-        },
-      }
-    },
-    close() {},
-    __inspect: state,
-  }
+    if (n.includes('UPDATE alocacoes SET status') && n.includes('escala_id') && n.includes('colaborador_id') && n.includes('data')) {
+      alocacaoUpdates.push({
+        status: String(params[0]),
+        escala_id: Number(params[1]),
+        colaborador_id: Number(params[2]),
+        data: String(params[3]),
+      })
+      return { changes: 1 }
+    }
+
+    if (n.includes("UPDATE escalas SET status = 'OFICIAL'")) {
+      const escalaId = Number(params[0])
+      oficializacoes.push(escalaId)
+      const escala = escalaById.get(escalaId)
+      if (escala) escala.status = 'OFICIAL'
+      return { changes: 1 }
+    }
+
+    return { changes: 1 }
+  })
+
+  solverBridgeMocks.buildSolverInput.mockReturnValue({ solver: 'input' })
+  solverBridgeMocks.persistirSolverResult.mockResolvedValue(321)
+  solverBridgeMocks.runSolver.mockReset()
+
+  return { regraEmpresaUpserts, alocacaoUpdates, oficializacoes }
 }
 
 describe('executeTool ferramentas restantes (contrato padronizado)', () => {
-  let db: ReturnType<typeof createOpsMockDb>
+  let inspect: ReturnType<typeof setupOpsMocks>
 
   beforeEach(() => {
-    db = createOpsMockDb({
+    resetMockDbState()
+    vi.clearAllMocks()
+    inspect = setupOpsMocks({
       regraDefs: [
-        { codigo: 'H1', nome: 'Dias consecutivos', editavel: 1 },
-        { codigo: 'X_CUSTOM', nome: 'Regra X', editavel: 1, descricao: 'Descricao customizada' },
+        { codigo: 'H1', nome: 'Dias consecutivos', editavel: true },
+        { codigo: 'X_CUSTOM', nome: 'Regra X', editavel: true, descricao: 'Descricao customizada' },
       ],
     })
-    setMockDb(db)
-    solverBridgeMocks.buildSolverInput.mockReturnValue({ solver: 'input' })
-    solverBridgeMocks.persistirSolverResult.mockReturnValue(321)
-    solverBridgeMocks.runSolver.mockReset()
   })
 
   afterEach(() => {
-    clearMockDb()
-    vi.clearAllMocks()
-    db.close()
+    resetMockDbState()
   })
 
   it('deletar retorna status ok + compat legado em sucesso', async () => {
@@ -174,13 +147,9 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
   })
 
   it('deletar retorna status error quando id não existe', async () => {
-    const missingDb = createOpsMockDb({ deleteChanges: 0 })
-    setMockDb(missingDb)
+    setupOpsMocks({ deleteChanges: 0 })
 
     const result = await executeTool('deletar', { entidade: 'feriados', id: 999 })
-
-    missingDb.close()
-    setMockDb(db)
 
     expect(result.status).toBe('error')
     expect(result.code).toBe('DELETAR_NAO_ENCONTRADO')
@@ -195,14 +164,14 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
     expect(result.codigo).toBe('H1')
     expect(result.novo_status).toBe('SOFT')
     expect(result.mensagem).toMatch(/alterada para SOFT/i)
-    expect(db.__inspect.regraEmpresaUpserts).toContainEqual({ codigo: 'H1', status: 'SOFT' })
+    expect(inspect.regraEmpresaUpserts).toContainEqual({ codigo: 'H1', status: 'SOFT' })
   })
 
   it('gerar_escala retorna status ok com solver_status separado', async () => {
     solverBridgeMocks.runSolver.mockResolvedValue({
       sucesso: true,
       status: 'OPTIMAL',
-      alocacoes: [{ colaborador_id: 1 }],
+      alocacoes: [{ colaborador_id: 1, status: 'TRABALHO', minutos_trabalho: 480 }],
       indicadores: {
         violacoes_hard: 0,
         violacoes_soft: 2,
@@ -210,6 +179,8 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
         pontuacao: 1234,
       },
       diagnostico: { avisos: [] },
+      decisoes: [{ colaborador_id: 1, colaborador_nome: 'Teste' }],
+      comparacao_demanda: [],
     })
 
     const result = await executeTool('gerar_escala', {
@@ -265,7 +236,7 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
     expect(result.sucesso).toBe(true)
     expect(result.novo_status).toBe('FOLGA')
     expect(result.summary).toMatch(/Alocação ajustada/i)
-    expect(db.__inspect.alocacaoUpdates).toContainEqual({
+    expect(inspect.alocacaoUpdates).toContainEqual({
       status: 'FOLGA',
       escala_id: 1,
       colaborador_id: 2,
@@ -274,15 +245,11 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
   })
 
   it('oficializar_escala retorna status ok com aviso quando já está oficial', async () => {
-    const officialDb = createOpsMockDb({
-      escalaById: [{ id: 7, status: 'OFICIAL', violacoes_hard: 0 }],
+    setupOpsMocks({
+      escalaById: new Map([[7, { id: 7, status: 'OFICIAL', violacoes_hard: 0 }]]),
     })
-    setMockDb(officialDb)
 
     const result = await executeTool('oficializar_escala', { escala_id: 7 })
-
-    officialDb.close()
-    setMockDb(db)
 
     expect(result.status).toBe('ok')
     expect(result.sucesso).toBe(true)
@@ -292,15 +259,11 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
   })
 
   it('oficializar_escala retorna status error quando há violação hard', async () => {
-    const hardDb = createOpsMockDb({
-      escalaById: [{ id: 8, status: 'RASCUNHO', violacoes_hard: 2 }],
+    setupOpsMocks({
+      escalaById: new Map([[8, { id: 8, status: 'RASCUNHO', violacoes_hard: 2 }]]),
     })
-    setMockDb(hardDb)
 
     const result = await executeTool('oficializar_escala', { escala_id: 8 })
-
-    hardDb.close()
-    setMockDb(db)
 
     expect(result.status).toBe('error')
     expect(result.code).toBe('OFICIALIZAR_ESCALA_COM_VIOLACAO_HARD')

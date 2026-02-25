@@ -4,6 +4,7 @@ import type {
   CriarColaboradorRequest,
   RegraHorarioColaborador,
   RegraHorarioColaboradorExcecaoData,
+  DiaSemana,
 } from '@shared/index'
 
 export const colaboradoresService = {
@@ -24,10 +25,11 @@ export const colaboradoresService = {
 
   // --- Regras de Horario ---
   buscarRegraHorario: (colaboradorId: number) =>
-    client['colaboradores.buscarRegraHorario']({ colaborador_id: colaboradorId }) as Promise<RegraHorarioColaborador | null>,
+    client['colaboradores.buscarRegraHorario']({ colaborador_id: colaboradorId }) as Promise<RegraHorarioColaborador[]>,
 
   salvarRegraHorario: (data: {
     colaborador_id: number
+    dia_semana_regra?: DiaSemana | null
     ativo?: boolean
     perfil_horario_id?: number | null
     inicio_min?: string | null
@@ -40,6 +42,9 @@ export const colaboradoresService = {
     folga_fixa_dia_semana?: string | null
   }) =>
     client['colaboradores.salvarRegraHorario'](data as any) as Promise<RegraHorarioColaborador>,
+
+  deletarRegraHorario: (id: number) =>
+    client['colaboradores.deletarRegraHorario']({ id }) as Promise<void>,
 
   listarRegrasExcecaoData: (colaboradorId: number) =>
     client['colaboradores.listarRegrasExcecaoData']({ colaborador_id: colaboradorId }) as Promise<RegraHorarioColaboradorExcecaoData[]>,

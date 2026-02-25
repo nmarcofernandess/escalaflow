@@ -1,100 +1,224 @@
-type SetorRow = { id: number; nome: string; ativo: number }
-type ColaboradorRow = { id: number; nome: string; setor_id: number; ativo: number }
-type DemandaRow = { id: number; setor_id: number }
-type FeriadoRow = { id: number; data: string; nome: string }
+/**
+ * db-test-utils.ts — Utilitários de mock para PGlite (query.ts)
+ *
+ * Estratégia: vi.mock('../../src/main/db/query') nos specs.
+ * Este módulo exporta helpers para configurar respostas dos mocks.
+ */
 
-type MockStatement = {
-  run: (...args: any[]) => any
-  get: (...args: any[]) => any
-  all: (...args: any[]) => any[]
+import { vi } from 'vitest'
+
+// ============================================================================
+// Query mock state — tabelas in-memory com routing por SQL pattern
+// ============================================================================
+
+type Row = Record<string, any>
+
+export interface MockDbState {
+  tables: Record<string, Row[]>
+  sequences: Record<string, number>
+  // Custom matchers — cada spec pode registrar handlers específicos
+  queryOneHandlers: Array<(sql: string, params: unknown[]) => Row | undefined | null>
+  queryAllHandlers: Array<(sql: string, params: unknown[]) => Row[] | null>
+  executeHandlers: Array<(sql: string, params: unknown[]) => { changes: number } | null>
+  insertHandlers: Array<(sql: string, params: unknown[]) => number | null>
 }
 
-export type IaToolsMockDb = {
-  prepare: (sql: string) => MockStatement
-  close: () => void
-  __seed: {
-    insertSetor: (row: SetorRow) => void
-    insertColaborador: (row: ColaboradorRow) => void
-    insertDemanda: (row: DemandaRow) => void
-    insertFeriado: (row: FeriadoRow) => void
+let _state: MockDbState = createFreshState()
+
+function createFreshState(): MockDbState {
+  return {
+    tables: {},
+    sequences: {},
+    queryOneHandlers: [],
+    queryAllHandlers: [],
+    executeHandlers: [],
+    insertHandlers: [],
   }
 }
 
-export function createIaToolsMockDb(): IaToolsMockDb {
-  const state = {
-    setores: [] as SetorRow[],
-    colaboradores: [] as ColaboradorRow[],
-    demandas: [] as DemandaRow[],
-    feriados: [] as FeriadoRow[],
-  }
+// ============================================================================
+// Public API — used by test files
+// ============================================================================
 
-  const db: IaToolsMockDb = {
-    prepare(sql: string): MockStatement {
-      const normalized = sql.replace(/\s+/g, ' ').trim()
-
-      return {
-        run: (...args: any[]) => {
-          if (normalized.startsWith('INSERT INTO setores')) {
-            state.setores.push({ id: Number(args[0]), nome: String(args[1]), ativo: Number(args[2]) })
-            return { changes: 1 }
-          }
-          throw new Error(`Mock DB run() não suportado para query: ${normalized}`)
-        },
-        get: (...args: any[]) => {
-          if (normalized.includes('SELECT id, ativo FROM setores WHERE id = ?')) {
-            const setorId = Number(args[0])
-            return state.setores.find((s) => s.id === setorId)
-          }
-
-          if (normalized.includes('SELECT COUNT(*) as count FROM colaboradores WHERE setor_id = ? AND ativo = 1')) {
-            const setorId = Number(args[0])
-            const count = state.colaboradores.filter((c) => c.setor_id === setorId && c.ativo === 1).length
-            return { count }
-          }
-
-          if (normalized.includes('SELECT COUNT(*) as count FROM demandas WHERE setor_id = ?')) {
-            const setorId = Number(args[0])
-            const count = state.demandas.filter((d) => d.setor_id === setorId).length
-            return { count }
-          }
-
-          if (normalized.includes('SELECT COUNT(*) as count FROM feriados WHERE data BETWEEN ? AND ?')) {
-            const [inicio, fim] = args.map(String)
-            const count = state.feriados.filter((f) => f.data >= inicio && f.data <= fim).length
-            return { count }
-          }
-
-          throw new Error(`Mock DB get() não suportado para query: ${normalized}`)
-        },
-        all: () => {
-          throw new Error(`Mock DB all() não suportado nesta fixture`)
-        },
-      }
-    },
-    close() {},
-    __seed: {
-      insertSetor(row: SetorRow) {
-        state.setores.push(row)
-      },
-      insertColaborador(row: ColaboradorRow) {
-        state.colaboradores.push(row)
-      },
-      insertDemanda(row: DemandaRow) {
-        state.demandas.push(row)
-      },
-      insertFeriado(row: FeriadoRow) {
-        state.feriados.push(row)
-      },
-    },
-  }
-
-  return db
+export function resetMockDbState(): void {
+  _state = createFreshState()
 }
 
-export function setMockDb(db: unknown) {
-  ;(globalThis as any).mockDb = db
+export function getMockDbState(): MockDbState {
+  return _state
 }
 
-export function clearMockDb() {
-  delete (globalThis as any).mockDb
+/** Insert a row into a mock table (in-memory only) */
+export function seedTable(table: string, row: Row): void {
+  if (!_state.tables[table]) _state.tables[table] = []
+  _state.tables[table].push({ ...row })
+}
+
+/** Get all rows from a mock table */
+export function getTableRows(table: string): Row[] {
+  return _state.tables[table] ?? []
+}
+
+/** Set the auto-increment sequence for a table */
+export function setSequence(table: string, startId: number): void {
+  _state.sequences[table] = startId
+}
+
+/** Get next ID and increment sequence */
+export function nextId(table: string): number {
+  if (!(_state.sequences[table])) _state.sequences[table] = 1
+  return _state.sequences[table]++
+}
+
+/** Register a custom queryOne handler (return undefined to fall through) */
+export function onQueryOne(handler: (sql: string, params: unknown[]) => Row | undefined | null): void {
+  _state.queryOneHandlers.push(handler)
+}
+
+/** Register a custom queryAll handler (return null to fall through) */
+export function onQueryAll(handler: (sql: string, params: unknown[]) => Row[] | null): void {
+  _state.queryAllHandlers.push(handler)
+}
+
+/** Register a custom execute handler (return null to fall through) */
+export function onExecute(handler: (sql: string, params: unknown[]) => { changes: number } | null): void {
+  _state.executeHandlers.push(handler)
+}
+
+/** Register a custom insertReturningId handler (return null to fall through) */
+export function onInsert(handler: (sql: string, params: unknown[]) => number | null): void {
+  _state.insertHandlers.push(handler)
+}
+
+// ============================================================================
+// Mock implementations — these get wired up via vi.mock in each spec
+// ============================================================================
+
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, ' ').trim()
+}
+
+/** Default queryOne mock — tries custom handlers, then generic table scan */
+export async function mockQueryOne<T = any>(sql: string, ...params: unknown[]): Promise<T | undefined> {
+  const normalized = normalizeSql(sql)
+
+  // Custom handlers first
+  for (const handler of _state.queryOneHandlers) {
+    const result = handler(normalized, params)
+    if (result !== null && result !== undefined) return result as T
+  }
+
+  // Generic: SELECT COUNT(*)::int as count FROM {table}
+  const countMatch = normalized.match(/SELECT COUNT\(\*\)::int as count FROM (\w+)(.*)/)
+  if (countMatch) {
+    const table = countMatch[1]
+    const rows = _state.tables[table] ?? []
+    // Basic WHERE filtering
+    const wherePart = countMatch[2] ?? ''
+    if (wherePart.includes('WHERE')) {
+      // Let custom handlers handle complex WHERE clauses
+      return { count: rows.length } as T
+    }
+    return { count: rows.length } as T
+  }
+
+  // Generic: SELECT * FROM {table} WHERE id = $N
+  const byIdMatch = normalized.match(/SELECT .+ FROM (\w+) WHERE id = \$1/)
+  if (byIdMatch && !normalized.includes('JOIN')) {
+    const table = byIdMatch[1]
+    const rows = _state.tables[table] ?? []
+    return rows.find(r => r.id === params[0]) as T | undefined
+  }
+
+  return undefined
+}
+
+/** Default queryAll mock — tries custom handlers, then generic table scan */
+export async function mockQueryAll<T = any>(sql: string, ...params: unknown[]): Promise<T[]> {
+  const normalized = normalizeSql(sql)
+
+  // Custom handlers first
+  for (const handler of _state.queryAllHandlers) {
+    const result = handler(normalized, params)
+    if (result !== null) return result as T[]
+  }
+
+  // Generic: SELECT * FROM {table}
+  const simpleSelect = normalized.match(/^SELECT \* FROM (\w+)$/)
+  if (simpleSelect) {
+    return (_state.tables[simpleSelect[1]] ?? []) as T[]
+  }
+
+  return []
+}
+
+/** Default execute mock — tries custom handlers, then default changes=1 */
+export async function mockExecute(sql: string, ...params: unknown[]): Promise<{ changes: number }> {
+  const normalized = normalizeSql(sql)
+
+  // Custom handlers first
+  for (const handler of _state.executeHandlers) {
+    const result = handler(normalized, params)
+    if (result !== null) return result
+  }
+
+  // Generic DELETE
+  if (normalized.startsWith('DELETE FROM')) {
+    return { changes: 1 }
+  }
+
+  // Generic UPDATE
+  if (normalized.startsWith('UPDATE ')) {
+    return { changes: 1 }
+  }
+
+  // Generic INSERT
+  if (normalized.startsWith('INSERT INTO')) {
+    return { changes: 1 }
+  }
+
+  return { changes: 0 }
+}
+
+/** Default insertReturningId mock */
+export async function mockInsertReturningId(sql: string, ...params: unknown[]): Promise<number> {
+  const normalized = normalizeSql(sql)
+
+  // Custom handlers first
+  for (const handler of _state.insertHandlers) {
+    const result = handler(normalized, params)
+    if (result !== null) return result
+  }
+
+  // Extract table name for sequence
+  const tableMatch = normalized.match(/INSERT INTO (\w+)/)
+  const table = tableMatch?.[1] ?? 'default'
+  return nextId(table)
+}
+
+// ============================================================================
+// Factory — creates the mock module object for vi.mock
+// ============================================================================
+
+export function createQueryMocks() {
+  return {
+    queryOne: vi.fn(mockQueryOne),
+    queryAll: vi.fn(mockQueryAll),
+    execute: vi.fn(mockExecute),
+    insertReturningId: vi.fn(mockInsertReturningId),
+  }
+}
+
+// ============================================================================
+// Compat shims — maintained for any old code that might reference these
+// ============================================================================
+
+/** @deprecated Use resetMockDbState() + seedTable() instead */
+export function setMockDb(_db: unknown): void {
+  // no-op — PGlite tests don't need this anymore
+}
+
+/** @deprecated Use resetMockDbState() instead */
+export function clearMockDb(): void {
+  resetMockDbState()
 }

@@ -1,5 +1,5 @@
 import { queryAll, execute, queryOne } from '../db/query'
-import { generateEmbedding } from './embeddings'
+import { generateQueryEmbedding } from './embeddings'
 import type { KnowledgeChunk, KnowledgeRelation } from '../../shared/types'
 
 interface SearchOptions {
@@ -25,7 +25,7 @@ export async function searchKnowledge(
   const limite = options?.limite ?? 5
 
   try {
-    const embedding = await generateEmbedding(query)
+    const embedding = await generateQueryEmbedding(query)
     if (embedding) {
       return await hybridSearch(embedding, query, limite)
     }
@@ -50,22 +50,28 @@ async function hybridSearch(
 
   const chunks = await queryAll<KnowledgeChunk & { score: number }>(`
     WITH vector_results AS (
-      SELECT id, source_id, conteudo, importance, access_count, last_accessed_at, criada_em,
-             1 - (embedding <=> $1::vector) AS vector_score
+      SELECT knowledge_chunks.id, knowledge_chunks.source_id, knowledge_chunks.conteudo,
+             knowledge_chunks.importance, knowledge_chunks.access_count,
+             knowledge_chunks.last_accessed_at, knowledge_chunks.criada_em,
+             1 - (knowledge_chunks.embedding <=> $1::vector) AS vector_score
       FROM knowledge_chunks
-      WHERE embedding IS NOT NULL
-        AND NOT (importance = 'low' AND access_count = 0
-                 AND criada_em < NOW() - INTERVAL '30 days')
-      ORDER BY embedding <=> $1::vector
+      JOIN knowledge_sources ks ON ks.id = knowledge_chunks.source_id AND ks.ativo = true
+      WHERE knowledge_chunks.embedding IS NOT NULL
+        AND NOT (knowledge_chunks.importance = 'low' AND knowledge_chunks.access_count = 0
+                 AND knowledge_chunks.criada_em < NOW() - INTERVAL '30 days')
+      ORDER BY knowledge_chunks.embedding <=> $1::vector
       LIMIT 20
     ),
     fts_results AS (
-      SELECT id, source_id, conteudo, importance, access_count, last_accessed_at, criada_em,
-             ts_rank(search_tsv, plainto_tsquery('portuguese', $2)) AS fts_score
+      SELECT knowledge_chunks.id, knowledge_chunks.source_id, knowledge_chunks.conteudo,
+             knowledge_chunks.importance, knowledge_chunks.access_count,
+             knowledge_chunks.last_accessed_at, knowledge_chunks.criada_em,
+             ts_rank(knowledge_chunks.search_tsv, plainto_tsquery('portuguese', $2)) AS fts_score
       FROM knowledge_chunks
-      WHERE search_tsv @@ plainto_tsquery('portuguese', $2)
-        AND NOT (importance = 'low' AND access_count = 0
-                 AND criada_em < NOW() - INTERVAL '30 days')
+      JOIN knowledge_sources ks ON ks.id = knowledge_chunks.source_id AND ks.ativo = true
+      WHERE knowledge_chunks.search_tsv @@ plainto_tsquery('portuguese', $2)
+        AND NOT (knowledge_chunks.importance = 'low' AND knowledge_chunks.access_count = 0
+                 AND knowledge_chunks.criada_em < NOW() - INTERVAL '30 days')
       LIMIT 20
     ),
     combined AS (
@@ -110,20 +116,26 @@ async function hybridSearch(
 async function keywordOnlySearch(query: string, limite: number): Promise<SearchResult> {
   const chunks = await queryAll<KnowledgeChunk & { score: number }>(`
     WITH fts AS (
-      SELECT id, source_id, conteudo, importance, access_count, last_accessed_at, criada_em,
-             ts_rank(search_tsv, plainto_tsquery('portuguese', $1)) AS fts_score
+      SELECT knowledge_chunks.id, knowledge_chunks.source_id, knowledge_chunks.conteudo,
+             knowledge_chunks.importance, knowledge_chunks.access_count,
+             knowledge_chunks.last_accessed_at, knowledge_chunks.criada_em,
+             ts_rank(knowledge_chunks.search_tsv, plainto_tsquery('portuguese', $1)) AS fts_score
       FROM knowledge_chunks
-      WHERE search_tsv @@ plainto_tsquery('portuguese', $1)
-        AND NOT (importance = 'low' AND access_count = 0
-                 AND criada_em < NOW() - INTERVAL '30 days')
+      JOIN knowledge_sources ks ON ks.id = knowledge_chunks.source_id AND ks.ativo = true
+      WHERE knowledge_chunks.search_tsv @@ plainto_tsquery('portuguese', $1)
+        AND NOT (knowledge_chunks.importance = 'low' AND knowledge_chunks.access_count = 0
+                 AND knowledge_chunks.criada_em < NOW() - INTERVAL '30 days')
     ),
     trgm AS (
-      SELECT id, source_id, conteudo, importance, access_count, last_accessed_at, criada_em,
-             similarity(conteudo, $1) AS trgm_score
+      SELECT knowledge_chunks.id, knowledge_chunks.source_id, knowledge_chunks.conteudo,
+             knowledge_chunks.importance, knowledge_chunks.access_count,
+             knowledge_chunks.last_accessed_at, knowledge_chunks.criada_em,
+             similarity(knowledge_chunks.conteudo, $1) AS trgm_score
       FROM knowledge_chunks
-      WHERE similarity(conteudo, $1) > 0.1
-        AND NOT (importance = 'low' AND access_count = 0
-                 AND criada_em < NOW() - INTERVAL '30 days')
+      JOIN knowledge_sources ks ON ks.id = knowledge_chunks.source_id AND ks.ativo = true
+      WHERE similarity(knowledge_chunks.conteudo, $1) > 0.1
+        AND NOT (knowledge_chunks.importance = 'low' AND knowledge_chunks.access_count = 0
+                 AND knowledge_chunks.criada_em < NOW() - INTERVAL '30 days')
     ),
     combined AS (
       SELECT
@@ -221,24 +233,30 @@ async function getRelatedEntities(
 
 /**
  * Monta texto contextual formatado para injeção no LLM.
+ * Cada chunk é truncado em CHUNK_CONTEXT_MAX_CHARS para controlar o tamanho total.
  */
+const CHUNK_CONTEXT_MAX_CHARS = 500
+
 function buildContextForLlm(
   chunks: Array<KnowledgeChunk & { score: number }>,
   relations: Array<{ from_nome: string; to_nome: string; tipo_relacao: string }>,
 ): string {
   if (chunks.length === 0) return ''
 
-  const parts: string[] = ['### Conhecimento relevante encontrado:']
+  const parts: string[] = []
 
   for (const chunk of chunks) {
-    parts.push(`\n**[Score: ${chunk.score.toFixed(2)} | ${chunk.importance.toUpperCase()}]**`)
-    parts.push(chunk.conteudo)
+    const snippet = chunk.conteudo.length > CHUNK_CONTEXT_MAX_CHARS
+      ? chunk.conteudo.slice(0, CHUNK_CONTEXT_MAX_CHARS) + '…'
+      : chunk.conteudo
+    parts.push(`\n**[${chunk.importance.toUpperCase()}]**`)
+    parts.push(snippet)
   }
 
   if (relations.length > 0) {
-    parts.push('\n### Relações no Knowledge Graph:')
+    parts.push('\n**Relações:**')
     for (const rel of relations) {
-      parts.push(`- ${rel.from_nome} —[${rel.tipo_relacao}]→ ${rel.to_nome}`)
+      parts.push(`- ${rel.from_nome} → ${rel.to_nome} (${rel.tipo_relacao})`)
     }
   }
 

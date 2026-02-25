@@ -12,7 +12,8 @@ Instruções para Claude Code ao trabalhar neste repositório.
 - **Motor Python (OR-Tools CP-SAT)** — o coração do sistema, via bridge TS → Python
 - **Electron 34** — shell desktop, IPC type-safe com @egoist/tipc
 - **20 regras CLT/CCT** aplicadas automaticamente ao gerar escalas
-- **IA integrada** — Chat RH com 28 tools (Vercel AI SDK + Gemini)
+- **IA integrada** — Chat RH com 34 tools (Vercel AI SDK + Gemini/OpenRouter)
+- **Knowledge Layer** — RAG com embeddings locais, knowledge graph, memórias IA (PGlite + pgvector)
 
 ---
 
@@ -34,17 +35,24 @@ escalaflow/
 ├── src/
 │   ├── main/                    # Electron Main Process (Node.js)
 │   │   ├── index.ts             # bootstrap, BrowserWindow, auto-updater, ipcMain
-│   │   ├── tipc.ts              # ~80+ IPC handlers type-safe (@egoist/tipc)
+│   │   ├── tipc.ts              # ~90+ IPC handlers type-safe (@egoist/tipc)
 │   │   ├── db/
-│   │   │   ├── database.ts      # conexão better-sqlite3
-│   │   │   ├── schema.ts        # DDL (CREATE TABLE IF NOT EXISTS)
+│   │   │   ├── database.ts      # conexão PGlite (Postgres WASM)
+│   │   │   ├── schema.ts        # DDL (CREATE TABLE IF NOT EXISTS) + migrations
 │   │   │   ├── seed.ts          # seed: contratos CLT, feriados, regras motor
 │   │   │   └── seed-local.ts    # seed dev: empresa, setores, colaboradores (gitignored)
 │   │   ├── ia/
 │   │   │   ├── system-prompt.ts # System prompt (370 linhas, 8 seções domínio RH/CLT)
-│   │   │   ├── tools.ts         # 28 IA tools (Zod schemas + handlers)
-│   │   │   ├── discovery.ts     # Auto-contexto por request (alertas, feriados, regras)
-│   │   │   └── cliente.ts       # Vercel AI SDK v6, multi-turn, DevTools
+│   │   │   ├── tools.ts         # 33 IA tools (Zod schemas + handlers)
+│   │   │   ├── discovery.ts     # Auto-contexto por request (alertas, feriados, regras, memórias)
+│   │   │   ├── cliente.ts       # Vercel AI SDK v6, multi-turn, compaction, DevTools
+│   │   │   ├── config.ts        # buildModelFactory — reutilizável por módulos
+│   │   │   └── session-processor.ts # Sanitize, indexação, compaction de sessões
+│   │   ├── knowledge/
+│   │   │   ├── embeddings.ts    # @huggingface/transformers multilingual-e5-small (ONNX local)
+│   │   │   ├── ingest.ts        # Chunking + ingestão de documentos
+│   │   │   ├── search.ts        # Busca semântica (pgvector) + FTS + knowledge graph
+│   │   │   └── graph.ts         # Extração de entidades/relações via LLM
 │   │   └── motor/
 │   │       ├── solver-bridge.ts  # spawn Python, stdin/stdout JSON
 │   │       └── validador.ts      # PolicyEngine (revalida após ajuste manual)
@@ -53,9 +61,9 @@ escalaflow/
 │   │   └── index.ts             # contextBridge: expõe ipcRenderer ao renderer
 │   │
 │   ├── renderer/src/            # React 19 + Vite (frontend)
-│   │   ├── paginas/             # 11 páginas (Dashboard, SetorLista, EscalaPagina…)
+│   │   ├── paginas/             # 13 páginas (Dashboard, SetorLista, EscalaPagina, MemoriaPagina, IaPagina…)
 │   │   ├── componentes/         # componentes custom reutilizáveis
-│   │   ├── components/ui/       # 24 shadcn/ui primitives
+│   │   ├── components/ui/       # 25 shadcn/ui primitives
 │   │   ├── servicos/            # wrappers IPC client (chama tipc do renderer)
 │   │   ├── estado/              # Zustand stores
 │   │   ├── hooks/               # useApiData, useColorTheme…
@@ -106,9 +114,10 @@ escalaflow/
 | Shell | Electron | 34 |
 | Build | electron-vite | 3 |
 | IPC | @egoist/tipc | 0.3 |
-| Database | better-sqlite3 | 11 |
+| Database | PGlite (Postgres 17 WASM) | 0.3 |
+| Embeddings | @huggingface/transformers (multilingual-e5-small) | local ONNX |
 | Motor | Python OR-Tools CP-SAT | via bridge |
-| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 28 tools |
+| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 34 tools |
 | Frontend | React | 19 |
 | Estilo | Tailwind CSS + shadcn/ui | 3 / 24 components |
 | Estado | Zustand | 5 |
@@ -184,8 +193,9 @@ npm run solver:test   # smoke test no DB real
 renderer → IPC (ia.chat) → cliente.ts → Vercel AI SDK generateText()
                                         ↕ tools loop (max 10 steps)
                                         → system-prompt.ts (370 linhas, 8 seções CLT/RH)
-                                        → discovery.ts (auto-contexto por request)
-                                        → tools.ts (28 tools, Zod schemas + handlers)
+                                        → discovery.ts (auto-contexto: alertas, feriados, regras, memórias)
+                                        → tools.ts (34 tools, Zod schemas + handlers)
+                                        → knowledge/ (RAG: embeddings + search + graph)
 ```
 
 ### Arquivos Chave
@@ -193,16 +203,20 @@ renderer → IPC (ia.chat) → cliente.ts → Vercel AI SDK generateText()
 | Arquivo | Papel |
 |---------|-------|
 | `src/main/ia/system-prompt.ts` | System prompt — 8 seções: identidade, CLT/CCT, motor, entidades, tools, schema, workflows, conduta |
-| `src/main/ia/tools.ts` | 28 tools com Zod schemas, runtime validation, enrichment, 3-status pattern |
-| `src/main/ia/discovery.ts` | Auto-contexto: feriados, regras custom, exceções, alertas proativos, dica de página |
-| `src/main/ia/cliente.ts` | Orquestrador: Vercel AI SDK v6, multi-turn, follow-up silencioso, DevTools |
+| `src/main/ia/tools.ts` | 34 tools com Zod schemas, runtime validation, enrichment, 3-status pattern |
+| `src/main/ia/discovery.ts` | Auto-contexto: feriados, regras custom, exceções, alertas proativos, memórias IA |
+| `src/main/ia/cliente.ts` | Orquestrador: Vercel AI SDK v6, multi-turn, compaction, DevTools |
+| `src/main/ia/config.ts` | Factory de modelo (reutilizável por knowledge graph, session-processor, etc) |
+| `src/main/ia/session-processor.ts` | Sanitize transcripts, indexação, compaction de sessões longas |
+| `src/main/knowledge/search.ts` | Busca semântica (pgvector cosine) + FTS português + knowledge graph CTE |
+| `src/main/knowledge/graph.ts` | Extração de entidades/relações via LLM + persist com embedding |
 
 ### Padrões de Tool Calling
 
 | Pattern | Implementação |
 |---------|---------------|
 | Response 3-status | `toolOk()`, `toolError()`, `toolTruncated()` — helpers centralizados |
-| Zod .describe() | Todos os 28 schemas com .describe() em cada campo |
+| Zod .describe() | Todos os 33 schemas com .describe() em cada campo |
 | Runtime validation | `safeParse` + mensagem de correção se falha |
 | FK enrichment | `enrichConsultarRows()` — traduz setor_id→setor_nome, etc |
 | Navigation metadata | `_meta.ids_usaveis_em`, `_meta.next_tools_hint` |
@@ -211,27 +225,30 @@ renderer → IPC (ia.chat) → cliente.ts → Vercel AI SDK generateText()
 | Truncation | CONSULTAR_MODEL_ROW_LIMIT = 50 com status 'truncated' |
 | SQL error translation | NOT NULL / UNIQUE / FK → mensagens acionáveis |
 
-### Tools (28)
+### Tools (33)
 
-**Discovery:** get_context, consultar, buscar_colaborador, obter_regra_horario_colaborador, listar_perfis_horario, obter_alertas
+**Discovery:** consultar, buscar_colaborador, listar_perfis_horario, obter_alertas
 **CRUD genérico:** criar, atualizar, deletar, cadastrar_lote
 **Escalas:** gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala
-**Validação:** preflight, preflight_completo, diagnosticar_escala, explicar_violacao
+**Validação:** preflight, preflight_completo, diagnosticar_escala, diagnosticar_infeasible, explicar_violacao
 **Regras:** editar_regra, salvar_regra_horario_colaborador, definir_janela_colaborador, upsert_regra_excecao_data, resetar_regras_empresa
 **Config:** configurar_horario_funcionamento, salvar_perfil_horario, deletar_perfil_horario
 **KPI:** resumir_horas_setor
 **Demanda:** salvar_demanda_excecao_data
+**Knowledge:** buscar_conhecimento, salvar_conhecimento, listar_conhecimento, explorar_relacoes
+**Memórias:** salvar_memoria, listar_memorias, remover_memoria
 
 ---
 
 ## Banco de Dados
 
-- **Arquivo:** `data/escalaflow.db` (SQLite, criado automaticamente)
-- **Schema:** `src/main/db/schema.ts`
+- **Engine:** PGlite (Postgres 17 WASM) com pgvector, FTS português, pg_trgm
+- **Diretório:** `data/pglite/` (criado automaticamente)
+- **Schema:** `src/main/db/schema.ts` (DDL + migrations incrementais)
 - **Seed:** `src/main/db/seed.ts` (roda na primeira inicialização se banco vazio)
-- **Reset:** `npm run db:reset` (ou delete `data/escalaflow.db` e reinicie o app)
+- **Reset:** `npm run db:reset` (ou delete `data/pglite/` e reinicie o app)
 
-### Entidades
+### Entidades Operacionais
 
 | Entidade | Tabela | Notas |
 |----------|--------|-------|
@@ -246,28 +263,62 @@ renderer → IPC (ia.chat) → cliente.ts → Vercel AI SDK generateText()
 | Funcao | `funcoes` | Postos de trabalho (com cor_hex) |
 | Feriado | `feriados` | Feriados com flag `proibido_trabalhar` (CCT) |
 
+### IA e Knowledge
+
+| Tabela | Notas |
+|--------|-------|
+| `ia_conversas` | Histórico de conversas IA (status, resumo_compactado) |
+| `ia_mensagens` | Mensagens individuais (role, content, tool_calls_json, anexos) |
+| `ia_memorias` | Memórias curtas do RH (max 20, injetadas no discovery) |
+| `knowledge_sources` | Documentos importados (manual, session, auto_extract) |
+| `knowledge_chunks` | Chunks com embedding vector(768) + FTS português |
+| `knowledge_entities` | Entidades extraídas (pessoa, setor, regra, conceito…) com `origem` (sistema/usuario) |
+| `knowledge_relations` | Relações entre entidades (trabalha_em, regido_por, etc) |
+
+### Knowledge Graph — Sistema vs Usuário
+
+O graph separa entidades por `origem`:
+- **sistema**: extraídas dos docs em `knowledge/` (CLT, regras, conceitos). Pre-computadas pelo dev.
+- **usuario**: extraídas dos docs importados pelo RH. O botão "Analisar Relações" na UI processa apenas estes.
+- **IA**: vê TUDO (ambas origens) via `explorar_relacoes` e RAG enrichment.
+
+**Fluxo dev para popular graph sistema:**
+
+1. Rodar `npm run dev`
+2. Ir em Memória → Documentos → selecionar "Sistema"
+3. Clicar "Rebuild Graph" (botão visível apenas em dev mode)
+4. Aguardar (1 LLM call por chunk dos docs sistema — usa API key configurada)
+5. Resultado exportado automaticamente para `knowledge/sistema/graph-seed.json`
+6. Commitar o JSON — ele é usado pelo seed em produção (sem LLM)
+
+**Em produção:** `seed.ts` lê `graph-seed.json` e importa entidades/relações com embeddings locais (grátis). Usuário final nunca toca nisso.
+
 ### Seeds
 
 | Arquivo | Conteúdo | Git? |
 |---------|----------|------|
-| `src/main/db/seed.ts` | Contratos CLT, feriados nacionais, perfis horário, 35 regras motor | Tracked |
+| `src/main/db/seed.ts` | Contratos CLT, feriados, perfis, 35 regras, knowledge docs, graph seed | Tracked |
 | `src/main/db/seed-local.ts` | Empresa exemplo, 2 setores, 13 colaboradores, horários, demandas, API keys | Gitignored |
+| `knowledge/sistema/graph-seed.json` | Entidades e relações pre-extraídas do graph sistema | Tracked |
 
 - `seed.ts` roda na primeira inicialização (banco vazio)
 - `seed-local.ts` opcional — dados de teste completos para dev. Período sugerido: 2026-03-02 a 2026-04-26
-- **Reset completo:** `npm run db:reset` (ou delete `data/escalaflow.db` + reiniciar)
+- **Reset completo:** `npm run db:reset` (ou delete `data/pglite/` + reiniciar)
 
 ### Padrões no schema
 
 ```sql
 -- Soft delete (nunca deletar de verdade)
-ativo BOOLEAN DEFAULT 1
+ativo BOOLEAN NOT NULL DEFAULT TRUE
 
--- Timestamps automáticos
-criada_em DATETIME DEFAULT CURRENT_TIMESTAMP
+-- Timestamps automáticos (Postgres syntax)
+criada_em TIMESTAMPTZ DEFAULT NOW()
 
 -- FKs sempre nomeadas {entidade}_id
 setor_id INTEGER REFERENCES setores(id)
+
+-- Embeddings (pgvector)
+embedding vector(768)
 ```
 
 ---
@@ -470,6 +521,47 @@ msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })  // ← PROIBIDO
 
 ---
 
+## Backup e Restauração
+
+O sistema exporta/importa dados como **ZIP compactado** com estrutura de pastas por categoria:
+
+```
+escalaflow-backup-20260224_1530.zip
+├── _meta.json                    ← versão, data, contagem, categorias incluídas
+├── cadastros/                    ← empresa, setores, colaboradores, escalas, regras…
+│   ├── empresa.json
+│   ├── colaboradores.json
+│   └── ...
+├── conhecimento/                 ← memórias IA, knowledge sources/chunks/entities/relations
+│   ├── ia_memorias.json
+│   └── ...
+└── conversas/                    ← histórico de chats IA
+    ├── ia_conversas.json
+    └── ia_mensagens.json
+```
+
+### Categorias (3 toggles na UI)
+
+| Categoria | Default | Tabelas |
+|-----------|---------|---------|
+| Cadastros e escalas | ON | 22 tabelas operacionais (empresa → regra_empresa) |
+| Conhecimento e memórias | ON | ia_memorias, knowledge_sources/chunks/entities/relations |
+| Histórico de conversas | OFF | ia_conversas, ia_mensagens |
+
+### Retrocompatibilidade
+
+O import aceita `.zip` (novo) e `.json` (legado). Ao importar, **só deleta tabelas presentes no backup** — categorias não incluídas permanecem intactas.
+
+### Arquivos chave
+
+| Arquivo | Papel |
+|---------|-------|
+| `src/main/tipc.ts` → `dadosExportar` | Gera ZIP via `adm-zip`, categorias seletivas |
+| `src/main/tipc.ts` → `dadosImportar` | Lê ZIP ou JSON legado, import com FK ordering |
+| `ConfiguracoesPagina.tsx` → card "Backup" | 3 Switches + botões exportar/importar |
+
+---
+
 ## Checklist antes de commitar
 
 - [ ] `npm run typecheck` retorna 0 erros
@@ -480,4 +572,4 @@ msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })  // ← PROIBIDO
 - [ ] Componentes shadcn verificados antes de criar div soup
 - [ ] Layout chain intacto (ver "Layout Contract") — sem `overflow-y-auto` em páginas, sem `scrollIntoView`
 - [ ] Novas tools IA: schema Zod + handler + entry no IA_TOOLS + TOOL_SCHEMAS
-- [ ] TOOL_SCHEMAS sincronizado com IA_TOOLS (28 entries)
+- [ ] TOOL_SCHEMAS sincronizado com IA_TOOLS (34 entries)

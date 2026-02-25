@@ -126,7 +126,7 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.trabalha_domingo, tc.max_minutos_dia
      FROM colaboradores c
      JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
-     WHERE c.setor_id = ? AND c.ativo = 1
+     WHERE c.setor_id = ? AND c.ativo = true
      ORDER BY c.rank DESC`,
     escala.setor_id
   )
@@ -140,7 +140,7 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     observacao: string | null
   }>(
     `SELECT * FROM excecoes
-     WHERE colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = 1)
+     WHERE colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = true)
        AND data_fim >= ? AND data_inicio <= ?`,
     escala.setor_id, escala.data_inicio, escala.data_fim
   )

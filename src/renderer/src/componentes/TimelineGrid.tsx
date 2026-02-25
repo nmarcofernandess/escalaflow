@@ -1,6 +1,6 @@
 import { Fragment, useState, useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import type { Alocacao, Colaborador, Setor, Demanda, TipoContrato } from '@shared/index'
+import type { Alocacao, Colaborador, Setor, Demanda, TipoContrato, SetorHorarioSemana } from '@shared/index'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +12,8 @@ const SLOT_SIZE = 15 // minutes per slot
 const ROW_HEIGHT = 52 // px per collaborator row
 const DIAS_SEMANA_NOME = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
+const DIAS_MAP: Record<number, string> = { 0: 'DOM', 1: 'SEG', 2: 'TER', 3: 'QUA', 4: 'QUI', 5: 'SEX', 6: 'SAB' }
+
 interface TimelineGridProps {
   colaboradores: Colaborador[]
   alocacoes: Alocacao[]
@@ -21,6 +23,7 @@ interface TimelineGridProps {
   dataFim: string // period end for nav bounds
   demandas?: Demanda[]
   tiposContrato?: TipoContrato[]
+  horariosSemana?: SetorHorarioSemana[]
   readOnly?: boolean
   onCelulaClick?: (colaboradorId: number, data: string, statusAtual: string) => void
   loadingCell?: { colaboradorId: number; data: string } | null
@@ -42,6 +45,7 @@ export function TimelineGrid({
   dataFim,
   demandas = [],
   tiposContrato = [],
+  horariosSemana = [],
   readOnly = false,
   onCelulaClick,
   loadingCell,
@@ -184,8 +188,7 @@ export function TimelineGrid({
   const coverageData = useMemo(() => {
     const data: { count: number; needed: number }[] = []
     const openMin = toMinutes(setor.hora_abertura)
-    const diasMap: Record<number, string> = { 0: 'DOM', 1: 'SEG', 2: 'TER', 3: 'QUA', 4: 'QUI', 5: 'SEX', 6: 'SAB' }
-    const diaSemana = diasMap[dow]
+    const diaSemana = DIAS_MAP[dow]
 
     for (let slotIndex = 0; slotIndex < totalSlots; slotIndex++) {
       const slotStartMin = openMin + slotIndex * SLOT_SIZE
@@ -236,6 +239,19 @@ export function TimelineGrid({
     }
     return indices
   }, [timeLabels, setor.hora_abertura])
+
+  // Operational range for current day (per-day override or setor default)
+  const { offSlotsLeft, offSlotsRight } = useMemo(() => {
+    const openMin = toMinutes(setor.hora_abertura)
+    const diaSemana = DIAS_MAP[dow]
+    const override = horariosSemana.find(h => h.dia_semana === diaSemana && h.ativo && !h.usa_padrao)
+    const opOpen = override ? toMinutes(override.hora_abertura) : openMin
+    const opClose = override ? toMinutes(override.hora_fechamento) : toMinutes(setor.hora_fechamento)
+
+    const leftSlots = Math.max(0, Math.floor((opOpen - openMin) / SLOT_SIZE))
+    const rightSlots = Math.max(0, Math.floor((toMinutes(setor.hora_fechamento) - opClose) / SLOT_SIZE))
+    return { offSlotsLeft: leftSlots, offSlotsRight: rightSlots }
+  }, [dow, setor.hora_abertura, setor.hora_fechamento, horariosSemana])
 
   return (
     <div className="space-y-4">
@@ -298,6 +314,26 @@ export function TimelineGrid({
               {label}
             </div>
           ))}
+
+          {/* Off-hours overlay (slots before/after operational window for this day) */}
+          {offSlotsLeft > 0 && (
+            <div
+              className="pointer-events-none bg-muted/40 dark:bg-muted/30 border-r border-dashed border-border/50"
+              style={{
+                gridRow: `1 / -1`,
+                gridColumn: `2 / ${2 + offSlotsLeft}`,
+              }}
+            />
+          )}
+          {offSlotsRight > 0 && (
+            <div
+              className="pointer-events-none bg-muted/40 dark:bg-muted/30 border-l border-dashed border-border/50"
+              style={{
+                gridRow: `1 / -1`,
+                gridColumn: `${totalSlots + 2 - offSlotsRight} / ${totalSlots + 2}`,
+              }}
+            />
+          )}
 
           {/* COLLABORATOR ROWS */}
           {sortedColaboradores.map((colab, rowIndex) => {

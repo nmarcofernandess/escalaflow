@@ -1,0 +1,8890 @@
+{
+  "entities": [
+    {
+      "nome": "1 Domingo de Folga",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "1 Hora",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "11 Horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "15 Minutos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "2 Horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "20h Semanais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "24 horas consecutivas de descanso semanal",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "30 Minutos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "36h Semanais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "4h/dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "7 Dias Consecutivos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "API",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "ARQUIVADA",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Acordo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Adicional noturno",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Afastamento medico",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ajuste",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ajuste de Horario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ajuste de Status",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ajustes",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ajustes Manuais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Alertas de Otimizacao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Almoco",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Almoco simultaneo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Almoco simultaneo excessivo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Almoço",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Almoço Simultâneo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Alocacao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Alocacao de Horario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Alocações",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Antipattern",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Antipatterns",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Apelido",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Aprendiz",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Aprendizes",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Arquivar escala",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Arquivo PGlite",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Atestado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Atestado Médico",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Atestados",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ausencia de folga em fim de semana (> 5 semanas)",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Backup Automático",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Banco de Dados",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Black Friday",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Blocos de 15 Minutos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Bloqueio",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Bloqueio de Colaborador",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Boa Prática",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Boas Práticas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "CLT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cadastros",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Campo intervalo_15min",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Campos de Limite Obrigatórios",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Carga Diaria",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Carga Semanal",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Carga de trabalho equilibrada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cargos abstratos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Chat",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ciclo Domingos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ciclo Personalizado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ciclo de domingo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Clopening",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Clopening Confortável",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cobertura (%)",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cobertura 100%",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cobertura 85%",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cobertura Mínima",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cobertura Percentual",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cobertura da Demanda",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Colaborador com rank baixo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Colaboradores",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Comercio Varejista",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Compensacao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Compensação",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Compensação 9h45",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Compliance semanal",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Conjunto 12 Regras ANTIPATTERN",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Conjunto 16 Regras CLT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Conjunto 35 Regras do Motor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Conjunto 7 Regras SOFT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Consistencia de horario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Contar Como Hora Trabalhada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Contrato",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cor HEX",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Custo de Deslocamento e Preparação",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "DSR",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "DSR Interjornada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Dados",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Dados Reais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Dados de Entrada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Data",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Data de Fim",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Data de Inicio",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Data especial",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Decisao de produto",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Decisao do Motor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Decisão de Produto",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Deficit de Cobertura",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Demais Feriados",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Demanda",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Demanda Excepcional",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Demanda Semanal Normal",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Demanda de Cobertura",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Demandas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Demandas Exceção Data",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Descanso",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Descanso < 13h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Descanso Semanal Remunerado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Desequilibrio de horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Desvio de horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Dia da Semana",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Dia de folga",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Diagnostico",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Diagnóstico",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Domingo Ciclo Folga",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Domingo Ciclo Trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Duração Superior a 2 Horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Edicoes acidentais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Electron 34",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Empresa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Equilibrio",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Equilibrio de carga",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Escala",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Escala Ativa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Escala de Trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "EscalaFlow",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Escalas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Escalas de fim de ano",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Estagiario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Estagiario Manha",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Estagiario Max Horas/Dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Estagiarios",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Excecao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Excecoes",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Excesso de cobertura",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Exceção",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Exceções",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Exceções Simultâneas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "F",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Faixa horaria",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Fazer Hora Extra",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Fechamento em sequencia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Feriados",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ferias",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Flexibilidade de escalonamento",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Flexivel",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Fluxo Ajuste Escala Existente",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Fluxo Cadastro Ferias",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Fluxos de Trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Folga",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Folga Fixa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Folga em fim de semana",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Folga isolada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Folgas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Funcionario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Férias",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Gemini",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Geracao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Geracao de Escala",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Gerar uma escala do mes",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Geração de Escalas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Grid visual",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "HARD",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Hard Constraint",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Hierarquia de Precedência",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Homens",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Hora Extra",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Hora Extra Evitável",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Hora Trabalhada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Hora extra evitavel",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Horario de funcionamento",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Horario de pico",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Horario noturno",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Horarios",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Horarios consistentes",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Horários",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "IA",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "IA Assistente",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "INFEASIBLE",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Indicadores",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Indisponibilidade generica",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Input Hash",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Interface",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Interjornada Minima 11 Horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Internet",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Intervalo Interjornada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Intervalo Intrajornada",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Intervalo de 15 minutos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Intervalo de Almoco",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Intervalo de almoco de 1 hora",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Intervalo de almoco reduzido (30 minutos)",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Início Mínimo Fim Máximo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ioio de Horário",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ioio de horario (grave)",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ioio de horario (moderado)",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Janela Individual",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Janela de 3h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Janela de Horário",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Janela de horario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Janelas Padrão de Entrada e Saída",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Janelas de Horário",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada 4h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada 4h/dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada 6h/dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Acima 6h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Acima de 6 Horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Acima de 6h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Diaria Maxima 4h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Diaria Maxima 6h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Maxima 10 Horas/Dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Média 7h12/dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Média 8h48/dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Segunda a Sexta 08h-15h12",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Semanal Maxima 20h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada Semanal Maxima 30h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada de 4h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada de trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada entre 4h e 6h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada máxima diária",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornada util",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Jornadas acima de 6 horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Junior sozinho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Legislação Trabalhista",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Lei do Estágio",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Limites de Horário",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Lista de funcionarios",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Listas em Lote",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "M",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Mac",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Manha",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Manhã Flexível",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Manhã Padrão",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Maratona em horario de pico",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Media de horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Meta Semanal",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Modo otimizado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Modo rapido",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Modos de Resolucao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Motor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Motor EscalaFlow",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Motor Python",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Motor de Escala",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Motor de alocacao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Motor de calculo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Motor do EscalaFlow",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Mulheres",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Nivel empresa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Nivel setor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Nome do Setor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Noturno",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Nova escala",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Numero de Dias de Trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Numero de pessoas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "OFF",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "OFICIAL",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "OR-Tools CP-SAT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Oficializacao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Oficializacao da Escala",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Oficializacao de escala",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "OpenRouter",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Ordem",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Override Pontual",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Override Pontual por Data",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "PGlite",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Padrao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Padrao Setor/Empresa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Padrao da empresa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Padrao do setor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Padrão 0:0",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Padrão 1:1",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Padrão 2:1",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Pagamento em dobro para trabalho em feriado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Passivo Trabalhista",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Pasta Data",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Perfil de Contrato",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Perfil de horario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Perfil do contrato",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Perfil padrao do contrato",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Perfis de Horario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Perfis de Horário",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Periodo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Periodo Noturno (22h-05h)",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Periodo de trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Pontuacao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Postgres 17",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Posto",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Posto de trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Preferencia de turno",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Preferência Individual",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Preflight",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Python OR-Tools CP-SAT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Questão Médica",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "RASCUNHO",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Rank",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "React 19",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regime 5X2",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regra HARD",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regra OFF",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regra SOFT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regras CLT Fixas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regras CLT Motor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regras HARD",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regras do Motor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Regras personalizadas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Respeitar Excecoes",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Restricoes legais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Restrições Legais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Restrições Severas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Resultado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Resumo de horas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Revisao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Rules Override",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "SOFT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "SOFT constraint",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Schedule shock",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Senioridade",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Setor",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Setor descoberto",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Setores com poucos colaboradores",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Severidade HARD",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Severidade SOFT",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Sistema",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Sistema de RH",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Slot",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Soft delete",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Status",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Status FOLGA",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Status INDISPONIVEL",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Status TRABALHO",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Status do Dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Status escala OFICIAL",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "TST",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Tabela colaborador_regra_horario",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Tailwind CSS",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Tarde",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Template de Janela de Entrada/Saída",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Tipo de Contrato",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Tools",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Total por pessoa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Trabalhador",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Trabalhar Domingo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Trabalhar Feriado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Trabalhar Horario Noturno",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Trabalho Consecutivo Excessivo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Trabalho Domingo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Turnos injustos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Validacao Pos-Ajuste",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Variacao de horario > 2h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Variacao de horario entre 1h e 2h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Variacao excessiva de horarios",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Violacao CLT Grave",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Violacoes Hard",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Violacoes Soft",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Violação CLT Grave",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Violação HARD (CLT)",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Violações",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Visualização",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "WASM",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Windows",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "`demandas_excecao_data`",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "ativo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "boas praticas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "ciclo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "ciclo 1:1",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "ciclo 1:2",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "ciclo de domingos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "cobertura",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "colaborador",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "colaborador_id",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "configuracao permanente da empresa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "convencao",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "demandas de cobertura",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "descanso total de 35h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "dias úteis",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "domingo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "domingo trabalhado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "domingo_ciclo_folga",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "domingo_ciclo_trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "empregado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "feriado + domingo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "fim_max",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "fim_min",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "folga compensatoria",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "folga no 7o dia",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "folga_fixa_dia_semana",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "folha de pagamento",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "funcao_id",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "gente",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "horario da empresa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "horarios personalizados",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "horas semanais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "inicio_max",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "inicio_min",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "interjornada de 11h",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "janela",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "junior",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "limites legais",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "perfil de horário",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "perfil de horário vinculado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "perfil_horario_id",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "pessoa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "prefere turno",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "preferencia_turno_soft",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "problemas de cobertura",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "rules_override",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "setores complexos",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "sexo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "shadcn/ui",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "sistema de folha de pagamento",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "tempo de processamento",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "trabalho",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "trabalho em feriado",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "trabalho no domingo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "turno",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "usa_cct_intervalo_reduzido",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "5X2",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "6X1",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Aprendiz",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "CCT",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "CCT FecomercioSP",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "CLT",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "CLT 36h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "CLT 44h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato 20h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato 30h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato 36h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato 44h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato 5X2",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato 6X1",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato Estagiario 20h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato Estagiario 30h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Contrato Estagio 30h Semana",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Estagiario",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Estagiario 20h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Estagiario 30h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Estagiario Manha",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Estagiario Tarde/Noite",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Estagiário Manhã",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Estagiário Manhã 20h",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Jovem Aprendiz",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Tipo de Contrato",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "01/01",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "25/12",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Ano Novo",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Atestado",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Black Friday",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Carnaval",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Confraternizacao Universal",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Consciencia Negra",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Corpus Christi",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Dia do Trabalho",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Domingo",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Feriado",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Ferias",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Finados",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Independencia do Brasil",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Natal",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Nossa Senhora Aparecida",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Proclamacao da Republica",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Sabado",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Segunda",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Semana Santa",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Sexta-feira Santa",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Tiradentes",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "feriados estaduais",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "feriados municipais",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "feriados nacionais",
+      "tipo": "feriado"
+    },
+    {
+      "nome": "Aprendiz",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Açougueiro",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Caixa",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Caixa 1",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Caixa 2",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Chat com Assistente de RH",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Estagiario",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Estagiario 20h",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Estagiario 30h",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Estagiario Manha",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Estagiario Tarde",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Estagiario Tarde/Noite",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Explicar violacao",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Frentista",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Função",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "IA",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Jovem Aprendiz",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Junior",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Motor de Escalas",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Padeiro",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Repositor",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Rules override",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "cadastrar_lote",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "criar_excecao",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "definir_janela_colaborador",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "funcao",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "npm run db:reset",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "obter_regra_horario_colaborador",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "salvar_regra_horario_colaborador",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "upsert_regra_excecao",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "upsert_regra_excecao_data",
+      "tipo": "funcao"
+    },
+    {
+      "nome": "Ana",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Aprendiz",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Aprendizes",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Camila",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Carlos",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Cleunice",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Colaborador",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Colaborador 5",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Colaborador 8",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Estagiario",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Estagiários",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Homem",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Joao",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "João",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Lucas",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Maria",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Mulher",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Pedro",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Usuario",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "Usuário",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "pessoa",
+      "tipo": "pessoa"
+    },
+    {
+      "nome": "1h CLT Padrão",
+      "tipo": "regra"
+    },
+    {
+      "nome": "20 horas semanais",
+      "tipo": "regra"
+    },
+    {
+      "nome": "30 horas semanais",
+      "tipo": "regra"
+    },
+    {
+      "nome": "30 horas semanais (Estagiário)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "36 horas semanais",
+      "tipo": "regra"
+    },
+    {
+      "nome": "44 horas semanais",
+      "tipo": "regra"
+    },
+    {
+      "nome": "ANTIPATTERN",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP1",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP2",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP3",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP4",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP5",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP6",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP7",
+      "tipo": "regra"
+    },
+    {
+      "nome": "AP8",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Acordo Coletivo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Almoço obrigatório",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 386 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 404",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 405",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 432",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 59 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 66 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 67 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 71 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 71 §1 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Art. 71, § 1 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Artigo 404 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Artigo 405 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Artigo 432 CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CCT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CCT FecomercioSP",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT 386",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT 404",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT 432",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT Art. 404/405",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT Art. 404/432",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT Geral",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CLT padrão",
+      "tipo": "regra"
+    },
+    {
+      "nome": "CONSISTENCIA",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo 1:1",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo 1:1 Domingos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo 1:2",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo 1:2 Domingos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo 2:1",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo 2:1 Padrao Domingos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo Domingos 2:1",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo de Domingo Personalizado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo de Folgas",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ciclo de domingo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Compensacao 9h45",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Corte Semanal",
+      "tipo": "regra"
+    },
+    {
+      "nome": "DSR",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Excecao por data",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Excecoes por data",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Exceção Total",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Exceção de Data",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Exceção de Data Início 10:00",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Exceção por Data",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Ferias",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Folga Fixa Quarta",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Folga Fixa Semanal",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Folga fixa",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Folga obrigatoria",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Folgas Obrigatórias",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Forcas folga no domingo especifico",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Grid de Minutos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "H11",
+      "tipo": "regra"
+    },
+    {
+      "nome": "H2",
+      "tipo": "regra"
+    },
+    {
+      "nome": "H4",
+      "tipo": "regra"
+    },
+    {
+      "nome": "H5",
+      "tipo": "regra"
+    },
+    {
+      "nome": "HARD CLT configuravel",
+      "tipo": "regra"
+    },
+    {
+      "nome": "HARD CLT fixa",
+      "tipo": "regra"
+    },
+    {
+      "nome": "HARD empresa",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Horas Semanais 30h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Horário de Funcionamento da Empresa",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Horário de Funcionamento do Setor",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Interjornada",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Interjornada 11h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Interjornada mínima de 11h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Intervalo Mínimo de Almoço",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Intervalo de 15 minutos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Intervalo interjornada 11h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Intervalo intrajornada 15 min",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Início às 09:00",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Início_Máx 09:00",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Janela de horario",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada Estagiario Manha 20h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada Estagiario Tarde 30h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada Maxima",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada Maxima Diaria 6h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada Máxima Diária 4h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada Máxima Diária 9h45",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada Mínima 4h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Jornada máxima diária de 6 horas",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Legislacao Brasileira",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Lei",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Lei 11.788",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Lei 11.788 Art. 10",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Lei 605/1949",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Almoço Máximo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Almoço Mínimo CCT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Almoço Mínimo CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite DSR Mínimo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Hora Extra 10h/dia",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Interjornada Mínima",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Intervalo Curto",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Jornada Máxima Normal",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Jornada Máxima com HE",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Limite Máximo Dias Consecutivos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "MIN_DIARIO",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Max 10h/dia",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Max 6 dias consecutivos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Meta Semanal 44h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Máximo 6 dias consecutivos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Máximo 6h/dia (Estagiário)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Mínimo 30min CCT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "NUNCA domingo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "NUNCA feriado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "NUNCA hora extra",
+      "tipo": "regra"
+    },
+    {
+      "nome": "NUNCA noturno",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Não Aplica Compensação",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Não Tem Direito a Almoço",
+      "tipo": "regra"
+    },
+    {
+      "nome": "OJ 410 TST",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Override pontual",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Padrão do Contrato",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Penalidade ANTIPATTERN",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Perfil de horario",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Perfil do Contrato",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Pratica do Setor",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Proibido Domingo (Estagiário)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Proibido Domingo (Jovem Aprendiz)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Proibido Feriado (Jovem Aprendiz)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Proibido Hora Extra (Estagiário)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Proibido Hora Extra (Jovem Aprendiz)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Proibido Noturno (Jovem Aprendiz)",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Proteção Legal",
+      "tipo": "regra"
+    },
+    {
+      "nome": "RABALHO",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regime 5X2",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Almoco CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Almoco Obrigatorio",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Almoco cedo penalizado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Almoco simultaneo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Almoco simultaneo excessivo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Almoco tarde penalizado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Almoço",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra CLT Obrigatoria",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Ciclo Domingo Homens",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Ciclo Domingo Mulheres",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Ciclo de domingo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Clopening",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Compensacao Semanal 5x2",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Compensação 5x2",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Completa Individual",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Completa Individual Recorrente",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Consistencia de horario",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra DIAS_TRABALHO",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra DSR preferencialmente aos domingos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Deficit de cobertura",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Editavel",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Equilibrio",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Feriados CCT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra H1",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra H10",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra H6",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Hora extra evitavel",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Horario ideal Almoco",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Ioio de horario",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada 20h Semanais Estagiarios",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada 30h Semanais Estagiarios",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada 4h a 6h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada Maxima Aprendizes",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada Maxima CLT com Hora Extra",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada Minima EscalaFlow",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada Normal CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada acima de 6h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jornada ate 6h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Jovem Aprendiz Feriado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Junior sozinho",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Max 6 dias consecutivos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Meta Semanal",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Proibicao Domingo Estagiarios e Aprendizes",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Proibicao Hora Extra Aprendizes",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Proibicao Hora Extra Estagiarios",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Proibido Trabalhar",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Spread justo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Turno preferido",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra Violacoes hard = 0",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra de 1 dia de folga por semana",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra de Ausência por Excecao",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra de Autorização CCT Feriado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra de Compensação CLT 44h",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra de Exceção por Data",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra de Proibição Geral Feriado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra horario Acougue Sabado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra horario padrao empresa",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra individual",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra: 7 dias consecutivos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra: Max 6 dias consecutivos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra: Proibição de Hora Extra para Estagiários",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regra: Turno preferido",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regras",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regras ANTIPATTERN",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regras CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regras HARD",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regras SOFT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regras configuráveis",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Regras do Motor",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Restrições CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "SOFT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "S_AP1_EXCESS",
+      "tipo": "regra"
+    },
+    {
+      "nome": "S_CONSISTENCIA",
+      "tipo": "regra"
+    },
+    {
+      "nome": "S_DEFICIT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "S_DOMINGO_CICLO",
+      "tipo": "regra"
+    },
+    {
+      "nome": "S_SPREAD",
+      "tipo": "regra"
+    },
+    {
+      "nome": "S_SURPLUS",
+      "tipo": "regra"
+    },
+    {
+      "nome": "S_TURNO_PREF",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Status Ativo do Setor",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Súmula 110 TST",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Tolerância Semanal de Minutos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Trabalho Mais de 2 Domingos Seguidos Sem Folga Dominical",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Trabalho de Manhã",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Usa CCT Intervalo Reduzido",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Violacao CLT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Violacoes CLT graves",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Violacoes Hard",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Violações CLT Graves",
+      "tipo": "regra"
+    },
+    {
+      "nome": "ciclo de domingos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "domingo de folga obrigatório",
+      "tipo": "regra"
+    },
+    {
+      "nome": "domingo_ciclo_*",
+      "tipo": "regra"
+    },
+    {
+      "nome": "folga_fixa_dia_semana",
+      "tipo": "regra"
+    },
+    {
+      "nome": "homens max 2",
+      "tipo": "regra"
+    },
+    {
+      "nome": "leis trabalhistas obrigatorias",
+      "tipo": "regra"
+    },
+    {
+      "nome": "max 4h/dia",
+      "tipo": "regra"
+    },
+    {
+      "nome": "max 6h/dia",
+      "tipo": "regra"
+    },
+    {
+      "nome": "max 9h45/dia",
+      "tipo": "regra"
+    },
+    {
+      "nome": "mulheres max 1",
+      "tipo": "regra"
+    },
+    {
+      "nome": "proibido_trabalhar",
+      "tipo": "regra"
+    },
+    {
+      "nome": "regra de domingos consecutivos",
+      "tipo": "regra"
+    },
+    {
+      "nome": "regra de junior sozinho",
+      "tipo": "regra"
+    },
+    {
+      "nome": "regra individual ativa",
+      "tipo": "regra"
+    },
+    {
+      "nome": "regras de escalamento",
+      "tipo": "regra"
+    },
+    {
+      "nome": "regras de feriado",
+      "tipo": "regra"
+    },
+    {
+      "nome": "restricoes legais",
+      "tipo": "regra"
+    },
+    {
+      "nome": "trabalha domingo",
+      "tipo": "regra"
+    },
+    {
+      "nome": "violacoes SOFT",
+      "tipo": "regra"
+    },
+    {
+      "nome": "Acougue",
+      "tipo": "setor"
+    },
+    {
+      "nome": "Caixa",
+      "tipo": "setor"
+    },
+    {
+      "nome": "RH",
+      "tipo": "setor"
+    },
+    {
+      "nome": "Setor",
+      "tipo": "setor"
+    },
+    {
+      "nome": "Supermercado",
+      "tipo": "setor"
+    },
+    {
+      "nome": "comercio",
+      "tipo": "setor"
+    }
+  ],
+  "relations": [
+    {
+      "from_nome": "24 horas consecutivas de descanso semanal",
+      "to_nome": "Descanso Semanal Remunerado",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP1",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP1",
+      "to_nome": "Clopening",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP1",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP2",
+      "to_nome": "Almoco simultaneo excessivo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP2",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP3",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP3",
+      "to_nome": "Hora extra evitavel",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP4",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP4",
+      "to_nome": "Ausencia de folga em fim de semana (> 5 semanas)",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP4",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP5",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP5",
+      "to_nome": "Maratona em horario de pico",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP6",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP6",
+      "to_nome": "Junior sozinho",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP7",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP7",
+      "to_nome": "Variacao de horario > 2h",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP8",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "AP8",
+      "to_nome": "Variacao de horario entre 1h e 2h",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "API",
+      "to_nome": "Gemini",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "API",
+      "to_nome": "OpenRouter",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajuste de Horario",
+      "to_nome": "Alocacao",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajuste de Horario",
+      "to_nome": "Fluxo Ajuste Escala Existente",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajuste de Horario",
+      "to_nome": "Joao",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ajuste de Status",
+      "to_nome": "Cleunice",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ajuste de Status",
+      "to_nome": "Fluxo Ajuste Escala Existente",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajuste de Status",
+      "to_nome": "Status FOLGA",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajuste de Status",
+      "to_nome": "Status INDISPONIVEL",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajuste de Status",
+      "to_nome": "Status TRABALHO",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajustes",
+      "to_nome": "Dia",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ajustes",
+      "to_nome": "Horarios",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ajustes Manuais",
+      "to_nome": "Horarios",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ajustes Manuais",
+      "to_nome": "Status do Dia",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Almoco",
+      "to_nome": "Hora Trabalhada",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoco simultaneo excessivo",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoco simultaneo excessivo",
+      "to_nome": "Setor descoberto",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoço",
+      "to_nome": "1 Hora",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoço",
+      "to_nome": "Contar Como Hora Trabalhada",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoço Simultâneo",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Almoço obrigatório",
+      "to_nome": "1h CLT Padrão",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoço obrigatório",
+      "to_nome": "CCT",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoço obrigatório",
+      "to_nome": "CLT padrão",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Almoço obrigatório",
+      "to_nome": "Mínimo 30min CCT",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Alocacao",
+      "to_nome": "Dia",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Alocacao",
+      "to_nome": "Dia",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Alocacao",
+      "to_nome": "Escala",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Alocacao",
+      "to_nome": "Escala",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Alocacao",
+      "to_nome": "colaborador",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Alocacao",
+      "to_nome": "funcao",
+      "tipo_relacao": "exige",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Alocacao",
+      "to_nome": "pessoa",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ana",
+      "to_nome": "CLT 36h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ana",
+      "to_nome": "Jornada Segunda a Sexta 08h-15h12",
+      "tipo_relacao": "trabalha_em",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ano Novo",
+      "to_nome": "Aprendiz",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ano Novo",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ano Novo",
+      "to_nome": "CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ano Novo",
+      "to_nome": "Estagiario",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ano Novo",
+      "to_nome": "Feriado",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "CLT Art. 404/405",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "CLT Art. 404/432",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Compensacao",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Compensacao 9h45",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Fazer Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Feriado",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Noturno",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Periodo Noturno (22h-05h)",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Restricoes legais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Trabalhar Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Trabalhar Feriado",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Aprendiz",
+      "to_nome": "Trabalhar Horario Noturno",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Arquivo PGlite",
+      "to_nome": "PGlite",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Art. 386 CLT",
+      "to_nome": "CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 59 CLT",
+      "to_nome": "CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 66 CLT",
+      "to_nome": "CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 67 CLT",
+      "to_nome": "CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 71 CLT",
+      "to_nome": "1 Hora",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 71 CLT",
+      "to_nome": "Almoço",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 71 CLT",
+      "to_nome": "CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 71 CLT",
+      "to_nome": "Duração Superior a 2 Horas",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Art. 71 §1 CLT",
+      "to_nome": "CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Atestado",
+      "to_nome": "Afastamento medico",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Atestado Médico",
+      "to_nome": "Excecao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ausencia de folga em fim de semana (> 5 semanas)",
+      "to_nome": "Folga em fim de semana",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Banco de Dados",
+      "to_nome": "PGlite",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Black Friday",
+      "to_nome": "Demanda Excepcional",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Black Friday",
+      "to_nome": "Demandas Exceção Data",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Blocos de 15 Minutos",
+      "to_nome": "Alocações",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Blocos de 15 Minutos",
+      "to_nome": "Demandas",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Blocos de 15 Minutos",
+      "to_nome": "Horários",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Bloqueio",
+      "to_nome": "Indisponibilidade generica",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Bloqueio de Colaborador",
+      "to_nome": "Excecao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT",
+      "to_nome": "Ano Novo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "CCT",
+      "to_nome": "Intervalo de Almoco",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "CCT",
+      "to_nome": "Natal",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "CCT",
+      "to_nome": "trabalho",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT",
+      "to_nome": "trabalho",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "01/01",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "25/12",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "30 Minutos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Almoço",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Ano Novo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "CLT",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Comercio Varejista",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Demais Feriados",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Intervalo de almoco reduzido (30 minutos)",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Lei 605/1949",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Natal",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "Trabalho Mais de 2 Domingos Seguidos Sem Folga Dominical",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CCT FecomercioSP",
+      "to_nome": "trabalho",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Art. 404",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Art. 405",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Art. 432",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Compensacao 9h45",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "DSR",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Intervalo Interjornada",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Intervalo Intrajornada",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Intervalo de almoco de 1 hora",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "Restricoes legais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT",
+      "to_nome": "domingo de folga obrigatório",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "36 horas semanais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "36h Semanais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Compensacao",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Domingo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Feriado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Jornada Máxima Diária 9h45",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Jornada Média 7h12/dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Noturno",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Regra de Compensação CLT 44h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Restrições Legais",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "Trabalho Domingo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "max 9h45/dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 36h",
+      "to_nome": "trabalha domingo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "44 horas semanais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Almoço obrigatório",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Art. 59 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Compensacao",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Compensação 9h45",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Domingo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Feriado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Interjornada mínima de 11h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Intervalo de 15 minutos",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Jornada Média 8h48/dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Jornada máxima diária",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Manha",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Máximo 6 dias consecutivos",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Noturno",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Padrão do Contrato",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Restrições Legais",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "Tarde",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "max 9h45/dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h",
+      "to_nome": "trabalha domingo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CLT Geral",
+      "to_nome": "Padrão 2:1",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "CONSISTENCIA",
+      "to_nome": "Horarios consistentes",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "CONSISTENCIA",
+      "to_nome": "Variacao excessiva de horarios",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Camila",
+      "to_nome": "Estagiario Tarde",
+      "tipo_relacao": "trabalha_em",
+      "peso": 1
+    },
+    {
+      "from_nome": "Camila",
+      "to_nome": "Estagiario Tarde",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Camila",
+      "to_nome": "Jornada Estagiario Tarde 30h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Campo intervalo_15min",
+      "to_nome": "Alocacao de Horario",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Campos de Limite Obrigatórios",
+      "to_nome": "fim_max",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Campos de Limite Obrigatórios",
+      "to_nome": "fim_min",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Campos de Limite Obrigatórios",
+      "to_nome": "inicio_max",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Campos de Limite Obrigatórios",
+      "to_nome": "inicio_min",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Carnaval",
+      "to_nome": "convencao",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Chat",
+      "to_nome": "Internet",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo 1:1 Domingos",
+      "to_nome": "1 Domingo de Folga",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo 2:1",
+      "to_nome": "Homem",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo 2:1",
+      "to_nome": "Homens",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo 2:1 Padrao Domingos",
+      "to_nome": "1 Domingo de Folga",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo Domingos 2:1",
+      "to_nome": "Pedro",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo Personalizado",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ciclo de Domingo Personalizado",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo de domingo",
+      "to_nome": "domingo_ciclo_folga",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ciclo de domingo",
+      "to_nome": "domingo_ciclo_trabalho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Cleunice",
+      "to_nome": "Exceção de Data",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Cleunice",
+      "to_nome": "Janela de horario",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Clopening",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Clopening",
+      "to_nome": "Descanso < 13h",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Clopening",
+      "to_nome": "Intervalo interjornada 11h",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Clopening Confortável",
+      "to_nome": "Boa Prática",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Cobertura Percentual",
+      "to_nome": "Demanda",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Colaborador 5",
+      "to_nome": "Regra Completa Individual Recorrente",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Colaborador 8",
+      "to_nome": "Regra Completa Individual Recorrente",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Compensacao 9h45",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Compensacao 9h45",
+      "to_nome": "Meta Semanal 44h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Compensacao 9h45",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 12 Regras ANTIPATTERN",
+      "to_nome": "Regra Almoco simultaneo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 12 Regras ANTIPATTERN",
+      "to_nome": "Regra Clopening",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 12 Regras ANTIPATTERN",
+      "to_nome": "Regra Hora extra evitavel",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 12 Regras ANTIPATTERN",
+      "to_nome": "Regra Ioio de horario",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 12 Regras ANTIPATTERN",
+      "to_nome": "Regra Junior sozinho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 16 Regras CLT",
+      "to_nome": "Aprendiz",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 16 Regras CLT",
+      "to_nome": "Estagiario",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 16 Regras CLT",
+      "to_nome": "Feriados",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 16 Regras CLT",
+      "to_nome": "Interjornada",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 16 Regras CLT",
+      "to_nome": "Jornada Maxima",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 16 Regras CLT",
+      "to_nome": "Regra Almoco CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 35 Regras do Motor",
+      "to_nome": "Conjunto 12 Regras ANTIPATTERN",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 35 Regras do Motor",
+      "to_nome": "Conjunto 16 Regras CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 35 Regras do Motor",
+      "to_nome": "Conjunto 7 Regras SOFT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 7 Regras SOFT",
+      "to_nome": "Regra Consistencia de horario",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 7 Regras SOFT",
+      "to_nome": "Regra Deficit de cobertura",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 7 Regras SOFT",
+      "to_nome": "Regra Equilibrio",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Conjunto 7 Regras SOFT",
+      "to_nome": "Regra Turno preferido",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato",
+      "to_nome": "4h/dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato",
+      "to_nome": "Janela de 3h",
+      "tipo_relacao": "proibe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Contrato 20h",
+      "to_nome": "Meta Semanal",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato 30h",
+      "to_nome": "Meta Semanal",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato 36h",
+      "to_nome": "Meta Semanal",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato 44h",
+      "to_nome": "Meta Semanal",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato 5X2",
+      "to_nome": "Numero de Dias de Trabalho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato 6X1",
+      "to_nome": "Numero de Dias de Trabalho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagiario 20h",
+      "to_nome": "Jornada 4h/dia",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagiario 20h",
+      "to_nome": "Jornada Diaria Maxima 4h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagiario 20h",
+      "to_nome": "Jornada Semanal Maxima 20h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagiario 30h",
+      "to_nome": "Jornada 6h/dia",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagiario 30h",
+      "to_nome": "Jornada Diaria Maxima 6h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagiario 30h",
+      "to_nome": "Jornada Semanal Maxima 30h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagio 30h Semana",
+      "to_nome": "Estagiario Tarde/Noite",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagio 30h Semana",
+      "to_nome": "Horas Semanais 30h",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagio 30h Semana",
+      "to_nome": "Jornada Maxima Diaria 6h",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Contrato Estagio 30h Semana",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "DSR",
+      "to_nome": "Dia de folga",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "DSR",
+      "to_nome": "Trabalhador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "DSR Interjornada",
+      "to_nome": "Súmula 110 TST",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "DSR Interjornada",
+      "to_nome": "descanso total de 35h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "DSR Interjornada",
+      "to_nome": "interjornada de 11h",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Dados",
+      "to_nome": "Arquivo PGlite",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Deficit de Cobertura",
+      "to_nome": "SOFT constraint",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda",
+      "to_nome": "Cobertura Mínima",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda",
+      "to_nome": "Setor",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda Excepcional",
+      "to_nome": "Data",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda Excepcional",
+      "to_nome": "Demais Feriados",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda Excepcional",
+      "to_nome": "Demanda Semanal Normal",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda Excepcional",
+      "to_nome": "Faixa horaria",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda Excepcional",
+      "to_nome": "Numero de pessoas",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demanda Excepcional",
+      "to_nome": "Setor",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demandas Exceção Data",
+      "to_nome": "Caixa",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Demandas Exceção Data",
+      "to_nome": "Demanda Semanal Normal",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Descanso Semanal Remunerado",
+      "to_nome": "Art. 67 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Descanso Semanal Remunerado",
+      "to_nome": "Lei 605/1949",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Descanso Semanal Remunerado",
+      "to_nome": "Regra de 1 dia de folga por semana",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Descanso Semanal Remunerado",
+      "to_nome": "Trabalhador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Desequilibrio de horas",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Desequilibrio de horas",
+      "to_nome": "Setor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Diagnostico",
+      "to_nome": "Demanda",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Diagnostico",
+      "to_nome": "Geracao de Escala",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Diagnostico",
+      "to_nome": "Regras",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Diagnostico",
+      "to_nome": "Resultado",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Diagnostico",
+      "to_nome": "gente",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Diagnóstico",
+      "to_nome": "INFEASIBLE",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Domingo",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Electron 34",
+      "to_nome": "Mac",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Electron 34",
+      "to_nome": "Windows",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Empresa",
+      "to_nome": "Corte Semanal",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Empresa",
+      "to_nome": "Grid de Minutos",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Empresa",
+      "to_nome": "Horário de Funcionamento da Empresa",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Empresa",
+      "to_nome": "Intervalo Mínimo de Almoço",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Empresa",
+      "to_nome": "Setor",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Empresa",
+      "to_nome": "Tolerância Semanal de Minutos",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Empresa",
+      "to_nome": "Usa CCT Intervalo Reduzido",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Equilibrio",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Cobertura Percentual",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Data de Fim",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Data de Inicio",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Equilibrio",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Indicadores",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Input Hash",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Intervalo de almoco reduzido (30 minutos)",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Motor",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Periodo",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Pontuacao",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "RASCUNHO",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Setor",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Setores com poucos colaboradores",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Status",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Violacoes CLT graves",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "Violacoes Hard",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala",
+      "to_nome": "violacoes SOFT",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala Ativa",
+      "to_nome": "Periodo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Escala de Trabalho",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala de Trabalho",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala de Trabalho",
+      "to_nome": "Preferência Individual",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Escala de Trabalho",
+      "to_nome": "Violação CLT Grave",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "Atestado",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "CLT 36h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "CLT 44h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "Escala",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "Escala de Trabalho",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "Ferias",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "Fluxos de Trabalho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "RH",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "Regra individual",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "Regras HARD",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "ciclo de domingos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "EscalaFlow",
+      "to_nome": "regras de escalamento",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Carga Diaria",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Carga Semanal",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Compensacao 9h45",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Contrato",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Contrato Estagiario 20h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Contrato Estagiario 30h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Fazer Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Janela de 3h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Lei 11.788",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Lei 11.788 Art. 10",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Pratica do Setor",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Restricoes legais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario",
+      "to_nome": "Trabalhar Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 20h",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Estagiario 20h",
+      "to_nome": "Compensacao",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 20h",
+      "to_nome": "Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 20h",
+      "to_nome": "Estagiario",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Estagiario 20h",
+      "to_nome": "Feriado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 20h",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 20h",
+      "to_nome": "Noturno",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 30h",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Estagiario 30h",
+      "to_nome": "Compensacao",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 30h",
+      "to_nome": "Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 30h",
+      "to_nome": "Estagiario",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Estagiario 30h",
+      "to_nome": "Feriado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 30h",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario 30h",
+      "to_nome": "Noturno",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Manha",
+      "to_nome": "20 horas semanais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Manha",
+      "to_nome": "Flexivel",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Manha",
+      "to_nome": "NUNCA domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Manha",
+      "to_nome": "NUNCA hora extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Manha",
+      "to_nome": "Padrao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Manha",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Manha",
+      "to_nome": "max 4h/dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "30 horas semanais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "30 horas semanais (Estagiário)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Compensacao",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Lei 11.788",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Máximo 6h/dia (Estagiário)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "NUNCA domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "NUNCA hora extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Proibido Domingo (Estagiário)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Proibido Hora Extra (Estagiário)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiario Tarde/Noite",
+      "to_nome": "max 6h/dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "20h Semanais",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Intervalo de 15 minutos",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Jornada Máxima Diária 4h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Lei 11.788",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Não Aplica Compensação",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Não Tem Direito a Almoço",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Regra: Proibição de Hora Extra para Estagiários",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Restrições Severas",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Estagiário Manhã 20h",
+      "to_nome": "Trabalho Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecao",
+      "to_nome": "Atestado",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecao",
+      "to_nome": "Bloqueio",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecao",
+      "to_nome": "Ferias",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Excecao",
+      "to_nome": "Ferias",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecao",
+      "to_nome": "Hard Constraint",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecao",
+      "to_nome": "colaborador",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecao",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecao por data",
+      "to_nome": "Regra individual",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecoes",
+      "to_nome": "Atestados",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecoes",
+      "to_nome": "Ferias",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecoes",
+      "to_nome": "Periodo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecoes por data",
+      "to_nome": "Forcas folga no domingo especifico",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecoes por data",
+      "to_nome": "Override Pontual",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecoes por data",
+      "to_nome": "Regras personalizadas",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Excecoes por data",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Exceção",
+      "to_nome": "Atestado",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Exceção",
+      "to_nome": "Férias",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Exceção Total",
+      "to_nome": "Padrão 0:0",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Exceção de Data Início 10:00",
+      "to_nome": "Maria",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Exceção por Data",
+      "to_nome": "Regra individual",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Explicar violacao",
+      "to_nome": "Regra",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Fechamento em sequencia",
+      "to_nome": "Supermercado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Fechamento em sequencia",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ferias",
+      "to_nome": "Funcionario",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ferias",
+      "to_nome": "Periodo",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ferias",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Ferias",
+      "to_nome": "colaborador",
+      "tipo_relacao": "proibe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Fluxo Cadastro Ferias",
+      "to_nome": "Funcionario",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Fluxos de Trabalho",
+      "to_nome": "Gerar uma escala do mes",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Folga Fixa",
+      "to_nome": "folga_fixa_dia_semana",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Folga Fixa Quarta",
+      "to_nome": "João",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Folga Fixa Semanal",
+      "to_nome": "Dia da Semana",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Folga obrigatoria",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Folgas Obrigatórias",
+      "to_nome": "CLT",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Férias",
+      "to_nome": "Excecao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Geracao",
+      "to_nome": "Dados",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Geracao",
+      "to_nome": "Escala",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Geracao",
+      "to_nome": "Modo otimizado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Geracao",
+      "to_nome": "Modo rapido",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Geracao",
+      "to_nome": "Motor Python",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Ajustes",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Excecoes",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Geracao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Oficializacao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Preflight",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Resultado",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Revisao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "Setor",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Gerar uma escala do mes",
+      "to_nome": "demandas de cobertura",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Grid visual",
+      "to_nome": "Dia",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Grid visual",
+      "to_nome": "Folgas",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Grid visual",
+      "to_nome": "Horarios",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Grid visual",
+      "to_nome": "colaborador",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Grid visual",
+      "to_nome": "funcao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "H11",
+      "to_nome": "Estagiario 20h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "H11",
+      "to_nome": "Estagiario 30h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "H11",
+      "to_nome": "Estagiario Max Horas/Dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "H11",
+      "to_nome": "Lei 11.788 Art. 10",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "H11",
+      "to_nome": "Regras CLT Fixas",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "H2",
+      "to_nome": "Art. 66 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "H2",
+      "to_nome": "Interjornada Minima 11 Horas",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "H2",
+      "to_nome": "Joao",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "H2",
+      "to_nome": "Regras CLT Fixas",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "H2",
+      "to_nome": "Supermercado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "H4",
+      "to_nome": "Art. 59 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "H4",
+      "to_nome": "Jornada Maxima 10 Horas/Dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "H4",
+      "to_nome": "Regras CLT Fixas",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "H4",
+      "to_nome": "colaborador",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "H5",
+      "to_nome": "Regras CLT Fixas",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "H5",
+      "to_nome": "Respeitar Excecoes",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "H5",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD CLT configuravel",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD CLT configuravel",
+      "to_nome": "HARD empresa",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD CLT configuravel",
+      "to_nome": "SOFT",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD CLT fixa",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD CLT fixa",
+      "to_nome": "HARD CLT configuravel",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD CLT fixa",
+      "to_nome": "HARD empresa",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD CLT fixa",
+      "to_nome": "SOFT",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD empresa",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "HARD empresa",
+      "to_nome": "SOFT",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Hard Constraint",
+      "to_nome": "Ano Novo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Hard Constraint",
+      "to_nome": "Natal",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Hard Constraint",
+      "to_nome": "Restrições CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Homens",
+      "to_nome": "Ciclo 2:1 Padrao Domingos",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Hora Extra",
+      "to_nome": "Limite Hora Extra 10h/dia",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Hora Extra Evitável",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Hora extra evitavel",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Hora extra evitavel",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Horario de funcionamento",
+      "to_nome": "Nivel empresa",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Horario de funcionamento",
+      "to_nome": "Nivel setor",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Horário de Funcionamento do Setor",
+      "to_nome": "Horário de Funcionamento da Empresa",
+      "tipo_relacao": "substitui",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "API",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Dados Reais",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Demandas",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Escalas",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Exceções",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Horários",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Internet",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Legislação Trabalhista",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Listas em Lote",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Regras",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Regras CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Sistema",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Tools",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "IA",
+      "to_nome": "Violações",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "IA Assistente",
+      "to_nome": "Chat",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "INFEASIBLE",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "INFEASIBLE",
+      "to_nome": "Escala",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "INFEASIBLE",
+      "to_nome": "Exceções Simultâneas",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "INFEASIBLE",
+      "to_nome": "Geracao de Escala",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "INFEASIBLE",
+      "to_nome": "Janelas de Horário",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "INFEASIBLE",
+      "to_nome": "Regras HARD",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Indicadores",
+      "to_nome": "Cobertura (%)",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Indicadores",
+      "to_nome": "Equilibrio",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Indicadores",
+      "to_nome": "Pontuacao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Indicadores",
+      "to_nome": "Violacoes Hard",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Indicadores",
+      "to_nome": "violacoes SOFT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Input Hash",
+      "to_nome": "Dados de Entrada",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Interface",
+      "to_nome": "React 19",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Interface",
+      "to_nome": "Tailwind CSS",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Interface",
+      "to_nome": "shadcn/ui",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Interjornada 11h",
+      "to_nome": "CLT",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Interjornada mínima de 11h",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Intervalo Interjornada",
+      "to_nome": "11 Horas",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo Intrajornada",
+      "to_nome": "15 Minutos",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Intervalo Intrajornada",
+      "to_nome": "Almoço",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Intervalo Mínimo de Almoço",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo Mínimo de Almoço",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo de almoco de 1 hora",
+      "to_nome": "Jornadas acima de 6 horas",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo de almoco reduzido (30 minutos)",
+      "to_nome": "Acordo",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo de almoco reduzido (30 minutos)",
+      "to_nome": "Jornada util",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Intervalo interjornada 11h",
+      "to_nome": "Art. 66 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo interjornada 11h",
+      "to_nome": "Descanso",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo interjornada 11h",
+      "to_nome": "Jornada de trabalho",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo interjornada 11h",
+      "to_nome": "Supermercado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo intrajornada 15 min",
+      "to_nome": "Art. 71, § 1 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo intrajornada 15 min",
+      "to_nome": "Estagiario",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Intervalo intrajornada 15 min",
+      "to_nome": "Hora Trabalhada",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Início às 09:00",
+      "to_nome": "Maria",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Início às 09:00",
+      "to_nome": "Questão Médica",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Início_Máx 09:00",
+      "to_nome": "Maria",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Ioio de Horário",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Janela Individual",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Janela de Horário",
+      "to_nome": "Início Mínimo Fim Máximo",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Janela de Horário",
+      "to_nome": "Limites de Horário",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Janela de Horário",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Janela de Horário",
+      "to_nome": "fim_max",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Janela de Horário",
+      "to_nome": "fim_min",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Janela de Horário",
+      "to_nome": "inicio_max",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Janela de Horário",
+      "to_nome": "inicio_min",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Joao",
+      "to_nome": "DSR Interjornada",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Joao",
+      "to_nome": "Folga Fixa",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Joao",
+      "to_nome": "Jornada de trabalho",
+      "tipo_relacao": "trabalha_em",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Jornada 4h",
+      "to_nome": "Almoço obrigatório",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada 4h/dia",
+      "to_nome": "Intervalo intrajornada 15 min",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada 6h/dia",
+      "to_nome": "Intervalo intrajornada 15 min",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada Acima 6h",
+      "to_nome": "Almoço",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada Acima de 6 Horas",
+      "to_nome": "Almoço",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada Acima de 6h",
+      "to_nome": "Almoço obrigatório",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada Máxima Diária 9h45",
+      "to_nome": "Compensação",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada Mínima 4h",
+      "to_nome": "Custo de Deslocamento e Preparação",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Jornada Mínima 4h",
+      "to_nome": "Decisão de Produto",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada de 4h",
+      "to_nome": "Almoço",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada de trabalho",
+      "to_nome": "Intervalo de 15 minutos",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada de trabalho",
+      "to_nome": "Intervalo interjornada 11h",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jornada entre 4h e 6h",
+      "to_nome": "Intervalo de 15 minutos",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Artigo 404 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Artigo 405 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Artigo 432 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Feriado",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Horario noturno",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Jornada máxima diária de 6 horas",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "NUNCA domingo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "NUNCA feriado",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "NUNCA hora extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "NUNCA noturno",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Proibido Domingo (Jovem Aprendiz)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Proibido Feriado (Jovem Aprendiz)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Proibido Hora Extra (Jovem Aprendiz)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Proibido Noturno (Jovem Aprendiz)",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Jovem Aprendiz",
+      "to_nome": "Regra Jovem Aprendiz Feriado",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "João",
+      "to_nome": "CLT 44h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Junior",
+      "to_nome": "Rank",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Junior sozinho",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Junior sozinho",
+      "to_nome": "Colaborador com rank baixo",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Junior sozinho",
+      "to_nome": "Horario de pico",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Legislacao Brasileira",
+      "to_nome": "Acordo Coletivo",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Lei",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Lei 11.788",
+      "to_nome": "Lei do Estágio",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Lei 605/1949",
+      "to_nome": "Regra DSR preferencialmente aos domingos",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Lei 605/1949",
+      "to_nome": "folga compensatoria",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Almoço Máximo",
+      "to_nome": "Art. 71 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Almoço Mínimo CCT",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Almoço Mínimo CLT",
+      "to_nome": "Art. 71 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite DSR Mínimo",
+      "to_nome": "Súmula 110 TST",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Interjornada Mínima",
+      "to_nome": "Art. 66 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Intervalo Curto",
+      "to_nome": "Art. 71 §1 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Jornada Máxima Normal",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Jornada Máxima com HE",
+      "to_nome": "Art. 59 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Limite Máximo Dias Consecutivos",
+      "to_nome": "Art. 67 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Lucas",
+      "to_nome": "Estagiario Manha",
+      "tipo_relacao": "trabalha_em",
+      "peso": 1
+    },
+    {
+      "from_nome": "Lucas",
+      "to_nome": "Jornada Estagiario Manha 20h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "MIN_DIARIO",
+      "to_nome": "HARD",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Manhã Flexível",
+      "to_nome": "Estagiário Manhã",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Manhã Padrão",
+      "to_nome": "Estagiário Manhã",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Maratona em horario de pico",
+      "to_nome": "Colaboradores",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Maratona em horario de pico",
+      "to_nome": "Horario de pico",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Maria",
+      "to_nome": "CLT 44h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Maria",
+      "to_nome": "Ciclo 1:2 Domingos",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Maria",
+      "to_nome": "Ciclo Personalizado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Maria",
+      "to_nome": "Ciclo de domingo",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Maria",
+      "to_nome": "ciclo 1:2",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Modo otimizado",
+      "to_nome": "Modos de Resolucao",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Modo otimizado",
+      "to_nome": "Periodo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Modo otimizado",
+      "to_nome": "setores complexos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Modo rapido",
+      "to_nome": "Modos de Resolucao",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor",
+      "to_nome": "Conjunto 35 Regras do Motor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor",
+      "to_nome": "Demais Feriados",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor",
+      "to_nome": "Hard Constraint",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor",
+      "to_nome": "Rank",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor",
+      "to_nome": "Regras do Motor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor",
+      "to_nome": "ciclo 1:2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor EscalaFlow",
+      "to_nome": "30 Minutos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor EscalaFlow",
+      "to_nome": "DSR",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor EscalaFlow",
+      "to_nome": "Hora Trabalhada",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor EscalaFlow",
+      "to_nome": "Intervalo Interjornada",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor EscalaFlow",
+      "to_nome": "Intervalo Intrajornada",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor EscalaFlow",
+      "to_nome": "usa_cct_intervalo_reduzido",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor Python",
+      "to_nome": "Escala de Trabalho",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor Python",
+      "to_nome": "OR-Tools CP-SAT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor de Escala",
+      "to_nome": "Restrições CLT",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor de Escala",
+      "to_nome": "cobertura",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor de Escalas",
+      "to_nome": "Python OR-Tools CP-SAT",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor de alocacao",
+      "to_nome": "Demanda Excepcional",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor de alocacao",
+      "to_nome": "pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor de calculo",
+      "to_nome": "Almoco simultaneo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Motor de calculo",
+      "to_nome": "Regra Horario ideal Almoco",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Motor do EscalaFlow",
+      "to_nome": "Regras CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Mulheres",
+      "to_nome": "Ciclo 1:1 Domingos",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Máximo 6 dias consecutivos",
+      "to_nome": "CLT",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Natal",
+      "to_nome": "Aprendiz",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Natal",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Natal",
+      "to_nome": "CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Natal",
+      "to_nome": "Estagiario",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Natal",
+      "to_nome": "Feriado",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Nivel empresa",
+      "to_nome": "Regra horario padrao empresa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Nivel setor",
+      "to_nome": "Regra horario Acougue Sabado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "OFF",
+      "to_nome": "MIN_DIARIO",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "OFICIAL",
+      "to_nome": "Violacao CLT Grave",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Oficializacao",
+      "to_nome": "Escala",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Oficializacao",
+      "to_nome": "Violacoes Hard",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Oficializacao da Escala",
+      "to_nome": "Violacoes Hard",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Oficializacao de escala",
+      "to_nome": "Edicoes acidentais",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Oficializacao de escala",
+      "to_nome": "Escala",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Oficializacao de escala",
+      "to_nome": "Regra Violacoes hard = 0",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Override Pontual",
+      "to_nome": "Cleunice",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Override Pontual por Data",
+      "to_nome": "Regra de Exceção por Data",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "PGlite",
+      "to_nome": "Postgres 17",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "PGlite",
+      "to_nome": "WASM",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrao da empresa",
+      "to_nome": "Empresa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrao do setor",
+      "to_nome": "Setor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrão 0:0",
+      "to_nome": "Domingo Ciclo Folga",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrão 0:0",
+      "to_nome": "Domingo Ciclo Trabalho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrão 1:1",
+      "to_nome": "Domingo Ciclo Folga",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrão 1:1",
+      "to_nome": "Domingo Ciclo Trabalho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrão 2:1",
+      "to_nome": "Domingo Ciclo Folga",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Padrão 2:1",
+      "to_nome": "Domingo Ciclo Trabalho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Passivo Trabalhista",
+      "to_nome": "OFF",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Pasta Data",
+      "to_nome": "Arquivo PGlite",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Pedro",
+      "to_nome": "Aprendiz",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Pedro",
+      "to_nome": "Excecao por data",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Pedro",
+      "to_nome": "Exceção de Data",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Pedro",
+      "to_nome": "Jovem Aprendiz",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Penalidade ANTIPATTERN",
+      "to_nome": "Almoco",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Penalidade ANTIPATTERN",
+      "to_nome": "Regra Almoco cedo penalizado",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Penalidade ANTIPATTERN",
+      "to_nome": "Regra Almoco tarde penalizado",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Perfil de Contrato",
+      "to_nome": "Padrao Setor/Empresa",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Perfil de horario",
+      "to_nome": "Perfil padrao do contrato",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Perfil de horario",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Perfil do Contrato",
+      "to_nome": "Padrão do Contrato",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Perfis de Horario",
+      "to_nome": "Contrato",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Perfis de Horário",
+      "to_nome": "Template de Janela de Entrada/Saída",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Perfis de Horário",
+      "to_nome": "Tipo de Contrato",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Perfis de Horário",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Periodo",
+      "to_nome": "Data especial",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Periodo",
+      "to_nome": "tempo de processamento",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Apelido",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Açougueiro",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Caixa",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Caixa 1",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Caixa 2",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Cargos abstratos",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Cor HEX",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Frentista",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Ordem",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Padeiro",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Repositor",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Setor",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "Tipo de Contrato",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Posto de trabalho",
+      "to_nome": "ativo",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Preferencia de turno",
+      "to_nome": "Manha",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Preferencia de turno",
+      "to_nome": "Tarde",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Preferência Individual",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Preflight",
+      "to_nome": "Contrato",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Preflight",
+      "to_nome": "Setor",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Preflight",
+      "to_nome": "colaborador",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Preflight",
+      "to_nome": "demandas de cobertura",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Proteção Legal",
+      "to_nome": "Padrão 1:1",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "RABALHO",
+      "to_nome": "5X2",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "RABALHO",
+      "to_nome": "6X1",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "RABALHO",
+      "to_nome": "HARD",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Ajustes",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Ajustes Manuais",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Demanda de Cobertura",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Escala",
+      "tipo_relacao": "supervisiona",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Escala de Trabalho",
+      "tipo_relacao": "supervisiona",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Escala de Trabalho",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Exceção",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Oficializacao",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "Setor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "ciclo 1:2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "RH",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Rank",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra Almoco cedo penalizado",
+      "to_nome": "Almoco",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Almoco simultaneo excessivo",
+      "to_nome": "Almoco simultaneo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Almoco simultaneo excessivo",
+      "to_nome": "Setor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Almoco simultaneo excessivo",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Almoco tarde penalizado",
+      "to_nome": "Almoco",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Ciclo Domingo Homens",
+      "to_nome": "Homens",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra Ciclo Domingo Mulheres",
+      "to_nome": "Art. 386 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Ciclo Domingo Mulheres",
+      "to_nome": "Mulheres",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Compensacao Semanal 5x2",
+      "to_nome": "CLT 36h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Compensacao Semanal 5x2",
+      "to_nome": "CLT 44h",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Compensação 5x2",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Completa Individual",
+      "to_nome": "salvar_regra_horario_colaborador",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Completa Individual Recorrente",
+      "to_nome": "salvar_regra_horario_colaborador",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra DIAS_TRABALHO",
+      "to_nome": "Contrato 5X2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra DIAS_TRABALHO",
+      "to_nome": "Contrato 6X1",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra DIAS_TRABALHO",
+      "to_nome": "HARD",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra DIAS_TRABALHO",
+      "to_nome": "Numero de Dias de Trabalho",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra DIAS_TRABALHO",
+      "to_nome": "SOFT",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra DSR preferencialmente aos domingos",
+      "to_nome": "Descanso Semanal Remunerado",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Editavel",
+      "to_nome": "Regra Almoco Obrigatorio",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Editavel",
+      "to_nome": "Regra Max 6 dias consecutivos",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Editavel",
+      "to_nome": "Regra Meta Semanal",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "Art. 67 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "Folga",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "HARD",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "OFF",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "OJ 410 TST",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "SOFT",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "Trabalho Consecutivo Excessivo",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "folga no 7o dia",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H1",
+      "to_nome": "pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H10",
+      "to_nome": "HARD",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H10",
+      "to_nome": "Meta Semanal",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H10",
+      "to_nome": "SOFT",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra H10",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H6",
+      "to_nome": "Art. 71 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H6",
+      "to_nome": "HARD",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H6",
+      "to_nome": "Intervalo de Almoco",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H6",
+      "to_nome": "Jornada de trabalho",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra H6",
+      "to_nome": "SOFT",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra Horario ideal Almoco",
+      "to_nome": "Almoco",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada 20h Semanais Estagiarios",
+      "to_nome": "Estagiarios",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada 30h Semanais Estagiarios",
+      "to_nome": "Estagiarios",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada 4h a 6h",
+      "to_nome": "Intervalo intrajornada 15 min",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada Maxima Aprendizes",
+      "to_nome": "Aprendizes",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada Maxima CLT com Hora Extra",
+      "to_nome": "Art. 59 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada Maxima CLT com Hora Extra",
+      "to_nome": "CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra Jornada Maxima CLT com Hora Extra",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada Minima EscalaFlow",
+      "to_nome": "Decisao de produto",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada Minima EscalaFlow",
+      "to_nome": "EscalaFlow",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jornada Normal CLT",
+      "to_nome": "CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra Jornada acima de 6h",
+      "to_nome": "Almoco",
+      "tipo_relacao": "exige",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra Jornada ate 6h",
+      "to_nome": "Almoco",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jovem Aprendiz Feriado",
+      "to_nome": "CLT 404",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jovem Aprendiz Feriado",
+      "to_nome": "CLT 432",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Jovem Aprendiz Feriado",
+      "to_nome": "trabalho em feriado",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Junior sozinho",
+      "to_nome": "Horario de pico",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra Junior sozinho",
+      "to_nome": "Junior",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibicao Domingo Estagiarios e Aprendizes",
+      "to_nome": "Aprendizes",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibicao Domingo Estagiarios e Aprendizes",
+      "to_nome": "Estagiarios",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibicao Domingo Estagiarios e Aprendizes",
+      "to_nome": "Hard Constraint",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibicao Hora Extra Aprendizes",
+      "to_nome": "Aprendizes",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibicao Hora Extra Aprendizes",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibicao Hora Extra Estagiarios",
+      "to_nome": "Estagiarios",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibicao Hora Extra Estagiarios",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra Proibido Trabalhar",
+      "to_nome": "Demais Feriados",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Ausência por Excecao",
+      "to_nome": "Escala",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Ausência por Excecao",
+      "to_nome": "Excecao",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Ausência por Excecao",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Autorização CCT Feriado",
+      "to_nome": "Acordo",
+      "tipo_relacao": "exige",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra de Autorização CCT Feriado",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Exceção por Data",
+      "to_nome": "Regra Completa Individual Recorrente",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Exceção por Data",
+      "to_nome": "upsert_regra_excecao_data",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Proibição Geral Feriado",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Proibição Geral Feriado",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra de Proibição Geral Feriado",
+      "to_nome": "trabalho",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra horario Acougue Sabado",
+      "to_nome": "Acougue",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra horario Acougue Sabado",
+      "to_nome": "Regra horario padrao empresa",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra horario padrao empresa",
+      "to_nome": "Empresa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra individual",
+      "to_nome": "Padrão do Contrato",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra individual",
+      "to_nome": "Perfil de Contrato",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra individual",
+      "to_nome": "Perfil do Contrato",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regra individual",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra: Max 6 dias consecutivos",
+      "to_nome": "HARD",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra: Max 6 dias consecutivos",
+      "to_nome": "SOFT",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Regra: Proibição de Hora Extra para Estagiários",
+      "to_nome": "Lei 11.788",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras ANTIPATTERN",
+      "to_nome": "Regra Almoco simultaneo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras ANTIPATTERN",
+      "to_nome": "Regra Clopening",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras ANTIPATTERN",
+      "to_nome": "Regra Hora extra evitavel",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras ANTIPATTERN",
+      "to_nome": "Regra Ioio de horario",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras ANTIPATTERN",
+      "to_nome": "Regra Junior sozinho",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Aprendizes",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Estagiários",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Interjornada 11h",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Max 10h/dia",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Max 6 dias consecutivos",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Regra Almoço",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Regra Feriados CCT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Regra HARD",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT",
+      "to_nome": "Usuário",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras CLT Fixas",
+      "to_nome": "Regras HARD",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras SOFT",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras SOFT",
+      "to_nome": "Regra Ciclo de domingo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras SOFT",
+      "to_nome": "Regra Consistencia de horario",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras SOFT",
+      "to_nome": "Regra Deficit de cobertura",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras SOFT",
+      "to_nome": "Regra SOFT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras SOFT",
+      "to_nome": "Regra Spread justo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras SOFT",
+      "to_nome": "Regra Turno preferido",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras configuráveis",
+      "to_nome": "Empresa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras personalizadas",
+      "to_nome": "Ciclo de domingo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras personalizadas",
+      "to_nome": "Folga Fixa",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras personalizadas",
+      "to_nome": "Janela de horario",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras personalizadas",
+      "to_nome": "Perfil de horario",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Regras personalizadas",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Respeitar Excecoes",
+      "to_nome": "Atestado",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Respeitar Excecoes",
+      "to_nome": "Bloqueio",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Respeitar Excecoes",
+      "to_nome": "Ferias",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Resumo de horas",
+      "to_nome": "Compliance semanal",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Resumo de horas",
+      "to_nome": "Equilibrio de carga",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Resumo de horas",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Resumo de horas",
+      "to_nome": "Periodo",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Resumo de horas",
+      "to_nome": "Setor",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Revisao",
+      "to_nome": "Grid visual",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Rules override",
+      "to_nome": "Regra",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Rules override",
+      "to_nome": "Regra Max 6 dias consecutivos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Rules override",
+      "to_nome": "Regras",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "SOFT",
+      "to_nome": "Antipattern",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "SOFT",
+      "to_nome": "MIN_DIARIO",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "SOFT",
+      "to_nome": "RABALHO",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_AP1_EXCESS",
+      "to_nome": "Antipatterns",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_CONSISTENCIA",
+      "to_nome": "Consistencia de horario",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_CONSISTENCIA",
+      "to_nome": "SOFT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_DEFICIT",
+      "to_nome": "Cobertura da Demanda",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_DEFICIT",
+      "to_nome": "SOFT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_DOMINGO_CICLO",
+      "to_nome": "Ciclo de domingo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_DOMINGO_CICLO",
+      "to_nome": "SOFT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_DOMINGO_CICLO",
+      "to_nome": "SOFT constraint",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_DOMINGO_CICLO",
+      "to_nome": "pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_SPREAD",
+      "to_nome": "Carga de trabalho equilibrada",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_SPREAD",
+      "to_nome": "Desequilibrio de horas",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_SURPLUS",
+      "to_nome": "Excesso de cobertura",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_SURPLUS",
+      "to_nome": "SOFT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_SURPLUS",
+      "to_nome": "Slot",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "S_TURNO_PREF",
+      "to_nome": "Preferencia de turno",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_TURNO_PREF",
+      "to_nome": "SOFT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "S_TURNO_PREF",
+      "to_nome": "pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Senioridade",
+      "to_nome": "pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "Demanda de Cobertura",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "Função",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "Horário de Funcionamento do Setor",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "Nome do Setor",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "Status Ativo do Setor",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "colaborador",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "demandas de cobertura",
+      "tipo_relacao": "exige",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "funcao",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Setor",
+      "to_nome": "pessoa",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Sistema",
+      "to_nome": "Backup Automático",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Sistema",
+      "to_nome": "Validacao Pos-Ajuste",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Sistema de RH",
+      "to_nome": "Desvio de horas",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Sistema de RH",
+      "to_nome": "Media de horas",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Sistema de RH",
+      "to_nome": "Total por pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Soft delete",
+      "to_nome": "Setor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Soft delete",
+      "to_nome": "pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Status",
+      "to_nome": "ARQUIVADA",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Status",
+      "to_nome": "OFICIAL",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Status",
+      "to_nome": "RASCUNHO",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Súmula 110 TST",
+      "to_nome": "TST",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Tipo de Contrato",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Trabalho Domingo",
+      "to_nome": "Ciclo de Folgas",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Trabalho de Manhã",
+      "to_nome": "Cleunice",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Turnos injustos",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Usa CCT Intervalo Reduzido",
+      "to_nome": "Intervalo Mínimo de Almoço",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Usuario",
+      "to_nome": "Gerar uma escala do mes",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "Usuario",
+      "to_nome": "Rules override",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Validacao Pos-Ajuste",
+      "to_nome": "Ajuste",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Validacao Pos-Ajuste",
+      "to_nome": "Escala",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "Violacao CLT",
+      "to_nome": "7 Dias Consecutivos",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Violacao CLT Grave",
+      "to_nome": "CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Violacoes Hard",
+      "to_nome": "Escala",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "Violacoes Hard",
+      "to_nome": "Regra: 7 dias consecutivos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "Violacoes Hard",
+      "to_nome": "Violacoes CLT graves",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "Violacoes Hard",
+      "to_nome": "leis trabalhistas obrigatorias",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Violação HARD (CLT)",
+      "to_nome": "Interjornada mínima de 11h",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "Violações CLT Graves",
+      "to_nome": "OFICIAL",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "`demandas_excecao_data`",
+      "to_nome": "cobertura",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "ciclo",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "ciclo 1:1",
+      "to_nome": "Art. 386 CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "ciclo 1:1",
+      "to_nome": "CLT 386",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "ciclo 1:1",
+      "to_nome": "Mulher",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "ciclo 1:1",
+      "to_nome": "Mulheres",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "CLT 44h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "Contrato",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "Demanda",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "Janela de horario",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "Regra individual",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "Setor",
+      "tipo_relacao": "trabalha_em",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "Tabela colaborador_regra_horario",
+      "tipo_relacao": "regido_por",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "colaborador",
+      "to_nome": "ativo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "criar_excecao",
+      "to_nome": "Carlos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "criar_excecao",
+      "to_nome": "Ferias",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "definir_janela_colaborador",
+      "to_nome": "Campos de Limite Obrigatórios",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "definir_janela_colaborador",
+      "to_nome": "Limites de Horário",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "definir_janela_colaborador",
+      "to_nome": "Limites de Horário",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "definir_janela_colaborador",
+      "to_nome": "Maria",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "definir_janela_colaborador",
+      "to_nome": "ativo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "definir_janela_colaborador",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "definir_janela_colaborador",
+      "to_nome": "salvar_regra_horario_colaborador",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "descanso total de 35h",
+      "to_nome": "24 horas consecutivas de descanso semanal",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "descanso total de 35h",
+      "to_nome": "interjornada de 11h",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "feriado + domingo",
+      "to_nome": "Aprendiz",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "folga compensatoria",
+      "to_nome": "Lei 605/1949",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "folga compensatoria",
+      "to_nome": "trabalho no domingo",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "folga_fixa_dia_semana",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "homens max 2",
+      "to_nome": "M",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "horarios personalizados",
+      "to_nome": "Setor",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "horarios personalizados",
+      "to_nome": "horario da empresa",
+      "tipo_relacao": "substitui",
+      "peso": 1
+    },
+    {
+      "from_nome": "horas semanais",
+      "to_nome": "pessoa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "leis trabalhistas obrigatorias",
+      "to_nome": "CLT",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "mulheres max 1",
+      "to_nome": "F",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "npm run db:reset",
+      "to_nome": "CLT",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "npm run db:reset",
+      "to_nome": "Regras do Motor",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "npm run db:reset",
+      "to_nome": "feriados nacionais",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "obter_regra_horario_colaborador",
+      "to_nome": "colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "perfil de horário",
+      "to_nome": "Contrato",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "perfil_horario_id",
+      "to_nome": "perfil de horário",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "Atestado",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "CCT FecomercioSP",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "CLT 36h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "CLT 44h",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "Estagiario",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "Ferias",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "Setor",
+      "tipo_relacao": "trabalha_em",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "funcao",
+      "tipo_relacao": "trabalha_em",
+      "peso": 1
+    },
+    {
+      "from_nome": "pessoa",
+      "to_nome": "prefere turno",
+      "tipo_relacao": "depende_de",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "prefere turno",
+      "to_nome": "Manha",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "prefere turno",
+      "to_nome": "Tarde",
+      "tipo_relacao": "compoe",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "proibido_trabalhar",
+      "to_nome": "Confraternizacao Universal",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "proibido_trabalhar",
+      "to_nome": "Natal",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "regra de junior sozinho",
+      "to_nome": "Horario de pico",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "regra de junior sozinho",
+      "to_nome": "Junior",
+      "tipo_relacao": "proibe",
+      "peso": 1
+    },
+    {
+      "from_nome": "regras de escalamento",
+      "to_nome": "limites legais",
+      "tipo_relacao": "regido_por",
+      "peso": 1
+    },
+    {
+      "from_nome": "regras de feriado",
+      "to_nome": "CLT",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
+    },
+    {
+      "from_nome": "rules_override",
+      "to_nome": "Geracao",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "rules_override",
+      "to_nome": "Regra: Max 6 dias consecutivos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "rules_override",
+      "to_nome": "Regras",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "Ciclo de domingo",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "Ciclo de domingo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "Folga Fixa",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "Folga Fixa",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "Janela de Horário",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "João",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "Pedro",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "ativo",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "colaborador_id",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "domingo_ciclo_*",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "folga_fixa_dia_semana",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "janela",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "perfil_horario_id",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "salvar_regra_horario_colaborador",
+      "to_nome": "preferencia_turno_soft",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "sexo",
+      "to_nome": "regra de domingos consecutivos",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "sistema de folha de pagamento",
+      "to_nome": "Adicional noturno",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "sistema de folha de pagamento",
+      "to_nome": "DSR",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "sistema de folha de pagamento",
+      "to_nome": "Hora Extra",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "sistema de folha de pagamento",
+      "to_nome": "Pagamento em dobro para trabalho em feriado",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "trabalho no domingo",
+      "to_nome": "CCT",
+      "tipo_relacao": "exige",
+      "peso": 1
+    },
+    {
+      "from_nome": "trabalho no domingo",
+      "to_nome": "comercio",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "upsert_regra_excecao_data",
+      "to_nome": "Data",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "usa_cct_intervalo_reduzido",
+      "to_nome": "Intervalo de almoco reduzido (30 minutos)",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "violacoes SOFT",
+      "to_nome": "Alertas de Otimizacao",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    },
+    {
+      "from_nome": "violacoes SOFT",
+      "to_nome": "Alertas de Otimizacao",
+      "tipo_relacao": "compoe",
+      "peso": 1
+    },
+    {
+      "from_nome": "violacoes SOFT",
+      "to_nome": "Regra: Turno preferido",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 1
+    },
+    {
+      "from_nome": "violacoes SOFT",
+      "to_nome": "boas praticas",
+      "tipo_relacao": "depende_de",
+      "peso": 1
+    }
+  ]
+}

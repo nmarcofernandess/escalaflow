@@ -200,6 +200,7 @@ export interface PerfilHorarioContrato {
 export interface RegraHorarioColaborador {
   id: number
   colaborador_id: number
+  dia_semana_regra: DiaSemana | null  // null = padrão (todos os dias), 'SEG'..'DOM' = dia específico
   ativo: boolean
   perfil_horario_id: number | null
   inicio_min: string | null       // override do perfil
@@ -207,9 +208,9 @@ export interface RegraHorarioColaborador {
   fim_min: string | null
   fim_max: string | null
   preferencia_turno_soft: Turno | null
-  domingo_ciclo_trabalho: number  // default 2
-  domingo_ciclo_folga: number     // default 1
-  folga_fixa_dia_semana: DiaSemana | null
+  domingo_ciclo_trabalho: number  // default 2 (só na regra padrão)
+  domingo_ciclo_folga: number     // default 1 (só na regra padrão)
+  folga_fixa_dia_semana: DiaSemana | null  // só na regra padrão
 }
 
 export interface RegraHorarioColaboradorExcecaoData {
@@ -627,6 +628,19 @@ export interface DiagnosticoSolver {
   motivo_infeasible?: string
   num_colaboradores: number
   num_dias: number
+  /** Graceful degradation: which pass solved (1=normal, 2=relaxed product rules, 3=CLT skeleton) */
+  pass_usado?: 1 | 2 | 3
+  /** Which rules were relaxed in the successful pass */
+  regras_relaxadas?: string[]
+  /** Pre-solve capacity analysis */
+  capacidade_vs_demanda?: {
+    total_slots_demanda: number
+    max_slots_disponiveis: number
+    ratio_cobertura_max: number
+    cobertura_matematicamente_possivel: boolean
+  }
+  /** True when Pass 3 stripped hard time windows and folga_fixa — review carefully */
+  modo_emergencia?: boolean
 }
 
 export interface SolverOutput {
@@ -652,7 +666,7 @@ export interface SolverOutput {
 
 export interface IaContexto {
   rota: string
-  pagina: 'dashboard' | 'setor_lista' | 'setor_detalhe' | 'escala' | 'escalas_hub' | 'colaborador_lista' | 'colaborador_detalhe' | 'contratos' | 'empresa' | 'feriados' | 'configuracoes' | 'regras' | 'outro'
+  pagina: 'dashboard' | 'setor_lista' | 'setor_detalhe' | 'escala' | 'escalas_hub' | 'colaborador_lista' | 'colaborador_detalhe' | 'contratos' | 'empresa' | 'feriados' | 'configuracoes' | 'regras' | 'ia' | 'outro'
   setor_id?: number
   colaborador_id?: number
 }
@@ -665,12 +679,24 @@ export interface ToolCall {
   result?: unknown
 }
 
+export interface IaAnexo {
+  id: string
+  tipo: 'image' | 'file'
+  mime_type: string
+  nome: string
+  tamanho_bytes: number
+  data_base64?: string        // transient — renderer only, never persisted
+  file_path?: string          // persisted — disk location relative to data dir
+  preview_url?: string        // transient — blob URL for renderer
+}
+
 export interface IaMensagem {
   id: string
   papel: 'usuario' | 'assistente' | 'tool_result'
   conteudo: string
   timestamp: string
   tool_calls?: ToolCall[]
+  anexos?: IaAnexo[]
 }
 
 export interface IaConfiguracao {
@@ -682,6 +708,7 @@ export interface IaConfiguracao {
   // Kept as raw string in DB shape for backward compatibility with existing queries.
   provider_configs_json?: string
   ativo: boolean
+  memoria_automatica: boolean
   criado_em: string
   atualizado_em: string
 }
@@ -690,6 +717,7 @@ export interface IaConversa {
   id: string
   titulo: string
   status: 'ativo' | 'arquivado'
+  resumo_compactado?: string | null
   criado_em: string
   atualizado_em: string
 }
@@ -700,7 +728,7 @@ export interface IaMensagemDB extends IaMensagem {
 
 export type IaStreamEvent =
   | { type: 'text-delta'; stream_id: string; delta: string }
-  | { type: 'tool-call-start'; stream_id: string; tool_call_id: string; tool_name: string; args: Record<string, unknown> }
+  | { type: 'tool-call-start'; stream_id: string; tool_call_id: string; tool_name: string; args: Record<string, unknown>; estimated_seconds?: number }
   | { type: 'tool-result'; stream_id: string; tool_call_id: string; tool_name: string; result: unknown }
   | { type: 'step-finish'; stream_id: string; step_index: number }
   | { type: 'follow-up-start'; stream_id: string }
@@ -712,16 +740,28 @@ export type IaStreamEvent =
 // ============================================================================
 
 // ============================================================================
+// MEMORIAS IA — fatos curtos do RH, sempre injetados
+// ============================================================================
+
+export interface IaMemoria {
+  id: number
+  conteudo: string
+  criada_em: string
+  atualizada_em: string
+}
+
+// ============================================================================
 // KNOWLEDGE LAYER — RAG + Knowledge Graph
 // ============================================================================
 
 export interface KnowledgeSource {
   id: number
-  tipo: 'manual' | 'auto_capture'
+  tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario' | 'session' | 'auto_extract'
   titulo: string
   conteudo_original: string
   metadata: Record<string, unknown>
   importance: 'high' | 'low'
+  ativo: boolean
   criada_em: string
   atualizada_em: string
 }
@@ -740,6 +780,7 @@ export interface KnowledgeEntity {
   id: number
   nome: string
   tipo: string
+  origem: 'sistema' | 'usuario'
   valid_from: string
   valid_to: string | null
   criada_em: string

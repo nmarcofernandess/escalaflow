@@ -26,7 +26,7 @@ describe('IA tool schemas (.describe -> JSON Schema)', () => {
   it('expõe descriptions em preflight', () => {
     const params = getToolParameters('preflight')
 
-    expect(params.properties.setor_id.description).toMatch(/get_context/i)
+    expect(params.properties.setor_id.description).toMatch(/contexto autom[áa]tico|consultar/i)
     expect(params.properties.data_inicio.description).toMatch(/YYYY-MM-DD/i)
     expect(params.properties.data_fim.description).toMatch(/YYYY-MM-DD/i)
   })
@@ -35,7 +35,7 @@ describe('IA tool schemas (.describe -> JSON Schema)', () => {
     const gerar = getToolParameters('gerar_escala')
     const ajustar = getToolParameters('ajustar_alocacao')
 
-    expect(gerar.properties.setor_id.description).toMatch(/nome citado pelo usu[áa]rio/i)
+    expect(gerar.properties.setor_id.description).toMatch(/contexto autom[áa]tico/i)
     expect(gerar.properties.rules_override.description).toMatch(/override/i)
     expect(ajustar.properties.status.description).toMatch(/TRABALHO/i)
     expect(ajustar.properties.data.description).toMatch(/YYYY-MM-DD/i)
@@ -50,17 +50,15 @@ describe('IA tool schemas (.describe -> JSON Schema)', () => {
 
   it('expõe descriptions nas tools da Onda 1 restante', () => {
     const preflightCompleto = getToolParameters('preflight_completo')
-    const obterRegra = getToolParameters('obter_regra_horario_colaborador')
     const salvarRegra = getToolParameters('salvar_regra_horario_colaborador')
     const definirJanela = getToolParameters('definir_janela_colaborador')
     const ajustarHorario = getToolParameters('ajustar_horario')
     const diagnosticarEscala = getToolParameters('diagnosticar_escala')
 
     expect(preflightCompleto.properties.regimes_override.description).toMatch(/override/i)
-    expect(obterRegra.properties.colaborador_id.description).toMatch(/buscar_colaborador/i)
     expect(salvarRegra.properties.folga_fixa_dia_semana.description).toMatch(/SEG\.\.DOM|SEG/i)
     expect(definirJanela.properties.fim_max.description).toMatch(/HH:MM/i)
     expect(ajustarHorario.properties.hora_inicio.description).toMatch(/HH:MM/i)
-    expect(diagnosticarEscala.properties.escala_id.description).toMatch(/get_context|consultar/i)
+    expect(diagnosticarEscala.properties.escala_id.description).toMatch(/contexto autom[áa]tico|consultar/i)
   })
 })

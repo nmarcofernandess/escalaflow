@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Routes, Route, useNavigate } from 'react-router-dom'
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { useIaStore } from '@/store/iaStore'
 import { AppSidebar } from './componentes/AppSidebar'
@@ -21,10 +21,12 @@ import { FeriadosPagina } from './paginas/FeriadosPagina'
 import { ConfiguracoesPagina } from './paginas/ConfiguracoesPagina'
 import { RegrasPagina } from './paginas/RegrasPagina'
 import { MemoriaPagina } from './paginas/MemoriaPagina'
+import { IaPagina } from './paginas/IaPagina'
 import { NaoEncontrado } from './paginas/NaoEncontrado'
 
 export function App() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [tourCompleted, setTourCompleted] = useState(() =>
     localStorage.getItem(TOUR_STORAGE_KEY) === 'true',
   )
@@ -34,12 +36,13 @@ export function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'j' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
+        if (location.pathname === '/ia') return
         toggleAberto()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [toggleAberto])
+  }, [toggleAberto, location.pathname])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -79,11 +82,12 @@ export function App() {
                   <Route path="/configuracoes" element={<ConfiguracoesPagina />} />
                   <Route path="/regras" element={<RegrasPagina />} />
                   <Route path="/memoria" element={<MemoriaPagina />} />
+                  <Route path="/ia" element={<IaPagina />} />
                   <Route path="*" element={<NaoEncontrado />} />
                 </Routes>
               </ErrorBoundary>
             </main>
-            <IaChatPanel />
+            {location.pathname !== '/ia' && <IaChatPanel />}
           </div>
         </SidebarInset>
         <TourSetup />

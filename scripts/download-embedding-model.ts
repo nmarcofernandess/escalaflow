@@ -1,5 +1,5 @@
 /**
- * Download do modelo de embedding local (multilingual-e5-small ONNX quantizado).
+ * Download do modelo de embedding local (multilingual-e5-base ONNX quantizado).
  *
  * Usa @huggingface/transformers que baixa automaticamente do HuggingFace Hub
  * e cacheia em models/embeddings/.
@@ -13,7 +13,7 @@ import fs from 'node:fs'
 const MODEL_DIR = path.join(process.cwd(), 'models', 'embeddings')
 
 async function main() {
-  console.log('[model:download] Iniciando download do multilingual-e5-small...')
+  console.log('[model:download] Iniciando download do multilingual-e5-base...')
   console.log(`[model:download] Destino: ${MODEL_DIR}`)
 
   // Garante diretório existe
@@ -28,7 +28,7 @@ async function main() {
   env.allowRemoteModels = true // Precisa baixar na primeira vez
 
   console.log('[model:download] Baixando e inicializando modelo...')
-  const extractor = await pipeline('feature-extraction', 'Xenova/multilingual-e5-small', {
+  const extractor = await pipeline('feature-extraction', 'Xenova/multilingual-e5-base', {
     quantized: true,
   })
 
@@ -37,6 +37,10 @@ async function main() {
   const output = await extractor('Teste de embedding local', { pooling: 'mean', normalize: true })
   const dims = (output.data as Float32Array).length
   console.log(`[model:download] OK! Dimensões: ${dims}`)
+  if (dims !== 768) {
+    console.error(`[model:download] ERRO: Esperava 768 dimensões, recebeu ${dims}!`)
+    process.exit(1)
+  }
 
   // Verificar tamanho
   const totalSize = getDirSize(MODEL_DIR)

@@ -1,8 +1,13 @@
 # SPEC: Reescrita do system-prompt.ts
 
-## Contexto
+> **Status: CONCLUIDA (2026-02-24)**
+> Reescrita executada com sucesso. Prompt agora tem ~370 linhas, 9 secoes.
+> Cleanup v2 subsequente removeu 3 tools (get_context, obter_regra_horario_colaborador, obter_regras_horario_setor) e atualizou workflows.
+> Este documento e referencia historica da spec original.
 
-O system prompt atual (`src/main/ia/system-prompt.ts`) tem **423 linhas** e os evals falham porque o prompt legado "vence" os overlays de runtime. Precisa de reescrita cirurgica — nao um patch, mas um prompt novo baseado no entendimento real do sistema (doc: `docs/flowai/COMO_O_SISTEMA_FUNCIONA.md`).
+## Contexto (historico)
+
+O system prompt atual (`src/main/ia/system-prompt.ts`) tinha **423 linhas** e os evals falhavam porque o prompt legado "vencia" os overlays de runtime. A reescrita foi executada com base no entendimento real do sistema (doc: `docs/flowai/COMO_O_SISTEMA_FUNCIONA.md`).
 
 ## Principios da reescrita
 

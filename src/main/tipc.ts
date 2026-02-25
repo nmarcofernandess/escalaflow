@@ -1,5 +1,5 @@
-import { writeFile } from 'node:fs/promises'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { writeFile, rm } from 'node:fs/promises'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
@@ -27,6 +27,50 @@ const t = tipc.create()
 const { dialog, BrowserWindow, app } = electron
 
 type RegimeEscalaInput = '5X2' | '6X1'
+
+// =============================================================================
+// ANEXOS — persistência em disco
+// =============================================================================
+
+function getAnexosBaseDir(): string {
+  try {
+    if (app?.isPackaged && app.getPath) {
+      return path.join(app.getPath('userData'), 'anexos')
+    }
+  } catch { /* fallback */ }
+  return path.join(__dirname, '../../data/anexos')
+}
+
+function getAnexosConversaDir(conversa_id: string): string {
+  const dir = path.join(getAnexosBaseDir(), conversa_id)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function mimeToExt(mime: string): string {
+  const map: Record<string, string> = {
+    'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif',
+    'image/webp': '.webp', 'image/bmp': '.bmp', 'application/pdf': '.pdf',
+    'text/plain': '.txt', 'text/markdown': '.md',
+  }
+  return map[mime] || '.bin'
+}
+
+async function limparAnexosConversa(conversa_id: string): Promise<void> {
+  const dir = path.join(getAnexosBaseDir(), conversa_id)
+  if (existsSync(dir)) {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+async function limparAnexosArquivadas(): Promise<void> {
+  const arquivadas = await queryAll<{ id: string }>(
+    `SELECT id FROM ia_conversas WHERE status = 'arquivado'`
+  )
+  for (const c of arquivadas) {
+    await limparAnexosConversa(c.id)
+  }
+}
 
 type SimulacaoRegimeOverride = {
   colaborador_id: number
@@ -1807,12 +1851,13 @@ const setoresDeletarDemandaExcecaoData = t.procedure
 const colaboradoresBuscarRegraHorario = t.procedure
   .input<{ colaborador_id: number }>()
   .action(async ({ input }) => {
-    return await queryOne('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', input.colaborador_id) ?? null
+    return await queryAll('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? ORDER BY dia_semana_regra NULLS FIRST', input.colaborador_id)
   })
 
 const colaboradoresSalvarRegraHorario = t.procedure
   .input<{
     colaborador_id: number
+    dia_semana_regra?: string | null
     ativo?: boolean
     perfil_horario_id?: number | null
     inicio_min?: string | null
@@ -1825,7 +1870,19 @@ const colaboradoresSalvarRegraHorario = t.procedure
     folga_fixa_dia_semana?: string | null
   }>()
   .action(async ({ input }) => {
-    const existe = await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ?', input.colaborador_id)
+    const diaSemana = input.dia_semana_regra ?? null
+    const isDiaEspecifico = diaSemana !== null
+
+    // Buscar existente com match exato de dia_semana_regra (NULL-safe)
+    const existe = diaSemana === null
+      ? await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', input.colaborador_id)
+      : await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', input.colaborador_id, diaSemana)
+
+    // Para regras de dia específico, forçar defaults em campos nível-colaborador
+    const domCicloTrabalho = isDiaEspecifico ? 2 : (input.domingo_ciclo_trabalho ?? 2)
+    const domCicloFolga = isDiaEspecifico ? 1 : (input.domingo_ciclo_folga ?? 1)
+    const folgaFixa = isDiaEspecifico ? null : (input.folga_fixa_dia_semana ?? null)
+
     if (existe) {
       await execute(`
         UPDATE colaborador_regra_horario SET
@@ -1836,34 +1893,43 @@ const colaboradoresSalvarRegraHorario = t.procedure
           domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
           domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
           folga_fixa_dia_semana = ?
-        WHERE colaborador_id = ?
+        WHERE id = ?
       `,
         input.ativo !== undefined ? input.ativo : null,
         input.perfil_horario_id ?? null,
         input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
         input.preferencia_turno_soft ?? null,
-        input.domingo_ciclo_trabalho ?? null,
-        input.domingo_ciclo_folga ?? null,
-        input.folga_fixa_dia_semana ?? null,
-        input.colaborador_id
+        domCicloTrabalho,
+        domCicloFolga,
+        folgaFixa,
+        existe.id
       )
+      return await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', existe.id)
     } else {
-      await execute(`
+      const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario
-          (colaborador_id, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio_min, inicio_max, fim_min, fim_max, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         input.colaborador_id,
+        diaSemana,
         input.ativo !== undefined ? input.ativo : true,
         input.perfil_horario_id ?? null,
         input.inicio_min ?? null, input.inicio_max ?? null, input.fim_min ?? null, input.fim_max ?? null,
         input.preferencia_turno_soft ?? null,
-        input.domingo_ciclo_trabalho ?? 2,
-        input.domingo_ciclo_folga ?? 1,
-        input.folga_fixa_dia_semana ?? null
+        domCicloTrabalho,
+        domCicloFolga,
+        folgaFixa
       )
+      return await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', id)
     }
-    return await queryOne('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ?', input.colaborador_id)
+  })
+
+const colaboradoresDeletarRegraHorario = t.procedure
+  .input<{ id: number }>()
+  .action(async ({ input }) => {
+    await execute('DELETE FROM colaborador_regra_horario WHERE id = ?', input.id)
+    return undefined
   })
 
 const colaboradoresListarRegrasExcecaoData = t.procedure
@@ -2122,11 +2188,11 @@ function parsePrice(raw: unknown): number {
 
 function staticGeminiCatalog(): IaModelCatalogResult {
   const models: IaModelCatalogItem[] = [
-    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['flash', 'preview'] },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['flash'] },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['pro'] },
-    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['flash-lite'] },
-    { id: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking Exp', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, tags: ['thinking', 'exp'] },
+    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_000_000, tags: ['flash', 'preview'] },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash'] },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['pro'] },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash-lite'] },
+    { id: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking Exp', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 32_767, tags: ['thinking', 'exp'] },
   ]
   return {
     provider: 'gemini',
@@ -2220,10 +2286,10 @@ const iaConfiguracaoSalvar = t.procedure
     const providerConfigsJson = serializeIaProviderConfigs(parseIaProviderConfigs(input.provider_configs_json))
 
     if (existe) {
-      await execute(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, provider_configs_json = ?, ativo = 1, atualizado_em = NOW() WHERE id = ?`,
+      await execute(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, provider_configs_json = ?, ativo = TRUE, atualizado_em = NOW() WHERE id = ?`,
         input.provider, input.api_key, input.modelo, providerConfigsJson, existe.id)
     } else {
-      await execute(`INSERT INTO configuracao_ia (provider, api_key, modelo, provider_configs_json, ativo) VALUES (?, ?, ?, ?, 1)`,
+      await execute(`INSERT INTO configuracao_ia (provider, api_key, modelo, provider_configs_json, ativo) VALUES (?, ?, ?, ?, TRUE)`,
         input.provider, input.api_key, input.modelo, providerConfigsJson)
     }
 
@@ -2261,13 +2327,72 @@ const iaModelosCatalogo = t.procedure
     return await getIaModelCatalog(input.provider, input.provider_config, Boolean(input.force_refresh))
   })
 
+const iaChatLerArquivo = t.procedure
+  .input<{ conversa_id: string }>()
+  .action(async ({ input }) => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) throw new Error('Nenhuma janela ativa')
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'Imagens e Documentos', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf', 'txt', 'md'] },
+      ],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const filePath = result.filePaths[0]
+    const buf = readFileSync(filePath)
+    if (buf.length > 10 * 1024 * 1024) throw new Error('Arquivo excede 10 MB')
+    const ext = path.extname(filePath).toLowerCase()
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+      '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
+    }
+    const mime = mimeMap[ext] || 'application/octet-stream'
+    const id = crypto.randomUUID()
+    // Salvar em disco
+    const dir = getAnexosConversaDir(input.conversa_id)
+    const destExt = mimeToExt(mime)
+    const destPath = path.join(dir, `${id}${destExt}`)
+    writeFileSync(destPath, buf)
+    return {
+      id,
+      data_base64: buf.toString('base64'),
+      mime_type: mime,
+      nome: path.basename(filePath),
+      tamanho_bytes: buf.length,
+      file_path: destPath,
+    }
+  })
+
+// Salvar anexo vindo do renderer (drag & drop, paste) em disco
+const iaChatSalvarAnexo = t.procedure
+  .input<{ conversa_id: string; id: string; data_base64: string; mime_type: string; nome: string; tamanho_bytes: number }>()
+  .action(async ({ input }) => {
+    const dir = getAnexosConversaDir(input.conversa_id)
+    const ext = mimeToExt(input.mime_type)
+    const destPath = path.join(dir, `${input.id}${ext}`)
+    const buf = Buffer.from(input.data_base64, 'base64')
+    writeFileSync(destPath, buf)
+    return { file_path: destPath }
+  })
+
+// Ler anexo do disco pra preview (ao recarregar histórico)
+const iaChatLerAnexoPreview = t.procedure
+  .input<{ file_path: string }>()
+  .action(async ({ input }) => {
+    if (!existsSync(input.file_path)) return null
+    const buf = readFileSync(input.file_path)
+    return { data_base64: buf.toString('base64') }
+  })
+
 const iaChatEnviar = t.procedure
-  .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[]; contexto?: import('@shared/index').IaContexto; stream_id?: string }>()
+  .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[]; contexto?: import('@shared/index').IaContexto; stream_id?: string; conversa_id?: string; anexos?: import('@shared/index').IaAnexo[] }>()
   .action(async ({ input }) => {
     if (input.stream_id) {
-      return await iaEnviarMensagemStream(input.mensagem, input.historico, input.stream_id, input.contexto)
+      return await iaEnviarMensagemStream(input.mensagem, input.historico, input.stream_id, input.contexto, input.conversa_id, input.anexos)
     }
-    return await iaEnviarMensagem(input.mensagem, input.historico, input.contexto)
+    return await iaEnviarMensagem(input.mensagem, input.historico, input.contexto, input.conversa_id, input.anexos)
   })
 
 // =============================================================================
@@ -2299,8 +2424,9 @@ const iaConversasObter = t.procedure
       conteudo: string
       timestamp: string
       tool_calls_json: string | null
+      anexos_meta_json: string | null
     }>(
-      `SELECT id, conversa_id, papel, conteudo, timestamp, tool_calls_json FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC`,
+      `SELECT id, conversa_id, papel, conteudo, timestamp, tool_calls_json, anexos_meta_json FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC`,
       input.id)
 
     const mensagens: import('@shared/index').IaMensagem[] = mensagensRaw.map((m) => ({
@@ -2311,6 +2437,9 @@ const iaConversasObter = t.procedure
       timestamp: m.timestamp,
       tool_calls: m.tool_calls_json
         ? JSON.parse(m.tool_calls_json)
+        : undefined,
+      anexos: m.anexos_meta_json
+        ? JSON.parse(m.anexos_meta_json)
         : undefined,
     }))
 
@@ -2341,6 +2470,7 @@ const iaConversasArquivar = t.procedure
     await execute(
       `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = NOW() WHERE id = ?`,
       input.id)
+    await limparAnexosConversa(input.id)
   })
 
 const iaConversasRestaurar = t.procedure
@@ -2354,6 +2484,7 @@ const iaConversasRestaurar = t.procedure
 const iaConversasDeletar = t.procedure
   .input<{ id: string }>()
   .action(async ({ input }) => {
+    await limparAnexosConversa(input.id)
     await execute(`DELETE FROM ia_conversas WHERE id = ?`, input.id)
   })
 
@@ -2367,28 +2498,208 @@ const iaMensagensSalvar = t.procedure
       ? JSON.stringify(mensagem.tool_calls)
       : null
 
+    const anexosMetaJson = mensagem.anexos && mensagem.anexos.length > 0
+      ? JSON.stringify(mensagem.anexos.map(a => ({ id: a.id, tipo: a.tipo, mime_type: a.mime_type, nome: a.nome, tamanho_bytes: a.tamanho_bytes, file_path: a.file_path })))
+      : null
+
     await execute(
-      `INSERT INTO ia_mensagens (id, conversa_id, papel, conteudo, timestamp, tool_calls_json) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+      `INSERT INTO ia_mensagens (id, conversa_id, papel, conteudo, timestamp, tool_calls_json, anexos_meta_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
       mensagem.id,
       conversa_id,
       mensagem.papel,
       mensagem.conteudo,
       mensagem.timestamp,
-      toolCallsJson
+      toolCallsJson,
+      anexosMetaJson
     )
+    // Invalidar cache de compaction (nova msg muda o historico)
     await execute(
-      `UPDATE ia_conversas SET atualizado_em = NOW() WHERE id = ?`,
+      `UPDATE ia_conversas SET atualizado_em = NOW(), resumo_compactado = NULL WHERE id = ?`,
       conversa_id)
   })
 
 const iaConversasArquivarTodas = t.procedure.action(async () => {
+  // Busca IDs ativas ANTES de arquivar (pra limpar anexos)
+  const ativas = await queryAll<{ id: string }>(
+    `SELECT id FROM ia_conversas WHERE status = 'ativo'`)
   await execute(
     `UPDATE ia_conversas SET status = 'arquivado', atualizado_em = NOW() WHERE status = 'ativo'`)
+  for (const c of ativas) {
+    await limparAnexosConversa(c.id)
+  }
 })
 
 const iaConversasDeletarArquivadas = t.procedure.action(async () => {
+  await limparAnexosArquivadas()
   await execute(`DELETE FROM ia_conversas WHERE status = 'arquivado'`)
 })
+
+// =============================================================================
+// IA MENSAGENS — Edit + Export
+// =============================================================================
+
+const iaMensagensAtualizar = t.procedure
+  .input<{ id: string; conteudo: string }>()
+  .action(async ({ input }) => {
+    await execute('UPDATE ia_mensagens SET conteudo = ? WHERE id = ?', input.conteudo, input.id)
+    return { ok: true }
+  })
+
+const iaMensagensDeletarApos = t.procedure
+  .input<{ conversa_id: string; timestamp: string }>()
+  .action(async ({ input }) => {
+    await execute(
+      'DELETE FROM ia_mensagens WHERE conversa_id = ? AND timestamp > ?',
+      input.conversa_id,
+      input.timestamp,
+    )
+    // Invalida compaction (edicao muda historico)
+    await execute(
+      'UPDATE ia_conversas SET resumo_compactado = NULL WHERE id = ?',
+      input.conversa_id,
+    )
+    return { ok: true }
+  })
+
+const iaConversasExportar = t.procedure
+  .input<{ conversa_id: string; formato: 'md' | 'json' }>()
+  .action(async ({ input }) => {
+    const { dialog } = await import('electron')
+    const { writeFile } = await import('node:fs/promises')
+
+    const msgs = await queryAll<{
+      papel: string; conteudo: string; timestamp: string
+      tool_calls_json: string | null; anexos_meta_json: string | null
+    }>(
+      'SELECT papel, conteudo, timestamp, tool_calls_json, anexos_meta_json FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp',
+      input.conversa_id,
+    )
+    const conversa = await queryOne<{ titulo: string }>(
+      'SELECT titulo FROM ia_conversas WHERE id = ?',
+      input.conversa_id,
+    )
+    const titulo = conversa?.titulo ?? 'Chat IA'
+
+    const mensagens = msgs.map(m => ({
+      ...m,
+      tool_calls: m.tool_calls_json ? JSON.parse(m.tool_calls_json) : undefined,
+      anexos: m.anexos_meta_json ? JSON.parse(m.anexos_meta_json) : undefined,
+    }))
+
+    let content: string
+    let ext: string
+    if (input.formato === 'json') {
+      content = JSON.stringify({ titulo, exportado_em: new Date().toISOString(), mensagens }, null, 2)
+      ext = 'json'
+    } else {
+      // Gera markdown inline (sem importar do renderer)
+      const lines: string[] = [`# ${titulo}`, `*Exportado em ${new Date().toLocaleString('pt-BR')}*`, '']
+      for (const m of mensagens) {
+        if (m.papel === 'tool_result') continue
+        lines.push(`### ${m.papel === 'usuario' ? '**Voce**' : '**IA**'}`)
+        lines.push(m.conteudo)
+        if (m.tool_calls?.length) {
+          lines.push('', '<details><summary>Ferramentas utilizadas</summary>', '')
+          for (const tc of m.tool_calls) {
+            lines.push(`- **${tc.name}**${tc.args ? `: \`${JSON.stringify(tc.args)}\`` : ''}`)
+          }
+          lines.push('</details>')
+        }
+        if (m.anexos?.length) {
+          lines.push('')
+          for (const a of m.anexos) lines.push(`> Anexo: ${a.nome} (${a.mime_type})`)
+        }
+        lines.push('', '---', '')
+      }
+      content = lines.join('\n')
+      ext = 'md'
+    }
+
+    const slug = titulo.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-')
+    const { filePath } = await dialog.showSaveDialog({
+      title: 'Exportar conversa',
+      defaultPath: `escalaflow-chat-${slug}.${ext}`,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    })
+
+    if (filePath) {
+      await writeFile(filePath, content, 'utf-8')
+      return { exportado: true, caminho: filePath }
+    }
+    return { exportado: false }
+  })
+
+// =============================================================================
+// IA SESSION PROCESSING — Phase 5
+// =============================================================================
+
+const iaSessaoProcessar = t.procedure
+  .input<{ conversa_id: string }>()
+  .action(async ({ input }) => {
+    const { indexSession, extractMemories } = await import('./ia/session-processor')
+    const { buildModelFactory } = await import('./ia/config')
+
+    // Carrega config
+    const config = await queryOne<import('@shared/index').IaConfiguracao>(
+      'SELECT * FROM configuracao_ia LIMIT 1')
+    if (!config) return { ok: true }
+
+    // Carrega conversa + mensagens
+    const conversa = await queryOne<{ id: string; titulo: string }>(
+      'SELECT id, titulo FROM ia_conversas WHERE id = ?', input.conversa_id)
+    if (!conversa) return { ok: true }
+
+    const mensagensRaw = await queryAll<{
+      id: string; conversa_id: string; papel: string; conteudo: string; timestamp: string
+    }>(
+      'SELECT id, conversa_id, papel, conteudo, timestamp FROM ia_mensagens WHERE conversa_id = ? ORDER BY timestamp ASC',
+      input.conversa_id)
+
+    if (mensagensRaw.length < 2) return { ok: true }
+
+    const mensagens: import('@shared/index').IaMensagem[] = mensagensRaw.map((m) => ({
+      id: m.id,
+      papel: m.papel as import('@shared/index').IaMensagem['papel'],
+      conteudo: m.conteudo,
+      timestamp: m.timestamp,
+    }))
+
+    // 1. Session Indexing — SEMPRE (gratis, embedding local)
+    try {
+      await indexSession(input.conversa_id, conversa.titulo, mensagens)
+      console.log('[Session] Indexed:', conversa.titulo)
+    } catch (err) {
+      console.warn('[Session] indexSession falhou:', (err as Error).message)
+    }
+
+    // 2. Smart Extraction — só se toggle ON + API configurada
+    if (config.memoria_automatica) {
+      const factory = buildModelFactory(config)
+      if (factory) {
+        try {
+          await extractMemories(input.conversa_id, mensagens, factory.createModel, factory.modelo)
+          console.log('[Session] Extracted memories:', conversa.titulo)
+        } catch (err) {
+          console.warn('[Session] extractMemories falhou:', (err as Error).message)
+        }
+      }
+    }
+
+    return { ok: true }
+  })
+
+const iaConfigMemoriaAutomatica = t.procedure
+  .input<{ valor?: boolean }>()
+  .action(async ({ input }) => {
+    if (input.valor !== undefined) {
+      await execute(
+        'UPDATE configuracao_ia SET memoria_automatica = ? WHERE id = 1',
+        input.valor)
+    }
+    const config = await queryOne<{ memoria_automatica: boolean }>(
+      'SELECT memoria_automatica FROM configuracao_ia LIMIT 1')
+    return { memoria_automatica: config?.memoria_automatica ?? true }
+  })
 
 // =============================================================================
 // EMPRESA HORÁRIO SEMANA (2 handlers) — v5
@@ -2462,129 +2773,193 @@ const regrasResetarRegra = t.procedure
 // BACKUP / RESTORE (2 handlers)
 // =============================================================================
 
-const BACKUP_TABLES = [
-  'empresa',
-  'tipos_contrato',
-  'setores',
-  'demandas',
-  'colaboradores',
-  'excecoes',
-  'escalas',
-  'alocacoes',
-  'funcoes',
-  'feriados',
-  'setor_horario_semana',
-  'empresa_horario_semana',
-  'contrato_perfis_horario',
-  'colaborador_regra_horario',
-  'colaborador_regra_horario_excecao_data',
-  'demandas_excecao_data',
-  'escala_ciclo_modelos',
-  'escala_ciclo_itens',
-  'escala_decisoes',
-  'escala_comparacao_demanda',
-  'configuracao_ia',
-  'regra_empresa',
-  'ia_conversas',
-  'ia_mensagens',
+// Tabelas agrupadas por categoria para backup seletivo
+// Estrutura do ZIP:
+//   _meta.json
+//   cadastros/empresa.json, cadastros/setores.json, ...
+//   conhecimento/ia_memorias.json, conhecimento/knowledge_chunks.json, ...
+//   conversas/ia_conversas.json, conversas/ia_mensagens.json
+
+const BACKUP_CATEGORIAS = {
+  cadastros: [
+    'empresa', 'tipos_contrato', 'setores', 'demandas', 'colaboradores',
+    'excecoes', 'escalas', 'alocacoes', 'funcoes', 'feriados',
+    'setor_horario_semana', 'empresa_horario_semana', 'contrato_perfis_horario',
+    'colaborador_regra_horario', 'colaborador_regra_horario_excecao_data',
+    'demandas_excecao_data', 'escala_ciclo_modelos', 'escala_ciclo_itens',
+    'escala_decisoes', 'escala_comparacao_demanda', 'configuracao_ia', 'regra_empresa',
+  ],
+  conhecimento: [
+    'ia_memorias', 'knowledge_sources', 'knowledge_chunks',
+    'knowledge_entities', 'knowledge_relations',
+  ],
+  conversas: [
+    'ia_conversas', 'ia_mensagens',
+  ],
+} as const
+
+// Ordem de import (pais antes de filhas por FK)
+const IMPORT_ORDER = [
+  'empresa', 'tipos_contrato', 'setores', 'funcoes', 'contrato_perfis_horario',
+  'colaboradores', 'demandas', 'excecoes', 'setor_horario_semana', 'empresa_horario_semana',
+  'colaborador_regra_horario', 'colaborador_regra_horario_excecao_data',
+  'demandas_excecao_data', 'feriados', 'escalas', 'alocacoes',
+  'escala_decisoes', 'escala_comparacao_demanda', 'escala_ciclo_modelos', 'escala_ciclo_itens',
+  'configuracao_ia', 'regra_empresa',
+  'ia_memorias', 'knowledge_sources', 'knowledge_chunks', 'knowledge_entities', 'knowledge_relations',
+  'ia_conversas', 'ia_mensagens',
 ] as const
 
-const dadosExportar = t.procedure.action(async (): Promise<{ filepath: string } | null> => {
+type BackupOpcoes = {
+  incluir_cadastros?: boolean
+  incluir_conhecimento?: boolean
+  incluir_historico_chat?: boolean
+}
+
+const dadosExportar = t.procedure
+  .input<BackupOpcoes>()
+  .action(async ({ input }): Promise<{ filepath: string; tamanho_mb: number } | null> => {
+  const AdmZip = (await import('adm-zip')).default
+
+  const incluir = {
+    cadastros: input?.incluir_cadastros !== false,
+    conhecimento: input?.incluir_conhecimento !== false,
+    conversas: input?.incluir_historico_chat !== false,
+  }
+
+  const categoriasAtivas = Object.entries(incluir)
+    .filter(([, v]) => v)
+    .map(([k]) => k as keyof typeof BACKUP_CATEGORIAS)
+
+  if (categoriasAtivas.length === 0) return null
+
   const now = new Date()
   const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
   const result = await dialog.showSaveDialog({
-    defaultPath: `escalaflow-backup-${ts}.json`,
-    filters: [{ name: 'JSON', extensions: ['json'] }],
+    defaultPath: `escalaflow-backup-${ts}.zip`,
+    filters: [{ name: 'EscalaFlow Backup', extensions: ['zip'] }],
   })
 
   if (result.canceled || !result.filePath) return null
 
-  const payload: Record<string, unknown[]> = {}
+  const zip = new AdmZip()
+  let totalTabelas = 0
+  let totalRegistros = 0
 
-  for (const table of BACKUP_TABLES) {
-    try {
-      payload[table] = await queryAll(`SELECT * FROM ${table}`)
-    } catch {
-      // tabela pode não existir em DBs antigos — ignora
+  for (const categoria of categoriasAtivas) {
+    const tables = BACKUP_CATEGORIAS[categoria]
+    for (const table of tables) {
+      try {
+        const rows = await queryAll(`SELECT * FROM ${table}`)
+        if (rows.length > 0) {
+          zip.addFile(
+            `${categoria}/${table}.json`,
+            Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'),
+          )
+          totalTabelas++
+          totalRegistros += rows.length
+        }
+      } catch {
+        // tabela pode não existir em DBs antigos — ignora
+      }
     }
   }
 
-  const backup = {
-    _meta: {
-      app: 'escalaflow',
-      versao: app.getVersion(),
-      criado_em: now.toISOString(),
-      tabelas: Object.keys(payload).length,
-      registros: Object.values(payload).reduce((acc, rows) => acc + rows.length, 0),
-    },
-    dados: payload,
+  // Metadata no root do zip
+  const meta = {
+    app: 'escalaflow',
+    versao: app.getVersion(),
+    criado_em: now.toISOString(),
+    tabelas: totalTabelas,
+    registros: totalRegistros,
+    categorias: incluir,
   }
+  zip.addFile('_meta.json', Buffer.from(JSON.stringify(meta, null, 2), 'utf-8'))
 
-  await writeFile(result.filePath, JSON.stringify(backup, null, 2), 'utf-8')
-  return { filepath: result.filePath }
+  zip.writeZip(result.filePath)
+
+  const stats = await import('node:fs/promises').then(fs => fs.stat(result.filePath))
+  const tamanhoMb = Math.round((stats.size / 1024 / 1024) * 100) / 100
+
+  return { filepath: result.filePath, tamanho_mb: tamanhoMb }
 })
 
-const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; registros: number } | null> => {
+const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; registros: number; categorias: string[] } | null> => {
   const result = await dialog.showOpenDialog({
-    filters: [{ name: 'JSON', extensions: ['json'] }],
+    filters: [
+      { name: 'EscalaFlow Backup', extensions: ['zip'] },
+      { name: 'JSON (legado)', extensions: ['json'] },
+    ],
     properties: ['openFile'],
   })
 
   if (result.canceled || !result.filePaths[0]) return null
 
-  const raw = readFileSync(result.filePaths[0], 'utf-8')
-  const backup = JSON.parse(raw) as {
-    _meta?: { app?: string }
-    dados?: Record<string, unknown[]>
+  const filePath = result.filePaths[0]
+
+  // Detecta formato: ZIP ou JSON legado
+  const isZip = filePath.toLowerCase().endsWith('.zip')
+
+  // Parseia o backup — normaliza ambos formatos pra { dados: Record<table, rows[]>, categorias: string[] }
+  let dados: Record<string, unknown[]> = {}
+  let categorias: string[] = []
+
+  if (isZip) {
+    const AdmZip = (await import('adm-zip')).default
+    const zip = new AdmZip(filePath)
+    const entries = zip.getEntries()
+
+    // Valida meta
+    const metaEntry = entries.find(e => e.entryName === '_meta.json')
+    if (!metaEntry) throw new Error('Arquivo ZIP invalido. Nenhum _meta.json encontrado.')
+    const meta = JSON.parse(metaEntry.getData().toString('utf-8'))
+    if (meta?.app !== 'escalaflow') throw new Error('Arquivo de backup invalido. Selecione um backup do EscalaFlow.')
+
+    // Lê cada JSON dentro das pastas
+    for (const entry of entries) {
+      if (entry.isDirectory || entry.entryName === '_meta.json') continue
+      const parts = entry.entryName.split('/')
+      if (parts.length !== 2) continue
+      const [categoria, filename] = parts
+      const table = filename.replace('.json', '')
+      if (!categorias.includes(categoria)) categorias.push(categoria)
+      try {
+        const rows = JSON.parse(entry.getData().toString('utf-8'))
+        if (Array.isArray(rows)) dados[table] = rows
+      } catch {
+        // arquivo corrompido dentro do zip — ignora
+      }
+    }
+  } else {
+    // JSON legado
+    const raw = readFileSync(filePath, 'utf-8')
+    const backup = JSON.parse(raw) as { _meta?: { app?: string }; dados?: Record<string, unknown[]> }
+    if (!backup?._meta?.app || backup._meta.app !== 'escalaflow') {
+      throw new Error('Arquivo de backup invalido. Selecione um arquivo exportado pelo EscalaFlow.')
+    }
+    if (!backup.dados || typeof backup.dados !== 'object') {
+      throw new Error('Arquivo de backup corrompido. Nenhum dado encontrado.')
+    }
+    dados = backup.dados
+    categorias = ['legado']
   }
 
-  if (!backup?._meta?.app || backup._meta.app !== 'escalaflow') {
-    throw new Error('Arquivo de backup invalido. Selecione um arquivo exportado pelo EscalaFlow.')
+  if (Object.keys(dados).length === 0) {
+    throw new Error('Nenhuma tabela encontrada no backup.')
   }
-
-  if (!backup.dados || typeof backup.dados !== 'object') {
-    throw new Error('Arquivo de backup corrompido. Nenhum dado encontrado.')
-  }
-
-  // Ordem importa por causa de FKs — tabelas pai antes de filhas
-  const IMPORT_ORDER = [
-    'empresa',
-    'tipos_contrato',
-    'setores',
-    'funcoes',
-    'contrato_perfis_horario',
-    'colaboradores',
-    'demandas',
-    'excecoes',
-    'setor_horario_semana',
-    'empresa_horario_semana',
-    'colaborador_regra_horario',
-    'colaborador_regra_horario_excecao_data',
-    'demandas_excecao_data',
-    'feriados',
-    'escalas',
-    'alocacoes',
-    'escala_decisoes',
-    'escala_comparacao_demanda',
-    'escala_ciclo_modelos',
-    'escala_ciclo_itens',
-    'configuracao_ia',
-    'regra_empresa',
-    'ia_conversas',
-    'ia_mensagens',
-  ] as const
 
   let totalTabelas = 0
   let totalRegistros = 0
 
   return await transaction(async () => {
-    // Desabilita FK checks durante o import
     await execDDL('SET session_replication_role = \'replica\'')
 
     try {
-      // Limpa todas as tabelas na ordem inversa (filhas antes de pais)
+      // Só limpa tabelas presentes no backup
+      const backupTables = new Set(Object.keys(dados))
       for (let i = IMPORT_ORDER.length - 1; i >= 0; i--) {
         const table = IMPORT_ORDER[i]
+        if (!backupTables.has(table)) continue
         try {
           await execute(`DELETE FROM ${table}`)
         } catch {
@@ -2594,7 +2969,7 @@ const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; re
 
       // Insere na ordem certa (pais antes de filhas)
       for (const table of IMPORT_ORDER) {
-        const rows = backup.dados![table]
+        const rows = dados[table]
         if (!rows || !Array.isArray(rows) || rows.length === 0) continue
 
         const sample = rows[0] as Record<string, unknown>
@@ -2614,12 +2989,54 @@ const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; re
         totalRegistros += rows.length
       }
     } finally {
-      // Reabilita FK checks
       await execDDL('SET session_replication_role = \'origin\'')
     }
 
-    return { tabelas: totalTabelas, registros: totalRegistros }
+    return { tabelas: totalTabelas, registros: totalRegistros, categorias }
   })
+})
+
+// =============================================================================
+// IA MEMÓRIAS (4 handlers)
+// =============================================================================
+
+const IA_MEMORIAS_LIMIT = 20
+
+const iaMemoriasListar = t.procedure.action(async () => {
+  return await queryAll<import('@shared/index').IaMemoria>(
+    'SELECT * FROM ia_memorias ORDER BY atualizada_em DESC')
+})
+
+const iaMemoriasSalvar = t.procedure
+  .input<{ id?: number; conteudo: string }>()
+  .action(async ({ input }) => {
+    if (input.id) {
+      await execute(
+        'UPDATE ia_memorias SET conteudo = $1, atualizada_em = NOW() WHERE id = $2',
+        input.conteudo, input.id)
+      return await queryOne<import('@shared/index').IaMemoria>(
+        'SELECT * FROM ia_memorias WHERE id = $1', input.id)
+    }
+    // Soft limit: se já tem 20, recusar
+    const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM ia_memorias')
+    if ((countRow?.c ?? 0) >= IA_MEMORIAS_LIMIT) {
+      throw new Error(`Limite de ${IA_MEMORIAS_LIMIT} memórias atingido. Remova uma antes de adicionar.`)
+    }
+    const id = await insertReturningId(
+      'INSERT INTO ia_memorias (conteudo) VALUES ($1)', input.conteudo)
+    return await queryOne<import('@shared/index').IaMemoria>(
+      'SELECT * FROM ia_memorias WHERE id = $1', id)
+  })
+
+const iaMemoriasRemover = t.procedure
+  .input<{ id: number }>()
+  .action(async ({ input }) => {
+    await execute('DELETE FROM ia_memorias WHERE id = $1', input.id)
+  })
+
+const iaMemoriasContar = t.procedure.action(async () => {
+  const row = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM ia_memorias')
+  return { total: row?.c ?? 0, limite: IA_MEMORIAS_LIMIT }
 })
 
 // =============================================================================
@@ -2643,11 +3060,12 @@ const knowledgeStats = t.procedure.action(async () => {
     tipo: string
     titulo: string
     importance: string
+    ativo: boolean
     criada_em: string
     atualizada_em: string
     chunks_count: number
   }>(`
-    SELECT ks.id, ks.tipo, ks.titulo, ks.importance, ks.criada_em, ks.atualizada_em,
+    SELECT ks.id, ks.tipo, ks.titulo, ks.importance, ks.ativo, ks.criada_em, ks.atualizada_em,
            COUNT(kc.id)::int as chunks_count
     FROM knowledge_sources ks
     LEFT JOIN knowledge_chunks kc ON kc.source_id = ks.id
@@ -2675,7 +3093,7 @@ const knowledgeEscolherArquivo = t.procedure.action(async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
     filters: [
-      { name: 'Documentos', extensions: ['md', 'txt'] }
+      { name: 'Documentos', extensions: ['md', 'txt', 'pdf'] }
     ]
   })
   if (result.canceled || !result.filePaths.length) return null
@@ -2708,6 +3126,197 @@ const knowledgeRemoverFonte = t.procedure
   .action(async ({ input }) => {
   await execute('DELETE FROM knowledge_sources WHERE id = $1', input.id)
   return { ok: true }
+})
+
+const knowledgeToggleAtivo = t.procedure
+  .input<{ id: number; ativo: boolean }>()
+  .action(async ({ input }) => {
+  await execute(
+    'UPDATE knowledge_sources SET ativo = $1, atualizada_em = NOW() WHERE id = $2',
+    input.ativo,
+    input.id,
+  )
+  return { ok: true }
+})
+
+const knowledgeObterTextoOriginal = t.procedure
+  .input<{ id: number }>()
+  .action(async ({ input }) => {
+  const row = await queryOne<{
+    titulo: string
+    conteudo_original: string
+    metadata: string
+  }>(
+    'SELECT titulo, conteudo_original, metadata::text as metadata FROM knowledge_sources WHERE id = $1',
+    input.id,
+  )
+  if (!row) throw new Error('Fonte não encontrada')
+  let context_hint: string | null = null
+  try {
+    const meta = JSON.parse(row.metadata)
+    context_hint = meta?.context_hint ?? null
+  } catch { /* ok */ }
+  return { titulo: row.titulo, conteudo_original: row.conteudo_original, context_hint }
+})
+
+const knowledgeExtrairTexto = t.procedure
+  .input<{ caminho_arquivo: string }>()
+  .action(async ({ input }) => {
+  const fs = require('node:fs') as typeof import('node:fs')
+  const p = require('node:path') as typeof import('node:path')
+
+  if (!fs.existsSync(input.caminho_arquivo)) {
+    throw new Error(`Arquivo não encontrado: ${input.caminho_arquivo}`)
+  }
+
+  const ext = p.extname(input.caminho_arquivo).toLowerCase()
+  const nome_arquivo = p.basename(input.caminho_arquivo, ext)
+
+  if (ext === '.pdf') {
+    try {
+      // pdf-parse v1 exports a single function
+      const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string }>
+      const buffer = fs.readFileSync(input.caminho_arquivo)
+      const data = await pdfParse(buffer)
+      return { texto: data.text, nome_arquivo }
+    } catch (err: any) {
+      throw new Error(`Não foi possível extrair texto do PDF. Tente copiar e colar o conteúdo. (${err?.message})`)
+    }
+  }
+
+  // .md, .txt, ou qualquer texto
+  const texto = fs.readFileSync(input.caminho_arquivo, 'utf-8')
+  return { texto, nome_arquivo }
+})
+
+const knowledgeGerarMetadataIa = t.procedure
+  .input<{ texto: string; campo: 'titulo' | 'quando_consultar' | 'texto' }>()
+  .action(async ({ input }) => {
+  const { generateText } = await import('ai')
+  const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
+  const { createOpenRouter } = await import('@openrouter/ai-sdk-provider')
+  const { resolveProviderApiKey, resolveModel } = await import('./ia/config')
+
+  const config = await queryOne<{
+    provider: 'gemini' | 'openrouter'
+    api_key: string
+    modelo: string
+    provider_configs_json?: string
+  }>('SELECT * FROM configuracao_ia LIMIT 1')
+
+  if (!config) throw new Error('IA não configurada.')
+
+  const apiKey = resolveProviderApiKey(config as any)
+  if (!apiKey) throw new Error('API Key não configurada.')
+
+  const modelo = resolveModel(config as any, config.provider)
+
+  let createModel: (m: string) => any
+  if (config.provider === 'gemini') {
+    const google = createGoogleGenerativeAI({ apiKey })
+    createModel = (m) => google(m)
+  } else {
+    const openrouter = createOpenRouter({ apiKey })
+    createModel = (m) => openrouter(m)
+  }
+
+  const prompts: Record<string, string> = {
+    titulo: `Gere um título curto (máximo 80 caracteres) para o seguinte documento. Responda APENAS com o título, sem aspas, sem explicação.\n\n${input.texto.slice(0, 3000)}`,
+    quando_consultar: `Gere uma frase curta (máximo 200 caracteres) descrevendo QUANDO a IA deve consultar este documento. Exemplo: "Quando o usuário perguntar sobre regras de hora extra" ou "Quando precisar de informações sobre o acordo coletivo". Responda APENAS com a frase, sem aspas.\n\n${input.texto.slice(0, 3000)}`,
+    texto: `Corrija a ortografia e gramática do texto abaixo SEM mudar o conteúdo ou significado. Mantenha a formatação original (markdown, listas, etc). Responda APENAS com o texto corrigido.\n\n${input.texto.slice(0, 8000)}`,
+  }
+
+  const prompt = prompts[input.campo]
+  if (!prompt) throw new Error(`Campo inválido: ${input.campo}`)
+
+  const result = await generateText({
+    model: createModel(modelo),
+    prompt,
+  })
+
+  return { resultado: result.text.trim() }
+})
+
+const knowledgeImportarCompleto = t.procedure
+  .input<{ titulo: string; conteudo: string; quando_consultar: string }>()
+  .action(async ({ input }) => {
+  const { ingestKnowledge } = await import('./knowledge/ingest')
+
+  // Prepend context hint como HTML comment
+  const conteudoComHint = input.quando_consultar
+    ? `<!-- quando_usar: ${input.quando_consultar} -->\n${input.conteudo}`
+    : input.conteudo
+
+  const result = await ingestKnowledge(input.titulo, conteudoComHint, 'high', {
+    tipo: 'manual',
+    context_hint: input.quando_consultar,
+  })
+
+  return result
+})
+
+// =============================================================================
+// KNOWLEDGE GRAPH — Fase 6
+// =============================================================================
+
+const knowledgeRebuildGraph = t.procedure
+  .input<{ origem?: 'sistema' | 'usuario' }>()
+  .action(async ({ input }) => {
+    const { rebuildGraph } = await import('./knowledge/graph')
+    const { buildModelFactory } = await import('./ia/config')
+
+    const config = await queryOne<import('@shared/index').IaConfiguracao>(
+      'SELECT * FROM configuracao_ia LIMIT 1')
+    if (!config) throw new Error('IA nao configurada. Configure um provider nas Configuracoes.')
+
+    const factory = buildModelFactory(config)
+    if (!factory) throw new Error('API Key nao configurada. Configure nas Configuracoes.')
+
+    const origem = input?.origem ?? 'usuario'
+    const result = await rebuildGraph(factory.createModel, factory.modelo, origem)
+    return result
+  })
+
+const knowledgeGraphStats = t.procedure
+  .input<{ origem?: 'sistema' | 'usuario' }>()
+  .action(async ({ input }) => {
+    const { graphStats } = await import('./knowledge/graph')
+    return await graphStats(input?.origem)
+  })
+
+/**
+ * DEV-ONLY: Rebuild graph do sistema (LLM) + export seed JSON.
+ * O JSON gerado é commitado no repo e usado pelo seed em produção (sem LLM).
+ */
+const knowledgeRebuildAndExportSistema = t.procedure.action(async () => {
+  const { rebuildGraph, exportGraphSeed } = await import('./knowledge/graph')
+  const { buildModelFactory } = await import('./ia/config')
+
+  const config = await queryOne<import('@shared/index').IaConfiguracao>(
+    'SELECT * FROM configuracao_ia LIMIT 1')
+  if (!config) throw new Error('IA nao configurada.')
+
+  const factory = buildModelFactory(config)
+  if (!factory) throw new Error('API Key nao configurada.')
+
+  // 1. Rebuild com LLM
+  const result = await rebuildGraph(factory.createModel, factory.modelo, 'sistema')
+
+  // 2. Export seed JSON pra knowledge/sistema/
+  const seed = await exportGraphSeed('sistema')
+  const fs = require('node:fs') as typeof import('node:fs')
+  const path = require('node:path') as typeof import('node:path')
+  const seedPath = path.join(process.cwd(), 'knowledge', 'sistema', 'graph-seed.json')
+  fs.writeFileSync(seedPath, JSON.stringify(seed, null, 2))
+
+  console.log(`[GRAPH] Sistema: ${seed.entities.length} entidades, ${seed.relations.length} relacoes → ${seedPath}`)
+
+  return {
+    ...result,
+    seed_entities: seed.entities.length,
+    seed_relations: seed.relations.length,
+    exported_to: seedPath,
+  }
 })
 
 // =============================================================================
@@ -2765,6 +3374,7 @@ export const router = {
   'colaboradores.deletar': colaboradoresDeletar,
   'colaboradores.buscarRegraHorario': colaboradoresBuscarRegraHorario,
   'colaboradores.salvarRegraHorario': colaboradoresSalvarRegraHorario,
+  'colaboradores.deletarRegraHorario': colaboradoresDeletarRegraHorario,
   'colaboradores.listarRegrasExcecaoData': colaboradoresListarRegrasExcecaoData,
   'colaboradores.upsertRegraExcecaoData': colaboradoresUpsertRegraExcecaoData,
   'colaboradores.deletarRegraExcecaoData': colaboradoresDeletarRegraExcecaoData,
@@ -2804,6 +3414,9 @@ export const router = {
   'ia.configuracao.salvar': iaConfiguracaoSalvar,
   'ia.configuracao.testar': iaConfiguracaoTestar,
   'ia.modelos.catalogo': iaModelosCatalogo,
+  'ia.chat.lerArquivo': iaChatLerArquivo,
+  'ia.chat.salvarAnexo': iaChatSalvarAnexo,
+  'ia.chat.lerAnexoPreview': iaChatLerAnexoPreview,
   'ia.chat.enviar': iaChatEnviar,
   'ia.conversas.listar': iaConversasListar,
   'ia.conversas.obter': iaConversasObter,
@@ -2815,12 +3428,31 @@ export const router = {
   'ia.conversas.arquivarTodas': iaConversasArquivarTodas,
   'ia.conversas.deletarArquivadas': iaConversasDeletarArquivadas,
   'ia.mensagens.salvar': iaMensagensSalvar,
+  'ia.mensagens.atualizar': iaMensagensAtualizar,
+  'ia.mensagens.deletarApos': iaMensagensDeletarApos,
+  'ia.conversas.exportar': iaConversasExportar,
+  // Session Processing
+  'ia.sessao.processar': iaSessaoProcessar,
+  'ia.config.memoriaAutomatica': iaConfigMemoriaAutomatica,
+  // Memórias IA
+  'ia.memorias.listar': iaMemoriasListar,
+  'ia.memorias.salvar': iaMemoriasSalvar,
+  'ia.memorias.remover': iaMemoriasRemover,
+  'ia.memorias.contar': iaMemoriasContar,
   // Knowledge
   'knowledge.listarFontes': knowledgeListarFontes,
   'knowledge.stats': knowledgeStats,
   'knowledge.escolherArquivo': knowledgeEscolherArquivo,
   'knowledge.importar': knowledgeImportar,
   'knowledge.removerFonte': knowledgeRemoverFonte,
+  'knowledge.toggleAtivo': knowledgeToggleAtivo,
+  'knowledge.obterTextoOriginal': knowledgeObterTextoOriginal,
+  'knowledge.extrairTexto': knowledgeExtrairTexto,
+  'knowledge.gerarMetadataIa': knowledgeGerarMetadataIa,
+  'knowledge.importarCompleto': knowledgeImportarCompleto,
+  'knowledge.rebuildGraph': knowledgeRebuildGraph,
+  'knowledge.graphStats': knowledgeGraphStats,
+  'knowledge.rebuildAndExportSistema': knowledgeRebuildAndExportSistema,
   // Backup / Restore
   'dados.exportar': dadosExportar,
   'dados.importar': dadosImportar,

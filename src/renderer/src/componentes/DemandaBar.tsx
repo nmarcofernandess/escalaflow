@@ -73,6 +73,7 @@ interface DemandaBarProps {
   onDelete: (id: number) => void
   onUpdatePessoas: (id: number, delta: number) => void
   onUpdateTimes: (id: number, hora_inicio: string, hora_fim: string) => void
+  maxPessoas?: number
 }
 
 export function DemandaBar({
@@ -89,6 +90,7 @@ export function DemandaBar({
   onDelete,
   onUpdatePessoas,
   onUpdateTimes,
+  maxPessoas,
 }: DemandaBarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -346,6 +348,7 @@ export function DemandaBar({
                   e.preventDefault()
                   onUpdatePessoas(demanda.id, 1)
                 }}
+                disabled={maxPessoas != null && demanda.min_pessoas >= maxPessoas}
               >
                 <Plus className="size-3.5" />
               </Button>

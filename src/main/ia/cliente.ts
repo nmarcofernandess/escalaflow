@@ -1,13 +1,14 @@
 import { generateText, streamText, stepCountIs, wrapLanguageModel } from 'ai'
-import type { ModelMessage } from '@ai-sdk/provider-utils'
+import type { ModelMessage, UserContent } from '@ai-sdk/provider-utils'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { SYSTEM_PROMPT } from './system-prompt'
 import { getVercelAiTools } from './tools'
 import { buildContextBriefing } from './discovery'
-import { ingestKnowledge } from '../knowledge/ingest'
+import { maybeCompact } from './session-processor'
 import { queryOne } from '../db/query'
-import type { IaMensagem, ToolCall, IaConfiguracao, IaContexto, IaStreamEvent } from '../../shared/types'
+import { resolveProviderApiKey, resolveModel, buildModelFactory, PROVIDER_DEFAULTS } from './config'
+import type { IaMensagem, IaAnexo, ToolCall, IaConfiguracao, IaContexto, IaStreamEvent } from '../../shared/types'
 
 import { createRequire } from 'node:module'
 const _require = createRequire(import.meta.url)
@@ -27,7 +28,7 @@ let _devToolsModeResolved = false
 let _devToolsEnabled = false
 let _devToolsMiddlewareFactory: null | (() => any) = null
 
-const TOOL_RESULT_MAX_CHARS = 400
+const TOOL_RESULT_MAX_CHARS = 1500
 const TOOL_RESULT_LEGACY_MAX_CHARS = 320
 
 function shouldEnableAiDevTools() {
@@ -97,6 +98,27 @@ function safeCompactJson(value: unknown, maxChars: number): string {
 function toolResultToText(result: unknown): string {
     if (result === undefined) return 'resultado_nao_persistido'
     if (result === null) return 'null'
+
+    // Preserva summary e _meta mesmo quando trunca o resto
+    if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
+        const r = result as Record<string, any>
+        if (r.summary || r._meta) {
+            const full = safeCompactJson(result, TOOL_RESULT_MAX_CHARS)
+            if (full.length <= TOOL_RESULT_MAX_CHARS) return full
+            // Monta versão compacta com essentials + dados truncados
+            const essentials: Record<string, any> = { status: r.status }
+            if (r.summary) essentials.summary = r.summary
+            if (r._meta) essentials._meta = r._meta
+            const essentialsJson = JSON.stringify(essentials)
+            const remaining = TOOL_RESULT_MAX_CHARS - essentialsJson.length - 20
+            if (remaining > 100) {
+                const dataStr = safeCompactJson(result, remaining)
+                return `${essentialsJson}\n[DATA_TRUNCADA]: ${dataStr}`
+            }
+            return essentialsJson
+        }
+    }
+
     return safeCompactJson(result, TOOL_RESULT_MAX_CHARS)
 }
 
@@ -105,12 +127,52 @@ function buildLegacyToolResultHistoryContent(msg: IaMensagem): string {
     return `[TOOL_RESULT_LEGADO]\n${compact}`
 }
 
-function buildChatMessages(historico: IaMensagem[], currentMsg: string): ModelMessage[] {
+function buildUserContent(text: string, anexos?: IaAnexo[]): UserContent {
+    if (!anexos || anexos.length === 0) return text
+
+    const { readFileSync: _readFileSync } = require('node:fs') as typeof import('node:fs')
+
+    const parts: Exclude<UserContent, string> = []
+    if (text) parts.push({ type: 'text', text })
+
+    for (const a of anexos) {
+        let buf: Buffer
+        if (a.file_path) {
+            try { buf = _readFileSync(a.file_path) } catch { continue }
+        } else if (a.data_base64) {
+            buf = Buffer.from(a.data_base64, 'base64')
+        } else {
+            continue
+        }
+
+        if (a.tipo === 'image') {
+            parts.push({ type: 'image', image: new Uint8Array(buf), mediaType: a.mime_type })
+        } else {
+            parts.push({ type: 'file', data: new Uint8Array(buf), mediaType: a.mime_type })
+        }
+    }
+    return parts
+}
+
+function buildChatMessages(historico: IaMensagem[], currentMsg: string, resumoCompactado?: string | null, currentAnexos?: IaAnexo[]): ModelMessage[] {
     const messages: ModelMessage[] = []
 
-    for (const h of historico) {
+    // Se temos resumo compactado, prepend contexto e só usa msgs recentes
+    const COMPACTION_KEEP_RECENT = 10
+    let msgsToConvert = historico
+    if (resumoCompactado && historico.length > COMPACTION_KEEP_RECENT) {
+        messages.push({ role: 'user', content: `[Resumo do contexto anterior]\n${resumoCompactado}` })
+        messages.push({ role: 'assistant', content: 'Entendido. Tenho o contexto anterior.' })
+        msgsToConvert = historico.slice(-COMPACTION_KEEP_RECENT)
+    }
+
+    for (const h of msgsToConvert) {
         if (h.papel === 'usuario') {
-            messages.push({ role: 'user', content: h.conteudo })
+            if (h.anexos && h.anexos.length > 0) {
+                messages.push({ role: 'user', content: buildUserContent(h.conteudo, h.anexos) })
+            } else {
+                messages.push({ role: 'user', content: h.conteudo })
+            }
             continue
         }
 
@@ -159,12 +221,12 @@ function buildChatMessages(historico: IaMensagem[], currentMsg: string): ModelMe
         }
     }
 
-    messages.push({ role: 'user', content: currentMsg })
+    messages.push({ role: 'user', content: buildUserContent(currentMsg, currentAnexos) })
     return messages
 }
 
-async function buildFullSystemPrompt(contexto?: IaContexto) {
-    const contextBriefing = await buildContextBriefing(contexto)
+async function buildFullSystemPrompt(contexto?: IaContexto, mensagemUsuario?: string) {
+    const contextBriefing = await buildContextBriefing(contexto, mensagemUsuario)
     return contextBriefing
         ? `${SYSTEM_PROMPT}\n\n---\n${contextBriefing}`
         : SYSTEM_PROMPT
@@ -218,30 +280,6 @@ function extractToolCallsFromSteps(steps: any[] | undefined): ToolCall[] {
     return acoes
 }
 
-/**
- * Auto-capture conservador: salva como LOW importance se a resposta contém
- * fatos CLT/legislativos explícitos que não são meros dados do banco.
- * Fire-and-forget — falha silenciosamente.
- */
-async function maybeAutoCapture(response: string): Promise<void> {
-    try {
-        if (!response || response.length < 100) return
-        // Heurística: menção a artigo de lei, CLT, CCT, legislação
-        const legalKeywords = /\b(Art\.\s*\d+|CLT|CCT|Lei\s+\d+|Portaria|NR-?\d+|ECA|interjornada|intrajornada)\b/i
-        if (!legalKeywords.test(response)) return
-
-        // Extrai um título a partir dos primeiros 80 chars da resposta
-        const titulo = `Auto: ${response.slice(0, 80).replace(/\n/g, ' ').trim()}...`
-        // Salva apenas o trecho relevante (primeiros 2000 chars)
-        const conteudo = response.slice(0, 2000)
-
-        await ingestKnowledge(titulo, conteudo, 'low')
-        console.log('[AI SDK] Auto-capture: conhecimento salvo como LOW')
-    } catch {
-        // Non-critical — falha silenciosa
-    }
-}
-
 // Test hooks for unit tests of mapper/history behavior.
 // Keeping these internal helpers accessible avoids mocking the whole provider stack.
 export const __iaClienteTestables = {
@@ -251,6 +289,9 @@ export const __iaClienteTestables = {
     buildFullSystemPrompt,
 }
 
+// PROVIDER_DEFAULTS, resolveModel, isValidModelForProvider, resolveProviderApiKey
+// → extraídos para ./config.ts (reutilizados por tipc.ts para geração de metadata IA)
+
 async function _callWithVercelAiSdkTools(
     providerLabel: 'gemini' | 'openrouter',
     config: IaConfiguracao,
@@ -258,29 +299,68 @@ async function _callWithVercelAiSdkTools(
     historico: IaMensagem[],
     contexto: IaContexto | undefined,
     createModel: (modelo: string) => any,
+    conversa_id?: string,
+    anexos?: IaAnexo[],
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const modelo = config.modelo || (providerLabel === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash')
+    const modelo = resolveModel(config, providerLabel)
 
-    const fullSystemPrompt = await buildFullSystemPrompt(contexto)
-    const messages = buildChatMessages(historico, currentMsg)
+    // History compaction (se conversa_id disponível)
+    let resumoCompactado: string | null = null
+    if (conversa_id) {
+        try {
+            resumoCompactado = await maybeCompact(conversa_id, historico, createModel, modelo)
+        } catch (err) {
+            console.warn('[AI SDK] Compaction falhou (continuando sem):', (err as Error).message)
+        }
+    }
+
+    const fullSystemPrompt = await buildFullSystemPrompt(contexto, currentMsg)
+    const messages = buildChatMessages(historico, currentMsg, resumoCompactado, anexos)
     const tools = getVercelAiTools()
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
-    const result = await generateText({
-        model,
-        system: fullSystemPrompt,
-        messages,
-        tools,
-        stopWhen: stepCountIs(10),
-        onStepFinish({ text, toolCalls, finishReason, usage }) {
-            console.log(`[AI SDK:${providerLabel}] Step:`, {
-                finishReason,
-                hasText: !!text,
-                toolCalls: toolCalls?.length ?? 0,
-                tokens: usage?.totalTokens,
+    let result
+    try {
+        result = await generateText({
+            model,
+            system: fullSystemPrompt,
+            messages,
+            tools,
+            stopWhen: stepCountIs(10),
+            onStepFinish({ text, toolCalls, finishReason, usage }) {
+                console.log(`[AI SDK:${providerLabel}] Step:`, {
+                    finishReason,
+                    hasText: !!text,
+                    toolCalls: toolCalls?.length ?? 0,
+                    tokens: usage?.totalTokens,
+                })
+            },
+        })
+    } catch (err: any) {
+        if (anexos?.length && (err.name === 'AI_InvalidPromptError' || err.message?.includes('schema'))) {
+            console.warn(`[AI SDK:${providerLabel}] Prompt invalido com anexos — retry sem anexos:`, err.message)
+            const fallbackMessages = buildChatMessages(historico, currentMsg, resumoCompactado)
+            const aviso = `[Nota: nao consegui processar ${anexos.length} anexo(s) (${anexos.map(a => a.nome).join(', ')}). Formato nao suportado ou arquivo corrompido. Responda ao usuario normalmente.]`
+            fallbackMessages.push({ role: 'user', content: aviso })
+            result = await generateText({
+                model,
+                system: fullSystemPrompt,
+                messages: fallbackMessages,
+                tools,
+                stopWhen: stepCountIs(10),
+                onStepFinish({ text, toolCalls, finishReason, usage }) {
+                    console.log(`[AI SDK:${providerLabel}] Step (fallback):`, {
+                        finishReason,
+                        hasText: !!text,
+                        toolCalls: toolCalls?.length ?? 0,
+                        tokens: usage?.totalTokens,
+                    })
+                },
             })
-        },
-    })
+        } else {
+            throw err
+        }
+    }
 
     const acoes = extractToolCallsFromSteps(result.steps as any[] | undefined)
 
@@ -300,16 +380,17 @@ async function _callWithVercelAiSdkTools(
             model,
             system: fullSystemPrompt,
             messages: followUpMessages,
+            tools,
+            stopWhen: stepCountIs(3),
         })
 
         finalText = finalResult.text || 'Feito!'
+        const followUpAcoes = extractToolCallsFromSteps(finalResult.steps as any[] | undefined)
+        acoes.push(...followUpAcoes)
         console.log(`[AI SDK:${providerLabel}] Follow-up:`, finalText.substring(0, 80))
     }
 
     const resposta = finalText || '(Resposta vazia)'
-
-    // Auto-capture fire-and-forget
-    maybeAutoCapture(resposta).catch(() => {})
 
     return { resposta, acoes }
 }
@@ -322,45 +403,109 @@ async function _callWithVercelAiSdkToolsStreaming(
     streamId: string,
     contexto: IaContexto | undefined,
     createModel: (modelo: string) => any,
+    conversa_id?: string,
+    anexos?: IaAnexo[],
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const modelo = config.modelo || (providerLabel === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash')
+    const modelo = resolveModel(config, providerLabel)
 
-    const fullSystemPrompt = await buildFullSystemPrompt(contexto)
-    const messages = buildChatMessages(historico, currentMsg)
+    // History compaction (se conversa_id disponível)
+    let resumoCompactado: string | null = null
+    if (conversa_id) {
+        try {
+            resumoCompactado = await maybeCompact(conversa_id, historico, createModel, modelo)
+        } catch (err) {
+            console.warn('[AI SDK:stream] Compaction falhou (continuando sem):', (err as Error).message)
+        }
+    }
+
+    const fullSystemPrompt = await buildFullSystemPrompt(contexto, currentMsg)
+    const messages = buildChatMessages(historico, currentMsg, resumoCompactado, anexos)
     const tools = getVercelAiTools()
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
     let stepIndex = 0
 
     try {
-        const result = streamText({
-            model,
-            system: fullSystemPrompt,
-            messages,
-            tools,
-            stopWhen: stepCountIs(10),
-            onStepFinish({ text, toolCalls, finishReason, usage }) {
-                console.log(`[AI SDK:${providerLabel}:stream] Step ${stepIndex}:`, {
-                    finishReason,
-                    hasText: !!text,
-                    toolCalls: toolCalls?.length ?? 0,
-                    tokens: usage?.totalTokens,
+        let result: ReturnType<typeof streamText>
+        try {
+            result = streamText({
+                model,
+                system: fullSystemPrompt,
+                messages,
+                tools,
+                stopWhen: stepCountIs(10),
+                onStepFinish({ text, toolCalls, finishReason, usage }) {
+                    console.log(`[AI SDK:${providerLabel}:stream] Step ${stepIndex}:`, {
+                        finishReason,
+                        hasText: !!text,
+                        toolCalls: toolCalls?.length ?? 0,
+                        tokens: usage?.totalTokens,
+                    })
+                    emitStream({ type: 'step-finish', stream_id: streamId, step_index: stepIndex })
+                    stepIndex++
+                },
+            })
+            // Force the stream to start so prompt validation runs eagerly
+            const reader = result.fullStream[Symbol.asyncIterator]()
+            const first = await reader.next()
+            // Re-emit the first part
+            if (!first.done) {
+                const part = first.value
+                if (part.type === 'text-delta') {
+                    emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
+                } else if (part.type === 'tool-call') {
+                    const est = part.toolName === 'gerar_escala' ? 30 : part.toolName === 'preflight_completo' ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
+                    emitStream({ type: 'tool-call-start', stream_id: streamId, tool_call_id: part.toolCallId, tool_name: part.toolName, args: normalizeToolArgs(part.input) ?? {}, estimated_seconds: est })
+                } else if (part.type === 'tool-result') {
+                    emitStream({ type: 'tool-result', stream_id: streamId, tool_call_id: part.toolCallId, tool_name: part.toolName, result: part.output })
+                } else if (part.type === 'error') {
+                    throw part.error instanceof Error ? part.error : new Error(String(part.error))
+                }
+            }
+        } catch (promptErr: any) {
+            if (anexos?.length && (promptErr.name === 'AI_InvalidPromptError' || promptErr.message?.includes('schema'))) {
+                console.warn(`[AI SDK:${providerLabel}:stream] Prompt invalido com anexos — retry sem anexos:`, promptErr.message)
+                const fallbackMessages = buildChatMessages(historico, currentMsg, resumoCompactado)
+                const aviso = `[Nota: nao consegui processar ${anexos.length} anexo(s) (${anexos.map(a => a.nome).join(', ')}). Formato nao suportado ou arquivo corrompido. Responda ao usuario normalmente.]`
+                fallbackMessages.push({ role: 'user', content: aviso })
+                result = streamText({
+                    model,
+                    system: fullSystemPrompt,
+                    messages: fallbackMessages,
+                    tools,
+                    stopWhen: stepCountIs(10),
+                    onStepFinish({ text, toolCalls, finishReason, usage }) {
+                        console.log(`[AI SDK:${providerLabel}:stream] Step ${stepIndex} (fallback):`, {
+                            finishReason,
+                            hasText: !!text,
+                            toolCalls: toolCalls?.length ?? 0,
+                            tokens: usage?.totalTokens,
+                        })
+                        emitStream({ type: 'step-finish', stream_id: streamId, step_index: stepIndex })
+                        stepIndex++
+                    },
                 })
-                emitStream({ type: 'step-finish', stream_id: streamId, step_index: stepIndex })
-                stepIndex++
-            },
-        })
+            } else {
+                throw promptErr
+            }
+        }
 
         for await (const part of result.fullStream) {
             if (part.type === 'text-delta') {
                 emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
             } else if (part.type === 'tool-call') {
+                // Estimativa de tempo: gerar_escala usa 60s timeout no solver
+                const estimated_seconds = part.toolName === 'gerar_escala' ? 30
+                    : part.toolName === 'preflight_completo' ? 10
+                    : part.toolName === 'diagnosticar_escala' ? 15
+                    : undefined
                 emitStream({
                     type: 'tool-call-start',
                     stream_id: streamId,
                     tool_call_id: part.toolCallId,
                     tool_name: part.toolName,
                     args: normalizeToolArgs(part.input) ?? {},
+                    estimated_seconds,
                 })
             } else if (part.type === 'tool-result') {
                 emitStream({
@@ -370,12 +515,31 @@ async function _callWithVercelAiSdkToolsStreaming(
                     tool_name: part.toolName,
                     result: part.output,
                 })
+            } else if (part.type === 'error') {
+                // Surfaça o erro real do stream em vez de deixar virar AI_NoOutputGeneratedError genérico
+                const err = part.error instanceof Error ? part.error : new Error(String(part.error))
+                console.error(`[AI SDK:${providerLabel}:stream] Erro no stream (event):`, err.message)
+                throw err
             }
         }
 
-        const finalText = await result.text
+        // Busca steps ANTES de text: se text lançar AI_NoOutputGeneratedError,
+        // já temos as tool calls para decidir se fazemos follow-up.
         const steps = await result.steps
         const acoes = extractToolCallsFromSteps(steps as any[] | undefined)
+
+        let finalText: string
+        try {
+            finalText = await result.text
+        } catch (textErr: any) {
+            if (textErr?.name === 'AI_NoOutputGeneratedError' && acoes.length > 0) {
+                // Modelo executou tools mas não gerou texto final — follow-up vai cobrir
+                console.log(`[AI SDK:${providerLabel}:stream] AI_NoOutputGeneratedError após tools — ativando follow-up`)
+                finalText = ''
+            } else {
+                throw textErr
+            }
+        }
 
         // Follow-up: if tools ran but no final text, do a streaming follow-up
         if ((!finalText || finalText.trim().length === 0) && acoes.length > 0) {
@@ -392,25 +556,46 @@ async function _callWithVercelAiSdkToolsStreaming(
                 model,
                 system: fullSystemPrompt,
                 messages: followUpMessages,
+                tools,
+                stopWhen: stepCountIs(3),
             })
 
             for await (const part of followUp.fullStream) {
                 if (part.type === 'text-delta') {
                     emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
+                } else if (part.type === 'tool-call') {
+                    const estF = part.toolName === 'gerar_escala' ? 30 : part.toolName === 'preflight_completo' ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
+                    emitStream({
+                        type: 'tool-call-start',
+                        stream_id: streamId,
+                        tool_call_id: part.toolCallId,
+                        tool_name: part.toolName,
+                        args: normalizeToolArgs(part.input) ?? {},
+                        estimated_seconds: estF,
+                    })
+                } else if (part.type === 'tool-result') {
+                    emitStream({
+                        type: 'tool-result',
+                        stream_id: streamId,
+                        tool_call_id: part.toolCallId,
+                        tool_name: part.toolName,
+                        result: part.output,
+                    })
                 }
             }
 
+            const followUpSteps = await followUp.steps
+            const followUpAcoes = extractToolCallsFromSteps(followUpSteps as any[] | undefined)
+            acoes.push(...followUpAcoes)
             const followUpText = await followUp.text
             const resposta = followUpText || 'Feito!'
 
             emitStream({ type: 'finish', stream_id: streamId, resposta, acoes })
-            maybeAutoCapture(resposta).catch(() => {})
             return { resposta, acoes }
         }
 
         const resposta = finalText || '(Resposta vazia)'
         emitStream({ type: 'finish', stream_id: streamId, resposta, acoes })
-        maybeAutoCapture(resposta).catch(() => {})
         return { resposta, acoes }
     } catch (err: any) {
         console.error(`[AI SDK:${providerLabel}:stream] Erro:`, err.message)
@@ -423,7 +608,9 @@ export async function iaEnviarMensagemStream(
     mensagem: string,
     historico: IaMensagem[],
     streamId: string,
-    contexto?: IaContexto
+    contexto?: IaContexto,
+    conversa_id?: string,
+    anexos?: IaAnexo[],
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const config = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
 
@@ -436,36 +623,24 @@ export async function iaEnviarMensagemStream(
     if (config.provider === 'gemini') {
         if (!apiKey) throw new Error('API Key do Gemini não configurada.')
         const google = createGoogleGenerativeAI({ apiKey })
-        return _callWithVercelAiSdkToolsStreaming('gemini', { ...config, api_key: apiKey }, mensagem, historico, streamId, contexto, (modelo) => google(modelo))
+        return _callWithVercelAiSdkToolsStreaming('gemini', { ...config, api_key: apiKey }, mensagem, historico, streamId, contexto, (modelo) => google(modelo), conversa_id, anexos)
     }
 
     if (config.provider === 'openrouter') {
         if (!apiKey) throw new Error('Token do OpenRouter não configurado.')
         const openrouter = createOpenRouter({ apiKey })
-        return _callWithVercelAiSdkToolsStreaming('openrouter', { ...config, api_key: apiKey }, mensagem, historico, streamId, contexto, (modelo) => openrouter(modelo))
+        return _callWithVercelAiSdkToolsStreaming('openrouter', { ...config, api_key: apiKey }, mensagem, historico, streamId, contexto, (modelo) => openrouter(modelo), conversa_id, anexos)
     }
 
     throw new Error(`Provider "${config.provider}" não suportado.`)
 }
 
-function resolveProviderApiKey(config: IaConfiguracao): string | undefined {
-    // provider_configs_json tem prioridade — é onde a UI multi-provider salva tokens
-    if (config.provider_configs_json) {
-        try {
-            const configs = typeof config.provider_configs_json === 'string'
-                ? JSON.parse(config.provider_configs_json)
-                : config.provider_configs_json
-            const providerCfg = configs?.[config.provider]
-            if (providerCfg?.token?.trim()) return providerCfg.token.trim()
-        } catch { /* fallback to api_key */ }
-    }
-    return config.api_key || undefined
-}
-
 export async function iaEnviarMensagem(
     mensagem: string,
     historico: IaMensagem[],
-    contexto?: IaContexto
+    contexto?: IaContexto,
+    conversa_id?: string,
+    anexos?: IaAnexo[],
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const config = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
 
@@ -479,14 +654,14 @@ export async function iaEnviarMensagem(
         if (!apiKey) {
             throw new Error('API Key do Gemini não configurada.')
         }
-        return _callGemini({ ...config, api_key: apiKey }, mensagem, historico, contexto)
+        return _callGemini({ ...config, api_key: apiKey }, mensagem, historico, contexto, conversa_id, anexos)
     }
 
     if (config.provider === 'openrouter') {
         if (!apiKey) {
             throw new Error('Token do OpenRouter não configurado.')
         }
-        return _callOpenRouter({ ...config, api_key: apiKey }, mensagem, historico, contexto)
+        return _callOpenRouter({ ...config, api_key: apiKey }, mensagem, historico, contexto, conversa_id, anexos)
     }
 
     throw new Error(`Provider "${config.provider}" não suportado. Providers disponíveis: Gemini e OpenRouter.`)
@@ -500,7 +675,9 @@ async function _callGemini(
     config: IaConfiguracao,
     currentMsg: string,
     historico: IaMensagem[],
-    contexto?: IaContexto
+    contexto?: IaContexto,
+    conversa_id?: string,
+    anexos?: IaAnexo[],
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const google = createGoogleGenerativeAI({ apiKey: config.api_key })
     return _callWithVercelAiSdkTools(
@@ -510,6 +687,8 @@ async function _callGemini(
         historico,
         contexto,
         (modelo) => google(modelo),
+        conversa_id,
+        anexos,
     )
 }
 
@@ -517,7 +696,9 @@ async function _callOpenRouter(
     config: IaConfiguracao,
     currentMsg: string,
     historico: IaMensagem[],
-    contexto?: IaContexto
+    contexto?: IaContexto,
+    conversa_id?: string,
+    anexos?: IaAnexo[],
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
     const openrouter = createOpenRouter({ apiKey: config.api_key })
     return _callWithVercelAiSdkTools(
@@ -527,6 +708,8 @@ async function _callOpenRouter(
         historico,
         contexto,
         (modelo) => openrouter(modelo),
+        conversa_id,
+        anexos,
     )
 }
 

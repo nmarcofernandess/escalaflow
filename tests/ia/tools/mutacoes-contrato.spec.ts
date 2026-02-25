@@ -1,62 +1,71 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetMockDbState } from '../../setup/db-test-utils'
+
+const queryMocks = vi.hoisted(() => ({
+  queryOne: vi.fn(),
+  queryAll: vi.fn(),
+  execute: vi.fn(),
+  insertReturningId: vi.fn(),
+}))
+
+vi.mock('../../../src/main/db/query', () => queryMocks)
+vi.mock('../../../src/main/knowledge/search', () => ({
+  searchKnowledge: vi.fn().mockResolvedValue([]),
+  exploreRelations: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('../../../src/main/knowledge/ingest', () => ({
+  ingestKnowledge: vi.fn().mockResolvedValue({ chunks_count: 0 }),
+}))
+
 import { executeTool } from '../../../src/main/ia/tools'
-import { clearMockDb, setMockDb } from '../../setup/db-test-utils'
 
-function createMutationsMockDb(options?: { failInsertCalls?: number[] }) {
-  let insertCall = 0
-  const failSet = new Set(options?.failInsertCalls ?? [])
+let insertCall = 0
+let failInsertCalls = new Set<number>()
 
-  return {
-    prepare(sql: string) {
-      const normalized = sql.replace(/\s+/g, ' ').trim()
+function setupMutationMocks(opts?: { failInsertCalls?: number[] }) {
+  insertCall = 0
+  failInsertCalls = new Set(opts?.failInsertCalls ?? [])
 
-      return {
-        get: (...args: any[]) => {
-          if (normalized.startsWith('SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE id = ? AND ativo = 1')) {
-            const id = Number(args[0])
-            if (id === 1) {
-              return { id: 1, nome: 'Caixa', hora_abertura: '08:00', hora_fechamento: '22:00' }
-            }
-            return undefined
-          }
-          if (normalized.startsWith('SELECT horas_semanais FROM tipos_contrato WHERE id = ?')) {
-            return { horas_semanais: 44 }
-          }
-          throw new Error(`Mock get() não suportado: ${normalized}`)
-        },
-        all: (..._args: any[]) => {
-          throw new Error(`Mock all() não suportado: ${normalized}`)
-        },
-        run: (..._args: any[]) => {
-          if (normalized.startsWith('INSERT INTO ')) {
-            insertCall += 1
-            if (failSet.has(insertCall)) {
-              throw new Error(`forced insert error #${insertCall}`)
-            }
-            return { lastInsertRowid: 100 + insertCall, changes: 1 }
-          }
-          if (normalized.startsWith('UPDATE ')) {
-            return { changes: 1 }
-          }
-          throw new Error(`Mock run() não suportado: ${normalized}`)
-        },
-      }
-    },
-    close() {},
-  }
+  queryMocks.queryOne.mockImplementation(async (sql: string, ...params: unknown[]) => {
+    const n = sql.replace(/\s+/g, ' ').trim()
+
+    // criar colaborador → valida setor
+    if (n.includes('FROM setores WHERE id') && n.includes('ativo')) {
+      const id = Number(params[0])
+      if (id === 1) return { id: 1, nome: 'Caixa', hora_abertura: '08:00', hora_fechamento: '22:00' }
+      return undefined
+    }
+
+    // cadastrar_lote → resolve horas_semanais do contrato
+    if (n.includes('horas_semanais FROM tipos_contrato WHERE id')) {
+      return { horas_semanais: 44 }
+    }
+
+    return undefined
+  })
+
+  queryMocks.execute.mockImplementation(async () => {
+    return { changes: 1 }
+  })
+
+  queryMocks.insertReturningId.mockImplementation(async () => {
+    insertCall++
+    if (failInsertCalls.has(insertCall)) {
+      throw new Error(`forced insert error #${insertCall}`)
+    }
+    return 100 + insertCall
+  })
 }
 
 describe('executeTool mutações (contrato padronizado)', () => {
-  let db: ReturnType<typeof createMutationsMockDb>
-
   beforeEach(() => {
-    db = createMutationsMockDb()
-    setMockDb(db)
+    resetMockDbState()
+    vi.clearAllMocks()
+    setupMutationMocks()
   })
 
   afterEach(() => {
-    clearMockDb()
-    db.close()
+    resetMockDbState()
   })
 
   it('criar retorna status ok + compat legado em sucesso', async () => {
@@ -88,7 +97,7 @@ describe('executeTool mutações (contrato padronizado)', () => {
     expect(result.status).toBe('error')
     expect(result.code).toBe('CRIAR_COLABORADOR_SETOR_ID_OBRIGATORIO')
     expect(result.erro).toMatch(/setor_id/i)
-    expect(result.correction).toMatch(/get_context/i)
+    expect(result.correction).toMatch(/contexto autom|consultar/i)
   })
 
   it('atualizar retorna status ok + meta de campos atualizados', async () => {
@@ -113,8 +122,7 @@ describe('executeTool mutações (contrato padronizado)', () => {
   })
 
   it('cadastrar_lote retorna status ok com partial_failure em erro parcial', async () => {
-    const partialDb = createMutationsMockDb({ failInsertCalls: [2] })
-    setMockDb(partialDb)
+    setupMutationMocks({ failInsertCalls: [2] })
 
     const result = await executeTool('cadastrar_lote', {
       entidade: 'setores',
@@ -123,9 +131,6 @@ describe('executeTool mutações (contrato padronizado)', () => {
         { nome: 'Frios', hora_abertura: '08:00', hora_fechamento: '22:00', ativo: 1 },
       ],
     })
-
-    partialDb.close()
-    setMockDb(db)
 
     expect(result.status).toBe('ok')
     expect(result.sucesso).toBe(false)
@@ -143,8 +148,7 @@ describe('executeTool mutações (contrato padronizado)', () => {
   })
 
   it('cadastrar_lote retorna status error quando todos os inserts falham', async () => {
-    const failAllDb = createMutationsMockDb({ failInsertCalls: [1, 2] })
-    setMockDb(failAllDb)
+    setupMutationMocks({ failInsertCalls: [1, 2] })
 
     const result = await executeTool('cadastrar_lote', {
       entidade: 'setores',
@@ -153,9 +157,6 @@ describe('executeTool mutações (contrato padronizado)', () => {
         { nome: 'Frios', hora_abertura: '08:00', hora_fechamento: '22:00', ativo: 1 },
       ],
     })
-
-    failAllDb.close()
-    setMockDb(db)
 
     expect(result.status).toBe('error')
     expect(result.code).toBe('CADASTRAR_LOTE_FALHOU_TOTAL')
