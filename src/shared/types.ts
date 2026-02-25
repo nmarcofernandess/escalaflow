@@ -746,6 +746,7 @@ export type IaStreamEvent =
 export interface IaMemoria {
   id: number
   conteudo: string
+  origem: 'manual' | 'auto'
   criada_em: string
   atualizada_em: string
 }
@@ -756,7 +757,7 @@ export interface IaMemoria {
 
 export interface KnowledgeSource {
   id: number
-  tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario' | 'session' | 'auto_extract'
+  tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario'
   titulo: string
   conteudo_original: string
   metadata: Record<string, unknown>

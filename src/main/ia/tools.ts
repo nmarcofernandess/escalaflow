@@ -3410,12 +3410,24 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'salvar_memoria') {
         const { conteudo, id } = args as { conteudo: string; id?: number }
         try {
+            const { generateQueryEmbedding } = await import('../knowledge/embeddings')
             const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM ia_memorias')
             const total = countRow?.c ?? 0
 
+            // Gera embedding local (grátis)
+            let embeddingStr: string | null = null
+            try {
+                const emb = await generateQueryEmbedding(conteudo)
+                if (emb) embeddingStr = `[${emb.join(',')}]`
+            } catch { /* embedding opcional */ }
+
             if (id) {
                 // Update
-                await execute('UPDATE ia_memorias SET conteudo = $1, atualizada_em = NOW() WHERE id = $2', conteudo, id)
+                if (embeddingStr) {
+                    await execute('UPDATE ia_memorias SET conteudo = $1, embedding = $2::vector, atualizada_em = NOW() WHERE id = $3', conteudo, embeddingStr, id)
+                } else {
+                    await execute('UPDATE ia_memorias SET conteudo = $1, atualizada_em = NOW() WHERE id = $2', conteudo, id)
+                }
                 return toolOk(
                     { id, conteudo, total },
                     { summary: `Memória #${id} atualizada.`, meta: { tool_kind: 'memoria' } }
@@ -3423,17 +3435,19 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             // Create — check limit
-            if (total >= 20) {
-                return toolError('LIMITE_MEMORIAS', `Limite de 20 memórias atingido (${total}/20).`, {
+            if (total >= 50) {
+                return toolError('LIMITE_MEMORIAS', `Limite de 50 memórias atingido (${total}/50).`, {
                     correction: 'Use listar_memorias para ver as existentes e remover_memoria para liberar espaço.',
                     meta: { tool_kind: 'memoria' }
                 })
             }
 
-            const newId = await insertReturningId('INSERT INTO ia_memorias (conteudo) VALUES ($1)', conteudo)
+            const newId = embeddingStr
+                ? await insertReturningId(`INSERT INTO ia_memorias (conteudo, origem, embedding) VALUES ($1, 'manual', $2::vector)`, conteudo, embeddingStr)
+                : await insertReturningId(`INSERT INTO ia_memorias (conteudo, origem) VALUES ($1, 'manual')`, conteudo)
             return toolOk(
                 { id: newId, conteudo, total: total + 1 },
-                { summary: `Memória salva (${total + 1}/20): "${conteudo.slice(0, 50)}..."`, meta: { tool_kind: 'memoria' } }
+                { summary: `Memória salva (${total + 1}/50): "${conteudo.slice(0, 50)}..."`, meta: { tool_kind: 'memoria' } }
             )
         } catch (e: any) {
             return toolError('SALVAR_MEMORIA_FALHOU', `Erro ao salvar memória: ${e.message}`, {
@@ -3445,11 +3459,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
     if (name === 'listar_memorias') {
         try {
-            const rows = await queryAll<{ id: number; conteudo: string; criada_em: string; atualizada_em: string }>(
+            const rows = await queryAll<{ id: number; conteudo: string; origem: string; criada_em: string; atualizada_em: string }>(
                 'SELECT * FROM ia_memorias ORDER BY atualizada_em DESC')
             return toolOk(
-                { memorias: rows, total: rows.length, limite: 20 },
-                { summary: `${rows.length} memória(s) salva(s) (max 20).`, meta: { tool_kind: 'memoria' } }
+                { memorias: rows, total: rows.length, limite: 50 },
+                { summary: `${rows.length} memória(s) salva(s) (max 50).`, meta: { tool_kind: 'memoria' } }
             )
         } catch (e: any) {
             return toolError('LISTAR_MEMORIAS_FALHOU', `Erro ao listar memórias: ${e.message}`, {

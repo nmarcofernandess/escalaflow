@@ -260,6 +260,29 @@ export function IaChatView() {
     setEditText('')
   }
 
+  // Regenerate: find last user msg up to (and including) this msg, re-send it
+  const handleRegenerate = async (msg: IaMensagem) => {
+    if (carregando) return
+    // For user msg: re-send that same msg. For assistant msg: find the user msg right before it.
+    let userMsg: IaMensagem | undefined
+    if (msg.papel === 'usuario') {
+      userMsg = msg
+    } else {
+      const idx = mensagens.findIndex((m) => m.id === msg.id)
+      for (let i = idx - 1; i >= 0; i--) {
+        if (mensagens[i].papel === 'usuario') {
+          userMsg = mensagens[i]
+          break
+        }
+      }
+    }
+    if (!userMsg) return
+    const novoConteudo = await editarEReenviar(userMsg.id, userMsg.conteudo)
+    if (novoConteudo) {
+      await enviar(novoConteudo)
+    }
+  }
+
   if (configurado === false) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-6">
@@ -284,7 +307,7 @@ export function IaChatView() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
-        <div className="flex min-w-0 max-w-full flex-col gap-3 p-4">
+        <div className="flex min-w-0 max-w-full flex-col gap-4 p-4">
           {mensagens.length === 0 && (
             <div className="flex flex-col items-center justify-center text-center gap-3 text-muted-foreground py-16">
               <Bot className="size-12 opacity-20" />
@@ -326,6 +349,7 @@ export function IaChatView() {
                   <IaMensagemBubble
                     msg={m}
                     onEdit={m.papel === 'usuario' ? handleStartEdit : undefined}
+                    onRegenerate={handleRegenerate}
                     showActions={!carregando}
                   />
                 )}

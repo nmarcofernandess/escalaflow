@@ -45,6 +45,17 @@ export const CORES_GENERO = {
   M: 'bg-sky-100 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300',
 } as const
 
+/** Knowledge Graph entity type colors (hex for Canvas) */
+export const ENTITY_TYPE_COLORS: Record<string, string> = {
+  pessoa: '#3b82f6',
+  contrato: '#8b5cf6',
+  setor: '#10b981',
+  regra: '#f59e0b',
+  feriado: '#ef4444',
+  funcao: '#06b6d4',
+  conceito: '#6b7280',
+}
+
 /** Contract type colors for timeline bars */
 export const CORES_CONTRATO: Record<string, { bar: string; text: string; border: string }> = {
   'CLT 44h': {

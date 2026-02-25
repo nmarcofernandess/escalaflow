@@ -2636,7 +2636,7 @@ const iaConversasExportar = t.procedure
 const iaSessaoProcessar = t.procedure
   .input<{ conversa_id: string }>()
   .action(async ({ input }) => {
-    const { indexSession, extractMemories } = await import('./ia/session-processor')
+    const { extractMemories } = await import('./ia/session-processor')
     const { buildModelFactory } = await import('./ia/config')
 
     // Carrega config
@@ -2664,15 +2664,7 @@ const iaSessaoProcessar = t.procedure
       timestamp: m.timestamp,
     }))
 
-    // 1. Session Indexing — SEMPRE (gratis, embedding local)
-    try {
-      await indexSession(input.conversa_id, conversa.titulo, mensagens)
-      console.log('[Session] Indexed:', conversa.titulo)
-    } catch (err) {
-      console.warn('[Session] indexSession falhou:', (err as Error).message)
-    }
-
-    // 2. Smart Extraction — só se toggle ON + API configurada
+    // Smart Extraction — só se toggle ON + API configurada
     if (config.memoria_automatica) {
       const factory = buildModelFactory(config)
       if (factory) {
@@ -3000,7 +2992,7 @@ const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; re
 // IA MEMÓRIAS (4 handlers)
 // =============================================================================
 
-const IA_MEMORIAS_LIMIT = 20
+const IA_MEMORIAS_LIMIT = 50
 
 const iaMemoriasListar = t.procedure.action(async () => {
   return await queryAll<import('@shared/index').IaMemoria>(
@@ -3010,20 +3002,39 @@ const iaMemoriasListar = t.procedure.action(async () => {
 const iaMemoriasSalvar = t.procedure
   .input<{ id?: number; conteudo: string }>()
   .action(async ({ input }) => {
+    // Gera embedding local (grátis, ONNX)
+    let embeddingStr: string | null = null
+    try {
+      const { generateQueryEmbedding } = await import('./knowledge/embeddings')
+      const emb = await generateQueryEmbedding(input.conteudo)
+      if (emb) embeddingStr = `[${emb.join(',')}]`
+    } catch { /* embedding opcional — continua sem */ }
+
     if (input.id) {
-      await execute(
-        'UPDATE ia_memorias SET conteudo = $1, atualizada_em = NOW() WHERE id = $2',
-        input.conteudo, input.id)
+      if (embeddingStr) {
+        await execute(
+          'UPDATE ia_memorias SET conteudo = $1, embedding = $2::vector, atualizada_em = NOW() WHERE id = $3',
+          input.conteudo, embeddingStr, input.id)
+      } else {
+        await execute(
+          'UPDATE ia_memorias SET conteudo = $1, atualizada_em = NOW() WHERE id = $2',
+          input.conteudo, input.id)
+      }
       return await queryOne<import('@shared/index').IaMemoria>(
         'SELECT * FROM ia_memorias WHERE id = $1', input.id)
     }
-    // Soft limit: se já tem 20, recusar
+    // Soft limit
     const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM ia_memorias')
     if ((countRow?.c ?? 0) >= IA_MEMORIAS_LIMIT) {
       throw new Error(`Limite de ${IA_MEMORIAS_LIMIT} memórias atingido. Remova uma antes de adicionar.`)
     }
-    const id = await insertReturningId(
-      'INSERT INTO ia_memorias (conteudo) VALUES ($1)', input.conteudo)
+    const id = embeddingStr
+      ? await insertReturningId(
+          `INSERT INTO ia_memorias (conteudo, origem, embedding) VALUES ($1, 'manual', $2::vector)`,
+          input.conteudo, embeddingStr)
+      : await insertReturningId(
+          `INSERT INTO ia_memorias (conteudo, origem) VALUES ($1, 'manual')`,
+          input.conteudo)
     return await queryOne<import('@shared/index').IaMemoria>(
       'SELECT * FROM ia_memorias WHERE id = $1', id)
   })
@@ -3320,6 +3331,54 @@ const knowledgeRebuildAndExportSistema = t.procedure.action(async () => {
 })
 
 // =============================================================================
+// KNOWLEDGE GRAPH VISUALIZER (2 handlers)
+// =============================================================================
+
+const knowledgeGraphData = t.procedure
+  .input<{ origem?: 'sistema' | 'usuario'; limite?: number }>()
+  .action(async ({ input }) => {
+    const origem = input?.origem ?? 'usuario'
+    const limite = input?.limite ?? 300
+
+    const entities = await queryAll<{ id: number; nome: string; tipo: string }>(
+      `SELECT id, nome, tipo FROM knowledge_entities
+       WHERE origem = $1 AND (valid_to IS NULL OR valid_to > NOW())
+       ORDER BY criada_em DESC
+       LIMIT $2`,
+      origem, limite,
+    )
+
+    const entityIds = entities.map(e => e.id)
+    if (entityIds.length === 0) {
+      return { nodes: [], links: [] }
+    }
+
+    const relations = await queryAll<{
+      source: number; target: number; tipo_relacao: string; peso: number
+    }>(
+      `SELECT kr.entity_from_id AS source, kr.entity_to_id AS target,
+              kr.tipo_relacao, kr.peso
+       FROM knowledge_relations kr
+       WHERE kr.entity_from_id = ANY($1::int[])
+         AND kr.entity_to_id = ANY($1::int[])
+         AND (kr.valid_to IS NULL OR kr.valid_to > NOW())`,
+      `{${entityIds.join(',')}}`,
+    )
+
+    return {
+      nodes: entities.map(e => ({ id: e.id, nome: e.nome, tipo: e.tipo })),
+      links: relations,
+    }
+  })
+
+const knowledgeGraphExplore = t.procedure
+  .input<{ entidade: string; profundidade?: number }>()
+  .action(async ({ input }) => {
+    const { exploreRelations } = await import('./knowledge/search')
+    return await exploreRelations(input.entidade, input.profundidade ?? 2)
+  })
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -3453,6 +3512,8 @@ export const router = {
   'knowledge.rebuildGraph': knowledgeRebuildGraph,
   'knowledge.graphStats': knowledgeGraphStats,
   'knowledge.rebuildAndExportSistema': knowledgeRebuildAndExportSistema,
+  'knowledge.graphData': knowledgeGraphData,
+  'knowledge.graphExplore': knowledgeGraphExplore,
   // Backup / Restore
   'dados.exportar': dadosExportar,
   'dados.importar': dadosImportar,

@@ -75,7 +75,7 @@ export function IaConversaItem({ conversa, onAbrir, tipo }: Props) {
     <>
       <div
         className={cn(
-          'group flex items-start gap-2 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-muted/60 transition-colors',
+          'group flex items-start gap-2 px-2 py-2 rounded-lg cursor-pointer hover:bg-muted/60 transition-colors',
           ativa && 'bg-muted',
         )}
         onClick={() => !editando && onAbrir(conversa.id)}

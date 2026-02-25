@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { Pencil, Trash2, Loader2, Check, X } from 'lucide-react'
+import { Pencil, Trash2, Loader2, Check, X, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import {
   AlertDialog,
@@ -114,7 +115,15 @@ export function MemoriaItem({ memoria, onSalvar, onRemover }: MemoriaItemProps) 
     <>
       <div className="group flex items-start justify-between gap-3 rounded-lg border px-4 py-3">
         <div className="min-w-0 flex-1" onDoubleClick={() => setEditando(true)}>
-          <p className="text-sm">{memoria.conteudo}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm">{memoria.conteudo}</p>
+            {memoria.origem === 'auto' && (
+              <Badge variant="outline" className="shrink-0 gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground">
+                <Sparkles className="size-2.5" />
+                Auto
+              </Badge>
+            )}
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {formatarData(memoria.criada_em)}
           </p>

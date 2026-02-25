@@ -635,6 +635,22 @@ async function migrateSchema(): Promise<void> {
   // --- v14: Knowledge Graph origem (sistema vs usuario) ---
   await addColumnIfMissing('knowledge_entities', 'origem', "TEXT NOT NULL DEFAULT 'usuario'")
 
+  // --- v15: Cleanup session/auto_extract pollution + ia_memorias columns ---
+  // Remove session transcripts and auto_extract entries from knowledge_sources (Fase 1+2 Pit Stop)
+  await execute(`DELETE FROM knowledge_sources WHERE metadata::text LIKE '%"tipo":"session"%'`)
+  await execute(`DELETE FROM knowledge_sources WHERE metadata::text LIKE '%"tipo":"auto_extract"%'`)
+  // Revert CHECK to exclude session/auto_extract types (no longer used)
+  try {
+    await execDDL(`ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_tipo_check`)
+    await execDDL(`ALTER TABLE knowledge_sources ADD CONSTRAINT knowledge_sources_tipo_check
+      CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario'))`)
+  } catch {
+    // safe to ignore
+  }
+  // Add origem + embedding columns to ia_memorias for auto-extraction dedup
+  await addColumnIfMissing('ia_memorias', 'origem', "TEXT NOT NULL DEFAULT 'manual'")
+  await addColumnIfMissing('ia_memorias', 'embedding', 'vector(768)')
+
   // --- v9: dia_semana_regra em colaborador_regra_horario ---
   await addColumnIfMissing('colaborador_regra_horario', 'dia_semana_regra',
     "TEXT CHECK (dia_semana_regra IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR dia_semana_regra IS NULL) DEFAULT NULL")
@@ -663,5 +679,5 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_V8_MEMORIAS)
   await execDDL(DDL_V7_KNOWLEDGE)
   await migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v13 + Memórias + Knowledge Layer + Anexos)')
+  console.log('[DB] Tabelas criadas com sucesso (v15 + Memórias + Knowledge Layer + Graph)')
 }

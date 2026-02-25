@@ -64,4 +64,17 @@ export const servicoConhecimento = {
       seed_relations: number
       exported_to: string
     }>,
+
+  graphData: (origem?: 'sistema' | 'usuario', limite?: number) =>
+    client['knowledge.graphData']({ origem, limite }) as Promise<{
+      nodes: Array<{ id: number; nome: string; tipo: string }>
+      links: Array<{ source: number; target: number; tipo_relacao: string; peso: number }>
+    }>,
+
+  graphExplore: (entidade: string, profundidade?: number) =>
+    client['knowledge.graphExplore']({ entidade, profundidade }) as Promise<{
+      entidade_raiz: string | null
+      entidades: Array<{ nome: string; tipo: string; nivel: number }>
+      relacoes: Array<{ from_nome: string; to_nome: string; tipo_relacao: string; peso: number }>
+    }>,
 }

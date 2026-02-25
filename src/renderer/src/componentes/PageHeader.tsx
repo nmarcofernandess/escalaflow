@@ -24,9 +24,11 @@ interface BreadcrumbEntry {
 export function PageHeader({
   breadcrumbs,
   actions,
+  afterBreadcrumb,
 }: {
   breadcrumbs: BreadcrumbEntry[]
   actions?: React.ReactNode
+  afterBreadcrumb?: React.ReactNode
 }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -120,27 +122,30 @@ export function PageHeader({
 
       <Separator orientation="vertical" className="mx-1 !h-4" />
 
-      <Breadcrumb className="flex-1">
-        <BreadcrumbList>
-          {breadcrumbs.map((item, i) => {
-            const isLast = i === breadcrumbs.length - 1
-            return (
-              <span key={i} className="flex items-center gap-1.5">
-                {i > 0 && <BreadcrumbSeparator />}
-                <BreadcrumbItem>
-                  {isLast ? (
-                    <BreadcrumbPage>{item.label}</BreadcrumbPage>
-                  ) : (
-                    <BreadcrumbLink asChild>
-                      <Link to={item.href ?? '#'}>{item.label}</Link>
-                    </BreadcrumbLink>
-                  )}
-                </BreadcrumbItem>
-              </span>
-            )
-          })}
-        </BreadcrumbList>
-      </Breadcrumb>
+      <div className="flex flex-1 items-center gap-2 min-w-0">
+        <Breadcrumb>
+          <BreadcrumbList>
+            {breadcrumbs.map((item, i) => {
+              const isLast = i === breadcrumbs.length - 1
+              return (
+                <span key={i} className="flex items-center gap-1.5">
+                  {i > 0 && <BreadcrumbSeparator />}
+                  <BreadcrumbItem>
+                    {isLast ? (
+                      <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                    ) : (
+                      <BreadcrumbLink asChild>
+                        <Link to={item.href ?? '#'}>{item.label}</Link>
+                      </BreadcrumbLink>
+                    )}
+                  </BreadcrumbItem>
+                </span>
+              )
+            })}
+          </BreadcrumbList>
+        </Breadcrumb>
+        {afterBreadcrumb}
+      </div>
 
       {/* Actions da página + Toggle IA */}
       <div className="flex items-center gap-2">

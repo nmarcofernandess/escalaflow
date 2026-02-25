@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Brain,
   Database,
@@ -15,7 +15,7 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -39,11 +39,14 @@ import { EmptyState } from '@/componentes/EmptyState'
 import { MemoriaItem } from '@/componentes/MemoriaItem'
 import { AdicionarConhecimentoDialog } from '@/componentes/AdicionarConhecimentoDialog'
 import { VerConhecimentoDialog } from '@/componentes/VerConhecimentoDialog'
+import { GraphVisualizer } from '@/componentes/GraphVisualizer'
+import type { GraphNode, GraphLink } from '@/componentes/GraphVisualizer'
 import { useApiData } from '@/hooks/useApiData'
 import { servicoConhecimento } from '@/servicos/conhecimento'
 import { servicoMemorias } from '@/servicos/memorias'
 import { toast } from 'sonner'
 import { client } from '@/servicos/client'
+import { ENTITY_TYPE_COLORS } from '@/lib/cores'
 import type { IaMemoria } from '@shared/types'
 
 type FonteComChunks = {
@@ -66,12 +69,9 @@ function formatarData(iso: string): string {
   }
 }
 
-function badgeTipo(tipo: string, importance: string) {
+function badgeTipo(tipo: string) {
   if (tipo === 'sistema') {
     return <Badge variant="secondary" className="text-xs">Sistema</Badge>
-  }
-  if (importance === 'LOW') {
-    return <Badge variant="outline" className="text-xs">Auto</Badge>
   }
   return <Badge className="bg-green-600 text-xs hover:bg-green-700">Manual</Badge>
 }
@@ -116,11 +116,9 @@ export function MemoriaPagina() {
   }
 
   const fontes = data?.fontes ?? []
-  const totais = data?.totais ?? { total_fontes: 0, total_chunks: 0, total_sistema: 0, total_usuario: 0 }
-  const [filtroDoc, setFiltroDoc] = useState<'usuario' | 'sistema' | 'automatico'>('usuario')
+  const [filtroDoc, setFiltroDoc] = useState<'usuario' | 'sistema'>('usuario')
   const fontesFiltradas = fontes.filter((f) => {
     if (filtroDoc === 'sistema') return f.tipo === 'sistema'
-    if (filtroDoc === 'automatico') return f.tipo === 'session' || f.tipo === 'auto_extract'
     return f.tipo === 'manual'
   })
 
@@ -146,9 +144,10 @@ export function MemoriaPagina() {
     }
   }
 
-  // --- Memorias (novo) ---
+  // --- Memorias ---
+  const [filtroMem, setFiltroMem] = useState<'manual' | 'auto'>('manual')
   const [memorias, setMemorias] = useState<IaMemoria[]>([])
-  const [contagem, setContagem] = useState({ total: 0, limite: 20 })
+  const [contagem, setContagem] = useState({ total: 0, limite: 50 })
   const [loadingMemorias, setLoadingMemorias] = useState(true)
   const [novaMemoria, setNovaMemoria] = useState('')
   const [criando, setCriando] = useState(false)
@@ -168,6 +167,10 @@ export function MemoriaPagina() {
   }
 
   useEffect(() => { carregarMemorias() }, [])
+
+  const memoriasFiltradas = memorias.filter(m =>
+    filtroMem === 'auto' ? m.origem === 'auto' : m.origem !== 'auto',
+  )
 
   const handleCriarMemoria = async () => {
     if (!novaMemoria.trim() || criando) return
@@ -192,17 +195,65 @@ export function MemoriaPagina() {
     tipos: Array<{ tipo: string; count: number }>
   } | null>(null)
   const [rebuildingGraph, setRebuildingGraph] = useState(false)
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([])
+  const [graphLinks, setGraphLinks] = useState<GraphLink[]>([])
+  const [loadingGraph, setLoadingGraph] = useState(false)
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
+  const [exploredData, setExploredData] = useState<{
+    entidade_raiz: string | null
+    entidades: Array<{ nome: string; tipo: string; nivel: number }>
+    relacoes: Array<{ from_nome: string; to_nome: string; tipo_relacao: string; peso: number }>
+  } | null>(null)
+  const [activeTypes, setActiveTypes] = useState<string[]>([])
+  const graphContainerRef = useRef<HTMLDivElement>(null)
+  const [graphWidth, setGraphWidth] = useState(800)
 
   const carregarGraphStats = async (origem?: 'usuario' | 'sistema') => {
     try {
       const stats = await servicoConhecimento.graphStats(origem ?? filtroGraph)
       setGraphStats(stats)
+      // Init active types from stats
+      if (stats.tipos.length > 0) {
+        setActiveTypes(stats.tipos.map(t => t.tipo))
+      }
     } catch {
       setGraphStats(null)
     }
   }
 
-  useEffect(() => { carregarGraphStats() }, [filtroGraph])
+  const carregarGraphData = async (origem?: 'usuario' | 'sistema') => {
+    setLoadingGraph(true)
+    try {
+      const result = await servicoConhecimento.graphData(origem ?? filtroGraph, 300)
+      setGraphNodes(result.nodes)
+      setGraphLinks(result.links)
+    } catch {
+      setGraphNodes([])
+      setGraphLinks([])
+    } finally {
+      setLoadingGraph(false)
+    }
+  }
+
+  useEffect(() => {
+    carregarGraphStats()
+    carregarGraphData()
+    setSelectedNode(null)
+    setExploredData(null)
+  }, [filtroGraph])
+
+  // Measure container width for responsive graph
+  useEffect(() => {
+    const el = graphContainerRef.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setGraphWidth(entry.contentRect.width)
+      }
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
 
   const handleRebuildGraph = async () => {
     if (rebuildingGraph) return
@@ -211,18 +262,43 @@ export function MemoriaPagina() {
       if (filtroGraph === 'sistema') {
         const result = await servicoConhecimento.rebuildAndExportSistema()
         toast.success(`Graph sistema: ${result.seed_entities} entidades, ${result.seed_relations} relacoes exportadas`)
-        await carregarGraphStats('sistema')
       } else {
         const result = await servicoConhecimento.rebuildGraph('usuario')
         toast.success(`Grafo gerado: ${result.entities_count} entidades, ${result.relations_count} relacoes (${result.chunks_processados} chunks)`)
-        await carregarGraphStats('usuario')
       }
+      await carregarGraphStats()
+      await carregarGraphData()
     } catch (err: any) {
       toast.error('Erro ao gerar grafo', { description: err?.message ?? 'Erro desconhecido' })
     } finally {
       setRebuildingGraph(false)
     }
   }
+
+  const handleNodeClick = async (node: GraphNode) => {
+    setSelectedNode(node)
+    try {
+      const result = await servicoConhecimento.graphExplore(node.nome, 2)
+      setExploredData(result)
+    } catch {
+      setExploredData(null)
+    }
+  }
+
+  const toggleType = (tipo: string) => {
+    setActiveTypes(prev =>
+      prev.includes(tipo) ? prev.filter(t => t !== tipo) : [...prev, tipo],
+    )
+  }
+
+  // Filtered graph data based on active types
+  const filteredNodes = activeTypes.length > 0
+    ? graphNodes.filter(n => activeTypes.includes(n.tipo))
+    : graphNodes
+  const filteredNodeIds = new Set(filteredNodes.map(n => n.id))
+  const filteredLinks = graphLinks.filter(
+    l => filteredNodeIds.has(l.source) && filteredNodeIds.has(l.target),
+  )
 
   const handleSalvarMemoria = async (id: number, conteudo: string) => {
     await servicoMemorias.salvar({ id, conteudo })
@@ -266,80 +342,96 @@ export function MemoriaPagina() {
 
           {/* ── TAB MEMORIAS ── */}
           <TabsContent value="memorias" className="mt-4 space-y-4">
-            {/* Toggle Memoria Automatica */}
-            <Card>
-              <CardContent className="flex items-center justify-between py-4">
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium">Memoria Automatica</p>
-                  <p className="text-xs text-muted-foreground">
-                    Salva informacoes das conversas automaticamente ao trocar de chat
-                  </p>
-                </div>
-                <Switch
-                  checked={memoriaAutomatica}
-                  onCheckedChange={handleToggleMemoriaAutomatica}
-                  disabled={loadingToggle}
-                />
-              </CardContent>
-            </Card>
-
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base">Memorias do RH</CardTitle>
-                    <CardDescription>
-                      Fatos rapidos que a IA lembra em toda conversa
-                    </CardDescription>
+                  <div className="flex items-center gap-3">
+                    <Select value={filtroMem} onValueChange={(v) => setFiltroMem(v as 'manual' | 'auto')}>
+                      <SelectTrigger className="w-[220px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="manual">
+                          <span className="flex items-center gap-1.5">
+                            <Brain className="size-3.5" />
+                            Memorias do RH
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="auto">
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles className="size-3.5" />
+                            Memorias Automaticas
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Badge variant="outline" className="text-xs">
+                      {memoriasFiltradas.length} / {contagem.limite}
+                    </Badge>
                   </div>
-                  <Badge variant="outline">{contagem.total} / {contagem.limite}</Badge>
+                  {filtroMem === 'auto' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Ativo</span>
+                      <Switch
+                        checked={memoriaAutomatica}
+                        onCheckedChange={handleToggleMemoriaAutomatica}
+                        disabled={loadingToggle}
+                      />
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Input nova memoria */}
-                <div className="flex gap-2">
-                  <Textarea
-                    rows={2}
-                    value={novaMemoria}
-                    onChange={(e) => setNovaMemoria(e.target.value)}
-                    placeholder="Ex: Maria pediu pra nao trabalhar quinta"
-                    className="resize-none text-sm"
-                    maxLength={500}
-                    disabled={contagem.total >= contagem.limite}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleCriarMemoria()
-                      }
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleCriarMemoria}
-                    disabled={!novaMemoria.trim() || criando || contagem.total >= contagem.limite}
-                    className="shrink-0 self-end"
-                  >
-                    {criando ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-                  </Button>
-                </div>
-                {contagem.total >= contagem.limite && (
-                  <p className="text-xs text-amber-500">
-                    Limite de {contagem.limite} memorias atingido. Remova uma para adicionar outra.
-                  </p>
+                {filtroMem === 'manual' && (
+                  <>
+                    {/* Input nova memoria */}
+                    <div className="flex gap-2">
+                      <Textarea
+                        rows={2}
+                        value={novaMemoria}
+                        onChange={(e) => setNovaMemoria(e.target.value)}
+                        placeholder="Ex: Maria pediu pra nao trabalhar quinta"
+                        className="resize-none text-sm"
+                        maxLength={500}
+                        disabled={contagem.total >= contagem.limite}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            handleCriarMemoria()
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleCriarMemoria}
+                        disabled={!novaMemoria.trim() || criando || contagem.total >= contagem.limite}
+                        className="shrink-0 self-end"
+                      >
+                        {criando ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                      </Button>
+                    </div>
+                    {contagem.total >= contagem.limite && (
+                      <p className="text-xs text-amber-500">
+                        Limite de {contagem.limite} memorias atingido. Remova uma para adicionar outra.
+                      </p>
+                    )}
+                    <Separator />
+                  </>
                 )}
 
-                <Separator />
-
-                {/* Lista memorias */}
-                {memorias.length === 0 && !loadingMemorias ? (
+                {/* Lista memorias filtradas */}
+                {memoriasFiltradas.length === 0 && !loadingMemorias ? (
                   <EmptyState
-                    icon={Brain}
-                    title="Nenhuma memoria"
-                    description="Adicione fatos que a IA deve lembrar em toda conversa."
+                    icon={filtroMem === 'manual' ? Brain : Sparkles}
+                    title={filtroMem === 'manual' ? 'Nenhuma memoria' : 'Nenhuma memoria automatica'}
+                    description={filtroMem === 'manual'
+                      ? 'Adicione fatos que a IA deve lembrar em toda conversa.'
+                      : 'Converse com a IA e troque de chat — fatos relevantes serao extraidos automaticamente.'
+                    }
                   />
                 ) : (
                   <div className="space-y-2">
-                    {memorias.map((m) => (
+                    {memoriasFiltradas.map((m) => (
                       <MemoriaItem
                         key={m.id}
                         memoria={m}
@@ -358,9 +450,9 @@ export function MemoriaPagina() {
                 <div className="flex gap-3">
                   <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-500" />
                   <div className="space-y-1 text-sm text-muted-foreground">
-                    <p><strong>Memorias</strong> sao fatos curtos que voce ensina a IA. Ela lembra em TODA conversa automaticamente.</p>
+                    <p><strong>Memorias do RH</strong> sao fatos que voce ensina a IA. Ela lembra em TODA conversa.</p>
+                    <p><strong>Memorias Automaticas</strong> sao extraidas das conversas quando voce troca de chat.</p>
                     <p><strong>Documentos</strong> sao textos longos (CLT, PDFs, manuais) que a IA consulta quando relevante.</p>
-                    <p>Use memorias pra preferencias e excecoes. Use documentos pra regras e referencias.</p>
                   </div>
                 </div>
               </CardContent>
@@ -373,7 +465,7 @@ export function MemoriaPagina() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <Select value={filtroDoc} onValueChange={(v) => setFiltroDoc(v as 'usuario' | 'sistema' | 'automatico')}>
+                    <Select value={filtroDoc} onValueChange={(v) => setFiltroDoc(v as 'usuario' | 'sistema')}>
                       <SelectTrigger className="w-[220px]">
                         <SelectValue />
                       </SelectTrigger>
@@ -382,12 +474,6 @@ export function MemoriaPagina() {
                           <span className="flex items-center gap-1.5">
                             <User className="size-3.5" />
                             Meus Documentos
-                          </span>
-                        </SelectItem>
-                        <SelectItem value="automatico">
-                          <span className="flex items-center gap-1.5">
-                            <Sparkles className="size-3.5" />
-                            Aprendizado Automatico
                           </span>
                         </SelectItem>
                         <SelectItem value="sistema">
@@ -426,12 +512,6 @@ export function MemoriaPagina() {
                           Importar
                         </Button>
                       }
-                    />
-                  ) : filtroDoc === 'automatico' ? (
-                    <EmptyState
-                      icon={Sparkles}
-                      title="Nenhum aprendizado automatico"
-                      description="Converse com a IA e troque de chat — memorias serao salvas automaticamente."
                     />
                   ) : (
                     <EmptyState
@@ -490,38 +570,40 @@ export function MemoriaPagina() {
                       </Badge>
                     )}
                   </div>
-                  {filtroGraph === 'usuario' && (
-                    <Button
-                      size="sm"
-                      onClick={handleRebuildGraph}
-                      disabled={rebuildingGraph}
-                    >
-                      {rebuildingGraph ? (
-                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="mr-1.5 size-3.5" />
-                      )}
-                      {rebuildingGraph ? 'Analisando...' : 'Analisar Relacoes'}
-                    </Button>
-                  )}
-                  {import.meta.env.DEV && filtroGraph === 'sistema' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleRebuildGraph}
-                      disabled={rebuildingGraph}
-                    >
-                      {rebuildingGraph ? (
-                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                      ) : (
-                        <Network className="mr-1.5 size-3.5" />
-                      )}
-                      {rebuildingGraph ? 'Extraindo...' : 'Rebuild Graph'}
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {filtroGraph === 'usuario' && (
+                      <Button
+                        size="sm"
+                        onClick={handleRebuildGraph}
+                        disabled={rebuildingGraph}
+                      >
+                        {rebuildingGraph ? (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-1.5 size-3.5" />
+                        )}
+                        {rebuildingGraph ? 'Analisando...' : 'Analisar Relacoes'}
+                      </Button>
+                    )}
+                    {import.meta.env.DEV && filtroGraph === 'sistema' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRebuildGraph}
+                        disabled={rebuildingGraph}
+                      >
+                        {rebuildingGraph ? (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        ) : (
+                          <Network className="mr-1.5 size-3.5" />
+                        )}
+                        {rebuildingGraph ? 'Extraindo...' : 'Rebuild Graph'}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4" ref={graphContainerRef}>
                 {!graphStats || (graphStats.entities_count === 0 && graphStats.relations_count === 0) ? (
                   <EmptyState
                     icon={Network}
@@ -533,33 +615,103 @@ export function MemoriaPagina() {
                   />
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="rounded-lg border p-3 text-center">
-                        <p className="text-2xl font-bold">{graphStats.entities_count}</p>
-                        <p className="text-xs text-muted-foreground">Entidades</p>
-                      </div>
-                      <div className="rounded-lg border p-3 text-center">
-                        <p className="text-2xl font-bold">{graphStats.relations_count}</p>
-                        <p className="text-xs text-muted-foreground">Relacoes</p>
-                      </div>
-                    </div>
-
+                    {/* Type filter badges */}
                     {graphStats.tipos.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium">Entidades por tipo</p>
-                        <div className="flex flex-wrap gap-2">
-                          {graphStats.tipos.map(t => (
-                            <Badge key={t.tipo} variant="outline" className="text-xs">
+                      <div className="flex flex-wrap gap-2">
+                        {graphStats.tipos.map(t => {
+                          const isActive = activeTypes.includes(t.tipo)
+                          const color = ENTITY_TYPE_COLORS[t.tipo] ?? '#6b7280'
+                          return (
+                            <button
+                              key={t.tipo}
+                              onClick={() => toggleType(t.tipo)}
+                              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                                isActive
+                                  ? 'border-transparent text-white'
+                                  : 'border-border text-muted-foreground opacity-50'
+                              }`}
+                              style={isActive ? { backgroundColor: color } : undefined}
+                            >
                               {t.tipo} ({t.count})
-                            </Badge>
-                          ))}
-                        </div>
+                            </button>
+                          )
+                        })}
                       </div>
+                    )}
+
+                    {/* Graph visualizer */}
+                    {loadingGraph ? (
+                      <div className="flex h-[500px] items-center justify-center">
+                        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <GraphVisualizer
+                        nodes={filteredNodes}
+                        links={filteredLinks}
+                        onNodeClick={handleNodeClick}
+                        selectedNodeId={selectedNode?.id ?? null}
+                        width={graphWidth}
+                        height={500}
+                      />
+                    )}
+
+                    {/* Entity detail card */}
+                    {selectedNode && (
+                      <Card className="border-l-4" style={{ borderLeftColor: ENTITY_TYPE_COLORS[selectedNode.tipo] ?? '#6b7280' }}>
+                        <CardContent className="py-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-semibold">{selectedNode.nome}</h3>
+                              <Badge
+                                variant="outline"
+                                className="text-xs text-white"
+                                style={{ backgroundColor: ENTITY_TYPE_COLORS[selectedNode.tipo] ?? '#6b7280' }}
+                              >
+                                {selectedNode.tipo}
+                              </Badge>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => { setSelectedNode(null); setExploredData(null) }}
+                            >
+                              Fechar
+                            </Button>
+                          </div>
+
+                          {exploredData && exploredData.relacoes.length > 0 ? (
+                            <div className="mt-3 space-y-1.5">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                Conexoes ({exploredData.relacoes.length})
+                              </p>
+                              <div className="max-h-[200px] overflow-y-auto space-y-1">
+                                {exploredData.relacoes.map((r, i) => (
+                                  <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <span className="font-medium text-foreground">{r.from_nome}</span>
+                                    <span className="text-muted-foreground">→</span>
+                                    <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                                      {r.tipo_relacao}
+                                    </Badge>
+                                    <span className="text-muted-foreground">→</span>
+                                    <span className="font-medium text-foreground">{r.to_nome}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : exploredData ? (
+                            <p className="mt-2 text-xs text-muted-foreground">Nenhuma conexao encontrada.</p>
+                          ) : (
+                            <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Loader2 className="size-3 animate-spin" /> Carregando conexoes...
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
                     )}
                   </>
                 )}
 
-                {filtroGraph === 'usuario' && (
+                {filtroGraph === 'usuario' && graphStats && graphStats.entities_count === 0 && (
                   <div className="rounded-lg bg-muted/30 px-4 py-3">
                     <div className="flex gap-3">
                       <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-500" />
@@ -618,7 +770,7 @@ function FonteItem({
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        {badgeTipo(fonte.tipo, fonte.importance)}
+        {badgeTipo(fonte.tipo)}
         {onToggleAtivo && (
           <Switch
             checked={fonte.ativo}

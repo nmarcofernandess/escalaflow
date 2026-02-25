@@ -173,8 +173,10 @@ export const useIaStore = create<IaStore>((set, get) => ({
     if (get()._inicializado) return
     set({ _inicializado: true })
 
+    // Busca ativas + arquivadas
     const ativas = (await ipc.invoke('ia.conversas.listar', { status: 'ativo' })) as IaConversa[]
-    set({ conversas: ativas })
+    const arquivadas = (await ipc.invoke('ia.conversas.listar', { status: 'arquivado' })) as IaConversa[]
+    set({ conversas: [...ativas, ...arquivadas] })
 
     if (ativas.length > 0) {
       const mais_recente = ativas[0]

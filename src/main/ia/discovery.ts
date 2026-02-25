@@ -449,10 +449,10 @@ async function _autoRag(query: string): Promise<string | null> {
 
 async function _memorias(): Promise<string | null> {
     try {
-        const rows = await queryAll<{ id: number; conteudo: string }>('SELECT id, conteudo FROM ia_memorias ORDER BY atualizada_em DESC LIMIT 20')
+        const rows = await queryAll<{ id: number; conteudo: string }>('SELECT id, conteudo FROM ia_memorias ORDER BY atualizada_em DESC LIMIT 50')
         if (rows.length === 0) return null
         const lines = rows.map(m => `- ${m.conteudo}`)
-        return `\n### Memórias do RH (${rows.length}/20)\n${lines.join('\n')}`
+        return `\n### Memórias do RH (${rows.length}/50)\n${lines.join('\n')}`
     } catch {
         return null
     }
