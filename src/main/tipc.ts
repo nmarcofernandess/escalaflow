@@ -1847,6 +1847,18 @@ const setoresDeletarDemandaExcecaoData = t.procedure
 // COLABORADORES — REGRAS DE HORÁRIO (5 handlers)
 // =============================================================================
 
+const colaboradoresListarRegrasPadraoSetor = t.procedure
+  .input<{ setor_id: number }>()
+  .action(async ({ input }) => {
+    return await queryAll(
+      `SELECT r.* FROM colaborador_regra_horario r
+       JOIN colaboradores c ON c.id = r.colaborador_id
+       WHERE c.setor_id = ? AND c.ativo = true AND r.ativo = true
+         AND r.dia_semana_regra IS NULL`,
+      input.setor_id
+    )
+  })
+
 const colaboradoresBuscarRegraHorario = t.procedure
   .input<{ colaborador_id: number }>()
   .action(async ({ input }) => {
@@ -3426,6 +3438,7 @@ export const router = {
   'colaboradores.criar': colaboradoresCriar,
   'colaboradores.atualizar': colaboradoresAtualizar,
   'colaboradores.deletar': colaboradoresDeletar,
+  'colaboradores.listarRegrasPadraoSetor': colaboradoresListarRegrasPadraoSetor,
   'colaboradores.buscarRegraHorario': colaboradoresBuscarRegraHorario,
   'colaboradores.salvarRegraHorario': colaboradoresSalvarRegraHorario,
   'colaboradores.deletarRegraHorario': colaboradoresDeletarRegraHorario,

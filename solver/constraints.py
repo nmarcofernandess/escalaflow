@@ -274,6 +274,23 @@ def add_h10_meta_semanal(
     weekly_minutes_by_colab: list[list[cp_model.IntVar]] = []
 
     for c in range(C):
+        # Intermitente: horas_semanais=0 — skip bounds, dominio livre
+        if int(colabs[c]["horas_semanais"]) == 0:
+            max_day_min = int(colabs[c].get("max_minutos_dia", 600))
+            blocked = blocked_days.get(c, set()) if blocked_days else set()
+            chunk_vars: list[cp_model.IntVar] = []
+            for w_idx, chunk in enumerate(week_chunks):
+                available = sum(1 for d in chunk if d not in blocked)
+                cap = max(1, available * max_day_min)
+                wm = model.new_int_var(0, cap, f"wm_{c}_{w_idx}")
+                model.add(wm == sum(work[c, d, s] for d in chunk for s in range(S)) * grid_min)
+                chunk_vars.append(wm)
+            wt = model.new_int_var(0, D * S * grid_min, f"wm_total_{c}")
+            model.add(wt == sum(chunk_vars))
+            total_minutes.append(wt)
+            weekly_minutes_by_colab.append(chunk_vars)
+            continue
+
         blocked = blocked_days.get(c, set()) if blocked_days else set()
         regime_days = _resolve_regime_days(colabs[c])
         target_week_min = int(colabs[c]["horas_semanais"]) * 60
@@ -344,6 +361,23 @@ def add_h10_meta_semanal_elastic(
     weekly_minutes_by_colab: list[list[cp_model.IntVar]] = []
 
     for c in range(C):
+        # Intermitente: horas_semanais=0 — skip penalty, dominio livre
+        if int(colabs[c]["horas_semanais"]) == 0:
+            max_day_min = int(colabs[c].get("max_minutos_dia", 600))
+            blocked = blocked_days.get(c, set()) if blocked_days else set()
+            chunk_vars: list[cp_model.IntVar] = []
+            for w_idx, chunk in enumerate(week_chunks):
+                available = sum(1 for d in chunk if d not in blocked)
+                cap = max(1, available * max_day_min)
+                wm = model.new_int_var(0, cap, f"wm_{c}_{w_idx}")
+                model.add(wm == sum(work[c, d, s] for d in chunk for s in range(S)) * grid_min)
+                chunk_vars.append(wm)
+            wt = model.new_int_var(0, D * S * grid_min, f"wm_total_{c}")
+            model.add(wt == sum(chunk_vars))
+            total_minutes.append(wt)
+            weekly_minutes_by_colab.append(chunk_vars)
+            continue
+
         blocked = blocked_days.get(c, set()) if blocked_days else set()
         regime_days = _resolve_regime_days(colabs[c])
         target_week_min = int(colabs[c]["horas_semanais"]) * 60
@@ -951,6 +985,49 @@ def add_folga_fixa_5x2(
         for d in range(D):
             if day_labels[d] == fixed_day:
                 model.add(works_day[c, d] == 0)
+
+
+def add_folga_variavel_condicional(
+    model: cp_model.CpModel,
+    works_day: WorksDay,
+    colabs: List[dict],
+    days: List[str],
+    C: int, D: int,
+) -> None:
+    """Folga variavel condicional: XOR entre domingo e dia variavel.
+
+    Se trabalhou domingo(semana N) -> folga no dia_var(semana N+1).
+    Se nao trabalhou domingo(semana N) -> trabalha no dia_var(semana N+1).
+
+    Constraint: works_day[c, dom_idx] + works_day[c, var_idx] == 1
+
+    So emite quando AMBOS indices estao dentro do periodo.
+    Semana 1 sem domingo anterior: sem constraint = solver livre.
+    """
+    DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+
+    from datetime import date as dt_date
+    day_labels = [DAY_LABELS[dt_date.fromisoformat(day).weekday()] for day in days]
+
+    # Offset do DOM ate o dia variavel na proxima semana (SEG-SAB)
+    OFFSET = {"SEG": 1, "TER": 2, "QUA": 3, "QUI": 4, "SEX": 5, "SAB": 6}
+
+    for c in range(C):
+        var_day = colabs[c].get("folga_variavel_dia_semana")
+        if not var_day:
+            continue
+
+        offset = OFFSET.get(var_day, 0)
+        if offset == 0:
+            continue
+
+        for d in range(D):
+            if day_labels[d] != "DOM":
+                continue
+            var_idx = d + offset
+            if var_idx < D:
+                # XOR: trabalha_dom + trabalha_var == 1
+                model.add(works_day[c, d] + works_day[c, var_idx] == 1)
 
 
 def add_surplus_soft(

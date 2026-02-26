@@ -24,7 +24,7 @@ import { colaboradoresService } from '@/servicos/colaboradores'
 import { exportarService } from '@/servicos/exportar'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda, CSV_BOM } from '@/lib/gerarCSV'
-import type { Setor, Colaborador, EscalaCompletaV3, TipoContrato, Funcao, SetorHorarioSemana } from '@shared/index'
+import type { Setor, Colaborador, EscalaCompletaV3, TipoContrato, Funcao, SetorHorarioSemana, RegraHorarioColaborador } from '@shared/index'
 
 interface SetorComEscala {
   setor: Setor
@@ -220,6 +220,7 @@ export function EscalasHub() {
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([])
   const [exportFuncoes, setExportFuncoes] = useState<Map<number, Funcao[]>>(new Map())
   const [exportHorariosSemana, setExportHorariosSemana] = useState<Map<number, SetorHorarioSemana[]>>(new Map())
+  const [exportRegrasPadrao, setExportRegrasPadrao] = useState<Map<number, RegraHorarioColaborador>>(new Map())
 
   // Abrir export modal com contexto inteligente
   async function handleOpenExport(overrideSetorIds?: Set<number>) {
@@ -237,25 +238,31 @@ export function EscalasHub() {
     setExportSetores(setoresExp)
 
     // Carregar escalas completas + tipos contrato para export
-    const [escalas, tcs, funcoesBySetor, horariosBySetor] = await Promise.all([
+    const [escalas, tcs, funcoesBySetor, horariosBySetor, regrasBySetor] = await Promise.all([
       Promise.all(comEscala.map((s) => escalasService.buscar(s.escalaResumo!.id))),
       tiposContratoService.listar(),
       Promise.all(comEscala.map((s) => funcoesService.listar(s.setor.id, true).catch(() => []))),
       Promise.all(comEscala.map((s) => setoresService.listarHorarioSemana(s.setor.id).catch(() => []))),
+      Promise.all(comEscala.map((s) => colaboradoresService.listarRegrasPadraoSetor(s.setor.id).catch(() => []))),
     ])
     const escMap = new Map<number, EscalaCompletaV3>()
     const funcoesMap = new Map<number, Funcao[]>()
     const horariosMap = new Map<number, SetorHorarioSemana[]>()
+    const regrasMap = new Map<number, RegraHorarioColaborador>()
     for (let i = 0; i < comEscala.length; i++) {
       const setorId = comEscala[i].setor.id
       escMap.set(setorId, escalas[i])
       funcoesMap.set(setorId, funcoesBySetor[i] ?? [])
       horariosMap.set(setorId, horariosBySetor[i] ?? [])
+      for (const r of (regrasBySetor[i] ?? [])) {
+        regrasMap.set(r.colaborador_id, r)
+      }
     }
     setExportEscalas(escMap)
     setTiposContrato(tcs)
     setExportFuncoes(funcoesMap)
     setExportHorariosSemana(horariosMap)
+    setExportRegrasPadrao(regrasMap)
 
     // Se 1 setor, pre-carregar colaboradores dele
     if (comEscala.length === 1) {
@@ -278,6 +285,7 @@ export function EscalasHub() {
     const colab = todosColabs.find((c) => c.id === colabId)
     if (!colab) return ''
     const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
+    const r = exportRegrasPadrao.get(colabId)
     return gerarHTMLFuncionario({
       nome: colab.nome,
       contrato: tc?.nome ?? '',
@@ -286,6 +294,7 @@ export function EscalasHub() {
       periodo: { inicio: ec.escala.data_inicio, fim: ec.escala.data_fim },
       alocacoes: ec.alocacoes.filter((a) => a.colaborador_id === colabId),
       violacoes: ec.violacoes.filter((v) => v.colaborador_id === colabId),
+      regra: r ? { folga_fixa_dia_semana: r.folga_fixa_dia_semana ?? null, folga_variavel_dia_semana: r.folga_variavel_dia_semana ?? null } : undefined,
     })
   }
 

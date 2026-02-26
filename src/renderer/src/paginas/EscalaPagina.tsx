@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   CalendarDays,
@@ -78,6 +78,7 @@ import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { RuleComplianceBadge } from '@/componentes/RuleComplianceBadge'
+import { ResumoFolgas } from '@/componentes/ResumoFolgas'
 import type {
   EscalaCompleta,
   EscalaCompletaV3,
@@ -88,6 +89,7 @@ import type {
   Funcao,
   ModeloCicloEscala,
   RegimeEscala,
+  RegraHorarioColaborador,
 } from '@shared/index'
 
 export function EscalaPagina() {
@@ -116,6 +118,18 @@ export function EscalaPagina() {
     () => setoresService.listarHorarioSemana(setorId),
     [setorId],
   )
+  const { data: regrasPadrao } = useApiData(
+    () => colaboradoresService.listarRegrasPadraoSetor(setorId),
+    [setorId],
+  )
+
+  const regrasMap = useMemo(() => {
+    const map = new Map<number, RegraHorarioColaborador>()
+    if (regrasPadrao) {
+      for (const r of regrasPadrao) map.set(r.colaborador_id, r)
+    }
+    return map
+  }, [regrasPadrao])
 
   // Simulacao state — auto-preenche com proximo mes
   const [dataInicio, setDataInicio] = useState(() => {
@@ -562,6 +576,7 @@ export function EscalaPagina() {
     const colab = colaboradores.find((c) => c.id === colabId)
     if (!colab) return ''
     const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
+    const r = regrasMap.get(colabId)
     return gerarHTMLFuncionario({
       nome: colab.nome,
       contrato: tc?.nome ?? '',
@@ -570,6 +585,7 @@ export function EscalaPagina() {
       periodo: { inicio: exportEscala.escala.data_inicio, fim: exportEscala.escala.data_fim },
       alocacoes: exportEscala.alocacoes.filter((a) => a.colaborador_id === colabId),
       violacoes: exportEscala.violacoes.filter((v) => v.colaborador_id === colabId),
+      regra: r ? { folga_fixa_dia_semana: r.folga_fixa_dia_semana ?? null, folga_variavel_dia_semana: r.folga_variavel_dia_semana ?? null } : undefined,
     })
   }
 
@@ -869,6 +885,7 @@ export function EscalaPagina() {
                 cicloResult={cicloResult}
                 onSalvarCicloOpen={() => setShowCicloSaveDialog(true)}
                 horariosSemana={horariosSemana ?? undefined}
+                regrasMap={regrasMap}
               />
             ) : (
               <Card>
@@ -967,6 +984,7 @@ export function EscalaPagina() {
                         tiposContrato={tiposContrato ?? undefined}
                         funcoes={funcoes ?? undefined}
                         readOnly
+                        regrasMap={regrasMap}
                       />
                     ) : (
                       <TimelineGrid
@@ -979,6 +997,7 @@ export function EscalaPagina() {
                         demandas={demandas ?? undefined}
                         tiposContrato={tiposContrato ?? undefined}
                         horariosSemana={horariosSemana ?? undefined}
+                        regrasMap={regrasMap}
                         readOnly
                       />
                     )}
@@ -1078,6 +1097,7 @@ export function EscalaPagina() {
                                   tiposContrato={tiposContrato ?? undefined}
                                   funcoes={funcoes ?? undefined}
                                   readOnly
+                                  regrasMap={regrasMap}
                                 />
                               ) : (
                                 <TimelineGrid
@@ -1090,6 +1110,7 @@ export function EscalaPagina() {
                                   demandas={demandas ?? undefined}
                                   tiposContrato={tiposContrato ?? undefined}
                                   horariosSemana={horariosSemana ?? undefined}
+                                  regrasMap={regrasMap}
                                   readOnly
                                 />
                               )}
@@ -1338,6 +1359,7 @@ interface SimulacaoResultProps {
   } | null
   onSalvarCicloOpen?: () => void
   horariosSemana?: import('@shared/index').SetorHorarioSemana[]
+  regrasMap?: Map<number, RegraHorarioColaborador>
 }
 
 function SimulacaoResult({
@@ -1370,6 +1392,7 @@ function SimulacaoResult({
   cicloResult = null,
   onSalvarCicloOpen,
   horariosSemana,
+  regrasMap,
 }: SimulacaoResultProps) {
   const indicators = getIndicators(escalaCompleta)
   const violacoes = escalaCompleta.violacoes
@@ -1451,6 +1474,15 @@ function SimulacaoResult({
         <RuleComplianceBadge diagnostico={escalaCompleta.diagnostico} />
       )}
 
+      {/* Resumo Folgas */}
+      {colaboradores && regrasMap && (
+        <ResumoFolgas
+          colaboradores={colaboradores}
+          alocacoes={escalaCompleta.alocacoes}
+          regrasMap={regrasMap}
+        />
+      )}
+
       {/* Grid */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -1483,6 +1515,7 @@ function SimulacaoResult({
               loadingCell={ajustando ?? undefined}
               changedCells={changedCells}
               violatedCells={violatedCells}
+              regrasMap={regrasMap}
             />
           ) : (
             <TimelineGrid
@@ -1500,6 +1533,7 @@ function SimulacaoResult({
               loadingCell={ajustando ?? undefined}
               changedCells={changedCells}
               violatedCells={violatedCells}
+              regrasMap={regrasMap}
             />
           )}
         </CardContent>

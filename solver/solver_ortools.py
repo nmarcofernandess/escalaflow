@@ -34,6 +34,7 @@ from constraints import (
     add_dias_trabalho_soft_penalty,
     add_domingo_ciclo_soft,
     add_folga_fixa_5x2,
+    add_folga_variavel_condicional,
     add_h1_max_dias_consecutivos,
     add_h1_soft_penalty,
     add_h2_interjornada,
@@ -542,6 +543,10 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
     # v4: Folga fixa 5x2 (product rule, skip in emergency pass)
     if not skip_folga_fixa:
         add_folga_fixa_5x2(model, works_day, colabs, days, C, D)
+
+    # v4: Folga variavel condicional (skip in emergency pass, like folga_fixa)
+    if not skip_folga_fixa:
+        add_folga_variavel_condicional(model, works_day, colabs, days, C, D)
 
     # Product rules (with blocked_days awareness)
     dt_status = rule_is('DIAS_TRABALHO', 'HARD')
@@ -1091,7 +1096,7 @@ def solve(data: dict) -> dict:
 
     diag = result.get("diagnostico", {})
     diag["pass_usado"] = 3
-    diag["regras_relaxadas"] = ["H1", "H6", "H10", "DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "TIME_WINDOW"]
+    diag["regras_relaxadas"] = ["H1", "H6", "H10", "DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
     diag["capacidade_vs_demanda"] = capacidade_diag
     diag["modo_emergencia"] = True
     result["diagnostico"] = diag

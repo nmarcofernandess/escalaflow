@@ -208,6 +208,7 @@ export interface RegraHorarioColaborador {
   domingo_ciclo_trabalho: number  // default 2 (só na regra padrão)
   domingo_ciclo_folga: number     // default 1 (só na regra padrão)
   folga_fixa_dia_semana: DiaSemana | null  // só na regra padrão
+  folga_variavel_dia_semana: DiaSemana | null  // só na regra padrão (SEG-SAB, condicional ao domingo)
 }
 
 export interface RegraHorarioColaboradorExcecaoData {
@@ -508,6 +509,7 @@ export interface SolverInputColab {
   domingo_ciclo_trabalho?: number
   domingo_ciclo_folga?: number
   folga_fixa_dia_semana?: DiaSemana | null
+  folga_variavel_dia_semana?: DiaSemana | null
 }
 
 export interface SolverInputDemanda {

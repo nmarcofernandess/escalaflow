@@ -1,6 +1,6 @@
 import { Fragment, useState, useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import type { Alocacao, Colaborador, Setor, Demanda, TipoContrato, SetorHorarioSemana } from '@shared/index'
+import type { Alocacao, Colaborador, Setor, Demanda, TipoContrato, SetorHorarioSemana, RegraHorarioColaborador } from '@shared/index'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
@@ -29,6 +29,7 @@ interface TimelineGridProps {
   loadingCell?: { colaboradorId: number; data: string } | null
   changedCells?: Set<string>
   violatedCells?: Set<string>
+  regrasMap?: Map<number, RegraHorarioColaborador>
 }
 
 /** Format a Date to YYYY-MM-DD string */
@@ -51,6 +52,7 @@ export function TimelineGrid({
   loadingCell,
   changedCells = new Set(),
   violatedCells = new Set(),
+  regrasMap,
 }: TimelineGridProps) {
   const [currentDate, setCurrentDate] = useState(dataSelecionada)
 
@@ -542,7 +544,13 @@ export function TimelineGrid({
                     style={{ gridRow, gridColumn: `2 / ${totalSlots + 2}` }}
                   >
                     <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                      FOLGA
+                      {(() => {
+                        const regra = regrasMap?.get(colab.id)
+                        const dow = DIAS_MAP[new Date(currentDate + 'T00:00:00').getDay()]
+                        if (regra?.folga_fixa_dia_semana === dow) return 'FOLGA [F]'
+                        if (regra?.folga_variavel_dia_semana === dow) return 'FOLGA (V)'
+                        return 'FOLGA'
+                      })()}
                     </Badge>
                   </div>
                 )}

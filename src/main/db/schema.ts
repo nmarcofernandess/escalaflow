@@ -752,6 +752,10 @@ async function migrateSchema(): Promise<void> {
       `INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia) VALUES ('Intermitente', 0, '6X1', 6, 585)`
     )
   }
+
+  // --- v18: Folga variavel condicional ---
+  await addColumnIfMissing('colaborador_regra_horario', 'folga_variavel_dia_semana',
+    "TEXT CHECK (folga_variavel_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB') OR folga_variavel_dia_semana IS NULL) DEFAULT NULL")
 }
 
 // ============================================================================
@@ -768,5 +772,5 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_V8_MEMORIAS)
   await execDDL(DDL_V7_KNOWLEDGE)
   await migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v17 + Limpeza Contratos)')
+  console.log('[DB] Tabelas criadas com sucesso (v18 + Folga Variavel)')
 }

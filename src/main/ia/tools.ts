@@ -276,6 +276,8 @@ const SalvarRegraHorarioColaboradorSchema = z.object({
   domingo_ciclo_trabalho: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de trabalho no ciclo (só na regra padrão).'),
   domingo_ciclo_folga: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de folga no ciclo (só na regra padrão).'),
   folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover (só na regra padrão).'),
+  folga_variavel_dia_semana: z.enum(['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']).nullable().optional()
+    .describe('Dia da 2a folga semanal (SEG..SAB, nunca DOM). Se trabalhou domingo, folga neste dia na semana seguinte. NULL para remover. Só na regra padrão.'),
 })
 
 // criar colaborador — validação específica para colaboradores
@@ -747,7 +749,7 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   ]),
   colaborador_regra_horario: new Set([
     'colaborador_id', 'dia_semana_regra', 'inicio', 'fim',
-    'folga_fixa_dia_semana', 'domingo_ciclo_trabalho',
+    'folga_fixa_dia_semana', 'folga_variavel_dia_semana', 'domingo_ciclo_trabalho',
     'domingo_ciclo_folga', 'perfil_horario_id', 'ativo'
   ]),
 }
@@ -968,6 +970,7 @@ const DICIONARIO_VIOLACOES: Record<string, string> = {
     'AP3': 'Antipadrão: almoço muito cedo ou muito tarde (fora da janela ideal 11h–14h).',
     'DIAS_TRABALHO': 'Dias de trabalho por semana abaixo ou acima do previsto no contrato (regime 5X2 ou 6X1).',
     'MIN_DIARIO': 'Jornada diária abaixo do mínimo configurado para o tipo de contrato.',
+    'FOLGA_VARIAVEL': 'Folga variável condicional: se trabalhou no domingo da semana anterior, deve folgar no dia variável configurado da semana seguinte (e vice-versa). Regra HARD do regime 5x2.',
 }
 
 // ==================== VERCEL AI SDK FORMAT ====================
@@ -2565,6 +2568,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           domingo_ciclo_trabalho,
           domingo_ciclo_folga,
           folga_fixa_dia_semana,
+          folga_variavel_dia_semana,
         } = args
 
         const diaSemana = dia_semana_regra ?? null
@@ -2602,6 +2606,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           const domCicloTrabalho = isDiaEspecifico ? 2 : (domingo_ciclo_trabalho ?? 2)
           const domCicloFolga = isDiaEspecifico ? 1 : (domingo_ciclo_folga ?? 1)
           const folgaFixa = isDiaEspecifico ? null : (folga_fixa_dia_semana ?? null)
+          const folgaVariavel = isDiaEspecifico ? null : (folga_variavel_dia_semana ?? null)
 
           // Buscar existente com match exato de dia_semana_regra (NULL-safe)
           const existe = diaSemana === null
@@ -2617,7 +2622,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 preferencia_turno_soft = ?,
                 domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
                 domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
-                folga_fixa_dia_semana = ?
+                folga_fixa_dia_semana = ?,
+                folga_variavel_dia_semana = ?
               WHERE id = ?
             `,
               ativo !== undefined ? ativo : null,
@@ -2628,13 +2634,14 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               domCicloTrabalho,
               domCicloFolga,
               folgaFixa,
+              folgaVariavel,
               existe.id,
             )
           } else {
             await execute(`
               INSERT INTO colaborador_regra_horario
-                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana, folga_variavel_dia_semana)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
               colaborador_id,
               diaSemana,
@@ -2646,6 +2653,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               domCicloTrabalho,
               domCicloFolga,
               folgaFixa,
+              folgaVariavel,
             )
           }
 

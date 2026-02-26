@@ -1,7 +1,7 @@
 # BUILD — Folga Condicional + Limpeza de Contratos v2
 
 > Arquitetura final para implementacao. Sem ciclos estaticos — regra condicional pura.
-> Data: 2026-02-25 | Status: FASE 1 COMPLETA — Fase 2 pronta pra implementar
+> Data: 2026-02-25 | Status: FASE 4 COMPLETA — UI complementar + Export F/V implementados
 
 ---
 
@@ -644,35 +644,42 @@ ALTER TABLE colaborador_regra_horario
 - [x] `validacao-compartilhada.ts` + `validador.ts` — remover de ColabMotor/ColabComContrato
 - [x] `npm run typecheck` — 0 erros
 
-### Fase 2: Folga Condicional + Guards (motor)
+### Fase 2: Folga Condicional + Guards (motor) ✅ COMPLETA
 
-- [ ] Migration v18 em `schema.ts`
-- [ ] ADD `folga_variavel_dia_semana` em `colaborador_regra_horario`
-- [ ] `types.ts` — add `folga_variavel_dia_semana` em `SolverInputColab` e `RegraHorarioColaborador`
-- [ ] `solver-bridge.ts` — ler `folga_variavel_dia_semana` da regra padrao e passar ao Python
-- [ ] `constraints.py` — implementar `add_folga_variavel_condicional()`
-- [ ] `constraints.py` — guard H10: pular se `horas_semanais == 0` (Intermitente, divisao por zero)
-- [x] ~~`constraints.py` — constraint H11: bloquear DOM se `tipo_trabalhador IN ('ESTAGIARIO', 'APRENDIZ')`~~ (resolvido na Fase 1 — `solver_ortools.py` ja usa `tipo_trabalhador`)
-- [ ] `solver_ortools.py` — chamar a nova constraint `add_folga_variavel_condicional()`
+- [x] Migration v18 em `schema.ts` — ADD `folga_variavel_dia_semana` (CHECK exclui DOM)
+- [x] `types.ts` — add `folga_variavel_dia_semana` em `SolverInputColab` e `RegraHorarioColaborador`
+- [x] `solver-bridge.ts` — ler `folga_variavel_dia_semana` da regra padrao e passar ao Python
+- [x] `constraints.py` — implementar `add_folga_variavel_condicional()` (~30 linhas, XOR HARD)
+- [x] `constraints.py` — guard H10 hard + elastic: pular se `horas_semanais == 0` (Intermitente)
+- [x] ~~`constraints.py` — constraint H11: bloquear DOM se `tipo_trabalhador IN ('ESTAGIARIO', 'APRENDIZ')`~~ (resolvido na Fase 1)
+- [x] `solver_ortools.py` — import + call + Pass 3 diagnostico atualizado
+- [x] `tools.ts` — CAMPOS_VALIDOS + Zod schema (enum 6 valores) + handler UPDATE/INSERT
+- [x] `system-prompt.ts` — schema ref + hierarquia + degradacao
 - [ ] Testar: gerar escala do acougue (5 pessoas, 5+ semanas) e validar padrao
-- [ ] `npm run typecheck` — 0 erros
+- [x] `npm run typecheck` — 0 erros
 - [ ] `npm run solver:build` — rebuild binario
 
-### Fase 3: Frontend (badges + resumo)
+### Fase 3: Frontend (badges + resumo) ✅
 
-- [ ] Badge F/V nas celulas de folga do Grid
-- [ ] `ResumoFolgas` componente no header da EscalaPagina
-- [ ] Cobertura de domingos no ResumoFolgas (COUNT alocacoes DOM=trabalho por pessoa)
-- [ ] Logica de deteccao: comparar dia_da_semana com folga_fixa do colab
-- [ ] `npm run typecheck` — 0 erros
+- [x] Badge F/V nas celulas de folga do Grid (EscalaGrid + TimelineGrid)
+- [x] `ResumoFolgas` componente entre RuleComplianceBadge e Grid na EscalaPagina
+- [x] Cobertura de domingos no ResumoFolgas (COUNT alocacoes DOM=trabalho por pessoa)
+- [x] Logica de deteccao: comparar dia_da_semana com folga_fixa/variavel do colab
+- [x] IPC batch `colaboradores.listarRegrasPadraoSetor` (evita N chamadas individuais)
+- [x] `npm run typecheck` — 0 erros
 
-### Fase 4: UI complementar + IA
+### Fase 4: UI complementar + Export F/V ✅ COMPLETA
 
-- [ ] Dropdown condicional de perfil horario no cadastro de colaborador (aparece SE contrato tem perfis)
-- [ ] `tools.ts` — add `folga_variavel_dia_semana` em CAMPOS_VALIDOS
-- [ ] `tools.ts` — aceitar campo em `salvar_regra_horario_colaborador`
-- [ ] `system-prompt.ts` — mencionar folga variavel no schema de referencia
-- [ ] `npm run typecheck` — 0 erros
+- [x] Campo `folga_variavel_dia_semana` no ColaboradorDetalhe (select SEG-SAB)
+- [x] INTERMITENTE nos selects de tipo_trabalhador (ColaboradorDetalhe + ColaboradorLista)
+- [x] Dropdown condicional de perfil horario no cadastro de colaborador (aparece SE contrato tem perfis)
+- [x] Export HTML: badges F/V nos cards FOLGA + print table
+- [x] Export HTML: secao Rotatividade (folga fixa, variavel, domingos trabalhados)
+- [x] EscalaPagina renderFuncHTML com regra F/V
+- [x] EscalasHub renderFuncHTML com regra F/V (fetch regrasPadrao no export)
+- [x] `tools.ts` — folga_variavel ja feito na Fase 2
+- [x] `system-prompt.ts` — ja feito na Fase 2
+- [x] `npm run typecheck` — 0 erros
 
 ---
 
@@ -707,7 +714,7 @@ DEPOIS (simplificacao):
   + limpeza de contratos (trabalha_domingo morto, estagiarios unificados, Intermitente)
   + UI dropdown perfil estagiario + ajuste minimo tools IA
 
-4 fases: Limpeza ✅ → Motor+Guards → Frontend → UI complementar+IA
+4 fases: Limpeza ✅ → Motor+Guards ✅ → Frontend ✅ → UI+Export ✅
 
 O solver JA SABE distribuir domingos (domingo_ciclo_soft).
 So precisa de 1 regra dizendo "se trabalhou dom, folga nesse dia".

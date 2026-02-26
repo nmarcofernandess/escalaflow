@@ -8,6 +8,7 @@ interface FuncionarioExportInput {
   periodo: { inicio: string; fim: string }
   alocacoes: Alocacao[]
   violacoes: Violacao[]
+  regra?: { folga_fixa_dia_semana: string | null; folga_variavel_dia_semana: string | null }
 }
 
 const DIAS = ['Domingo', 'Segunda', 'Terca', 'Quarta', 'Quinta', 'Sexta', 'Sabado']
@@ -38,7 +39,7 @@ function escapeHtml(s: string): string {
  * Mobile-first, card-per-day, navegacao semanal, dark mode auto.
  */
 export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
-  const { nome, contrato, horasSemanais, setor, periodo, alocacoes, violacoes } = input
+  const { nome, contrato, horasSemanais, setor, periodo, alocacoes, violacoes, regra } = input
 
   // Build date range
   const allDates: string[] = []
@@ -101,6 +102,13 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
         let statusClass = 'folga'
         let statusLabel = 'Folga'
         let barHtml = ''
+        let badgeHtml = ''
+
+        if (status === 'FOLGA' && regra) {
+          const dayLabel = DIAS_CURTO[dow]
+          if (regra.folga_fixa_dia_semana === dayLabel) badgeHtml = ' <span class="badge-f">[F]</span>'
+          else if (regra.folga_variavel_dia_semana === dayLabel) badgeHtml = ' <span class="badge-v">(V)</span>'
+        }
 
         if (status === 'TRABALHO') {
           statusClass = isSunday ? 'trabalho-dom' : 'trabalho'
@@ -129,7 +137,7 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
             <span class="day-date">${fmtDate(dt)}</span>
           </div>
           <div class="day-body">
-            <span class="day-status">${escapeHtml(statusLabel)}</span>
+            <span class="day-status">${escapeHtml(statusLabel)}${badgeHtml}</span>
             ${barHtml}
           </div>
         </div>`
@@ -169,6 +177,26 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
     </div>`
   }
 
+  // Rotatividade section
+  const DIA_LABEL: Record<string, string> = { DOM: 'Domingo', SEG: 'Segunda', TER: 'Terca', QUA: 'Quarta', QUI: 'Quinta', SEX: 'Sexta', SAB: 'Sabado' }
+  let rotatividadeHtml = ''
+  if (regra) {
+    const domTrabalhados = allDates.filter(dt => {
+      const dow = new Date(dt + 'T00:00:00').getDay()
+      return dow === 0 && alocMap.get(dt)?.status === 'TRABALHO'
+    }).length
+    const domTotal = allDates.filter(dt => new Date(dt + 'T00:00:00').getDay() === 0).length
+
+    rotatividadeHtml = `
+    <div class="section rotatividade">
+      <h3>Rotatividade</h3>
+      <div class="rot-row"><span class="rot-label">Folga fixa:</span> ${regra.folga_fixa_dia_semana ? `<span class="badge-f">[F]</span> ${DIA_LABEL[regra.folga_fixa_dia_semana] ?? regra.folga_fixa_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
+      <div class="rot-row"><span class="rot-label">Folga variavel:</span> ${regra.folga_variavel_dia_semana ? `<span class="badge-v">(V)</span> ${DIA_LABEL[regra.folga_variavel_dia_semana] ?? regra.folga_variavel_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
+      <div class="rot-row"><span class="rot-label">Domingos trabalhados:</span> ${domTrabalhados} / ${domTotal}</div>
+      ${regra.folga_variavel_dia_semana ? '<p class="rot-note">(V) ativa quando trabalhou domingo na semana anterior</p>' : ''}
+    </div>`
+  }
+
   // Print-only: all weeks visible, compact list
   const printWeeksHtml = weeks
     .map(
@@ -185,6 +213,9 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
             return `<td class="print-work">${fmtTime(a?.hora_inicio ?? null)}-${fmtTime(a?.hora_fim ?? null)}${almoco}</td>`
           }
           if (st === 'INDISPONIVEL') return `<td class="print-off">I</td>`
+          const dayLabel = DIAS_CURTO[new Date(dt + 'T00:00:00').getDay()]
+          if (regra?.folga_fixa_dia_semana === dayLabel) return `<td class="print-off">[F]</td>`
+          if (regra?.folga_variavel_dia_semana === dayLabel) return `<td class="print-off">(V)</td>`
           return `<td class="print-off">F</td>`
         }).join('')}</tr>
       </table>
@@ -244,6 +275,8 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
   .trabalho-dom .day-name, .trabalho-dom .day-status { color: var(--dom-fg); }
   .indisponivel .day-name, .indisponivel .day-status { color: var(--indis-fg); }
   .folga .day-name, .folga .day-status { color: var(--off-fg); }
+  .badge-f { display:inline-block; font-size:11px; font-weight:700; color:var(--off-fg); background:var(--border); border-radius:3px; padding:0 4px; margin-left:4px; }
+  .badge-v { display:inline-block; font-size:11px; font-weight:700; color:var(--off-fg); border:1px dashed var(--off-fg); border-radius:3px; padding:0 4px; margin-left:4px; }
   .day-body { display: flex; flex-direction: column; gap: 6px; }
   .day-status { font-size: 14px; font-weight: 600; }
   .bar-track { height: 6px; background: var(--border); border-radius: 3px; position: relative; }
@@ -255,6 +288,9 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
   .aviso.hard { background: var(--hard); color: var(--hard-fg); border: 1px solid var(--hard-border); }
   .aviso.soft { background: var(--soft); color: var(--soft-fg); border: 1px solid var(--soft-border); }
   .aviso small { opacity: 0.8; }
+  .rotatividade .rot-row { display:flex; align-items:center; gap:6px; padding:4px 0; font-size:13px; }
+  .rotatividade .rot-label { font-weight:600; min-width:130px; }
+  .rotatividade .rot-note { font-size:11px; color:var(--muted); margin-top:6px; font-style:italic; }
   .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); text-align: center; }
 
   /* Print styles */
@@ -298,6 +334,8 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
 ${weeksHtml}
 
 ${violacoesHtml}
+
+${rotatividadeHtml}
 
 <div class="print-only">
   ${printWeeksHtml}

@@ -31,7 +31,6 @@ const TOOL_LABELS: Record<string, string> = {
   listar_memorias: 'Listando memorias',
   remover_memoria: 'Removendo memoria',
   salvar_regra_horario_colaborador: 'Salvando regra individual',
-  definir_janela_colaborador: 'Definindo janela',
 }
 
 export function toolLabel(name: string): string {

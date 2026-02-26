@@ -23,6 +23,9 @@ export const colaboradoresService = {
   deletar: (id: number) =>
     client['colaboradores.deletar']({ id }) as Promise<void>,
 
+  listarRegrasPadraoSetor: (setorId: number) =>
+    client['colaboradores.listarRegrasPadraoSetor']({ setor_id: setorId }) as Promise<RegraHorarioColaborador[]>,
+
   // --- Regras de Horario ---
   buscarRegraHorario: (colaboradorId: number) =>
     client['colaboradores.buscarRegraHorario']({ colaborador_id: colaboradorId }) as Promise<RegraHorarioColaborador[]>,
@@ -38,6 +41,7 @@ export const colaboradoresService = {
     domingo_ciclo_trabalho?: number
     domingo_ciclo_folga?: number
     folga_fixa_dia_semana?: string | null
+    folga_variavel_dia_semana?: string | null
   }) =>
     client['colaboradores.salvarRegraHorario'](data as any) as Promise<RegraHorarioColaborador>,
 

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import type { Alocacao, Colaborador, Demanda, TipoContrato, Funcao } from '@shared/index'
+import type { Alocacao, Colaborador, Demanda, TipoContrato, Funcao, RegraHorarioColaborador } from '@shared/index'
 import {
   Tooltip,
   TooltipContent,
@@ -52,6 +52,7 @@ interface EscalaGridProps {
   loadingCell?: { colaboradorId: number; data: string } | null
   changedCells?: Set<string>
   violatedCells?: Set<string>
+  regrasMap?: Map<number, RegraHorarioColaborador>
 }
 
 export function EscalaGrid({
@@ -67,6 +68,7 @@ export function EscalaGrid({
   loadingCell,
   changedCells = new Set(),
   violatedCells = new Set(),
+  regrasMap,
 }: EscalaGridProps) {
   const [weekOffset, setWeekOffset] = useState(0)
 
@@ -318,8 +320,17 @@ export function EscalaGrid({
                                   </span>
                                 </>
                               ) : status === 'FOLGA' ? (
-                                <span className="text-[10px] font-medium">
-                                  FOLGA
+                                <span className={cn('text-[10px] font-medium', (() => {
+                                  const regra = regrasMap?.get(colab.id)
+                                  return regra?.folga_variavel_dia_semana === DIAS_SEMANA_CURTO[dow] ? 'opacity-60' : ''
+                                })())}>
+                                  {(() => {
+                                    const regra = regrasMap?.get(colab.id)
+                                    const sigla = DIAS_SEMANA_CURTO[dow]
+                                    if (regra?.folga_fixa_dia_semana === sigla) return 'F'
+                                    if (regra?.folga_variavel_dia_semana === sigla) return '(V)'
+                                    return 'FOLGA'
+                                  })()}
                                 </span>
                               ) : (
                                 <span className="text-[10px] font-medium">

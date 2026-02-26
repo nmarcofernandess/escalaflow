@@ -76,15 +76,16 @@ import { excecoesService } from '@/servicos/excecoes'
 import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
 import { toast } from 'sonner'
-import type { Colaborador, Setor, TipoContrato, Excecao, Funcao } from '@shared/index'
+import type { Colaborador, Setor, TipoContrato, Excecao, Funcao, PerfilHorarioContrato } from '@shared/index'
 
 const novoColabSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
   sexo: z.string().min(1, 'Selecione o sexo'),
   setor_id: z.string().min(1, 'Selecione o setor'),
   tipo_contrato_id: z.string().min(1, 'Selecione o tipo de contrato'),
-  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'APRENDIZ']),
+  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'APRENDIZ', 'INTERMITENTE']),
   funcao_id: z.string(),
+  perfil_horario_id: z.string(),
 })
 
 type NovoColabData = z.infer<typeof novoColabSchema>
@@ -126,13 +127,14 @@ export function ColaboradorLista() {
   const [showNewDialog, setShowNewDialog] = useState(false)
   const [criando, setCriando] = useState(false)
   const [funcoesNovo, setFuncoesNovo] = useState<Funcao[]>([])
+  const [perfisNovo, setPerfisNovo] = useState<PerfilHorarioContrato[]>([])
   const [viewMode, setViewMode] = useViewMode('colaboradores', 'table')
   const [archivingId, setArchivingId] = useState<number | null>(null)
   const [arquivando, setArquivando] = useState(false)
 
   const novoColabForm = useForm<NovoColabData>({
     resolver: zodResolver(novoColabSchema),
-    defaultValues: { nome: '', sexo: '', setor_id: '', tipo_contrato_id: '', tipo_trabalhador: 'CLT', funcao_id: 'none' },
+    defaultValues: { nome: '', sexo: '', setor_id: '', tipo_contrato_id: '', tipo_trabalhador: 'CLT', funcao_id: 'none', perfil_horario_id: 'none' },
   })
 
   const { data: todosColabs, loading: loadingColabs, reload: reloadColabs } = useApiData<Colaborador[]>(
@@ -185,6 +187,29 @@ export function ColaboradorLista() {
     }
   }, [showNewDialog, setorSelecionado, novoColabForm])
 
+  const contratoSelecionado = novoColabForm.watch('tipo_contrato_id')
+
+  useEffect(() => {
+    if (!showNewDialog || !contratoSelecionado) {
+      setPerfisNovo([])
+      novoColabForm.setValue('perfil_horario_id', 'none')
+      return
+    }
+
+    let active = true
+    tiposContratoService.listarPerfisHorario(parseInt(contratoSelecionado, 10))
+      .then((list) => {
+        if (active) setPerfisNovo(list.filter(p => p.ativo))
+      })
+      .catch(() => {
+        if (active) setPerfisNovo([])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [showNewDialog, contratoSelecionado, novoColabForm])
+
   // Map colaborador_id -> excecao tipo (ativa hoje)
   const excecaoMap = new Map<number, string>()
   for (const exc of excecoesList) {
@@ -228,7 +253,7 @@ export function ColaboradorLista() {
   const handleCriar = async (data: NovoColabData) => {
     setCriando(true)
     try {
-      await colaboradoresService.criar({
+      const created = await colaboradoresService.criar({
         nome: data.nome.trim(),
         sexo: data.sexo as 'M' | 'F',
         setor_id: parseInt(data.setor_id),
@@ -236,6 +261,20 @@ export function ColaboradorLista() {
         tipo_trabalhador: data.tipo_trabalhador,
         funcao_id: data.funcao_id === 'none' ? null : parseInt(data.funcao_id, 10),
       })
+
+      if (data.perfil_horario_id !== 'none') {
+        const perfil = perfisNovo.find(p => p.id === parseInt(data.perfil_horario_id))
+        if (perfil) {
+          await colaboradoresService.salvarRegraHorario({
+            colaborador_id: created.id,
+            perfil_horario_id: parseInt(data.perfil_horario_id),
+            inicio: perfil.inicio ?? null,
+            fim: perfil.fim ?? null,
+            preferencia_turno_soft: perfil.preferencia_turno_soft ?? null,
+          })
+        }
+      }
+
       toast.success('Colaborador cadastrado')
       setShowNewDialog(false)
       novoColabForm.reset()
@@ -593,7 +632,10 @@ export function ColaboradorLista() {
       {/* New Colaborador Dialog */}
       <Dialog open={showNewDialog} onOpenChange={(open) => {
         setShowNewDialog(open)
-        if (!open) novoColabForm.reset()
+        if (!open) {
+          novoColabForm.reset()
+          setPerfisNovo([])
+        }
       }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -688,6 +730,33 @@ export function ColaboradorLista() {
                   </FormItem>
                 )}
               />
+              {perfisNovo.length > 0 && (
+                <FormField
+                  control={novoColabForm.control}
+                  name="perfil_horario_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Perfil de Horario</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o perfil" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">Sem perfil</SelectItem>
+                          {perfisNovo.map((p) => (
+                            <SelectItem key={p.id} value={String(p.id)}>
+                              {p.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={novoColabForm.control}
                 name="tipo_trabalhador"
@@ -704,6 +773,7 @@ export function ColaboradorLista() {
                         <SelectItem value="CLT">CLT</SelectItem>
                         <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
                         <SelectItem value="APRENDIZ">Aprendiz</SelectItem>
+                        <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

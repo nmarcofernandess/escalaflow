@@ -224,7 +224,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     input: 'O colaborador 2 só pode trabalhar de manhã.',
     mutates: true,
     expected: {
-      shouldCallAnyOf: ['definir_janela_colaborador', 'salvar_regra_horario_colaborador'],
+      shouldCallAnyOf: ['salvar_regra_horario_colaborador'],
       maxSteps: 6,
     },
   },

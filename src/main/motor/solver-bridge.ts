@@ -269,6 +269,7 @@ export async function buildSolverInput(
     preferencia_turno_soft: string | null;
     domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
     folga_fixa_dia_semana: string | null;
+    folga_variavel_dia_semana: string | null;
     p_inicio: string | null; p_fim: string | null;
     p_preferencia_turno_soft: string | null;
   }
@@ -277,7 +278,7 @@ export async function buildSolverInput(
            r.dia_semana_regra,
            r.inicio, r.fim,
            r.preferencia_turno_soft, r.domingo_ciclo_trabalho, r.domingo_ciclo_folga,
-           r.folga_fixa_dia_semana,
+           r.folga_fixa_dia_semana, r.folga_variavel_dia_semana,
            p.inicio AS p_inicio, p.fim AS p_fim,
            p.preferencia_turno_soft AS p_preferencia_turno_soft
     FROM colaborador_regra_horario r
@@ -402,6 +403,7 @@ export async function buildSolverInput(
       c.domingo_ciclo_trabalho = padrao.domingo_ciclo_trabalho
       c.domingo_ciclo_folga = padrao.domingo_ciclo_folga
       c.folga_fixa_dia_semana = (padrao.folga_fixa_dia_semana as DiaSemana | null) ?? null
+      c.folga_variavel_dia_semana = (padrao.folga_variavel_dia_semana as DiaSemana | null) ?? null
     }
   }
 

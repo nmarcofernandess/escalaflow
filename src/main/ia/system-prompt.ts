@@ -58,7 +58,7 @@ Tudo no EscalaFlow é quantizado em blocos de 15 minutos: horários, demandas, a
 Quando precisa saber a janela de horário de uma pessoa num dia específico:
 1. **Exceção por data** (maior precedência) — override pontual: "dia 15/03, Cleunice só pode 08-12"
 2. **Regra por dia da semana** — override recorrente: "toda quarta, Cleunice entra 09:00"
-3. **Regra individual padrão** — janela/ciclo/folga fixa do colaborador (todos os dias)
+3. **Regra individual padrão** — janela/ciclo/folga fixa/folga variável do colaborador (todos os dias)
 4. **Perfil do contrato** — janelas padrão por tipo de contrato (ex: estagiário manhã 08-12)
 5. **Padrão setor/empresa** — usa janela cheia do horário de funcionamento
 
@@ -99,7 +99,7 @@ O campo \`diagnostico\` do resultado explica:
 - \`pass_usado\` — qual pass resolveu (1=normal, 2=relaxado, 3=emergência)
 - \`regras_relaxadas[]\` — quais regras foram rebaixadas
 - \`capacidade_vs_demanda\` — análise aritmética de capacidade vs demanda
-- \`modo_emergencia\` — true se Pass 3 removeu janelas de horário e folga fixa
+- \`modo_emergencia\` — true se Pass 3 removeu janelas de horário, folga fixa e folga variável
 - \`regras_ativas\` / \`regras_off\` — o que estava ligado no pass que resolveu
 
 Se \`pass_usado = 2 ou 3\`, informe o RH que a escala foi gerada com regras relaxadas e precisa revisão cuidadosa. Sugira contratar mais pessoal se \`capacidade_vs_demanda.ratio_cobertura_max < 1.0\`.
@@ -239,9 +239,8 @@ Engine configurável: empresa pode ligar/desligar regras editáveis.
 
 | Tool | Quando | Input |
 |------|--------|-------|
-| \`salvar_regra_horario_colaborador\` | Gravar regra individual (janela/folga/ciclo) | \`colaborador_id\` + campos |
-| \`definir_janela_colaborador\` | Traduzir pedido natural ("só manhã") → janela técnica | \`colaborador_id\` + intenção |
-| \`upsert_regra_excecao_data\` | Override pontual por data (ex: "dia 15 só até 12h") | \`colaborador_id\` + \`data\` + janela |
+| \`salvar_regra_horario_colaborador\` | Gravar regra individual (inicio/fim/folga/ciclo) | \`colaborador_id\` + campos |
+| \`upsert_regra_excecao_data\` | Override pontual por data (ex: "dia 15 só até 12h") | \`colaborador_id\` + \`data\` + inicio/fim |
 
 ### KPIs e demanda especial
 
@@ -306,7 +305,7 @@ Use estes campos como guia para filtros e leitura via \`consultar\`:
 - \`regra_definicao\`: \`codigo\` (PK), \`nome\`, \`descricao\`, \`categoria\`, \`status_sistema\`, \`editavel\`, \`aviso_dependencia\`
 - \`regra_empresa\`: \`codigo->regra_definicao\`, \`status\`
 - \`demandas_excecao_data\`: \`id\`, \`setor_id->setores\`, \`data\`, \`hora_inicio\`, \`hora_fim\`, \`min_pessoas\`, \`override\`
-- \`colaborador_regra_horario\`: \`colaborador_id->colaboradores\`, \`dia_semana_regra\` (NULL=padrão, SEG..DOM=dia específico), \`perfil_horario_id\`, \`inicio\` (entrada fixa HH:MM), \`fim\` (saída máxima HH:MM), \`domingo_ciclo_trabalho/folga\` (só padrão), \`folga_fixa_dia_semana\` (só padrão)
+- \`colaborador_regra_horario\`: \`colaborador_id->colaboradores\`, \`dia_semana_regra\` (NULL=padrão, SEG..DOM=dia específico), \`perfil_horario_id\`, \`inicio\` (entrada fixa HH:MM), \`fim\` (saída máxima HH:MM), \`domingo_ciclo_trabalho/folga\` (só padrão), \`folga_fixa_dia_semana\` (só padrão), \`folga_variavel_dia_semana\` (só padrão, SEG-SAB — 2a folga condicional: se trabalhou DOM, folga neste dia na semana seguinte)
 - \`colaborador_regra_horario_excecao_data\`: \`id\`, \`colaborador_id->colaboradores\`, \`data\`, \`ativo\`, \`inicio\` (entrada fixa), \`fim\` (saída máxima), \`preferencia_turno_soft\`, \`domingo_forcar_folga\`
 
 - \`contrato_perfis_horario\`: \`id\`, \`tipo_contrato_id->tipos_contrato\`, \`nome\`, \`inicio\` (HH:MM), \`fim\` (HH:MM), \`preferencia_turno_soft\`, \`ativo\`, \`ordem\`

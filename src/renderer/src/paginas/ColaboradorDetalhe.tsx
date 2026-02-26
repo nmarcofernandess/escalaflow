@@ -203,6 +203,7 @@ export function ColaboradorDetalhe() {
     domingo_ciclo_trabalho: 2,
     domingo_ciclo_folga: 1,
     folga_fixa_dia_semana: 'none' as string,
+    folga_variavel_dia_semana: 'none' as string,
   })
 
   // Seccao B: Regras por dia da semana
@@ -307,6 +308,7 @@ export function ColaboradorDetalhe() {
           domingo_ciclo_trabalho: padrao.domingo_ciclo_trabalho,
           domingo_ciclo_folga: padrao.domingo_ciclo_folga,
           folga_fixa_dia_semana: padrao.folga_fixa_dia_semana ?? 'none',
+          folga_variavel_dia_semana: padrao.folga_variavel_dia_semana ?? 'none',
         })
       }
 
@@ -423,6 +425,7 @@ export function ColaboradorDetalhe() {
         domingo_ciclo_trabalho: regraForm.domingo_ciclo_trabalho,
         domingo_ciclo_folga: regraForm.domingo_ciclo_folga,
         folga_fixa_dia_semana: regraForm.folga_fixa_dia_semana === 'none' ? null : regraForm.folga_fixa_dia_semana,
+        folga_variavel_dia_semana: regraForm.folga_variavel_dia_semana === 'none' ? null : regraForm.folga_variavel_dia_semana,
       }
       await colaboradoresService.salvarRegraHorario(payload as any)
 
@@ -728,6 +731,7 @@ export function ColaboradorDetalhe() {
                           <SelectItem value="CLT">CLT</SelectItem>
                           <SelectItem value="APRENDIZ">Menor Aprendiz</SelectItem>
                           <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
+                          <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -897,7 +901,7 @@ export function ColaboradorDetalhe() {
             </div>
 
             {/* Ciclo domingo + Folga fixa + Turno */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label className="text-xs">Ciclo domingo (trabalho/folga)</Label>
                 <div className="flex items-center gap-1">
@@ -941,6 +945,28 @@ export function ColaboradorDetalhe() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Folga variavel (cond.)</Label>
+                <Select
+                  value={regraForm.folga_variavel_dia_semana}
+                  onValueChange={v => setRegraForm(f => ({ ...f, folga_variavel_dia_semana: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem folga var.</SelectItem>
+                    {DIAS_SEMANA_OPTIONS.filter(d => d.value !== 'DOM').map(d => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[0.7rem] text-muted-foreground">
+                  Se trabalhou DOM, folga neste dia
+                </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-xs">Pref. turno (regra)</Label>
