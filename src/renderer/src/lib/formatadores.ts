@@ -86,6 +86,13 @@ export function mapError(err: unknown): string {
   if (m.includes('timeout') || m.includes('demorou')) {
     return 'A geracao demorou mais que o esperado. Tente novamente com menos colaboradores ou um periodo menor.'
   }
+  if (m.includes('infeasible')) {
+    const detalhe = msg.replace(/^.*infeasible:\s*/i, '').trim()
+    if (detalhe && detalhe.length <= 220 && !detalhe.toLowerCase().includes('impossivel satisfazer todas as restricoes simultaneamente')) {
+      return `Nao foi possivel gerar uma escala viavel para este periodo. ${detalhe}`
+    }
+    return 'Nao foi possivel gerar uma escala viavel para este periodo com as regras atuais. Revise demanda, periodo, excecoes e quantidade de colaboradores.'
+  }
   // Se ja for uma mensagem curta e "humana", reaproveita em vez de mascarar.
   if (!m.includes('typeerror') && !m.includes('referenceerror') && msg.length <= 220) {
     return msg

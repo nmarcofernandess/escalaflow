@@ -153,6 +153,35 @@ async function buildEscalaPreflight(
   }
 }
 
+async function buildInfeasibleMessage(
+  setorId: number,
+  dataInicio: string,
+  dataFim: string,
+  regimesOverride?: SimulacaoRegimeOverride[],
+  solverMensagem?: string,
+  solverSugestoes?: string[],
+): Promise<string> {
+  const diag = await buildEscalaPreflight(setorId, dataInicio, dataFim, regimesOverride)
+  const blocker = diag.blockers[0]
+  if (blocker) {
+    return `INFEASIBLE: ${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`
+  }
+
+  const sugestao = (solverSugestoes ?? []).find((s) => typeof s === 'string' && s.trim().length > 0)
+  if (sugestao) {
+    return `INFEASIBLE: ${sugestao}`
+  }
+
+  if (solverMensagem && solverMensagem.trim().length > 0) {
+    const sanitized = solverMensagem.replace(/^solver retornou infeasible:\s*/i, '').trim()
+    if (sanitized.length > 0) {
+      return `INFEASIBLE: ${sanitized}`
+    }
+  }
+
+  return 'INFEASIBLE: Nao foi possivel gerar uma escala viavel com as regras e a equipe atuais. Revise demanda, excecoes, contratos e periodo.'
+}
+
 // =============================================================================
 // EMPRESA (2 handlers)
 // =============================================================================
@@ -1025,16 +1054,15 @@ const escalasAjustar = t.procedure
 
     if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
       if (solverResult.status === 'INFEASIBLE') {
-        const diag = await buildEscalaPreflight(
+        const msg = await buildInfeasibleMessage(
           escala.setor_id,
           escala.data_inicio,
           escala.data_fim,
           cfg.regimes_override,
+          solverResult.erro?.mensagem,
+          solverResult.erro?.sugestoes,
         )
-        const blocker = diag.blockers[0]
-        if (blocker) {
-          throw new Error(`INFEASIBLE: ${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`)
-        }
+        throw new Error(msg)
       }
       throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
@@ -1108,11 +1136,15 @@ const escalasGerar = t.procedure
 
     if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
       if (solverResult.status === 'INFEASIBLE') {
-        const diag = await buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
-        const blocker = diag.blockers[0]
-        if (blocker) {
-          throw new Error(`INFEASIBLE: ${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`)
-        }
+        const msg = await buildInfeasibleMessage(
+          setorId,
+          input.data_inicio,
+          input.data_fim,
+          regimesOverride,
+          solverResult.erro?.mensagem,
+          solverResult.erro?.sugestoes,
+        )
+        throw new Error(msg)
       }
       throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }

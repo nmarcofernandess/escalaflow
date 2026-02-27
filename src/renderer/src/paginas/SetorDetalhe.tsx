@@ -6,14 +6,12 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import {
   DndContext,
   closestCenter,
-  pointerWithin,
   PointerSensor,
-  useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import type { CollisionDetection, DragEndEvent } from '@dnd-kit/core'
+import type { DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
   Save,
@@ -29,6 +27,7 @@ import {
   SlidersHorizontal,
   Pencil,
   UserMinus,
+  Briefcase,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -117,100 +116,44 @@ import type {
   ColaboradorPostoSnapshotItem,
 } from '@shared/index'
 
-// ─── Draggable Collaborator Card ───────────────────────────────────────
-function DraggableColabCard({
-  colab,
-  resumo,
-  compacto = false,
+// ─── DnD: Sortable row for posto hierarchy reorder ──────────────────
+
+function SortablePostoRow({
+  postoId,
+  index,
+  children,
 }: {
-  colab: Colaborador
-  resumo?: string
-  compacto?: boolean
+  postoId: number
+  index: number
+  children: import('react').ReactNode
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `colab-${colab.id}`,
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `posto-${postoId}`,
   })
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    opacity: isDragging ? 0.6 : 1,
+    transition,
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        'flex touch-none items-center gap-2 rounded-md border bg-card px-2 cursor-grab active:cursor-grabbing',
-        compacto ? 'h-8 min-w-[160px]' : 'h-9 w-full',
-        isDragging && 'shadow-sm',
-      )}
-      {...attributes}
-      {...listeners}
-    >
-      <GripVertical className="size-3.5 shrink-0 text-muted-foreground/50" />
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        <span className="truncate text-xs font-medium text-foreground">{colab.nome}</span>
-        {resumo && <span className="truncate text-[11px] text-muted-foreground">· {resumo}</span>}
-      </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0"
-        asChild
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <Link to={`/colaboradores/${colab.id}`}>
-          <ArrowRight className="size-3.5" />
-        </Link>
-      </Button>
-    </div>
-  )
-}
-
-function DropZone({
-  id,
-  children,
-  vazio = false,
-  className,
-}: {
-  id: string
-  children: import('react').ReactNode
-  vazio?: boolean
-  className?: string
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id })
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'rounded-md border transition-colors',
-        vazio ? 'border-dashed' : 'border-solid',
-        isOver
-          ? 'border-primary bg-primary/5'
-          : vazio
-            ? 'border-muted-foreground/25 bg-muted/20'
-            : 'border-border bg-background',
-        className,
-      )}
-    >
-      {children}
-    </div>
-  )
-}
-
-function PostoDropRow({
-  id,
-  children,
-}: {
-  id: string
-  children: import('react').ReactNode
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id })
-
-  return (
-    <TableRow ref={setNodeRef} className={cn(isOver && 'bg-primary/5')}>
+    <TableRow ref={setNodeRef} style={style} className={cn(isDragging && 'bg-muted/40')}>
+      <TableCell className="w-[60px] text-center">
+        <div className="flex items-center justify-center gap-1.5">
+          <button
+            type="button"
+            className="inline-flex size-6 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted active:cursor-grabbing"
+            aria-label="Arrastar para reordenar"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="size-3.5" />
+          </button>
+          <span className="font-mono text-xs text-muted-foreground">
+            {String(index + 1).padStart(2, '0')}
+          </span>
+        </div>
+      </TableCell>
       {children}
     </TableRow>
   )
@@ -297,16 +240,24 @@ export function SetorDetalhe() {
   )
 
   const contratoMap = new Map((tiposContrato ?? []).map((tc) => [tc.id, tc.nome]))
-  const funcoesList = funcoes ?? []
+  const funcoesList = useMemo(() => funcoes ?? [], [funcoes])
 
   // ─── State ───────────────────────────────────────────────────────────
   const [showPostoDialog, setShowPostoDialog] = useState(false)
   const [novoPostoApelido, setNovoPostoApelido] = useState('')
   const [criandoPosto, setCriandoPosto] = useState(false)
+  const [orderedPostos, setOrderedPostos] = useState<Funcao[]>([])
   const [orderedColabs, setOrderedColabs] = useState<Colaborador[]>([])
   const [editingPostoId, setEditingPostoId] = useState<number | null>(null)
   const [postoSearchTerm, setPostoSearchTerm] = useState('')
   const [postoAssignmentLoading, setPostoAssignmentLoading] = useState(false)
+  const [pendingAutocompleteSwap, setPendingAutocompleteSwap] = useState<{
+    postoId: number
+    colabId: number
+    colaboradorNome: string
+    postoOrigemNome: string
+    postoDestinoNome: string
+  } | null>(null)
 
   // Geracao inline
   const [gerando, setGerando] = useState(false)
@@ -358,10 +309,7 @@ export function SetorDetalhe() {
     return map
   }, [orderedColabs])
 
-  const postosOrdenados = useMemo(
-    () => [...funcoesList].sort((a, b) => a.ordem - b.ordem || a.apelido.localeCompare(b.apelido)),
-    [funcoesList],
-  )
+  const postosOrdenados = orderedPostos
 
   const colabsSemPosto = useMemo(
     () => orderedColabs.filter((c) => c.funcao_id == null),
@@ -399,16 +347,30 @@ export function SetorDetalhe() {
     )
   }, [])
 
-  // ─── DnD setup (assignment) ───────────────────────────────────────
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  // ─── DnD setup (reorder postos) ─────────────────────────────────────
+  const postoSortSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   )
 
-  const assignmentCollisionDetection = useCallback<CollisionDetection>((args) => {
-    const pointerHits = pointerWithin(args)
-    if (pointerHits.length > 0) return pointerHits
-    return closestCenter(args)
-  }, [])
+  const handlePostoReorderDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = postosOrdenados.findIndex((p) => `posto-${p.id}` === active.id)
+    const newIndex = postosOrdenados.findIndex((p) => `posto-${p.id}` === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reordered = arrayMove(postosOrdenados, oldIndex, newIndex)
+    setOrderedPostos(reordered)
+
+    try {
+      await Promise.all(
+        reordered.map((posto, idx) => funcoesService.atualizar(posto.id, { ordem: idx })),
+      )
+    } catch {
+      toast.error('Erro ao salvar nova ordem dos postos')
+    }
+  }
 
   // Sync ordered list when API data changes
   useEffect(() => {
@@ -417,54 +379,21 @@ export function SetorDetalhe() {
     }
   }, [colaboradores])
 
+  useEffect(() => {
+    const next = [...funcoesList].sort((a, b) => a.ordem - b.ordem || a.apelido.localeCompare(b.apelido))
+    setOrderedPostos((prev) => {
+      if (prev.length === next.length && prev.every((p, idx) => p.id === next[idx]?.id && p.ordem === next[idx]?.ordem)) {
+        return prev
+      }
+      return next
+    })
+  }, [funcoesList])
+
   // Carregar demandas excecao por data
   useEffect(() => {
     if (!setorId) return
     setoresService.listarDemandasExcecaoData(setorId).then(setDemandasExcecao).catch(() => {})
   }, [setorId])
-
-  const handleAssignmentDragEnd = async (event: DragEndEvent) => {
-    const activeId = String(event.active.id)
-    const overId = event.over ? String(event.over.id) : null
-    if (!overId || !activeId.startsWith('colab-')) return
-
-    const colabId = Number(activeId.replace('colab-', ''))
-    if (!Number.isInteger(colabId) || colabId <= 0) return
-
-    const resolveFuncaoIdFromDropTarget = () => {
-      if (overId === 'drop-sem-posto') return null
-
-      if (overId.startsWith('drop-posto-')) {
-        const parsed = Number(overId.replace('drop-posto-', ''))
-        return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
-      }
-
-      if (overId.startsWith('row-posto-')) {
-        const parsed = Number(overId.replace('row-posto-', ''))
-        return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
-      }
-
-      // Soltar em cima de outro colaborador deve alocar no posto dele.
-      if (overId.startsWith('colab-')) {
-        const alvoColabId = Number(overId.replace('colab-', ''))
-        if (!Number.isInteger(alvoColabId) || alvoColabId <= 0) return undefined
-        const alvo = orderedColabs.find((c) => c.id === alvoColabId)
-        return alvo?.funcao_id ?? null
-      }
-
-      return undefined
-    }
-
-    const targetFuncaoId = resolveFuncaoIdFromDropTarget()
-    if (targetFuncaoId === undefined) return
-
-    if (targetFuncaoId === null) {
-      await applyPostoAssignment(colabId, null)
-      return
-    }
-
-    await applyPostoAssignment(colabId, targetFuncaoId)
-  }
 
   const applyPostoAssignment = useCallback(async (colabId: number, newFuncaoId: number | null) => {
     const colab = orderedColabs.find((c) => c.id === colabId)
@@ -529,20 +458,32 @@ export function SetorDetalhe() {
   }, [])
 
   const handleSelecionarNoAutocomplete = useCallback(async (postoId: number, colabId: number) => {
+    const candidato = orderedColabs.find((c) => c.id === colabId)
+    if (!candidato) return
+    if (candidato.funcao_id != null && candidato.funcao_id !== postoId) {
+      setPendingAutocompleteSwap({
+        postoId,
+        colabId,
+        colaboradorNome: candidato.nome,
+        postoOrigemNome: funcaoMap.get(candidato.funcao_id) ?? 'posto atual',
+        postoDestinoNome: funcaoMap.get(postoId) ?? 'posto selecionado',
+      })
+      return
+    }
     await applyPostoAssignment(colabId, postoId)
     closePostoEditor()
-  }, [applyPostoAssignment, closePostoEditor])
+  }, [applyPostoAssignment, closePostoEditor, funcaoMap, orderedColabs])
+
+  const handleConfirmarAutocompleteSwap = useCallback(async () => {
+    if (!pendingAutocompleteSwap) return
+    await applyPostoAssignment(pendingAutocompleteSwap.colabId, pendingAutocompleteSwap.postoId)
+    setPendingAutocompleteSwap(null)
+    closePostoEditor()
+  }, [applyPostoAssignment, closePostoEditor, pendingAutocompleteSwap])
 
   const handleRemoverTitularPosto = useCallback(async (colabId: number) => {
     await applyPostoAssignment(colabId, null)
   }, [applyPostoAssignment])
-
-  const getResumoColaborador = useCallback((colab: Colaborador) => {
-    const contratoNome = contratoMap.get(colab.tipo_contrato_id) ?? 'Contrato'
-    const sexo = colab.sexo === 'M' ? 'Masc' : 'Fem'
-    const status = getStatusColaborador(colab.id)
-    return `${contratoNome} • ${sexo} • ${status}`
-  }, [contratoMap, getStatusColaborador])
 
   const getDescricaoBuscaColaborador = useCallback((colab: Colaborador) => {
     const postoAtual = colab.funcao_id != null ? (funcaoMap.get(colab.funcao_id) ?? 'Posto') : 'Reserva operacional'
@@ -875,7 +816,7 @@ export function SetorDetalhe() {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <FormField
                   control={setorForm.control}
                   name="hora_abertura"
@@ -902,31 +843,28 @@ export function SetorDetalhe() {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={setorForm.control}
+                  name="regime_escala"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Regime Padrao</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="5X2">5x2 (5 dias + 2 folgas)</SelectItem>
+                          <SelectItem value="6X1">6x1 (6 dias + 1 folga)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
-              <FormField
-                control={setorForm.control}
-                name="regime_escala"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Regime Padrao</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="5X2">5x2 (5 dias + 2 folgas)</SelectItem>
-                        <SelectItem value="6X1">6x1 (6 dias + 1 folga)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Regime define a folga semanal padrao da equipe deste setor.
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </CardContent>
           </Card>
         </Form>
@@ -941,15 +879,7 @@ export function SetorDetalhe() {
           <TabsContent value="pessoas">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <div className="space-y-1">
-                  <CardTitle className="text-base font-semibold">
-                    Equipe
-                    <span className="ml-2 text-xs font-normal text-muted-foreground">(arraste para alocar)</span>
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    {postosOrdenados.filter((f) => ocupanteMap.has(f.id)).length}/{postosOrdenados.length} postos preenchidos
-                  </p>
-                </div>
+                <CardTitle className="text-base font-semibold">Equipe</CardTitle>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
                     <Plus className="mr-1 size-3.5" /> Novo Posto
@@ -981,180 +911,195 @@ export function SetorDetalhe() {
                     }
                   />
                 ) : (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={assignmentCollisionDetection}
-                    onDragEnd={handleAssignmentDragEnd}
-                  >
-                    <div className="space-y-4">
+                  <div className="space-y-4">
+                    {colabsSemPosto.length > 0 && (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reserva operacional</p>
                           <span className="text-xs text-muted-foreground">{colabsSemPosto.length}</span>
                         </div>
-                        <DropZone id="drop-sem-posto" vazio={colabsSemPosto.length === 0} className="p-2">
-                          {colabsSemPosto.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {colabsSemPosto.map((colab) => (
-                                <DraggableColabCard key={colab.id} colab={colab} compacto />
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">Nenhum colaborador na reserva operacional.</p>
-                          )}
-                        </DropZone>
-                      </div>
-
-                      <div className="h-px bg-border" />
-
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Postos</p>
-                        <div className="rounded-md border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-[76px] text-center">#</TableHead>
-                                <TableHead className="w-[120px]">Posto</TableHead>
-                                <TableHead>Colaborador alocado</TableHead>
-                                <TableHead className="w-[120px]">Contrato</TableHead>
-                                <TableHead className="w-[80px]">Sexo</TableHead>
-                                <TableHead className="w-[120px]">Status</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {postosOrdenados.map((posto, index) => {
-                                const ocupante = ocupanteMap.get(posto.id)
-                                const status = ocupante ? getStatusColaborador(ocupante.id) : '-'
-                                const contratoNome = ocupante ? (contratoMap.get(ocupante.tipo_contrato_id) ?? 'Contrato') : '-'
-                                const resumo = ocupante ? getResumoColaborador(ocupante) : undefined
-                                const editorAberto = editingPostoId === posto.id
-
-                                return (
-                                  <PostoDropRow key={posto.id} id={`row-posto-${posto.id}`}>
-                                    <TableCell className="text-center">
-                                      <Badge variant="outline" className="w-11 justify-center font-mono text-[10px]">
-                                        {String(index + 1).padStart(2, '0')}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className="font-medium">{posto.apelido}</TableCell>
-                                    <TableCell>
-                                      <div className="flex items-center gap-2">
-                                        <DropZone id={`drop-posto-${posto.id}`} vazio={!ocupante} className="flex-1 p-1">
-                                          {ocupante ? (
-                                            <DraggableColabCard colab={ocupante} resumo={resumo} />
-                                          ) : (
-                                            <p className="px-2 py-1 text-xs text-muted-foreground">
-                                              Arraste um colaborador ou clique no lapis para alocar.
-                                            </p>
-                                          )}
-                                        </DropZone>
-                                        <div className="flex shrink-0 items-center gap-1">
-                                          <Popover
-                                            open={editorAberto}
-                                            onOpenChange={(open) => {
-                                              if (open) openPostoEditor(posto.id)
-                                              else if (editorAberto) closePostoEditor()
-                                            }}
-                                          >
-                                            <PopoverTrigger asChild>
-                                              <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="icon"
-                                                className="size-8"
-                                                disabled={postoAssignmentLoading}
-                                              >
-                                                <Pencil className="size-3.5" />
-                                              </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent align="end" className="w-80 space-y-2">
-                                              <div className="space-y-1">
-                                                <p className="text-xs font-medium">Selecionar titular para {posto.apelido}</p>
-                                                <Input
-                                                  value={postoSearchTerm}
-                                                  onChange={(e) => setPostoSearchTerm(e.target.value)}
-                                                  placeholder="Digite o nome do colaborador"
-                                                  autoFocus
-                                                />
-                                              </div>
-                                              <div className="max-h-64 space-y-1 overflow-auto">
-                                                {colaboradoresFiltradosBusca.length === 0 ? (
-                                                  <p className="rounded-md border border-dashed px-2 py-2 text-xs text-muted-foreground">
-                                                    Nenhum colaborador encontrado.
-                                                  </p>
-                                                ) : (
-                                                  colaboradoresFiltradosBusca.map((candidato) => (
-                                                    <button
-                                                      key={candidato.id}
-                                                      type="button"
-                                                      className="flex w-full items-center justify-between rounded-md border px-2 py-2 text-left hover:bg-muted"
-                                                      onClick={() => {
-                                                        void handleSelecionarNoAutocomplete(posto.id, candidato.id)
-                                                      }}
-                                                      disabled={postoAssignmentLoading}
-                                                    >
-                                                      <div className="min-w-0">
-                                                        <p className="truncate text-xs font-medium text-foreground">{candidato.nome}</p>
-                                                        <p className="truncate text-[11px] text-muted-foreground">
-                                                          {getDescricaoBuscaColaborador(candidato)}
-                                                        </p>
-                                                      </div>
-                                                      {candidato.funcao_id != null && (
-                                                        <Badge variant="outline" className="text-[10px]">
-                                                          {funcaoMap.get(candidato.funcao_id) ?? 'Posto'}
-                                                        </Badge>
-                                                      )}
-                                                    </button>
-                                                  ))
-                                                )}
-                                              </div>
-                                            </PopoverContent>
-                                          </Popover>
-                                          {ocupante && (
-                                            <Button
-                                              type="button"
-                                              variant="outline"
-                                              size="icon"
-                                              className="size-8"
-                                              onClick={() => {
-                                                void handleRemoverTitularPosto(ocupante.id)
-                                              }}
-                                              disabled={postoAssignmentLoading}
-                                            >
-                                              <UserMinus className="size-3.5" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </TableCell>
-                                    <TableCell className="text-xs text-muted-foreground">{contratoNome}</TableCell>
-                                    <TableCell className="text-xs text-muted-foreground">
-                                      {ocupante ? (ocupante.sexo === 'M' ? 'Masc' : 'Fem') : '-'}
-                                    </TableCell>
-                                    <TableCell>
-                                      {ocupante ? (
-                                        <Badge variant="outline" className={cn(
-                                          'text-[10px]',
-                                          status === 'Ativo' && 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400',
-                                          status === 'Ferias' && 'border-amber-500/40 text-amber-600 dark:text-amber-400',
-                                          status === 'Atestado' && 'border-red-500/40 text-red-600 dark:text-red-400',
-                                          status === 'Bloqueio' && 'border-muted-foreground/40 text-muted-foreground',
-                                        )}>
-                                          {status}
-                                        </Badge>
-                                      ) : (
-                                        <span className="text-xs text-muted-foreground">-</span>
-                                      )}
-                                    </TableCell>
-                                  </PostoDropRow>
-                                )
-                              })}
-                            </TableBody>
-                          </Table>
+                        <div className="flex flex-wrap gap-1.5 rounded-md border border-dashed bg-muted/20 p-2">
+                          {colabsSemPosto.map((colab) => (
+                            <Link key={colab.id} to={`/colaboradores/${colab.id}`}>
+                              <Badge variant="secondary" className="cursor-pointer gap-1 text-xs hover:bg-secondary/80">
+                                {colab.nome}
+                                <ArrowRight className="size-3" />
+                              </Badge>
+                            </Link>
+                          ))}
                         </div>
                       </div>
+                    )}
+
+                    {colabsSemPosto.length > 0 && <div className="h-px bg-border" />}
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Postos
+                        <span className="ml-2 text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">(arraste ⠿ para reordenar)</span>
+                      </p>
+                      <DndContext
+                        sensors={postoSortSensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handlePostoReorderDragEnd}
+                      >
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-[60px] text-center">#</TableHead>
+                              <TableHead className="w-[120px]">Posto</TableHead>
+                              <TableHead>Titular</TableHead>
+                              <TableHead className="w-[100px]">Contrato</TableHead>
+                              <TableHead className="w-[60px]">Sexo</TableHead>
+                              <TableHead className="w-[100px]">Status</TableHead>
+                              <TableHead className="w-[100px] text-right">Ações</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            <SortableContext
+                              items={postosOrdenados.map((p) => `posto-${p.id}`)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                            {postosOrdenados.map((posto, index) => {
+                              const ocupante = ocupanteMap.get(posto.id)
+                              const status = ocupante ? getStatusColaborador(ocupante.id) : '-'
+                              const contratoNome = ocupante ? (contratoMap.get(ocupante.tipo_contrato_id) ?? 'Contrato') : '-'
+                              const editorAberto = editingPostoId === posto.id
+
+                              return (
+                                <SortablePostoRow key={posto.id} postoId={posto.id} index={index}>
+                                  <TableCell className="font-medium">{posto.apelido}</TableCell>
+                                  <TableCell>
+                                    {ocupante ? (
+                                      <span className="truncate text-sm">{ocupante.nome}</span>
+                                    ) : (
+                                      <span className="text-sm italic text-muted-foreground">Vazio</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-muted-foreground">{contratoNome}</TableCell>
+                                  <TableCell className="text-xs text-muted-foreground">
+                                    {ocupante ? (ocupante.sexo === 'M' ? 'Masc' : 'Fem') : '-'}
+                                  </TableCell>
+                                  <TableCell>
+                                    {ocupante ? (
+                                      <Badge variant="outline" className={cn(
+                                        'text-xs',
+                                        status === 'Ativo' && 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400',
+                                        status === 'Ferias' && 'border-amber-500/40 text-amber-600 dark:text-amber-400',
+                                        status === 'Atestado' && 'border-red-500/40 text-red-600 dark:text-red-400',
+                                        status === 'Bloqueio' && 'border-muted-foreground/40 text-muted-foreground',
+                                      )}>
+                                        {status}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <Popover
+                                        open={editorAberto}
+                                        onOpenChange={(open) => {
+                                          if (open) openPostoEditor(posto.id)
+                                          else if (editorAberto) closePostoEditor()
+                                        }}
+                                      >
+                                        <PopoverTrigger asChild>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-7"
+                                            disabled={postoAssignmentLoading}
+                                            aria-label={`Editar titular de ${posto.apelido}`}
+                                          >
+                                            <Pencil className="size-3.5" />
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent align="end" className="w-80 space-y-2">
+                                          <div className="space-y-1">
+                                            <p className="text-xs font-medium">Selecionar titular para {posto.apelido}</p>
+                                            <Input
+                                              value={postoSearchTerm}
+                                              onChange={(e) => setPostoSearchTerm(e.target.value)}
+                                              placeholder="Digite o nome do colaborador"
+                                              autoFocus
+                                            />
+                                          </div>
+                                          <div className="max-h-64 space-y-1 overflow-auto">
+                                            {colaboradoresFiltradosBusca.length === 0 ? (
+                                              <p className="rounded-md border border-dashed px-2 py-2 text-xs text-muted-foreground">
+                                                Nenhum colaborador encontrado.
+                                              </p>
+                                            ) : (
+                                              colaboradoresFiltradosBusca.map((candidato) => (
+                                                <button
+                                                  key={candidato.id}
+                                                  type="button"
+                                                  className="flex w-full items-center justify-between rounded-md border px-2 py-2 text-left hover:bg-muted"
+                                                  onClick={() => {
+                                                    void handleSelecionarNoAutocomplete(posto.id, candidato.id)
+                                                  }}
+                                                  disabled={postoAssignmentLoading}
+                                                >
+                                                  <div className="min-w-0">
+                                                    <p className="truncate text-xs font-medium text-foreground">{candidato.nome}</p>
+                                                    <p className="truncate text-[11px] text-muted-foreground">
+                                                      {getDescricaoBuscaColaborador(candidato)}
+                                                    </p>
+                                                  </div>
+                                                  {candidato.funcao_id != null ? (
+                                                    <Badge variant="outline" className="text-[10px]">
+                                                      <Briefcase className="mr-1 size-3" />
+                                                      {funcaoMap.get(candidato.funcao_id) ?? 'Posto'}
+                                                    </Badge>
+                                                  ) : (
+                                                    <Badge variant="secondary" className="text-[10px]">
+                                                      <Users className="mr-1 size-3" />
+                                                      Reserva
+                                                    </Badge>
+                                                  )}
+                                                </button>
+                                              ))
+                                            )}
+                                          </div>
+                                        </PopoverContent>
+                                      </Popover>
+                                      {ocupante && (
+                                        <>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-7"
+                                            onClick={() => {
+                                              void handleRemoverTitularPosto(ocupante.id)
+                                            }}
+                                            disabled={postoAssignmentLoading}
+                                            aria-label={`Remover ${ocupante.nome} de ${posto.apelido}`}
+                                          >
+                                            <UserMinus className="size-3.5" />
+                                          </Button>
+                                          <Button variant="ghost" size="icon" className="size-7" asChild>
+                                            <Link to={`/colaboradores/${ocupante.id}`} aria-label={`Ver perfil de ${ocupante.nome}`}>
+                                              <ArrowRight className="size-3.5" />
+                                            </Link>
+                                          </Button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </SortablePostoRow>
+                              )
+                            })}
+                            </SortableContext>
+                          </TableBody>
+                        </Table>
+                      </div>
+                      </DndContext>
                     </div>
-                  </DndContext>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -1495,6 +1440,29 @@ export function SetorDetalhe() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!pendingAutocompleteSwap} onOpenChange={(open) => { if (!open) setPendingAutocompleteSwap(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Trocar colaborador de posto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAutocompleteSwap ? (
+                <>
+                  <strong>{pendingAutocompleteSwap.colaboradorNome}</strong> ja esta no posto{' '}
+                  <strong>{pendingAutocompleteSwap.postoOrigemNome}</strong>. Deseja remover de lá e trazer para{' '}
+                  <strong>{pendingAutocompleteSwap.postoDestinoNome}</strong>?
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { void handleConfirmarAutocompleteSwap() }}>
+              Trocar posto
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <DirtyGuardDialog blocker={blocker} />
     </div>
