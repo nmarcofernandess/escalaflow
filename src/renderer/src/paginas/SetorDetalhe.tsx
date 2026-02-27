@@ -16,6 +16,7 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   Save,
   GripVertical,
+  ChevronDown,
   CalendarDays,
   Users,
   ArrowRight,
@@ -42,7 +43,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Form,
   FormField,
@@ -869,17 +870,14 @@ export function SetorDetalhe() {
           </Card>
         </Form>
 
-        <Tabs defaultValue="pessoas" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="pessoas">1. Pessoas</TabsTrigger>
-            <TabsTrigger value="demanda">2. Demanda por horario</TabsTrigger>
-            <TabsTrigger value="escala">3. Escala</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="pessoas">
+        <div className="space-y-4">
+          <Collapsible defaultOpen className="group/equipe">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <CardTitle className="text-base font-semibold">Equipe</CardTitle>
+                <CollapsibleTrigger className="flex items-center gap-2 text-base font-semibold hover:underline">
+                  <ChevronDown className="size-4 transition-transform group-data-[state=closed]/equipe:-rotate-90" />
+                  Equipe
+                </CollapsibleTrigger>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
                     <Plus className="mr-1 size-3.5" /> Novo Posto
@@ -891,6 +889,7 @@ export function SetorDetalhe() {
                   </Button>
                 </div>
               </CardHeader>
+              <CollapsibleContent>
               <CardContent className="space-y-4">
                 {postosOrdenados.length === 0 && (
                   <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
@@ -1102,11 +1101,11 @@ export function SetorDetalhe() {
                   </div>
                 )}
               </CardContent>
+              </CollapsibleContent>
             </Card>
-          </TabsContent>
+          </Collapsible>
 
-          <TabsContent value="demanda">
-            <Card>
+          <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold">
                   Demanda por Faixa Horaria
@@ -1122,10 +1121,8 @@ export function SetorDetalhe() {
                 />
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <TabsContent value="escala">
-            <Card>
+          <Card>
               <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
                 <div>
                   <CardTitle className="text-base font-semibold">
@@ -1310,8 +1307,7 @@ export function SetorDetalhe() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+        </div>
 
         {/* Excecoes de Demanda por Data — oculto (IA configura via tool) */}
 
