@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { CORES_EXCECAO } from '@/lib/cores'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -56,6 +58,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/componentes/PageHeader'
+import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { EmptyState } from '@/componentes/EmptyState'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { setoresService } from '@/servicos/setores'
@@ -109,26 +113,42 @@ function inicioFimParaRestricao(inicio: string | null, fim: string | null): { ti
   return { tipo_restricao: 'nenhum', horario: '' }
 }
 
+function derivarTipoTrabalhadorPorContrato(nomeContrato?: string): 'CLT' | 'ESTAGIARIO' | 'APRENDIZ' | 'INTERMITENTE' {
+  if (!nomeContrato) return 'CLT'
+  const normalizado = nomeContrato
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
+  if (normalizado.includes('estagi')) return 'ESTAGIARIO'
+  if (normalizado.includes('aprendiz')) return 'APRENDIZ'
+  if (normalizado.includes('intermit')) return 'INTERMITENTE'
+  return 'CLT'
+}
+
 // Componente inline de Radio para tipo de restricao
 function RestricaoRadio({
   value,
   onChange,
   horario,
   onHorarioChange,
+  showNenhum = true,
 }: {
   value: TipoRestricao
   onChange: (v: TipoRestricao) => void
   horario: string
   onHorarioChange: (v: string) => void
+  showNenhum?: boolean
 }) {
+  const opcoes = [
+    ...(showNenhum ? [{ v: 'nenhum' as TipoRestricao, label: 'Sem restricao' }] : []),
+    { v: 'entrada' as TipoRestricao, label: 'Entrada fixa' },
+    { v: 'saida' as TipoRestricao, label: 'Saida maxima' },
+  ]
   return (
     <div className="space-y-3">
       <div className="flex gap-4">
-        {([
-          { v: 'nenhum', label: 'Sem restricao' },
-          { v: 'entrada', label: 'Entrada fixa' },
-          { v: 'saida', label: 'Saida maxima' },
-        ] as { v: TipoRestricao; label: string }[]).map(opt => (
+        {opcoes.map(opt => (
           <label key={opt.v} className="flex cursor-pointer items-center gap-1.5 text-sm">
             <input
               type="radio"
@@ -177,11 +197,13 @@ export function ColaboradorDetalhe() {
   const colabForm = useForm<ColabFormInput, unknown, ColabFormData>({
     resolver: zodResolver(colabSchema),
     defaultValues: {
-      nome: '', sexo: 'M', setor_id: '', tipo_contrato_id: '',
+      nome: '', sexo: '' as 'M' | 'F', setor_id: '', tipo_contrato_id: '',
       horas_semanais: 44, prefere_turno: 'none', evitar_dia_semana: 'none',
       tipo_trabalhador: 'CLT', funcao_id: 'none',
     },
   })
+
+  const blocker = useDirtyGuard({ isDirty: colabForm.formState.isDirty })
 
   // Excecao dialog state
   const [showExcecaoDialog, setShowExcecaoDialog] = useState(false)
@@ -345,15 +367,20 @@ export function ColaboradorDetalhe() {
   const handleSalvar = async (data: ColabFormData) => {
     setSalvando(true)
     try {
+      const contratoId = parseInt(data.tipo_contrato_id)
+      const contratoSelecionado = contratosList.find((tc) => tc.id === contratoId)
+      const horasSemanaisEfetivas = contratoSelecionado?.horas_semanais ?? data.horas_semanais
+      const tipoTrabalhadorEfetivo = derivarTipoTrabalhadorPorContrato(contratoSelecionado?.nome)
+
       await colaboradoresService.atualizar(colabId, {
         nome: data.nome.trim(),
         sexo: data.sexo as 'M' | 'F',
         setor_id: parseInt(data.setor_id),
-        tipo_contrato_id: parseInt(data.tipo_contrato_id),
-        horas_semanais: data.horas_semanais,
+        tipo_contrato_id: contratoId,
+        horas_semanais: horasSemanaisEfetivas,
         prefere_turno: data.prefere_turno === 'none' ? null : data.prefere_turno as 'MANHA' | 'TARDE',
         evitar_dia_semana: data.evitar_dia_semana === 'none' ? null : data.evitar_dia_semana as DiaSemana,
-        tipo_trabalhador: data.tipo_trabalhador,
+        tipo_trabalhador: tipoTrabalhadorEfetivo,
         funcao_id: data.funcao_id === 'none' ? null : parseInt(data.funcao_id),
       })
       toast.success('Colaborador salvo')
@@ -586,591 +613,554 @@ export function ColaboradorDetalhe() {
         }
       />
 
-      <div className="flex-1 space-y-6 p-6">
+      <div className="flex flex-1 flex-col gap-6 p-6">
         <Form {...colabForm}>
-          {/* Info basica */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">
-                Informacoes Pessoais
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={colabForm.control}
-                name="nome"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nome completo</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+          <Tabs defaultValue="geral">
+            <TabsList>
+              <TabsTrigger value="geral">Geral</TabsTrigger>
+              <TabsTrigger value="horarios">Horarios</TabsTrigger>
+              <TabsTrigger value="ausencias" className="gap-1.5">
+                Ausencias
+                {excecoesList.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 min-w-5 justify-center px-1.5 text-[0.65rem]">
+                    {excecoesList.length}
+                  </Badge>
                 )}
-              />
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={colabForm.control}
-                  name="sexo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Sexo</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="F">Feminino</SelectItem>
-                          <SelectItem value="M">Masculino</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
+              </TabsTrigger>
+            </TabsList>
+
+            {/* ===== Tab Geral: Dados do Colaborador (Cards A+B+C unificados) ===== */}
+            <TabsContent value="geral" className="space-y-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Dados do Colaborador
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={colabForm.control}
+                      name="nome"
+                      render={({ field }) => (
+                        <FormItem className="col-span-2">
+                          <FormLabel>Nome completo</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={colabForm.control}
+                      name="sexo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Sexo</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="F">Feminino</SelectItem>
+                              <SelectItem value="M">Masculino</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={colabForm.control}
+                      name="setor_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Setor</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {setoresList.map((s) => (
+                                <SelectItem key={s.id} value={String(s.id)}>
+                                  {s.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={colabForm.control}
+                      name="funcao_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Funcao / Posto</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sem funcao" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">Sem funcao definida</SelectItem>
+                              {funcoesList.map((f) => (
+                                <SelectItem key={f.id} value={String(f.id)}>
+                                  {f.apelido}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={colabForm.control}
+                      name="tipo_contrato_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tipo de Contrato</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {contratosList.map((tc) => (
+                                <SelectItem key={tc.id} value={String(tc.id)}>
+                                  {tc.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  {selectedContrato && (
+                    <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                      Template:{' '}
+                      <strong>{selectedContrato.nome}</strong> | {selectedContrato.horas_semanais}h/semana |
+                      {' '}{selectedContrato.regime_escala} | Max {selectedContrato.max_minutos_dia}min/dia
+                    </div>
                   )}
-                />
-                <FormField
-                  control={colabForm.control}
-                  name="setor_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Setor</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
+
+                  <Separator />
+
+                  {/* Preferencias */}
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">
+                      Preferencias{' '}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        (soft constraints - motor tenta respeitar)
+                      </span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={colabForm.control}
+                        name="prefere_turno"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Prefere turno</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">Sem preferencia</SelectItem>
+                                <SelectItem value="MANHA">Manha</SelectItem>
+                                <SelectItem value="TARDE">Tarde</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={colabForm.control}
+                        name="evitar_dia_semana"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Evitar dia da semana</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">Sem preferencia</SelectItem>
+                                {DIAS_SEMANA_OPTIONS.map((d) => (
+                                  <SelectItem key={d.value} value={d.value}>
+                                    {d.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <p className="text-[0.8rem] text-muted-foreground">
+                      O motor de escala tenta respeitar essas preferencias, mas nao
+                      garante. Se nao conseguir, aparece como alerta amarelo na escala.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ===== Tab Horarios: Cards E + F ===== */}
+            <TabsContent value="horarios" className="space-y-6">
+              {/* Regras de Horario */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="size-4 text-muted-foreground" />
+                    <CardTitle className="text-base font-semibold">
+                      Regras de Horario
+                    </CardTitle>
+                    {regraPadrao && (
+                      <Badge variant="outline" className="text-xs">Configurado</Badge>
+                    )}
+                  </div>
+                  <Button size="sm" onClick={handleSalvarRegra} disabled={regraSalvando}>
+                    <Save className="mr-1 size-3.5" />
+                    {regraSalvando ? 'Salvando...' : 'Salvar Regra'}
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Perfil de horario */}
+                  {perfisHorario.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Perfil de horario (do contrato)</Label>
+                      <Select
+                        value={regraForm.perfil_horario_id}
+                        onValueChange={handlePreencherDoPerfil}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sem perfil" />
+                        </SelectTrigger>
                         <SelectContent>
-                          {setoresList.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.nome}
+                          <SelectItem value="none">Sem perfil (manual)</SelectItem>
+                          {perfisHorario.filter(p => p.ativo).map(p => (
+                            <SelectItem key={p.id} value={String(p.id)}>
+                              {p.nome} ({p.inicio}-{p.fim})
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage />
-                    </FormItem>
+                      <p className="text-[0.75rem] text-muted-foreground">
+                        Selecionar um perfil preenche o horario automaticamente. Voce pode sobrescrever depois.
+                      </p>
+                    </div>
                   )}
-                />
-              </div>
-            </CardContent>
-          </Card>
 
-          {/* Contrato */}
-          <Card className="mt-6">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Contrato</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={colabForm.control}
-                name="tipo_contrato_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo de Contrato</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
+                  {/* Seccao A: Restricao de horario padrao */}
+                  <div>
+                    <Label className="mb-2 block">Restricao de horario (hard constraint)</Label>
+                    <RestricaoRadio
+                      value={regraForm.tipo_restricao}
+                      onChange={v => setRegraForm(f => ({ ...f, tipo_restricao: v }))}
+                      horario={regraForm.horario}
+                      onHorarioChange={v => setRegraForm(f => ({ ...f, horario: v }))}
+                    />
+                    <p className="mt-2 text-[0.75rem] text-muted-foreground">
+                      Sem restricao = motor decide livremente. Entrada fixa = entrada no horario exato. Saida maxima = nao aloca alem deste horario.
+                    </p>
+                  </div>
+
+                  {/* Ciclo domingo + Folga fixa + Turno */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs">Ciclo domingo (trabalho/folga)</Label>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={6}
+                          className="w-16"
+                          value={regraForm.domingo_ciclo_trabalho}
+                          onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_trabalho: parseInt(e.target.value) || 2 }))}
+                        />
+                        <span className="text-xs text-muted-foreground">/</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={4}
+                          className="w-16"
+                          value={regraForm.domingo_ciclo_folga}
+                          onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_folga: parseInt(e.target.value) || 1 }))}
+                        />
+                      </div>
+                      <p className="text-[0.7rem] text-muted-foreground">
+                        Ex: 2/1 = trabalha 2 dom, folga 1
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Folga fixa (5x2)</Label>
+                      <Select
+                        value={regraForm.folga_fixa_dia_semana}
+                        onValueChange={v => setRegraForm(f => ({ ...f, folga_fixa_dia_semana: v }))}
+                      >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {contratosList.map((tc) => (
-                          <SelectItem key={tc.id} value={String(tc.id)}>
-                            {tc.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={colabForm.control}
-                name="horas_semanais"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Horas Semanais{' '}
-                      <span className="text-xs font-normal text-muted-foreground">
-                        (auto do template, editavel por pessoa)
-                      </span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        value={typeof field.value === 'number' ? field.value : ''}
-                        onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
-                        onBlur={field.onBlur}
-                        name={field.name}
-                        ref={field.ref}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={colabForm.control}
-                  name="tipo_trabalhador"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tipo de Trabalhador</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
                         <SelectContent>
-                          <SelectItem value="CLT">CLT</SelectItem>
-                          <SelectItem value="APRENDIZ">Menor Aprendiz</SelectItem>
-                          <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
-                          <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={colabForm.control}
-                  name="funcao_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Funcao / Posto</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Sem funcao" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">Sem funcao definida</SelectItem>
-                          {funcoesList.map((f) => (
-                            <SelectItem key={f.id} value={String(f.id)}>
-                              {f.apelido}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              {selectedContrato && (
-                <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  Template:{' '}
-                  <strong>{selectedContrato.nome}</strong> | {selectedContrato.dias_trabalho} dias/semana |
-                  Max {selectedContrato.max_minutos_dia}min/dia
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Preferencias */}
-          <Card className="mt-6">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">
-                Preferencias{' '}
-                <span className="text-xs font-normal text-muted-foreground">
-                  (soft constraints - motor tenta respeitar)
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={colabForm.control}
-                  name="prefere_turno"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Prefere turno</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">Sem preferencia</SelectItem>
-                          <SelectItem value="MANHA">Manha</SelectItem>
-                          <SelectItem value="TARDE">Tarde</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={colabForm.control}
-                  name="evitar_dia_semana"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Evitar dia da semana</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">Sem preferencia</SelectItem>
-                          {DIAS_SEMANA_OPTIONS.map((d) => (
+                          <SelectItem value="none">Sem folga fixa</SelectItem>
+                          {DIAS_SEMANA_OPTIONS.map(d => (
                             <SelectItem key={d.value} value={d.value}>
                               {d.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage />
-                    </FormItem>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Folga variavel (cond.)</Label>
+                      <Select
+                        value={regraForm.folga_variavel_dia_semana}
+                        onValueChange={v => setRegraForm(f => ({ ...f, folga_variavel_dia_semana: v }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sem folga var.</SelectItem>
+                          {DIAS_SEMANA_OPTIONS.filter(d => d.value !== 'DOM').map(d => (
+                            <SelectItem key={d.value} value={d.value}>
+                              {d.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[0.7rem] text-muted-foreground">
+                        Se trabalhou DOM, folga neste dia
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Pref. turno (regra)</Label>
+                      <Select
+                        value={regraForm.preferencia_turno_soft}
+                        onValueChange={v => setRegraForm(f => ({ ...f, preferencia_turno_soft: v }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sem preferencia</SelectItem>
+                          <SelectItem value="MANHA">Manha</SelectItem>
+                          <SelectItem value="TARDE">Tarde</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Seccao B - Horarios por Dia da Semana */}
+                  <div className="border-t pt-4">
+                    <div className="mb-3">
+                      <Label className="text-sm font-medium">Horarios por dia da semana</Label>
+                      <p className="text-[0.75rem] text-muted-foreground">
+                        Ative um dia para definir restricao de horario especifica naquele dia.
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {DIAS_SEMANA_OPTIONS.map(dia => {
+                        const diaForm = regrasDiaForm[dia.value]
+                        return (
+                          <div key={dia.value} className="flex items-start gap-3">
+                            <Switch
+                              checked={diaForm.enabled}
+                              onCheckedChange={(checked) => {
+                                setRegrasDiaForm(prev => ({
+                                  ...prev,
+                                  [dia.value]: {
+                                    ...prev[dia.value],
+                                    enabled: checked,
+                                    ...(checked
+                                      ? { tipo_restricao: 'entrada' as TipoRestricao }
+                                      : { tipo_restricao: 'nenhum' as TipoRestricao, horario: '' }),
+                                  },
+                                }))
+                              }}
+                            />
+                            <span className="mt-0.5 w-10 shrink-0 text-sm font-medium">{dia.value}</span>
+                            {diaForm.enabled ? (
+                              <RestricaoRadio
+                                value={diaForm.tipo_restricao}
+                                onChange={v => setRegrasDiaForm(prev => ({
+                                  ...prev,
+                                  [dia.value]: { ...prev[dia.value], tipo_restricao: v },
+                                }))}
+                                horario={diaForm.horario}
+                                onHorarioChange={v => setRegrasDiaForm(prev => ({
+                                  ...prev,
+                                  [dia.value]: { ...prev[dia.value], horario: v },
+                                }))}
+                                showNenhum={false}
+                              />
+                            ) : (
+                              <span className="mt-0.5 text-xs text-muted-foreground">Usando padrao</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Excecoes por Data */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="size-4 text-muted-foreground" />
+                    <CardTitle className="text-base font-semibold">
+                      Excecoes por Data
+                    </CardTitle>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    setExcDataForm({ data: '', tipo_restricao: 'nenhum', horario: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
+                    setShowExcDataDialog(true)
+                  }}>
+                    <Plus className="mr-1 size-3.5" /> Nova Excecao
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {excecoesPorData.length === 0 ? (
+                    <EmptyState
+                      icon={CalendarDays}
+                      title="Nenhuma excecao por data"
+                      description="Sobrescreva horario ou force folga em datas especificas"
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      {excecoesPorData.map(exc => (
+                        <div key={exc.id} className="flex items-center justify-between rounded-lg border p-3">
+                          <div>
+                            <span className="text-sm font-medium">{formatarData(exc.data)}</span>
+                            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                              {exc.domingo_forcar_folga && (
+                                <Badge variant="destructive" className="text-[0.65rem]">Folga forcada</Badge>
+                              )}
+                              {exc.inicio && <span>Entrada: {exc.inicio}</span>}
+                              {exc.fim && <span>Saida max: {exc.fim}</span>}
+                              {exc.preferencia_turno_soft && <span>Turno: {exc.preferencia_turno_soft}</span>}
+                            </div>
+                          </div>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Remover excecao?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  A excecao de {formatarData(exc.data)} sera removida.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeletarExcData(exc.id)}>Remover</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                />
-              </div>
-              <p className="text-[0.8rem] text-muted-foreground">
-                O motor de escala tenta respeitar essas preferencias, mas nao
-                garante. Se nao conseguir, aparece como alerta amarelo na escala.
-              </p>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ===== Tab Ausencias: Card D ===== */}
+            <TabsContent value="ausencias" className="space-y-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Excecoes
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => setShowExcecaoDialog(true)}>
+                    <Plus className="mr-1 size-3.5" /> Nova Excecao
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {excecoesList.length === 0 ? (
+                    <EmptyState
+                      icon={Archive}
+                      title="Nenhuma excecao ativa"
+                      description="Ferias, atestados e bloqueios aparecem aqui"
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      {excecoesList.map((exc) => (
+                        <div
+                          key={exc.id}
+                          className="flex items-center justify-between rounded-lg border p-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <ExcecaoIcon tipo={exc.tipo} />
+                            <div>
+                              <span className="text-sm font-medium text-foreground">
+                                {exc.tipo}
+                              </span>
+                              <p className="text-xs text-muted-foreground">
+                                {formatarData(exc.data_inicio)} a {formatarData(exc.data_fim)}
+                                {exc.observacao && ` - ${exc.observacao}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Remover excecao?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    A excecao de {exc.tipo.toLowerCase()} ({formatarData(exc.data_inicio)} a {formatarData(exc.data_fim)}) sera removida.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeletarExcecao(exc.id)}>
+                                    Remover
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </Form>
-
-        {/* Regras de Horario */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div className="flex items-center gap-2">
-              <Clock className="size-4 text-muted-foreground" />
-              <CardTitle className="text-base font-semibold">
-                Regras de Horario
-              </CardTitle>
-              {regraPadrao && (
-                <Badge variant="outline" className="text-xs">Configurado</Badge>
-              )}
-            </div>
-            <Button size="sm" onClick={handleSalvarRegra} disabled={regraSalvando}>
-              <Save className="mr-1 size-3.5" />
-              {regraSalvando ? 'Salvando...' : 'Salvar Regra'}
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Perfil de horario */}
-            {perfisHorario.length > 0 && (
-              <div className="space-y-2">
-                <Label>Perfil de horario (do contrato)</Label>
-                <Select
-                  value={regraForm.perfil_horario_id}
-                  onValueChange={handlePreencherDoPerfil}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sem perfil" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem perfil (manual)</SelectItem>
-                    {perfisHorario.filter(p => p.ativo).map(p => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.nome} ({p.inicio}-{p.fim})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[0.75rem] text-muted-foreground">
-                  Selecionar um perfil preenche o horario automaticamente. Voce pode sobrescrever depois.
-                </p>
-              </div>
-            )}
-
-            {/* Seccao A: Restricao de horario padrao */}
-            <div>
-              <Label className="mb-2 block">Restricao de horario (hard constraint)</Label>
-              <RestricaoRadio
-                value={regraForm.tipo_restricao}
-                onChange={v => setRegraForm(f => ({ ...f, tipo_restricao: v }))}
-                horario={regraForm.horario}
-                onHorarioChange={v => setRegraForm(f => ({ ...f, horario: v }))}
-              />
-              <p className="mt-2 text-[0.75rem] text-muted-foreground">
-                Sem restricao = motor decide livremente. Entrada fixa = entrada no horario exato. Saida maxima = nao aloca alem deste horario.
-              </p>
-            </div>
-
-            {/* Ciclo domingo + Folga fixa + Turno */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label className="text-xs">Ciclo domingo (trabalho/folga)</Label>
-                <div className="flex items-center gap-1">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={6}
-                    className="w-16"
-                    value={regraForm.domingo_ciclo_trabalho}
-                    onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_trabalho: parseInt(e.target.value) || 2 }))}
-                  />
-                  <span className="text-xs text-muted-foreground">/</span>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={4}
-                    className="w-16"
-                    value={regraForm.domingo_ciclo_folga}
-                    onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_folga: parseInt(e.target.value) || 1 }))}
-                  />
-                </div>
-                <p className="text-[0.7rem] text-muted-foreground">
-                  Ex: 2/1 = trabalha 2 dom, folga 1
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">Folga fixa (5x2)</Label>
-                <Select
-                  value={regraForm.folga_fixa_dia_semana}
-                  onValueChange={v => setRegraForm(f => ({ ...f, folga_fixa_dia_semana: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem folga fixa</SelectItem>
-                    {DIAS_SEMANA_OPTIONS.map(d => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">Folga variavel (cond.)</Label>
-                <Select
-                  value={regraForm.folga_variavel_dia_semana}
-                  onValueChange={v => setRegraForm(f => ({ ...f, folga_variavel_dia_semana: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem folga var.</SelectItem>
-                    {DIAS_SEMANA_OPTIONS.filter(d => d.value !== 'DOM').map(d => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[0.7rem] text-muted-foreground">
-                  Se trabalhou DOM, folga neste dia
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">Pref. turno (regra)</Label>
-                <Select
-                  value={regraForm.preferencia_turno_soft}
-                  onValueChange={v => setRegraForm(f => ({ ...f, preferencia_turno_soft: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem preferencia</SelectItem>
-                    <SelectItem value="MANHA">Manha</SelectItem>
-                    <SelectItem value="TARDE">Tarde</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Seccao B - Horarios por Dia da Semana */}
-            <div className="border-t pt-4">
-              <div className="mb-3">
-                <Label className="text-sm font-medium">Horarios por dia da semana</Label>
-                <p className="text-[0.75rem] text-muted-foreground">
-                  Ative um dia para definir restricao de horario especifica naquele dia.
-                </p>
-              </div>
-              <div className="space-y-3">
-                {DIAS_SEMANA_OPTIONS.map(dia => {
-                  const diaForm = regrasDiaForm[dia.value]
-                  return (
-                    <div key={dia.value} className="flex items-start gap-3">
-                      <Switch
-                        checked={diaForm.enabled}
-                        onCheckedChange={(checked) => {
-                          setRegrasDiaForm(prev => ({
-                            ...prev,
-                            [dia.value]: {
-                              ...prev[dia.value],
-                              enabled: checked,
-                              ...(!checked ? { tipo_restricao: 'nenhum' as TipoRestricao, horario: '' } : {}),
-                            },
-                          }))
-                        }}
-                      />
-                      <span className="mt-0.5 w-10 shrink-0 text-sm font-medium">{dia.value}</span>
-                      {diaForm.enabled ? (
-                        <RestricaoRadio
-                          value={diaForm.tipo_restricao}
-                          onChange={v => setRegrasDiaForm(prev => ({
-                            ...prev,
-                            [dia.value]: { ...prev[dia.value], tipo_restricao: v },
-                          }))}
-                          horario={diaForm.horario}
-                          onHorarioChange={v => setRegrasDiaForm(prev => ({
-                            ...prev,
-                            [dia.value]: { ...prev[dia.value], horario: v },
-                          }))}
-                        />
-                      ) : (
-                        <span className="mt-0.5 text-xs text-muted-foreground">Usando padrao</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Excecoes por Data */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="size-4 text-muted-foreground" />
-              <CardTitle className="text-base font-semibold">
-                Excecoes por Data
-              </CardTitle>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => {
-              setExcDataForm({ data: '', tipo_restricao: 'nenhum', horario: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
-              setShowExcDataDialog(true)
-            }}>
-              <Plus className="mr-1 size-3.5" /> Nova Excecao
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {excecoesPorData.length === 0 ? (
-              <EmptyState
-                icon={CalendarDays}
-                title="Nenhuma excecao por data"
-                description="Sobrescreva horario ou force folga em datas especificas"
-              />
-            ) : (
-              <div className="space-y-2">
-                {excecoesPorData.map(exc => (
-                  <div key={exc.id} className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <span className="text-sm font-medium">{formatarData(exc.data)}</span>
-                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        {exc.domingo_forcar_folga && (
-                          <Badge variant="destructive" className="text-[0.65rem]">Folga forcada</Badge>
-                        )}
-                        {exc.inicio && <span>Entrada: {exc.inicio}</span>}
-                        {exc.fim && <span>Saida max: {exc.fim}</span>}
-                        {exc.preferencia_turno_soft && <span>Turno: {exc.preferencia_turno_soft}</span>}
-                      </div>
-                    </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Remover excecao?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            A excecao de {formatarData(exc.data)} sera removida.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDeletarExcData(exc.id)}>Remover</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Excecoes */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-base font-semibold">
-              Excecoes
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => setShowExcecaoDialog(true)}>
-              <Plus className="mr-1 size-3.5" /> Nova Excecao
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {excecoesList.length === 0 ? (
-              <EmptyState
-                icon={Archive}
-                title="Nenhuma excecao ativa"
-                description="Ferias, atestados e bloqueios aparecem aqui"
-              />
-            ) : (
-              <div className="space-y-2">
-                {excecoesList.map((exc) => (
-                  <div
-                    key={exc.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ExcecaoIcon tipo={exc.tipo} />
-                      <div>
-                        <span className="text-sm font-medium text-foreground">
-                          {exc.tipo}
-                        </span>
-                        <p className="text-xs text-muted-foreground">
-                          {formatarData(exc.data_inicio)} a {formatarData(exc.data_fim)}
-                          {exc.observacao && ` - ${exc.observacao}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Remover excecao?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              A excecao de {exc.tipo.toLowerCase()} ({formatarData(exc.data_inicio)} a {formatarData(exc.data_fim)}) sera removida.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDeletarExcecao(exc.id)}>
-                              Remover
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
       </div>
 
       {/* Excecao por Data Dialog */}
@@ -1300,6 +1290,8 @@ export function ColaboradorDetalhe() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DirtyGuardDialog blocker={blocker} />
     </div>
   )
 }

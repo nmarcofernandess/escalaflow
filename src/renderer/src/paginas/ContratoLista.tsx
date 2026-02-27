@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FileText, Plus, Edit, Trash2, Info, Search, Clock, Calendar, Timer, Settings2 } from 'lucide-react'
+import { FileText, Plus, Edit, Trash2, Info, Search, Clock, Calendar, Timer, Settings2, Lock } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -238,7 +238,9 @@ export function ContratoLista() {
       reload()
     } catch (err) {
       const msg = err instanceof Error ? err.message.toLowerCase() : ''
-      if (msg.includes('vinculados') || msg.includes('colaboradores')) {
+      if (msg.includes('sistema') && msg.includes('nao pode')) {
+        toast.error('Contrato de sistema nao pode ser deletado.')
+      } else if (msg.includes('vinculados') || msg.includes('colaboradores')) {
         const match = msg.match(/(\d+)/)
         const n = match ? match[1] : ''
         toast.error(
@@ -329,7 +331,17 @@ export function ContratoLista() {
               <TableBody>
                 {filtered.map((tc) => (
                   <TableRow key={tc.id}>
-                    <TableCell className="pl-4 font-medium">{tc.nome}</TableCell>
+                    <TableCell className="pl-4 font-medium">
+                      <div className="flex items-center gap-2">
+                        <span>{tc.nome}</span>
+                        {tc.protegido_sistema && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                            <Lock className="size-3" />
+                            Sistema
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{tc.horas_semanais}h</TableCell>
                     <TableCell>{tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1')}</TableCell>
                     <TableCell>{tc.dias_trabalho} dias</TableCell>
@@ -357,6 +369,8 @@ export function ContratoLista() {
                           variant="ghost"
                           size="icon"
                           className="size-8 text-destructive hover:bg-destructive/5"
+                          disabled={tc.protegido_sistema}
+                          title={tc.protegido_sistema ? 'Contrato de sistema nao pode ser deletado' : 'Excluir contrato'}
                           onClick={() => setDeletingId(tc.id)}
                         >
                           <Trash2 className="size-3.5" />
@@ -385,7 +399,15 @@ export function ContratoLista() {
                         <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
                           <FileText className="size-5 text-primary" />
                         </div>
-                        <h3 className="text-sm font-semibold text-foreground">{tc.nome}</h3>
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-semibold text-foreground">{tc.nome}</h3>
+                          {tc.protegido_sistema && (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                              <Lock className="size-3" />
+                              Contrato de sistema
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
@@ -416,6 +438,8 @@ export function ContratoLista() {
                         variant="outline"
                         size="sm"
                         className="text-destructive hover:bg-destructive/5"
+                        disabled={tc.protegido_sistema}
+                        title={tc.protegido_sistema ? 'Contrato de sistema nao pode ser deletado' : 'Excluir contrato'}
                         onClick={() => setDeletingId(tc.id)}
                       >
                         <Trash2 className="size-3" />

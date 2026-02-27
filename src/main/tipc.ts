@@ -4,9 +4,11 @@ import { createRequire } from 'node:module'
 import os from 'node:os'
 import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
 import { validarEscalaV3 } from './motor/validador'
-import { buildSolverInput, computeSolverScenarioHash, runSolver } from './motor/solver-bridge'
+import { buildSolverInput, computeSolverScenarioHash, runSolver, persistirSolverResult } from './motor/solver-bridge'
 import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
+import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
+import { persistirAjusteResult } from './tipc/escalas-utils'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
@@ -16,7 +18,6 @@ import type {
   DashboardResumo,
   SetorResumo,
   AlertaDashboard,
-  SolverInput,
 } from '../shared'
 
 const require = createRequire(import.meta.url)
@@ -25,8 +26,6 @@ const { tipc } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/mai
 
 const t = tipc.create()
 const { dialog, BrowserWindow, app } = electron
-
-type RegimeEscalaInput = '5X2' | '6X1'
 
 // =============================================================================
 // ANEXOS — persistência em disco
@@ -72,204 +71,12 @@ async function limparAnexosArquivadas(): Promise<void> {
   }
 }
 
-type SimulacaoRegimeOverride = {
-  colaborador_id: number
-  regime_escala: RegimeEscalaInput
+function safeJsonParse<T = unknown>(json: string | null | undefined): T | undefined {
+  if (!json) return undefined
+  try { return JSON.parse(json) as T }
+  catch { return undefined }
 }
 
-type EscalaSimulacaoConfig = {
-  regimes_override?: SimulacaoRegimeOverride[]
-}
-
-function normalizeRegimesOverride(overrides?: SimulacaoRegimeOverride[]): SimulacaoRegimeOverride[] {
-  const map = new Map<number, RegimeEscalaInput>()
-  for (const o of overrides ?? []) {
-    if (!Number.isInteger(o.colaborador_id) || o.colaborador_id <= 0) continue
-    if (o.regime_escala !== '5X2' && o.regime_escala !== '6X1') continue
-    map.set(o.colaborador_id, o.regime_escala)
-  }
-  return [...map.entries()]
-    .map(([colaborador_id, regime_escala]) => ({ colaborador_id, regime_escala }))
-    .sort((a, b) => a.colaborador_id - b.colaborador_id)
-}
-
-function parseEscalaSimulacaoConfig(raw: string | null | undefined): EscalaSimulacaoConfig {
-  if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw) as EscalaSimulacaoConfig
-    return {
-      regimes_override: normalizeRegimesOverride(parsed?.regimes_override),
-    }
-  } catch {
-    return {}
-  }
-}
-
-function listDays(dataInicio: string, dataFim: string): string[] {
-  const out: string[] = []
-  const start = new Date(`${dataInicio}T00:00:00`)
-  const end = new Date(`${dataFim}T00:00:00`)
-  const d = new Date(start.getTime())
-  while (d <= end) {
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    out.push(iso)
-    d.setDate(d.getDate() + 1)
-  }
-  return out
-}
-
-function dayLabel(isoDate: string): 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM' {
-  const d = new Date(`${isoDate}T00:00:00`)
-  const week = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'] as const
-  return week[d.getDay()] === 'DOM' ? 'DOM' : week[d.getDay()]
-}
-
-function minutesBetween(h1: string, h2: string): number {
-  const [aH, aM] = h1.split(':').map(Number)
-  const [bH, bM] = h2.split(':').map(Number)
-  return Math.max(0, (bH * 60 + bM) - (aH * 60 + aM))
-}
-
-function enrichPreflightWithCapacityChecks(
-  input: SolverInput,
-  blockers: EscalaPreflightResult['blockers'],
-  warnings: EscalaPreflightResult['warnings'],
-): void {
-  const days = listDays(input.data_inicio, input.data_fim)
-  const holidayForbidden = new Set(
-    input.feriados.filter((f) => f.proibido_trabalhar).map((f) => f.data),
-  )
-
-  const demandByDay = new Map<string, Array<{ min_pessoas: number; hora_inicio: string; hora_fim: string }>>()
-  for (const day of days) {
-    const label = dayLabel(day)
-    const active = input.demanda
-      .filter((d) => d.dia_semana === null || d.dia_semana === label)
-      .filter((d) => d.min_pessoas > 0)
-      .map((d) => ({ min_pessoas: d.min_pessoas, hora_inicio: d.hora_inicio, hora_fim: d.hora_fim }))
-    demandByDay.set(day, active)
-  }
-
-  for (const day of days) {
-    const dayDemand = demandByDay.get(day) ?? []
-    if (dayDemand.length === 0) continue
-
-    const label = dayLabel(day)
-    if (label === 'DOM' && input.colaboradores.every((c) => (c.domingo_ciclo_trabalho ?? 0) <= 0)) {
-      blockers.push({
-        codigo: 'DOMINGO_SEM_COLABORADORES',
-        severidade: 'BLOCKER',
-        mensagem: `Ha demanda no domingo (${day}), mas nenhum colaborador aceita domingo.`,
-        detalhe: 'Ative domingo para alguem ou ajuste demanda.',
-      })
-      break
-    }
-
-    if (holidayForbidden.has(day)) {
-      blockers.push({
-        codigo: 'DEMANDA_EM_FERIADO_PROIBIDO',
-        severidade: 'BLOCKER',
-        mensagem: `Ha demanda no feriado proibido ${day}.`,
-        detalhe: 'Ajuste demanda do dia ou permissao de feriado.',
-      })
-      break
-    }
-
-    const peakDemand = dayDemand.reduce((acc, d) => Math.max(acc, d.min_pessoas), 0)
-    const requiredMin = peakDemand
-    const availableCount = input.colaboradores.filter((c) => {
-      if (label === 'DOM' && (c.domingo_ciclo_trabalho ?? 0) <= 0) return false
-      if (holidayForbidden.has(day)) return false
-      return !input.excecoes.some((e) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
-    }).length
-
-    if (availableCount < requiredMin) {
-      blockers.push({
-        codigo: 'CAPACIDADE_DIARIA_INSUFICIENTE',
-        severidade: 'BLOCKER',
-        mensagem: `Capacidade insuficiente em ${day}: disponiveis=${availableCount}, minimo requerido=${requiredMin}.`,
-        detalhe: 'Revise piso operacional, excecoes, regime dos contratos ou demanda.',
-      })
-      break
-    }
-  }
-
-  const requiredMinutes = days.reduce((accDay, day) => {
-    const segments = demandByDay.get(day) ?? []
-    return accDay + segments.reduce((accSeg, seg) => {
-      return accSeg + minutesBetween(seg.hora_inicio, seg.hora_fim) * seg.min_pessoas
-    }, 0)
-  }, 0)
-
-  const totalWeeksFactor = days.length / 7
-  const availableContractMinutes = input.colaboradores.reduce((acc, c) => {
-    return acc + (c.horas_semanais * 60 * totalWeeksFactor)
-  }, 0)
-
-  if (requiredMinutes > availableContractMinutes * 1.15) {
-    warnings.push({
-      codigo: 'DEMANDA_ACIMA_CAPACIDADE_ESTIMADA',
-      severidade: 'WARNING',
-      mensagem: 'Demanda do periodo parece acima da capacidade estimada da equipe.',
-      detalhe: `Demanda≈${Math.round(requiredMinutes)}min vs capacidade≈${Math.round(availableContractMinutes)}min.`,
-    })
-  }
-
-  // v4: Validar limite de capacidade individual por colaborador
-  // Verifica se a janela (fim - inicio) de cada dia multiplicada pelos dias de trabalho
-  // e apos deducao do intervalo de almoco obrigatorio nao torna a meta de horas matematicamente impossivel.
-  for (const c of input.colaboradores) {
-    if (c.tipo_trabalhador === 'ESTAGIARIO') continue;
-
-    const horasSemanaisMinutos = c.horas_semanais * 60;
-    const toleranciaMinutos = input.empresa.tolerancia_semanal_min;
-    const limiteInferiorSemanal = Math.max(0, horasSemanaisMinutos - toleranciaMinutos);
-
-    // Identificar a janela padrao do colaborador pelas regras
-    let maxJanelaDoColaborador = c.max_minutos_dia;
-
-    const regras = input.regras_colaborador_dia?.filter(r => r.colaborador_id === c.id) || [];
-
-    // Simplificacao: preflight busca apenas detectar casos endemicos (padrao semanal de janela curta)
-    if (regras.length > 0) {
-      const regraTipica = regras.find(r => r.inicio_min || r.fim_max);
-
-      if (regraTipica) {
-        let janelaMinutos = c.max_minutos_dia; // default fallback
-
-        let startToUse = regraTipica.inicio_min || input.empresa.hora_abertura;
-        let endToUse = regraTipica.fim_max || input.empresa.hora_fechamento;
-
-        const possibleMinutes = minutesBetween(startToUse, endToUse);
-        if (possibleMinutes > 0 && possibleMinutes < janelaMinutos) {
-          janelaMinutos = possibleMinutes;
-        }
-
-        maxJanelaDoColaborador = Math.min(janelaMinutos, c.max_minutos_dia);
-      }
-    }
-
-    // Se a meta e > 6h (360 minutos), um almoco obrigatorio de X minutos sera descontado.
-    let capacidadeDiaria = maxJanelaDoColaborador;
-    const metaDiariaMedia = horasSemanaisMinutos / c.dias_trabalho;
-
-    if (metaDiariaMedia > 360) {
-      capacidadeDiaria -= input.empresa.min_intervalo_almoco_min;
-    }
-
-    const capacidadeMaxSemanal = capacidadeDiaria * c.dias_trabalho;
-
-    // Se a capacidade total e menor que a tolerancia minima do contrato, o modelo VAI FALHAR
-    if (capacidadeMaxSemanal < limiteInferiorSemanal) {
-      blockers.push({
-        codigo: 'CAPACIDADE_INDIVIDUAL_INSUFICIENTE',
-        severidade: 'BLOCKER',
-        mensagem: `A janela de disponibilidade de ${c.nome} torna a carga horaria incompativel.`,
-        detalhe: `Capacidade max da jornada (descontando almoço) é ${Math.round(capacidadeMaxSemanal / 60)}h. Contrato exige minimo de ${Math.round(limiteInferiorSemanal / 60)}h. Altere a escala de horario dele ou reduza o contrato.`,
-      });
-    }
-  }
-}
 
 async function buildEscalaPreflight(
   setorId: number,
@@ -411,9 +218,9 @@ const tiposContratoCriar = t.procedure
     const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
     const diasTrabalho = regime === '5X2' ? 5 : 6
     const id = await insertReturningId(`
-      INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia)
-      VALUES (?, ?, ?, ?, ?)
-    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia)
+      INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia, false)
 
     return await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', id)
   })
@@ -441,6 +248,15 @@ const tiposContratoAtualizar = t.procedure
 const tiposContratoDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
+    const contrato = await queryOne<{ id: number; protegido_sistema: boolean }>(
+      'SELECT id, protegido_sistema FROM tipos_contrato WHERE id = ?',
+      input.id,
+    )
+    if (!contrato) throw new Error('Tipo de contrato nao encontrado')
+    if (contrato.protegido_sistema) {
+      throw new Error('Contrato de sistema nao pode ser deletado.')
+    }
+
     const count = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE tipo_contrato_id = ?', input.id)
     if (count && count.count > 0) {
       throw new Error(`${count.count} colaboradores usam este contrato. Mova-os antes de deletar.`)
@@ -549,18 +365,19 @@ const setoresBuscar = t.procedure
   })
 
 const setoresCriar = t.procedure
-  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null }>()
+  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; regime_escala?: '5X2' | '6X1'; icone?: string | null }>()
   .action(async ({ input }) => {
+    const regimeEscala = input.regime_escala ?? '5X2'
     const id = await insertReturningId(`
-      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento)
-      VALUES (?, ?, ?, ?)
-    `, input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento)
+      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, regime_escala)
+      VALUES (?, ?, ?, ?, ?)
+    `, input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento, regimeEscala)
 
     return await queryOne('SELECT * FROM setores WHERE id = ?', id)
   })
 
 const setoresAtualizar = t.procedure
-  .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; ativo?: boolean }>()
+  .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; regime_escala?: '5X2' | '6X1'; ativo?: boolean }>()
   .action(async ({ input }) => {
     const fields: string[] = []
     const values: unknown[] = []
@@ -569,6 +386,7 @@ const setoresAtualizar = t.procedure
     if (input.icone !== undefined) { fields.push('icone = ?'); values.push(input.icone) }
     if (input.hora_abertura !== undefined) { fields.push('hora_abertura = ?'); values.push(input.hora_abertura) }
     if (input.hora_fechamento !== undefined) { fields.push('hora_fechamento = ?'); values.push(input.hora_fechamento) }
+    if (input.regime_escala !== undefined) { fields.push('regime_escala = ?'); values.push(input.regime_escala) }
     if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo) }
 
     if (fields.length > 0) {
@@ -723,7 +541,7 @@ const setoresReordenarRank = t.procedure
   })
 
 // =============================================================================
-// COLABORADORES (5 handlers)
+// COLABORADORES (7 handlers)
 // =============================================================================
 
 const colaboradoresListar = t.procedure
@@ -821,6 +639,127 @@ const colaboradoresAtualizar = t.procedure
     }
 
     return await queryOne('SELECT * FROM colaboradores WHERE id = ?', input.id)
+  })
+
+const colaboradoresAtribuirPosto = t.procedure
+  .input<{ colaborador_id: number; funcao_id: number | null; estrategia?: 'swap' | 'strict' }>()
+  .action(async ({ input }) => {
+    const estrategia = input.estrategia ?? 'swap'
+
+    const colaborador = await queryOne<{ id: number; setor_id: number; funcao_id: number | null; nome: string }>(
+      'SELECT id, setor_id, funcao_id, nome FROM colaboradores WHERE id = ?',
+      input.colaborador_id,
+    )
+    if (!colaborador) throw new Error('Colaborador nao encontrado')
+
+    let funcaoAlvo: { id: number; setor_id: number; apelido: string } | undefined
+    if (input.funcao_id !== null) {
+      funcaoAlvo = await queryOne<{ id: number; setor_id: number; apelido: string }>(
+        'SELECT id, setor_id, apelido FROM funcoes WHERE id = ?',
+        input.funcao_id,
+      )
+      if (!funcaoAlvo) throw new Error('Posto nao encontrado')
+      if (funcaoAlvo.setor_id !== colaborador.setor_id) {
+        throw new Error('Colaborador e posto pertencem a setores diferentes')
+      }
+    }
+
+    let ocupantesNoPosto: Array<{ id: number; funcao_id: number | null }> = []
+    if (funcaoAlvo) {
+      ocupantesNoPosto = await queryAll<{ id: number; funcao_id: number | null }>(
+        'SELECT id, funcao_id FROM colaboradores WHERE funcao_id = ? AND id <> ?',
+        funcaoAlvo.id,
+        colaborador.id,
+      )
+      if (estrategia === 'strict' && ocupantesNoPosto.length > 0) {
+        throw new Error('Posto ja ocupado. Remova o titular atual ou use estrategia swap.')
+      }
+    }
+
+    const snapshotIds = new Set<number>([colaborador.id, ...ocupantesNoPosto.map((o) => o.id)])
+    const snapshotAntes: Array<{ colaborador_id: number; funcao_id: number | null }> = []
+    for (const colaboradorId of snapshotIds) {
+      const row = await queryOne<{ id: number; funcao_id: number | null }>(
+        'SELECT id, funcao_id FROM colaboradores WHERE id = ?',
+        colaboradorId,
+      )
+      if (row) snapshotAntes.push({ colaborador_id: row.id, funcao_id: row.funcao_id ?? null })
+    }
+    snapshotAntes.sort((a, b) => a.colaborador_id - b.colaborador_id)
+
+    await transaction(async () => {
+      if (input.funcao_id === null) {
+        await execute('UPDATE colaboradores SET funcao_id = NULL WHERE id = ?', colaborador.id)
+        return
+      }
+
+      if (estrategia === 'swap' && ocupantesNoPosto.length > 0) {
+        for (const ocupante of ocupantesNoPosto) {
+          await execute('UPDATE colaboradores SET funcao_id = NULL WHERE id = ?', ocupante.id)
+        }
+      }
+
+      await execute('UPDATE colaboradores SET funcao_id = ? WHERE id = ?', input.funcao_id, colaborador.id)
+    })
+
+    const snapshotDepois: Array<{ colaborador_id: number; funcao_id: number | null }> = []
+    for (const colaboradorId of snapshotIds) {
+      const row = await queryOne<{ id: number; funcao_id: number | null }>(
+        'SELECT id, funcao_id FROM colaboradores WHERE id = ?',
+        colaboradorId,
+      )
+      if (row) snapshotDepois.push({ colaborador_id: row.id, funcao_id: row.funcao_id ?? null })
+    }
+    snapshotDepois.sort((a, b) => a.colaborador_id - b.colaborador_id)
+
+    return {
+      snapshot_antes: snapshotAntes,
+      snapshot_depois: snapshotDepois,
+    }
+  })
+
+const colaboradoresRestaurarPostos = t.procedure
+  .input<{ snapshot: { colaborador_id: number; funcao_id: number | null }[] }>()
+  .action(async ({ input }) => {
+    const dedup = new Map<number, number | null>()
+    for (const item of input.snapshot ?? []) {
+      if (!Number.isInteger(item.colaborador_id) || item.colaborador_id <= 0) {
+        throw new Error('Snapshot invalido para restauracao')
+      }
+      dedup.set(item.colaborador_id, item.funcao_id ?? null)
+    }
+
+    if (dedup.size === 0) return { ok: true as const }
+
+    const colaboradorSetorMap = new Map<number, number>()
+    for (const colaboradorId of dedup.keys()) {
+      const colab = await queryOne<{ id: number; setor_id: number }>(
+        'SELECT id, setor_id FROM colaboradores WHERE id = ?',
+        colaboradorId,
+      )
+      if (!colab) throw new Error(`Colaborador ${colaboradorId} nao encontrado`)
+      colaboradorSetorMap.set(colaboradorId, colab.setor_id)
+    }
+
+    for (const [colaboradorId, funcaoId] of dedup) {
+      if (funcaoId === null) continue
+      const funcao = await queryOne<{ id: number; setor_id: number }>(
+        'SELECT id, setor_id FROM funcoes WHERE id = ?',
+        funcaoId,
+      )
+      if (!funcao) throw new Error(`Posto ${funcaoId} nao encontrado`)
+      if (funcao.setor_id !== colaboradorSetorMap.get(colaboradorId)) {
+        throw new Error('Snapshot invalido: colaborador e posto de setores diferentes')
+      }
+    }
+
+    await transaction(async () => {
+      for (const [colaboradorId, funcaoId] of dedup) {
+        await execute('UPDATE colaboradores SET funcao_id = ? WHERE id = ?', funcaoId, colaboradorId)
+      }
+    })
+
+    return { ok: true as const }
   })
 
 const colaboradoresDeletar = t.procedure
@@ -1105,70 +1044,11 @@ const escalasAjustar = t.procedure
     const comparacao = solverResult.comparacao_demanda ?? []
 
     // Persistir resultado do solver (substituir alocacoes + decisoes + comparacao)
-    await transaction(async () => {
-      await execute('DELETE FROM alocacoes WHERE escala_id = ?', escalaId)
-      await execute('DELETE FROM escala_decisoes WHERE escala_id = ?', escalaId)
-      await execute('DELETE FROM escala_comparacao_demanda WHERE escala_id = ?', escalaId)
+    await persistirAjusteResult(escalaId, solverResult, ind, decisoes, comparacao, inputHash, cfg)
 
-      for (const a of solverResult.alocacoes!) {
-        await execute(`
-          INSERT INTO alocacoes
-            (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
-             minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
-             minutos_almoco, intervalo_15min, funcao_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-          escalaId, a.colaborador_id, a.data, a.status,
-          a.hora_inicio ?? null, a.hora_fim ?? null,
-          a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
-          a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
-          a.minutos_almoco ?? null,
-          a.intervalo_15min ?? false,
-          a.funcao_id ?? null
-        )
-      }
-
-      for (const d of decisoes) {
-        await execute(`
-          INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `, escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
-      }
-
-      for (const c of comparacao) {
-        await execute(`
-          INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, escalaId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ?? false, c.justificativa ?? null)
-      }
-
-      await execute(`
-        UPDATE escalas
-        SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?, input_hash = ?, simulacao_config_json = ?
-        WHERE id = ?
-      `,
-        ind.pontuacao,
-        ind.cobertura_percent,
-        ind.violacoes_hard,
-        ind.violacoes_soft,
-        ind.equilibrio,
-        inputHash,
-        JSON.stringify({ regimes_override: cfg.regimes_override ?? [] } satisfies EscalaSimulacaoConfig),
-        escalaId,
-      )
-    })
-
-    const escalaAtual = await queryOne<Escala>('SELECT * FROM escalas WHERE id = ?', escalaId)
-    const alocacoesDB = await queryAll<Alocacao>('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id', escalaId)
-
+    const validacao = await validarEscalaV3(escalaId)
     return {
-      escala: escalaAtual!,
-      alocacoes: alocacoesDB,
-      indicadores: ind,
-      violacoes: [],
-      antipatterns: [],
-      decisoes,
-      comparacao_demanda: comparacao,
+      ...validacao,
       diagnostico: solverResult.diagnostico,
       timing: {
         fase0_ms: 0, fase1_ms: 0, fase2_ms: 0, fase3_ms: 0,
@@ -1237,70 +1117,17 @@ const escalasGerar = t.procedure
       throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
 
-    const ind = solverResult.indicadores
-    const decisoes = solverResult.decisoes ?? []
-    const comparacao = solverResult.comparacao_demanda ?? []
+    // Limpar rascunhos anteriores deste setor (max 1 rascunho por setor)
+    await execute(`DELETE FROM escalas WHERE setor_id = ? AND status = 'RASCUNHO'`, setorId)
 
-    // Persist escala + alocacoes + decisoes + comparacao em transaction
-    const escalaId = await transaction(async () => {
-      const newId = await insertReturningId(`
-        INSERT INTO escalas
-          (setor_id, data_inicio, data_fim, status, pontuacao,
-           cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json)
-        VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?)
-      `,
-        setorId, input.data_inicio, input.data_fim,
-        ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
-        inputHash,
-        JSON.stringify({ regimes_override: regimesOverride } satisfies EscalaSimulacaoConfig),
-      )
+    const escalaId = await persistirSolverResult(
+      setorId, input.data_inicio, input.data_fim,
+      solverResult, inputHash, regimesOverride,
+    )
 
-      for (const a of solverResult.alocacoes!) {
-        await execute(`
-          INSERT INTO alocacoes
-            (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
-             minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
-             minutos_almoco, intervalo_15min, funcao_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-          newId, a.colaborador_id, a.data, a.status,
-          a.hora_inicio ?? null, a.hora_fim ?? null,
-          a.minutos_trabalho ?? null, a.minutos_trabalho ?? null,
-          a.hora_almoco_inicio ?? null, a.hora_almoco_fim ?? null,
-          a.minutos_almoco ?? null,
-          a.intervalo_15min ?? false,
-          a.funcao_id ?? null
-        )
-      }
-
-      for (const d of decisoes) {
-        await execute(`
-          INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `, newId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
-      }
-
-      for (const c of comparacao) {
-        await execute(`
-          INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, newId, c.data, c.hora_inicio, c.hora_fim, c.planejado, c.executado, c.delta, c.override ?? false, c.justificativa ?? null)
-      }
-
-      return newId
-    })
-
-    const escalaAtual = await queryOne<Escala>('SELECT * FROM escalas WHERE id = ?', escalaId)
-    const alocacoesDB = await queryAll<Alocacao>('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id', escalaId)
-
+    const validacao = await validarEscalaV3(escalaId)
     return {
-      escala: escalaAtual!,
-      alocacoes: alocacoesDB,
-      indicadores: ind,
-      violacoes: [],
-      antipatterns: [],
-      decisoes,
-      comparacao_demanda: comparacao,
+      ...validacao,
       diagnostico: solverResult.diagnostico,
       timing: {
         fase0_ms: 0, fase1_ms: 0, fase2_ms: 0, fase3_ms: 0,
@@ -1339,10 +1166,25 @@ const dashboardResumo = t.procedure
     for (const s of setoresDb) {
       const totalColabRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE setor_id = ? AND ativo = TRUE', s.id)
       const totalColab = totalColabRow?.count ?? 0
-      const escalaAtual = await queryOne<{ status: string }>(`
-        SELECT status FROM escalas WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')
+      const escalaAtual = await queryOne<{ status: string; violacoes_hard: number; criada_em: string }>(`
+        SELECT status, COALESCE(violacoes_hard, 0)::int as violacoes_hard, criada_em FROM escalas
+        WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')
         ORDER BY CASE status WHEN 'OFICIAL' THEN 1 WHEN 'RASCUNHO' THEN 2 END LIMIT 1
       `, s.id)
+
+      // Staleness check: algo mudou no setor apos a escala ser gerada?
+      let stale = false
+      if (escalaAtual) {
+        const ultimoChange = await queryOne<{ ts: string }>(`
+          SELECT GREATEST(
+            COALESCE((SELECT MAX(atualizada_em) FROM colaboradores WHERE setor_id = ?), '1970-01-01'),
+            COALESCE((SELECT MAX(atualizada_em) FROM demandas WHERE setor_id = ?), '1970-01-01')
+          )::text as ts
+        `, s.id, s.id)
+        if (ultimoChange?.ts) {
+          stale = new Date(ultimoChange.ts) > new Date(escalaAtual.criada_em)
+        }
+      }
 
       setores.push({
         id: s.id,
@@ -1351,7 +1193,8 @@ const dashboardResumo = t.procedure
         total_colaboradores: totalColab,
         escala_atual: (escalaAtual?.status ?? 'SEM_ESCALA') as SetorResumo['escala_atual'],
         proxima_geracao: null,
-        violacoes_pendentes: 0,
+        violacoes_pendentes: escalaAtual?.violacoes_hard ?? 0,
+        escala_desatualizada: stale,
       })
     }
 
@@ -1371,6 +1214,22 @@ const dashboardResumo = t.procedure
           setor_id: s.id,
           setor_nome: s.nome,
           mensagem: `${s.nome}: apenas ${s.total_colaboradores} colaborador(es)`,
+        })
+      }
+      if (s.violacoes_pendentes > 0) {
+        alertas.push({
+          tipo: 'VIOLACAO_HARD',
+          setor_id: s.id,
+          setor_nome: s.nome,
+          mensagem: `${s.nome}: ${s.violacoes_pendentes} violação(ões) CLT`,
+        })
+      }
+      if (s.escala_desatualizada) {
+        alertas.push({
+          tipo: 'ESCALA_DESATUALIZADA',
+          setor_id: s.id,
+          setor_nome: s.nome,
+          mensagem: `${s.nome}: escala desatualizada (dados mudaram)`,
         })
       }
     }
@@ -2099,16 +1958,9 @@ const escalasGerarPorCicloRotativo = t.procedure
       }
     })
 
-    // Retornar escala completa
-    const escala = await queryOne('SELECT * FROM escalas WHERE id = ?', escalaId) as any
-    const alocacoes = await queryAll('SELECT * FROM alocacoes WHERE escala_id = ? ORDER BY data, colaborador_id', escalaId)
-    return {
-      ...escala,
-      alocacoes,
-      indicadores: { total_horas: 0, media_horas: 0, violacoes_hard: 0, violacoes_soft: 0 },
-      violacoes: [],
-      pinned_cells: [],
-    }
+    // Validar escala gerada pelo ciclo (pode ter violacoes CLT)
+    const validacao = await validarEscalaV3(escalaId)
+    return validacao
   })
 
 // =============================================================================
@@ -2443,10 +2295,10 @@ const iaConversasObter = t.procedure
       conteudo: m.conteudo,
       timestamp: m.timestamp,
       tool_calls: m.tool_calls_json
-        ? JSON.parse(m.tool_calls_json)
+        ? safeJsonParse(m.tool_calls_json)
         : undefined,
       anexos: m.anexos_meta_json
-        ? JSON.parse(m.anexos_meta_json)
+        ? safeJsonParse(m.anexos_meta_json)
         : undefined,
     }))
 
@@ -2589,8 +2441,8 @@ const iaConversasExportar = t.procedure
 
     const mensagens = msgs.map(m => ({
       ...m,
-      tool_calls: m.tool_calls_json ? JSON.parse(m.tool_calls_json) : undefined,
-      anexos: m.anexos_meta_json ? JSON.parse(m.anexos_meta_json) : undefined,
+      tool_calls: m.tool_calls_json ? safeJsonParse<{ name: string; args?: unknown }[]>(m.tool_calls_json) : undefined,
+      anexos: m.anexos_meta_json ? safeJsonParse<{ nome: string; mime_type: string }[]>(m.anexos_meta_json) : undefined,
     }))
 
     let content: string
@@ -3307,6 +3159,10 @@ const knowledgeGraphStats = t.procedure
  * O JSON gerado é commitado no repo e usado pelo seed em produção (sem LLM).
  */
 const knowledgeRebuildAndExportSistema = t.procedure.action(async () => {
+  if (process.env.NODE_ENV !== 'development' && !process.argv.includes('--dev')) {
+    throw new Error('rebuildAndExportSistema so pode ser executado em modo development')
+  }
+
   const { rebuildGraph, exportGraphSeed } = await import('./knowledge/graph')
   const { buildModelFactory } = await import('./ia/config')
 
@@ -3437,6 +3293,8 @@ export const router = {
   'colaboradores.buscar': colaboradoresBuscar,
   'colaboradores.criar': colaboradoresCriar,
   'colaboradores.atualizar': colaboradoresAtualizar,
+  'colaboradores.atribuirPosto': colaboradoresAtribuirPosto,
+  'colaboradores.restaurarPostos': colaboradoresRestaurarPostos,
   'colaboradores.deletar': colaboradoresDeletar,
   'colaboradores.listarRegrasPadraoSetor': colaboradoresListarRegrasPadraoSetor,
   'colaboradores.buscarRegraHorario': colaboradoresBuscarRegraHorario,

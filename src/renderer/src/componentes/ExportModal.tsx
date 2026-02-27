@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   Select,
@@ -17,15 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { ExportPreview } from '@/componentes/ExportPreview'
 import { Download, Printer, Loader2, FileSpreadsheet } from 'lucide-react'
-
-export interface ExportOpcoes {
-  avisos: boolean
-  horas: boolean
-}
 
 export interface SetorExportItem {
   id: number
@@ -42,8 +35,6 @@ export interface ExportModalProps {
   children?: ReactNode
   formato: string
   onFormatoChange: (f: string) => void
-  opcoes: ExportOpcoes
-  onOpcoesChange: (o: ExportOpcoes) => void
   colaboradores?: { id: number; nome: string }[]
   funcionarioId?: number | null
   onFuncionarioChange?: (id: number) => void
@@ -64,8 +55,6 @@ export function ExportModal({
   children,
   formato,
   onFormatoChange,
-  opcoes,
-  onOpcoesChange,
   colaboradores,
   funcionarioId,
   onFuncionarioChange,
@@ -116,32 +105,6 @@ export function ExportModal({
                 onFuncionarioChange={onFuncionarioChange}
               />
             )}
-
-            <Separator />
-
-            {/* Shared toggles */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="sw-avisos" className="text-sm">Incluir avisos</Label>
-                <Switch
-                  id="sw-avisos"
-                  checked={opcoes.avisos}
-                  onCheckedChange={(checked) =>
-                    onOpcoesChange({ ...opcoes, avisos: checked })
-                  }
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="sw-horas" className="text-sm">Incluir horas (Real vs Meta)</Label>
-                <Switch
-                  id="sw-horas"
-                  checked={opcoes.horas}
-                  onCheckedChange={(checked) =>
-                    onOpcoesChange({ ...opcoes, horas: checked })
-                  }
-                />
-              </div>
-            </div>
           </div>
         </div>
 

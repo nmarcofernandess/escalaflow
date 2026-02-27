@@ -37,7 +37,7 @@ const tourSteps: TourStep[] = [
           <li>Cadastre os <strong>Setores</strong> (departamentos)</li>
           <li>Cadastre os <strong>Colaboradores</strong></li>
           <li>Gere a <strong>Escala</strong> dentro de cada setor</li>
-          <li>Acompanhe tudo no <strong>Hub de Escalas</strong></li>
+          <li>Use o <strong>Hub de Escalas</strong> quando precisar de export em lote</li>
         </ol>
       </>
     ),
@@ -107,39 +107,22 @@ const tourSteps: TourStep[] = [
       </>
     ),
   },
-  // 7. Tipos de Contrato nav (NOVO)
+  // 7. Hub de escalas (acesso avancado)
   {
-    targetId: TOUR_STEP_IDS.NAV_CONTRATOS,
+    targetId: TOUR_STEP_IDS.FOOTER_MENU,
     position: 'right',
-    onEnter: () => navigateTo('/tipos-contrato'),
-    content: (
-      <>
-        <h3 className="font-semibold">Tipos de Contrato</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Templates CLT que definem jornada semanal (44h, 36h, 30h, 20h).
-          Cada tipo tem <strong>perfis de horario</strong> — combinacoes
-          pre-definidas de entrada, saida e almoco que o motor usa como
-          opcoes ao gerar a escala.
-        </p>
-      </>
-    ),
-  },
-  // 8. Escalas nav
-  {
-    targetId: TOUR_STEP_IDS.NAV_ESCALAS,
-    position: 'right',
-    onEnter: () => navigateTo('/escalas'),
+    onEnter: () => navigateTo('/configuracoes'),
     content: (
       <>
         <h3 className="font-semibold">Hub de Escalas</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Visao geral de todas as escalas geradas. Acompanhe todos os
-          setores de uma vez — sem precisar entrar em cada um.
+          O Hub continua disponivel como recurso avancado para visao
+          consolidada e exportacao em lote de varios setores.
         </p>
       </>
     ),
   },
-  // 9. Content Escalas (EDITADO — compliance badge + timeline + config)
+  // 8. Content Escalas
   {
     targetId: TOUR_STEP_IDS.CONTENT_AREA,
     position: 'bottom',
@@ -163,7 +146,7 @@ const tourSteps: TourStep[] = [
       </>
     ),
   },
-  // 10. Feriados nav
+  // 9. Feriados nav
   {
     targetId: TOUR_STEP_IDS.NAV_FERIADOS,
     position: 'right',
@@ -178,29 +161,7 @@ const tourSteps: TourStep[] = [
       </>
     ),
   },
-  // 11. Regras nav (EDITADO — 3 categorias + contagens)
-  {
-    targetId: TOUR_STEP_IDS.NAV_REGRAS,
-    position: 'right',
-    content: (
-      <>
-        <h3 className="font-semibold">Regras do Motor</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          35 regras organizadas em 3 categorias:
-        </p>
-        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
-          <li><strong>CLT</strong> (16) — obrigatorias por lei</li>
-          <li><strong>Preferencias</strong> (7) — qualidade da escala</li>
-          <li><strong>Antipadroes</strong> (12) — evitam escalas ruins</li>
-        </ul>
-        <p className="text-sm text-muted-foreground mt-1">
-          Ative, desative ou suavize cada uma individualmente.
-          Use o botao de restaurar para voltar ao padrao do sistema.
-        </p>
-      </>
-    ),
-  },
-  // 12. Footer Menu (NOVO)
+  // 10. Footer Menu
   {
     targetId: TOUR_STEP_IDS.FOOTER_MENU,
     position: 'right',
@@ -218,7 +179,7 @@ const tourSteps: TourStep[] = [
       </>
     ),
   },
-  // 13. IA Toggle (EDITADO — exemplos concretos)
+  // 11. IA Toggle
   {
     targetId: TOUR_STEP_IDS.IA_TOGGLE,
     position: 'bottom',
@@ -241,7 +202,7 @@ const tourSteps: TourStep[] = [
       </>
     ),
   },
-  // 14. Encerramento (NOVO)
+  // 12. Encerramento
   {
     targetId: TOUR_STEP_IDS.CONTENT_AREA,
     position: 'bottom',

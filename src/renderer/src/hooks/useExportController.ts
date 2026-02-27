@@ -9,7 +9,6 @@ interface UseExportControllerProps {
 
 export function useExportController({ context }: UseExportControllerProps) {
   const [formato, setFormato] = useState('completa')
-  const [opcoes, setOpcoes] = useState({ avisos: true, horas: false })
   const [funcionarioId, setFuncionarioId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -87,8 +86,6 @@ export function useExportController({ context }: UseExportControllerProps) {
   return {
     formato,
     setFormato,
-    opcoes,
-    setOpcoes,
     funcionarioId,
     setFuncionarioId,
     loading,

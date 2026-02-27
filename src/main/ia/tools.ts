@@ -1,4 +1,6 @@
-import { queryOne, queryAll, execute, insertReturningId } from '../db/query'
+import { queryOne, queryAll, execute, insertReturningId, transaction } from '../db/query'
+import { minutesBetween as minutesBetweenUtil } from '../date-utils'
+import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride } from '../preflight-capacity'
 import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenarioHash } from '../motor/solver-bridge'
 import { coreAlerts } from './discovery'
 import { validarEscalaV3 } from '../motor/validador'
@@ -86,144 +88,7 @@ const RegimeOverrideSchema = z.object({
   regime_escala: z.enum(['5X2', '6X1']).describe('Regime temporário de simulação para preflight/geração.')
 })
 
-function normalizeRegimesOverrideForTool(overrides?: Array<{ colaborador_id: number; regime_escala: '5X2' | '6X1' }>) {
-  const map = new Map<number, '5X2' | '6X1'>()
-  for (const o of overrides ?? []) {
-    if (!Number.isInteger(o.colaborador_id) || o.colaborador_id <= 0) continue
-    if (o.regime_escala !== '5X2' && o.regime_escala !== '6X1') continue
-    map.set(o.colaborador_id, o.regime_escala)
-  }
-  return [...map.entries()]
-    .map(([colaborador_id, regime_escala]) => ({ colaborador_id, regime_escala }))
-    .sort((a, b) => a.colaborador_id - b.colaborador_id)
-}
-
-function listDaysForTool(dataInicio: string, dataFim: string): string[] {
-  const out: string[] = []
-  const start = new Date(`${dataInicio}T00:00:00`)
-  const end = new Date(`${dataFim}T00:00:00`)
-  const d = new Date(start.getTime())
-  while (d <= end) {
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
-    d.setDate(d.getDate() + 1)
-  }
-  return out
-}
-
-function dayLabelForTool(isoDate: string): 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM' {
-  const d = new Date(`${isoDate}T00:00:00`)
-  const week = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'] as const
-  return week[d.getDay()]
-}
-
-function minutesBetweenTimes(h1: string, h2: string): number {
-  const [aH, aM] = h1.split(':').map(Number)
-  const [bH, bM] = h2.split(':').map(Number)
-  return Math.max(0, (bH * 60 + bM) - (aH * 60 + aM))
-}
-
-function enrichPreflightWithCapacityChecksForTool(
-  solverInput: any,
-  blockers: Array<{ codigo: string; severidade: 'BLOCKER' | 'WARNING'; mensagem: string; detalhe?: string }>,
-  warnings: Array<{ codigo: string; severidade: 'BLOCKER' | 'WARNING'; mensagem: string; detalhe?: string }>
-) {
-  const days = listDaysForTool(solverInput.data_inicio, solverInput.data_fim)
-  const holidayForbidden = new Set((solverInput.feriados ?? []).filter((f: any) => f.proibido_trabalhar).map((f: any) => f.data))
-
-  for (const day of days) {
-    const label = dayLabelForTool(day)
-    const dayDemand = (solverInput.demanda ?? [])
-      .filter((d: any) => d.dia_semana === null || d.dia_semana === label)
-      .filter((d: any) => (d.min_pessoas ?? 0) > 0)
-
-    if (dayDemand.length === 0) continue
-
-    if (label === 'DOM' && (solverInput.colaboradores ?? []).every((c: any) => ['ESTAGIARIO', 'APRENDIZ'].includes(c.tipo_trabalhador ?? 'CLT'))) {
-      blockers.push({
-        codigo: 'DOMINGO_SEM_COLABORADORES',
-        severidade: 'BLOCKER',
-        mensagem: `Há demanda no domingo (${day}), mas nenhum colaborador aceita domingo.`,
-        detalhe: 'Ative domingo para alguém ou ajuste a demanda.',
-      })
-      break
-    }
-
-    if (holidayForbidden.has(day)) {
-      blockers.push({
-        codigo: 'DEMANDA_EM_FERIADO_PROIBIDO',
-        severidade: 'BLOCKER',
-        mensagem: `Há demanda no feriado proibido ${day}.`,
-        detalhe: 'Ajuste a demanda do dia ou a política de feriado.',
-      })
-      break
-    }
-
-    const peakDemand = dayDemand.reduce((acc: number, d: any) => Math.max(acc, d.min_pessoas ?? 0), 0)
-    const availableCount = (solverInput.colaboradores ?? []).filter((c: any) => {
-      if (label === 'DOM' && ['ESTAGIARIO', 'APRENDIZ'].includes(c.tipo_trabalhador ?? 'CLT')) return false
-      if (holidayForbidden.has(day)) return false
-      return !(solverInput.excecoes ?? []).some((e: any) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
-    }).length
-
-    if (availableCount < peakDemand) {
-      blockers.push({
-        codigo: 'CAPACIDADE_COLETIVA_INSUFICIENTE',
-        severidade: 'BLOCKER',
-        mensagem: `Capacidade insuficiente em ${day}: demanda pico ${peakDemand}, disponíveis ${availableCount}.`,
-        detalhe: 'Ajuste demanda, exceções, domingos/feriados ou quadro de colaboradores.',
-      })
-      break
-    }
-  }
-
-  const empresa = solverInput.empresa
-  if (!empresa || !(solverInput.colaboradores?.length)) return
-
-  for (const c of solverInput.colaboradores as any[]) {
-    const horasSemanaisMinutos = (c.horas_semanais ?? 0) * 60
-    const toleranciaMinutos = empresa.tolerancia_semanal_min ?? 0
-    const limiteInferiorSemanal = Math.max(0, horasSemanaisMinutos - toleranciaMinutos)
-
-    let maxJanelaDoColaborador = c.max_minutos_dia ?? 0
-    const regras = (solverInput.regras_colaborador_dia ?? []).filter((r: any) => r.colaborador_id === c.id)
-    const regraTipica = regras.find((r: any) => r.inicio_min || r.fim_max)
-
-    if (regraTipica) {
-      const startToUse = regraTipica.inicio_min || empresa.hora_abertura
-      const endToUse = regraTipica.fim_max || empresa.hora_fechamento
-      const possibleMinutes = minutesBetweenTimes(startToUse, endToUse)
-      if (possibleMinutes > 0) {
-        maxJanelaDoColaborador = Math.min(possibleMinutes, c.max_minutos_dia ?? possibleMinutes)
-      }
-    }
-
-    let capacidadeDiaria = maxJanelaDoColaborador
-    const diasTrabalho = c.dias_trabalho ?? 1
-    const metaDiariaMedia = diasTrabalho > 0 ? horasSemanaisMinutos / diasTrabalho : horasSemanaisMinutos
-    if (metaDiariaMedia > 360) {
-      capacidadeDiaria -= empresa.min_intervalo_almoco_min ?? 60
-    }
-
-    const capacidadeMaxSemanal = capacidadeDiaria * diasTrabalho
-    if (capacidadeMaxSemanal < limiteInferiorSemanal) {
-      blockers.push({
-        codigo: 'CAPACIDADE_INDIVIDUAL_INSUFICIENTE',
-        severidade: 'BLOCKER',
-        mensagem: `A janela de disponibilidade de ${c.nome} torna a carga horária incompatível.`,
-        detalhe: `Capacidade máxima ~${Math.round(capacidadeMaxSemanal / 60)}h. Contrato exige mínimo ~${Math.round(limiteInferiorSemanal / 60)}h.`,
-      })
-    }
-  }
-
-  if (warnings.length === 0 && blockers.length === 0) {
-    warnings.push({
-      codigo: 'PREFLIGHT_COMPLETO_SEM_BLOCKERS',
-      severidade: 'WARNING',
-      mensagem: 'Pré-flight completo executado sem blockers adicionais.',
-      detalhe: 'Capacidade básica e restrições gerais parecem consistentes para o período.',
-    })
-  }
-}
+const minutesBetweenTimes = minutesBetweenUtil
 
 function summarizeViolacoesTop(items: Array<{ codigo?: string }> | undefined, limit = 5) {
   const counts = new Map<string, number>()
@@ -692,7 +557,7 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
     'data_nascimento', 'hora_inicio_min', 'hora_fim_max'
   ]),
   setores: new Set([
-    'id', 'nome', 'icone', 'hora_abertura', 'hora_fechamento', 'ativo'
+    'id', 'nome', 'icone', 'hora_abertura', 'hora_fechamento', 'regime_escala', 'ativo'
   ]),
   escalas: new Set([
     'id', 'setor_id', 'data_inicio', 'data_fim', 'status', 'pontuacao',
@@ -1090,7 +955,6 @@ async function applyColaboradorDefaults(
     dados: Record<string, any>,
     setor?: { hora_abertura?: string; hora_fechamento?: string } | null
 ): Promise<Record<string, any>> {
-    if (!dados.sexo) dados.sexo = 'M'
     if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1
     if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'regular'
     if (!dados.data_nascimento) {
@@ -1658,6 +1522,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     correction: 'Escolha um setor ativo válido via contexto automático ou consultar("setores").',
                     meta: { setor_id: dados.setor_id }
                   }
+                )
+            }
+
+            // Validar sexo obrigatório
+            if (!dados.sexo || (dados.sexo !== 'M' && dados.sexo !== 'F')) {
+                return toolError(
+                  'CRIAR_COLABORADOR_SEXO_OBRIGATORIO',
+                  '❌ Campo obrigatório: "sexo" (M ou F). Pergunte ao usuário.',
+                  { correction: 'Pergunte ao usuário se o colaborador é do sexo masculino (M) ou feminino (F) antes de cadastrar.' }
                 )
             }
 
@@ -2353,7 +2226,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'preflight_completo') {
         try {
             const { setor_id, data_inicio, data_fim } = args
-            const regimesOverride = normalizeRegimesOverrideForTool(args.regimes_override as any[] | undefined)
+            const regimesOverride = normalizeRegimesOverride(args.regimes_override as any[] | undefined)
 
             const base = await executeTool('preflight', { setor_id, data_inicio, data_fim })
             if (base?.status === 'error') {
@@ -2374,7 +2247,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
                   regimesOverride,
                 })
-                enrichPreflightWithCapacityChecksForTool(solverInput, blockers as any, warnings as any)
+                enrichPreflightWithCapacityChecks(solverInput as any, blockers as any, warnings as any, {
+                  collectiveCode: 'CAPACIDADE_COLETIVA_INSUFICIENTE',
+                  collectiveMessageMode: 'coletiva',
+                  addNoBlockersWarning: true,
+                })
               } catch (err: any) {
                 warnings.push({
                   codigo: 'PREFLIGHT_COMPLETO_DIAGNOSTICO_INDISPONIVEL',
@@ -2440,9 +2317,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
-        const resultados: Array<{ indice: number; sucesso: boolean; id?: number; erro?: string }> = []
-        let criados = 0
-
         // Cache de setores pra não buscar N vezes
         const setorCache: Record<number, { id: number; nome: string; hora_abertura: string; hora_fechamento: string } | null> = {}
         async function getSetor(setorId: number) {
@@ -2454,105 +2328,149 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             return setorCache[setorId]
         }
 
+        // Validação prévia completa (sem INSERT)
+        const validados: Array<{ dados: Record<string, any>; indice: number }> = []
         for (let i = 0; i < registros.length; i++) {
             const dados = { ...registros[i] }
 
-            try {
-                // Aplica mesma lógica de defaults da tool 'criar'
-                if (entidade === 'colaboradores') {
-                    if (!dados.nome || typeof dados.nome !== 'string') {
-                        resultados.push({ indice: i, sucesso: false, erro: 'nome obrigatório' })
-                        continue
-                    }
-                    if (!dados.setor_id || typeof dados.setor_id !== 'number') {
-                        resultados.push({ indice: i, sucesso: false, erro: 'setor_id obrigatório' })
-                        continue
-                    }
-
-                    const setor = await getSetor(dados.setor_id)
-                    if (!setor) {
-                        resultados.push({ indice: i, sucesso: false, erro: `setor_id ${dados.setor_id} não encontrado` })
-                        continue
-                    }
-
-                    await applyColaboradorDefaults(dados, setor)
-                    if (!dados.horas_semanais) {
-                        const contrato = await queryOne<{ horas_semanais: number }>('SELECT horas_semanais FROM tipos_contrato WHERE id = ?', dados.tipo_contrato_id)
-                        dados.horas_semanais = contrato?.horas_semanais ?? 44
-                    }
+            if (entidade === 'colaboradores') {
+                if (!dados.nome || typeof dados.nome !== 'string') {
+                    return toolError(
+                      'CADASTRAR_LOTE_VALIDACAO_FALHOU',
+                      `Registro ${i + 1}: nome obrigatorio.`,
+                      {
+                        correction: 'Corrija o campo `nome` e tente novamente.',
+                        details: { entidade, indice: i, erro: 'nome obrigatorio' },
+                        meta: { tool_kind: 'action', action: 'batch-create', entidade, atomic: true },
+                      },
+                    )
+                }
+                if (!dados.setor_id || typeof dados.setor_id !== 'number') {
+                    return toolError(
+                      'CADASTRAR_LOTE_VALIDACAO_FALHOU',
+                      `Registro ${i + 1}: setor_id obrigatorio.`,
+                      {
+                        correction: 'Informe `setor_id` valido e tente novamente.',
+                        details: { entidade, indice: i, erro: 'setor_id obrigatorio' },
+                        meta: { tool_kind: 'action', action: 'batch-create', entidade, atomic: true },
+                      },
+                    )
                 }
 
-                if (entidade === 'excecoes') {
-                    if (!dados.colaborador_id || !dados.tipo || !dados.data_inicio || !dados.data_fim) {
-                        resultados.push({ indice: i, sucesso: false, erro: 'campos obrigatórios: colaborador_id, tipo, data_inicio, data_fim' })
-                        continue
-                    }
-                    if (!dados.observacao) dados.observacao = dados.tipo
+                if (!dados.sexo || (dados.sexo !== 'M' && dados.sexo !== 'F')) {
+                    return toolError(
+                      'CADASTRAR_LOTE_VALIDACAO_FALHOU',
+                      `Registro ${i + 1}: sexo obrigatorio (M/F) para "${dados.nome}".`,
+                      {
+                        correction: 'Use `sexo` = "M" ou "F".',
+                        details: { entidade, indice: i, erro: 'sexo obrigatorio (M/F)' },
+                        meta: { tool_kind: 'action', action: 'batch-create', entidade, atomic: true },
+                      },
+                    )
                 }
 
-                const keys = Object.keys(dados)
-                const placeholders = keys.map(() => '?').join(', ')
-                const values = Object.values(dados)
-                const newId = await insertReturningId(
-                    `INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`, ...values
-                )
+                const setor = await getSetor(dados.setor_id)
+                if (!setor) {
+                    return toolError(
+                      'CADASTRAR_LOTE_VALIDACAO_FALHOU',
+                      `Registro ${i + 1}: setor_id ${dados.setor_id} nao encontrado.`,
+                      {
+                        correction: 'Use um setor ativo valido.',
+                        details: { entidade, indice: i, erro: `setor_id ${dados.setor_id} nao encontrado` },
+                        meta: { tool_kind: 'action', action: 'batch-create', entidade, atomic: true },
+                      },
+                    )
+                }
 
-                resultados.push({ indice: i, sucesso: true, id: newId })
-                criados++
-            } catch (e: any) {
-                resultados.push({ indice: i, sucesso: false, erro: e.message })
+                await applyColaboradorDefaults(dados, setor)
+                if (!dados.horas_semanais) {
+                    const contrato = await queryOne<{ horas_semanais: number }>('SELECT horas_semanais FROM tipos_contrato WHERE id = ?', dados.tipo_contrato_id)
+                    dados.horas_semanais = contrato?.horas_semanais ?? 44
+                }
             }
+
+            if (entidade === 'excecoes') {
+                if (!dados.colaborador_id || !dados.tipo || !dados.data_inicio || !dados.data_fim) {
+                    return toolError(
+                      'CADASTRAR_LOTE_VALIDACAO_FALHOU',
+                      `Registro ${i + 1}: campos obrigatorios ausentes em excecoes.`,
+                      {
+                        correction: 'Informe colaborador_id, tipo, data_inicio e data_fim.',
+                        details: { entidade, indice: i, erro: 'campos obrigatorios ausentes em excecoes' },
+                        meta: { tool_kind: 'action', action: 'batch-create', entidade, atomic: true },
+                      },
+                    )
+                }
+                if (!dados.observacao) dados.observacao = dados.tipo
+            }
+
+            validados.push({ dados, indice: i })
         }
 
-        const erros = resultados.filter(r => !r.sucesso)
-        const idsCriados = resultados.filter(r => r.sucesso).map(r => r.id)
-        const payload = {
-            sucesso: erros.length === 0,
+        const idsCriados: number[] = []
+        try {
+            await transaction(async () => {
+              for (const { dados, indice } of validados) {
+                  const keys = Object.keys(dados)
+                  const placeholders = keys.map(() => '?').join(', ')
+                  const values = Object.values(dados)
+                  let newId: number
+                  try {
+                    newId = await insertReturningId(
+                      `INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`, ...values,
+                    )
+                  } catch (insertErr: any) {
+                    const enriched = new Error(insertErr?.message ?? 'Falha de insert')
+                    ;(enriched as Error & { indice?: number }).indice = indice
+                    throw enriched
+                  }
+                  idsCriados.push(newId)
+              }
+            })
+        } catch (e: any) {
+            const indiceFalha = typeof e?.indice === 'number' ? e.indice : null
+            return toolError(
+              'CADASTRAR_LOTE_ATOMICO_FALHOU',
+              `Cadastro em lote abortado para '${entidade}'. Nenhum registro foi persistido.`,
+              {
+                correction: 'Corrija o registro inválido e execute novamente.',
+                details: {
+                  entidade,
+                  total_enviado: registros.length,
+                  total_criado: 0,
+                  total_erros: 1,
+                  indice_primeira_falha: indiceFalha,
+                  causa_erro: e?.message ?? 'Falha desconhecida',
+                },
+                meta: {
+                  tool_kind: 'action',
+                  action: 'batch-create',
+                  entidade,
+                  atomic: true,
+                },
+              },
+            )
+        }
+
+        return toolOk(
+          {
+            sucesso: true,
             entidade,
             total_enviado: registros.length,
-            total_criado: criados,
-            total_erros: erros.length,
-            erros: erros.length > 0 ? erros : undefined,
+            total_criado: idsCriados.length,
+            total_erros: 0,
             ids_criados: idsCriados,
-        }
-
-        if (erros.length === 0) {
-            return toolOk(payload, {
-              summary: `Cadastro em lote concluído em ${entidade}: ${criados}/${registros.length} registro(s) criados.`,
-              meta: {
-                tool_kind: 'action',
-                action: 'batch-create',
-                entidade,
-                partial_failure: false,
-              }
-            })
-        }
-
-        if (criados > 0) {
-            return toolOk(payload, {
-              summary: `Cadastro em lote parcial em ${entidade}: ${criados} criado(s), ${erros.length} erro(s).`,
-              meta: {
-                tool_kind: 'action',
-                action: 'batch-create',
-                entidade,
-                partial_failure: true,
-              }
-            })
-        }
-
-        return toolError(
-          'CADASTRAR_LOTE_FALHOU_TOTAL',
-          `Nenhum registro foi criado em lote para '${entidade}'. ${erros.length} erro(s) encontrados.`,
+          },
           {
-            correction: 'Revise os registros com erro e tente novamente.',
-            details: payload,
+            summary: `Cadastro em lote concluido em ${entidade}: ${idsCriados.length}/${registros.length} registro(s) criados.`,
             meta: {
               tool_kind: 'action',
               action: 'batch-create',
               entidade,
+              atomic: true,
               partial_failure: false,
-            }
-          }
+            },
+          },
         )
     }
 

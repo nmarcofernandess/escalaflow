@@ -188,8 +188,34 @@ export async function buildSolverInput(
     id: number
     hora_abertura: string
     hora_fechamento: string
+    regime_escala: '5X2' | '6X1'
   }>('SELECT * FROM setores WHERE id = ?', setorId)
   if (!setor) throw new Error(`Setor ${setorId} nao encontrado`)
+
+  // Ler horarios por dia do setor (cascata: setor > empresa > default)
+  const setorHorarios = await queryAll<{
+    dia_semana: string; hora_abertura: string; hora_fechamento: string; ativo: boolean
+  }>('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND ativo = TRUE', setorId)
+
+  const empresaHorarios = await queryAll<{
+    dia_semana: string; hora_abertura: string; hora_fechamento: string
+  }>('SELECT * FROM empresa_horario_semana')
+
+  // Montar mapa dia_semana → {abertura, fechamento}
+  // Cascata: setor_horario_semana > empresa_horario_semana > setor.hora_abertura/hora_fechamento
+  const DIA_MAP: Record<string, number> = { DOM: 0, SEG: 1, TER: 2, QUA: 3, QUI: 4, SEX: 5, SAB: 6 }
+  const horarioPorDia: Record<number, { abertura: string; fechamento: string }> = {}
+  for (let d = 0; d < 7; d++) {
+    horarioPorDia[d] = { abertura: setor.hora_abertura, fechamento: setor.hora_fechamento }
+  }
+  for (const eh of empresaHorarios) {
+    const d = DIA_MAP[eh.dia_semana]
+    if (d !== undefined) horarioPorDia[d] = { abertura: eh.hora_abertura, fechamento: eh.hora_fechamento }
+  }
+  for (const sh of setorHorarios) {
+    const d = DIA_MAP[sh.dia_semana]
+    if (d !== undefined) horarioPorDia[d] = { abertura: sh.hora_abertura, fechamento: sh.hora_fechamento }
+  }
 
   // Colaboradores + TipoContrato
   const colabRows = await queryAll<{
@@ -208,7 +234,7 @@ export async function buildSolverInput(
   `, setorId)
 
   const colaboradores: SolverInputColab[] = colabRows.map(r => {
-    const regimeEfetivo = overrideByColab.get(r.id) ?? r.regime_escala ?? (r.dias_trabalho <= 5 ? '5X2' : '6X1')
+    const regimeEfetivo = overrideByColab.get(r.id) ?? setor.regime_escala ?? r.regime_escala ?? (r.dias_trabalho <= 5 ? '5X2' : '6X1')
     const diasTrabalhoEfetivo = regimeEfetivo === '5X2' ? 5 : 6
     return ({
       id: r.id,
@@ -413,7 +439,7 @@ export async function buildSolverInput(
     : await queryOne<{ id: number }>(`
         SELECT id
         FROM escalas
-        WHERE setor_id = ? AND data_inicio = ? AND data_fim = ?
+        WHERE setor_id = ? AND data_inicio = ? AND data_fim = ? AND status != 'ARQUIVADA'
         ORDER BY id DESC
         LIMIT 1
       `, setorId, dataInicio, dataFim)
@@ -452,6 +478,7 @@ export async function buildSolverInput(
       min_intervalo_almoco_min: emp?.min_intervalo_almoco_min ?? 60,
       max_intervalo_almoco_min: 120,
       grid_minutos: emp?.grid_minutos ?? 30,
+      horario_por_dia: horarioPorDia,
     },
     colaboradores,
     demanda,
@@ -483,7 +510,7 @@ export async function buildSolverInput(
       : undefined,
     config: {
       solve_mode: options.solveMode ?? 'rapido',
-      max_time_seconds: options.maxTimeSeconds ?? 30,
+      max_time_seconds: options.maxTimeSeconds ?? 90,
       num_workers: 8,
       nivel_rigor: options.nivelRigor ?? 'ALTO',  // backward compat quando rules ausente
       rules: await buildRulesConfig(options.rulesOverride),
@@ -537,6 +564,7 @@ export function computeSolverScenarioHash(input: SolverInput): string {
       min_intervalo_almoco_min: input.empresa.min_intervalo_almoco_min,
       max_intervalo_almoco_min: input.empresa.max_intervalo_almoco_min,
       grid_minutos: input.empresa.grid_minutos,
+      horario_por_dia: input.empresa.horario_por_dia ?? {},
     },
     colaboradores: [...input.colaboradores]
       .map((c) => ({
@@ -550,6 +578,7 @@ export function computeSolverScenarioHash(input: SolverInput): string {
         domingo_ciclo_trabalho: c.domingo_ciclo_trabalho ?? 2,
         domingo_ciclo_folga: c.domingo_ciclo_folga ?? 1,
         folga_fixa_dia_semana: c.folga_fixa_dia_semana ?? null,
+        folga_variavel_dia_semana: c.folga_variavel_dia_semana ?? null,
       }))
       .sort((a, b) => a.id - b.id),
     demanda: [...input.demanda]
@@ -600,7 +629,7 @@ export function computeSolverScenarioHash(input: SolverInput): string {
 
 export function runSolver(
   input: SolverInput,
-  timeoutMs = 3_700_000,
+  timeoutMs = 300_000,
   onLog?: (line: string) => void,
 ): Promise<SolverOutput> {
   return new Promise((resolve, reject) => {
@@ -765,8 +794,9 @@ export async function persistirSolverResult(
         INSERT INTO alocacoes
           (escala_id, colaborador_id, data, status, hora_inicio, hora_fim,
            minutos, minutos_trabalho, hora_almoco_inicio, hora_almoco_fim,
-           minutos_almoco, intervalo_15min, funcao_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           minutos_almoco, intervalo_15min, funcao_id,
+           hora_intervalo_inicio, hora_intervalo_fim, hora_real_inicio, hora_real_fim)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         escalaId, a.colaborador_id, a.data, a.status,
         a.hora_inicio ?? null, a.hora_fim ?? null,
@@ -775,6 +805,10 @@ export async function persistirSolverResult(
         a.minutos_almoco ?? null,
         a.intervalo_15min ?? false,
         a.funcao_id ?? null,
+        a.hora_intervalo_inicio ?? null,
+        a.hora_intervalo_fim ?? null,
+        a.hora_real_inicio ?? null,
+        a.hora_real_fim ?? null,
       )
     }
 

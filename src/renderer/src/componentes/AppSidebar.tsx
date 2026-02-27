@@ -6,10 +6,8 @@ import {
   Building2,
   Users,
   CalendarDays,
-  FileText,
   Settings,
-  ShieldCheck,
-  Brain,
+  FileText,
   BrainCircuit,
   ChevronsUpDown,
   Sun,
@@ -54,16 +52,14 @@ import { useTour } from './Tour'
 const mainNav = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard },
   { label: 'Setores', to: '/setores', icon: Building2 },
-  { label: 'Colaboradores', to: '/colaboradores', icon: Users },
   { label: 'Escalas', to: '/escalas', icon: CalendarDays },
+  { label: 'Colaboradores', to: '/colaboradores', icon: Users },
   { label: 'Assistente IA', to: '/ia', icon: BrainCircuit },
 ]
 
 const configNav = [
-  { label: 'Tipos de Contrato', to: '/tipos-contrato', icon: FileText },
   { label: 'Feriados', to: '/feriados', icon: CalendarDays },
-  { label: 'Regras', to: '/regras', icon: ShieldCheck },
-  { label: 'Memoria', to: '/memoria', icon: Brain },
+  { label: 'Tipos de Contrato', to: '/tipos-contrato', icon: FileText },
 ]
 
 const temaOpcoes = [
@@ -129,9 +125,7 @@ export function AppSidebar() {
                     ? TOUR_STEP_IDS.NAV_SETORES
                     : item.to === '/colaboradores'
                       ? TOUR_STEP_IDS.NAV_COLABORADORES
-                      : item.to === '/escalas'
-                        ? TOUR_STEP_IDS.NAV_ESCALAS
-                        : undefined
+                      : undefined
                 return (
                   <SidebarMenuItem key={item.label} id={tourId}>
                     <SidebarMenuButton
@@ -163,9 +157,7 @@ export function AppSidebar() {
                 <SidebarMenuItem
                   key={item.label}
                   id={
-                    item.to === '/tipos-contrato' ? TOUR_STEP_IDS.NAV_CONTRATOS :
                     item.to === '/feriados' ? TOUR_STEP_IDS.NAV_FERIADOS :
-                    item.to === '/regras' ? TOUR_STEP_IDS.NAV_REGRAS :
                     undefined
                   }
                 >

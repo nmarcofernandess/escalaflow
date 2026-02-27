@@ -7,6 +7,7 @@ import {
   Monitor,
   Sun,
   Moon,
+  CalendarDays,
   Check,
   Download,
   Upload,
@@ -23,6 +24,11 @@ import {
   Database,
   BookOpen,
   MessageSquare,
+  ChevronsUpDown,
+  FileText,
+  ShieldCheck,
+  Brain,
+  ChevronRight,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -46,7 +52,11 @@ import {
   FormControl,
   FormMessage,
 } from '@/components/ui/form'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
+import { Link } from 'react-router-dom'
 import { PageHeader } from '@/componentes/PageHeader'
+import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useApiData } from '@/hooks/useApiData'
 import { useColorTheme } from '@/hooks/useColorTheme'
 import { cn } from '@/lib/utils'
@@ -238,6 +248,8 @@ export function ConfiguracoesPagina() {
       provider_configs: getDefaultProviderConfigs(),
     },
   })
+
+  const blocker = useDirtyGuard({ isDirty: iaForm.formState.isDirty })
 
   const { data: iaConfig } = useApiData<any>(
     () => window.electron.ipcRenderer.invoke('ia.configuracao.obter'),
@@ -517,182 +529,6 @@ export function ConfiguracoesPagina() {
           </CardContent>
         </Card>
 
-        {/* Assistente IA */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <BrainCircuit className="size-4" />
-              Assistente IA
-            </CardTitle>
-            <CardDescription>Configure o provedor e modelo de IA para o chat do RH</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Form {...iaForm}>
-              <form className="space-y-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={iaForm.control}
-                    name="provider"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Provedor</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={(next) => {
-                            field.onChange(next)
-                            const nextProvider = next as IaProviderId
-                            const nextCfg = iaForm.getValues(`provider_configs.${nextProvider}` as any) as IaProviderConfigForm | undefined
-                            const nextOptions = IA_PROVIDER_MODELS[nextProvider]
-                            const nextModel =
-                              nextCfg?.modelo && nextOptions.some((m) => m.value === nextCfg.modelo)
-                                ? nextCfg.modelo
-                                : nextOptions[0].value
-                            iaForm.setValue('modelo', nextModel, { shouldDirty: true })
-                            if (nextProvider === 'gemini') {
-                              iaForm.setValue('api_key', nextCfg?.token || '', { shouldDirty: false })
-                            }
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione o provedor..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="gemini">Google Gemini</SelectItem>
-                            <SelectItem value="openrouter">OpenRouter</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={iaForm.control}
-                    name="modelo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Modelo{iaProvider === 'openrouter' && openrouterFavoritos.length > 0 ? ` (${openrouterFavoritos.length} favoritos)` : ''}</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={(next) => {
-                            field.onChange(next)
-                            iaForm.setValue(`provider_configs.${iaProvider}.modelo` as any, next, {
-                              shouldDirty: true,
-                            })
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione o modelo..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {!currentModelOptions.some((m) => m.value === field.value) && field.value ? (
-                              <SelectItem value={field.value}>{field.value} (custom)</SelectItem>
-                            ) : null}
-                            {currentModelOptions.map((model) => (
-                              <SelectItem key={`${iaProvider}-${model.value}`} value={model.value}>
-                                {model.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* API Key */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{tokenFieldLabel}</Label>
-                    <a
-                      href={IA_PROVIDER_DOCS[iaProvider]}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      Obter chave
-                      <ExternalLink className="size-3" />
-                    </a>
-                  </div>
-                  <div className="relative">
-                    <Input
-                      type={showApiKey ? 'text' : 'password'}
-                      placeholder={tokenFieldPlaceholder}
-                      value={(selectedProviderConfig.token ?? '') as string}
-                      onChange={(e) => {
-                        iaForm.setValue(`provider_configs.${iaProvider}.token` as any, e.target.value, {
-                          shouldDirty: true,
-                        })
-                        if (iaProvider === 'gemini') {
-                          iaForm.setValue('api_key', e.target.value, { shouldDirty: true })
-                        }
-                      }}
-                      className="pr-10"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full w-10 hover:bg-transparent"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                    >
-                      {showApiKey ? (
-                        <EyeOff className="size-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="size-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Picker de modelos OpenRouter — aparece quando catálogo carregado */}
-                {iaProvider === 'openrouter' && remoteCatalog?.models?.length ? (
-                  <div className="space-y-2">
-                    <Label>Modelo</Label>
-                    <IaModelCatalogPicker
-                      models={remoteCatalog.models}
-                      value={currentModelValue}
-                      favorites={openrouterFavoritos}
-                      onChange={(modelId) => {
-                        iaForm.setValue('modelo', modelId, { shouldDirty: true })
-                        iaForm.setValue('provider_configs.openrouter.modelo' as any, modelId, { shouldDirty: true })
-                      }}
-                      onToggleFavorite={(modelId) => {
-                        const current = iaForm.getValues('provider_configs.openrouter.favoritos' as any) as string[] ?? []
-                        const next = current.includes(modelId)
-                          ? current.filter((id: string) => id !== modelId)
-                          : [...current, modelId]
-                        iaForm.setValue('provider_configs.openrouter.favoritos' as any, next, { shouldDirty: true })
-                      }}
-                    />
-                  </div>
-                ) : null}
-
-                {/* Footer com ações */}
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa}>
-                    {testandoIa ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
-                    Testar conexão
-                  </Button>
-                  <Button type="submit" size="sm" disabled={salvandoIa}>
-                    {salvandoIa ? (
-                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                    ) : (
-                      <Save className="mr-1.5 size-3.5" />
-                    )}
-                    Salvar
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
-
         {/* Atualizações */}
         <Card>
           <CardHeader>
@@ -897,7 +733,240 @@ export function ConfiguracoesPagina() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Configuracoes Avancadas */}
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="flex w-full items-center justify-between px-1 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+              Configuracoes Avancadas
+              <ChevronsUpDown className="size-4" />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-6 pt-2">
+            {/* Assistente IA */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BrainCircuit className="size-4" />
+                  Assistente IA
+                </CardTitle>
+                <CardDescription>Configure o provedor e modelo de IA para o chat do RH</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Form {...iaForm}>
+                  <form className="space-y-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FormField
+                        control={iaForm.control}
+                        name="provider"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Provedor</FormLabel>
+                            <Select
+                              value={field.value}
+                              onValueChange={(next) => {
+                                field.onChange(next)
+                                const nextProvider = next as IaProviderId
+                                const nextCfg = iaForm.getValues(`provider_configs.${nextProvider}` as any) as IaProviderConfigForm | undefined
+                                const nextOptions = IA_PROVIDER_MODELS[nextProvider]
+                                const nextModel =
+                                  nextCfg?.modelo && nextOptions.some((m) => m.value === nextCfg.modelo)
+                                    ? nextCfg.modelo
+                                    : nextOptions[0].value
+                                iaForm.setValue('modelo', nextModel, { shouldDirty: true })
+                                if (nextProvider === 'gemini') {
+                                  iaForm.setValue('api_key', nextCfg?.token || '', { shouldDirty: false })
+                                }
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione o provedor..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="gemini">Google Gemini</SelectItem>
+                                <SelectItem value="openrouter">OpenRouter</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={iaForm.control}
+                        name="modelo"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Modelo{iaProvider === 'openrouter' && openrouterFavoritos.length > 0 ? ` (${openrouterFavoritos.length} favoritos)` : ''}</FormLabel>
+                            <Select
+                              value={field.value}
+                              onValueChange={(next) => {
+                                field.onChange(next)
+                                iaForm.setValue(`provider_configs.${iaProvider}.modelo` as any, next, {
+                                  shouldDirty: true,
+                                })
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione o modelo..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {!currentModelOptions.some((m) => m.value === field.value) && field.value ? (
+                                  <SelectItem value={field.value}>{field.value} (custom)</SelectItem>
+                                ) : null}
+                                {currentModelOptions.map((model) => (
+                                  <SelectItem key={`${iaProvider}-${model.value}`} value={model.value}>
+                                    {model.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* API Key */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>{tokenFieldLabel}</Label>
+                        <a
+                          href={IA_PROVIDER_DOCS[iaProvider]}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Obter chave
+                          <ExternalLink className="size-3" />
+                        </a>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          type={showApiKey ? 'text' : 'password'}
+                          placeholder={tokenFieldPlaceholder}
+                          value={(selectedProviderConfig.token ?? '') as string}
+                          onChange={(e) => {
+                            iaForm.setValue(`provider_configs.${iaProvider}.token` as any, e.target.value, {
+                              shouldDirty: true,
+                            })
+                            if (iaProvider === 'gemini') {
+                              iaForm.setValue('api_key', e.target.value, { shouldDirty: true })
+                            }
+                          }}
+                          className="pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full w-10 hover:bg-transparent"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                        >
+                          {showApiKey ? (
+                            <EyeOff className="size-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="size-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Picker de modelos OpenRouter */}
+                    {iaProvider === 'openrouter' && remoteCatalog?.models?.length ? (
+                      <div className="space-y-2">
+                        <Label>Modelo</Label>
+                        <IaModelCatalogPicker
+                          models={remoteCatalog.models}
+                          value={currentModelValue}
+                          favorites={openrouterFavoritos}
+                          onChange={(modelId) => {
+                            iaForm.setValue('modelo', modelId, { shouldDirty: true })
+                            iaForm.setValue('provider_configs.openrouter.modelo' as any, modelId, { shouldDirty: true })
+                          }}
+                          onToggleFavorite={(modelId) => {
+                            const current = iaForm.getValues('provider_configs.openrouter.favoritos' as any) as string[] ?? []
+                            const next = current.includes(modelId)
+                              ? current.filter((id: string) => id !== modelId)
+                              : [...current, modelId]
+                            iaForm.setValue('provider_configs.openrouter.favoritos' as any, next, { shouldDirty: true })
+                          }}
+                        />
+                      </div>
+                    ) : null}
+
+                    {/* Footer com acoes */}
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <Button type="button" variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa}>
+                        {testandoIa ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
+                        Testar conexao
+                      </Button>
+                      <Button type="submit" size="sm" disabled={salvandoIa}>
+                        {salvandoIa ? (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        ) : (
+                          <Save className="mr-1.5 size-3.5" />
+                        )}
+                        Salvar
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </CardContent>
+            </Card>
+
+            {/* Links Rapidos */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  Links Rapidos
+                </CardTitle>
+                <CardDescription>Acesso rapido a paginas avancadas</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <Link
+                  to="/escalas"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-accent"
+                >
+                  <CalendarDays className="size-4 text-muted-foreground" />
+                  <span className="flex-1">Escalas</span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </Link>
+                <Link
+                  to="/tipos-contrato"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-accent"
+                >
+                  <FileText className="size-4 text-muted-foreground" />
+                  <span className="flex-1">Tipos de Contrato</span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </Link>
+                <Link
+                  to="/regras"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-accent"
+                >
+                  <ShieldCheck className="size-4 text-muted-foreground" />
+                  <span className="flex-1">Regras do Motor</span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </Link>
+                <Link
+                  to="/memoria"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-accent"
+                >
+                  <Brain className="size-4 text-muted-foreground" />
+                  <span className="flex-1">Base de Conhecimento</span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </Link>
+              </CardContent>
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
+
+      <DirtyGuardDialog blocker={blocker} />
     </div>
   )
 }

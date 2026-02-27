@@ -36,6 +36,7 @@ export interface TipoContrato {
   regime_escala: RegimeEscala
   dias_trabalho: number
   max_minutos_dia: number
+  protegido_sistema: boolean
 }
 
 export interface Setor {
@@ -44,6 +45,7 @@ export interface Setor {
   icone: string | null
   hora_abertura: string
   hora_fechamento: string
+  regime_escala: RegimeEscala
   ativo: boolean
 }
 
@@ -120,6 +122,11 @@ export interface Alocacao {
   minutos_almoco?: number | null
   intervalo_15min?: boolean
   funcao_id?: number | null
+  // v19: H7 campos de intervalo 15min
+  hora_intervalo_inicio?: string | null
+  hora_intervalo_fim?: string | null
+  hora_real_inicio?: string | null
+  hora_real_fim?: string | null
 }
 
 // ============================================================================
@@ -444,10 +451,11 @@ export interface SetorResumo {
   escala_atual: 'SEM_ESCALA' | 'RASCUNHO' | 'OFICIAL'
   proxima_geracao: string | null
   violacoes_pendentes: number
+  escala_desatualizada: boolean
 }
 
 export interface AlertaDashboard {
-  tipo: 'ESCALA_VENCIDA' | 'VIOLACAO_HARD' | 'SEM_ESCALA' | 'POUCOS_COLABORADORES'
+  tipo: 'ESCALA_VENCIDA' | 'VIOLACAO_HARD' | 'SEM_ESCALA' | 'POUCOS_COLABORADORES' | 'ESCALA_DESATUALIZADA'
   setor_id: number
   setor_nome: string
   mensagem: string
@@ -488,6 +496,16 @@ export interface AjustarAlocacaoRequest {
     hora_inicio?: string | null
     hora_fim?: string | null
   }[]
+}
+
+export interface ColaboradorPostoSnapshotItem {
+  colaborador_id: number
+  funcao_id: number | null
+}
+
+export interface AtribuirPostoResult {
+  snapshot_antes: ColaboradorPostoSnapshotItem[]
+  snapshot_depois: ColaboradorPostoSnapshotItem[]
 }
 
 // ============================================================================
@@ -582,6 +600,8 @@ export interface SolverInput {
     min_intervalo_almoco_min: number
     max_intervalo_almoco_min: number
     grid_minutos: number
+    /** Horário de funcionamento por dia da semana (0=DOM..6=SAB). Cascata: setor > empresa > default. */
+    horario_por_dia?: Record<number, { abertura: string; fechamento: string }>
   }
   colaboradores: SolverInputColab[]
   demanda: SolverInputDemanda[]
@@ -614,6 +634,11 @@ export interface SolverOutputAlocacao {
   minutos_almoco: number
   intervalo_15min: boolean
   funcao_id: number | null
+  // v19: H7 campos de intervalo 15min
+  hora_intervalo_inicio: string | null
+  hora_intervalo_fim: string | null
+  hora_real_inicio: string | null
+  hora_real_fim: string | null
 }
 
 export interface DiagnosticoSolver {

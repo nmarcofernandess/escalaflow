@@ -206,7 +206,7 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
           )}
           <Button variant="ghost" size="sm" asChild>
             <Link to={`/setores/${setor.id}/escala`}>
-              Editar
+              Ver
               <ExternalLink className="ml-1 size-3" />
             </Link>
           </Button>

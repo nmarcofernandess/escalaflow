@@ -16,19 +16,22 @@ const PALETA_CORES = [
 
 export async function seedData(): Promise<void> {
   // -- 1. Tipos de Contrato --
-  const tiposExistem = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM tipos_contrato')
-  if ((tiposExistem?.count ?? 0) === 0) {
-    const tipos: [string, number, string, number, number][] = [
-      ['CLT 44h', 44, '5X2', 5, 585],
-      ['CLT 36h', 36, '5X2', 5, 585],
-      ['Estagiario', 20, '5X2', 5, 360],
-      ['Intermitente', 0, '6X1', 6, 585],
+  // Checa por CLT 44h (não usa COUNT(*) pois migration v17 pode já ter criado Intermitente)
+  const clt44 = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'CLT 44h'`)
+  if (!clt44) {
+    const tipos: [string, number, string, number, number, boolean][] = [
+      ['CLT 44h', 44, '5X2', 5, 585, true],
+      ['CLT 36h', 36, '5X2', 5, 585, true],
+      ['Estagiario', 20, '5X2', 5, 360, true],
+      ['Intermitente', 0, '6X1', 6, 585, true],
     ]
 
     await transaction(async () => {
       for (const tipo of tipos) {
+        const existe = await queryOne<{ id: number }>('SELECT id FROM tipos_contrato WHERE nome = $1', tipo[0])
+        if (existe) continue
         await execute(
-          'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia) VALUES ($1, $2, $3, $4, $5)',
+          'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema) VALUES ($1, $2, $3, $4, $5, $6)',
           ...tipo,
         )
       }
@@ -223,8 +226,10 @@ export async function seedLocalData(): Promise<void> {
     if (typeof local.seedLocalData === 'function') {
       await local.seedLocalData()
     }
-  } catch {
+  } catch (e) {
     // seed-local.ts nao existe — app abre vazio (usuario cadastra do zero)
+    if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'MODULE_NOT_FOUND') return
+    console.error('[SEED-LOCAL] Erro no seed local:', e)
   }
 }
 

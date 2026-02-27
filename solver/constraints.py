@@ -523,9 +523,9 @@ def add_ap1_jornada_excessiva(
     model: cp_model.CpModel,
     work: SlotGrid,
     C: int, D: int, S: int,
-    threshold_slots: int = 16,
+    grid_min: int = 30,
 ) -> List[cp_model.IntVar]:
-    """AP1: Excess daily work > 8h (16 slots).
+    """AP1: Excess daily work > 8h.
 
     Returns excess variables: amount OVER 8h per (person, day).
     Weight: 80 per excess slot in objective.
@@ -533,11 +533,14 @@ def add_ap1_jornada_excessiva(
     Based on: ANTIPATTERNS.PESO_HORA_EXTRA_EVITAVEL = -8 (from constants.ts)
     Scaled by 10 for CP-SAT: 80.
     """
+    threshold_slots = 480 // grid_min  # 8h in any grid (e.g. 32 for 15min, 16 for 30min)
     excess_vars: list[cp_model.IntVar] = []
     for c in range(C):
         for d in range(D):
             day_total = sum(work[c, d, s] for s in range(S))
             max_excess = S - threshold_slots
+            if max_excess <= 0:
+                continue
             excess = model.new_int_var(0, max_excess, f"ap1_{c}_{d}")
             model.add(excess >= day_total - threshold_slots)
             excess_vars.append(excess)
@@ -547,37 +550,6 @@ def add_ap1_jornada_excessiva(
 # ===================================================================
 # CAMADA 2.5 — SOFT: SURPLUS PENALTY (redistributor)
 # ===================================================================
-
-def add_h3_rodizio_domingo(
-    model: cp_model.CpModel,
-    works_day: WorksDay,
-    colabs: List[dict],
-    C: int,
-    sunday_indices: List[int],
-) -> None:
-    """H3/H3b: Rodizio domingo.
-
-    Mulher: max 1 domingo consecutivo (CLT Art. 386).
-    Homem: max 2 domingos consecutivos (Lei 10.101/2000).
-
-    Only applies when period contains 2+ Sundays.
-    For single-week (7-day) periods, trivially satisfied.
-    """
-    if len(sunday_indices) < 2:
-        return
-
-    for c in range(C):
-        sexo = colabs[c].get("sexo", "M")
-        max_consec = 1 if sexo == "F" else 2
-        window = max_consec + 1
-
-        if window > len(sunday_indices):
-            continue
-
-        for i in range(len(sunday_indices) - window + 1):
-            suns = sunday_indices[i : i + window]
-            model.add(sum(works_day[c, d] for d in suns) <= max_consec)
-
 
 def add_h5_excecoes(
     model: cp_model.CpModel,
@@ -740,27 +712,6 @@ def add_h17_h18_feriado_proibido(
     for c in range(C):
         for d in holiday_prohibited_indices:
             model.add(works_day[c, d] == 0)
-
-
-def add_h19_folga_comp_domingo(
-    model: cp_model.CpModel,
-    works_day: WorksDay,
-    C: int,
-    D: int,
-    sunday_indices: List[int],
-) -> None:
-    """H19: Folga compensatoria domingo dentro de 7 dias. Lei 605/1949.
-
-    NOTA: Esta constraint é matematicamente redundante quando H1 (max 6 dias
-    consecutivos) está ativa. H1 já garante pelo menos 1 folga em qualquer
-    janela de 7 dias. Mantida como no-op para preservar a interface; a
-    compliance legal é garantida por H1.
-    """
-    # H1 (max 6 consecutive) already guarantees at least 1 day off
-    # in any 7-day sliding window, making this constraint redundant.
-    # Emitting it caused INFEASIBLE conflicts in multi-week periods
-    # due to interaction with dias_trabalho + h10 + human_blocks.
-    pass
 
 
 # ===================================================================

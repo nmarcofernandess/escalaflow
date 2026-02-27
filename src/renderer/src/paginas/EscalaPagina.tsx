@@ -1,103 +1,191 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useState, useEffect, useMemo } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Printer,
-  Trash2,
-  Shield,
-  TrendingUp,
-  Clock,
-  Eye,
   Loader2,
-  Info,
   Download,
-  Terminal,
-  Repeat,
-  Save,
-  Settings2,
+  Printer,
+  FileText,
 } from 'lucide-react'
-import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Progress } from '@/components/ui/progress'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog'
-import { EmptyState } from '@/componentes/EmptyState'
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
-import { PontuacaoBadge } from '@/componentes/PontuacaoBadge'
-import { IndicatorCard } from '@/componentes/IndicatorCard'
 import { EscalaGrid } from '@/componentes/EscalaGrid'
 import { EscalaViewToggle, useEscalaViewMode } from '@/componentes/EscalaViewToggle'
 import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ViolacoesAgrupadas } from '@/componentes/ViolacoesAgrupadas'
-import { ExportModal } from '@/componentes/ExportModal'
-import { useExportController } from '@/hooks/useExportController'
+import { StatusBadge } from '@/componentes/StatusBadge'
+import { EmptyState } from '@/componentes/EmptyState'
+import { formatarData, mapError } from '@/lib/formatadores'
+import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda } from '@/lib/gerarCSV'
-import { exportarService } from '@/servicos/exportar'
-import { cn } from '@/lib/utils'
-import { formatarData, formatarMes, mapError, iniciais } from '@/lib/formatadores'
 import { useApiData } from '@/hooks/useApiData'
 import { setoresService } from '@/servicos/setores'
 import { funcoesService } from '@/servicos/funcoes'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
-import { RuleComplianceBadge } from '@/componentes/RuleComplianceBadge'
-import { ResumoFolgas } from '@/componentes/ResumoFolgas'
+import { exportarService } from '@/servicos/exportar'
 import type {
-  EscalaCompleta,
   EscalaCompletaV3,
-  Escala,
-  Alocacao,
   Colaborador,
   Setor,
   Funcao,
-  ModeloCicloEscala,
-  RegimeEscala,
   RegraHorarioColaborador,
 } from '@shared/index'
+
+// ─── Resumo Table (reused from SetorEscalaSection pattern) ────────────
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { cn } from '@/lib/utils'
+import { formatarMinutos, REGRAS_TEXTO } from '@/lib/formatadores'
+
+const TOLERANCIA_DEFAULT = 30
+
+function ResumoTable({
+  colaboradores,
+  alocacoes,
+  violacoes,
+  tiposContrato,
+  dataInicio,
+  dataFim,
+}: {
+  colaboradores: Colaborador[]
+  alocacoes: EscalaCompletaV3['alocacoes']
+  violacoes: EscalaCompletaV3['violacoes']
+  tiposContrato: { id: number; nome: string; horas_semanais: number }[]
+  dataInicio: string
+  dataFim: string
+}) {
+  const rows = useMemo(() => {
+    const start = new Date(dataInicio + 'T00:00:00')
+    const end = new Date(dataFim + 'T00:00:00')
+    const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    const semanas = Math.max(1, totalDays / 7)
+
+    const minutosReais = new Map<number, number>()
+    for (const a of alocacoes) {
+      const minutos = a.minutos_trabalho ?? a.minutos
+      if (a.status === 'TRABALHO' && minutos != null) {
+        minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + minutos)
+      }
+    }
+
+    const violacoesPorColab = new Map<number, typeof violacoes>()
+    for (const v of violacoes) {
+      if (v.colaborador_id != null) {
+        const arr = violacoesPorColab.get(v.colaborador_id) ?? []
+        arr.push(v)
+        violacoesPorColab.set(v.colaborador_id, arr)
+      }
+    }
+
+    return colaboradores.map((colab) => {
+      const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
+      const real = minutosReais.get(colab.id) ?? 0
+      const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
+      const delta = real - metaTotal
+      const ok = delta >= -TOLERANCIA_DEFAULT
+      const colabViolacoes = violacoesPorColab.get(colab.id) ?? []
+      return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-', violacoes: colabViolacoes }
+    })
+  }, [colaboradores, alocacoes, violacoes, tiposContrato, dataInicio, dataFim])
+
+  return (
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-xs">Colaborador</TableHead>
+            <TableHead className="text-xs text-right">Real</TableHead>
+            <TableHead className="text-xs text-right">Meta</TableHead>
+            <TableHead className="text-xs text-right">Delta</TableHead>
+            <TableHead className="text-xs">Avisos</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map(({ colab, real, meta, delta, ok, contratoNome, violacoes: colabV }) => (
+            <TableRow key={colab.id}>
+              <TableCell className="py-2">
+                <div>
+                  <p className="text-xs font-medium">{colab.nome}</p>
+                  <p className="text-[10px] text-muted-foreground">{contratoNome}</p>
+                </div>
+              </TableCell>
+              <TableCell className="text-xs text-right py-2">{formatarMinutos(real)}</TableCell>
+              <TableCell className="text-xs text-right py-2">{formatarMinutos(meta)}</TableCell>
+              <TableCell className={cn(
+                'text-xs text-right py-2 font-medium',
+                delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : delta >= -TOLERANCIA_DEFAULT ? 'text-amber-600 dark:text-amber-400' : 'text-destructive',
+              )}>
+                {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}
+                {delta < 0 && ' ↓'}
+              </TableCell>
+              <TableCell className="py-2">
+                {colabV.length > 0 ? (
+                  <div className="space-y-0.5">
+                    {colabV.map((v, i) => (
+                      <p key={i} className={cn(
+                        'text-[11px] leading-tight',
+                        v.severidade === 'HARD' ? 'text-destructive font-medium' : 'text-amber-600 dark:text-amber-400',
+                      )}>
+                        {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
+                      </p>
+                    ))}
+                    {!ok && (
+                      <p className="text-[11px] leading-tight text-amber-600 dark:text-amber-400">
+                        Abaixo da meta
+                      </p>
+                    )}
+                  </div>
+                ) : !ok ? (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">Abaixo da meta</p>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground">—</span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────
 
 export function EscalaPagina() {
   const { id } = useParams<{ id: string }>()
   const setorId = parseInt(id ?? '0', 10)
+  const navigate = useNavigate()
 
   // Data loading
   const { data: setor } = useApiData(() => setoresService.buscar(setorId), [setorId])
+  const { data: setores } = useApiData(() => setoresService.listar(), [])
+  const { data: resumoPorSetor } = useApiData(() => escalasService.resumoPorSetor(), [])
   const { data: colaboradores } = useApiData(
     () => colaboradoresService.listar({ setor_id: setorId, ativo: true }),
     [setorId],
@@ -131,479 +219,169 @@ export function EscalaPagina() {
     return map
   }, [regrasPadrao])
 
-  // Simulacao state — auto-preenche com proximo mes
-  const [dataInicio, setDataInicio] = useState(() => {
-    const hoje = new Date()
-    const prox = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1)
-    return prox.toISOString().split('T')[0]
-  })
-  const [dataFim, setDataFim] = useState(() => {
-    const hoje = new Date()
-    const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 2, 0)
-    return ultimoDia.toISOString().split('T')[0]
-  })
-  const [gerando, setGerando] = useState(false)
-  const [preflightLoading, setPreflightLoading] = useState(false)
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
-  const [ajustando, setAjustando] = useState<{ colaboradorId: number; data: string } | null>(null)
-  const [changedCells, setChangedCells] = useState<Set<string>>(new Set())
-  const [expandViolacoes, setExpandViolacoes] = useState(false)
-  const [oficializando, setOficializando] = useState(false)
-  const [descartando, setDescartando] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [escalaViewMode, setEscalaViewMode] = useEscalaViewMode()
-  const [exportOpen, setExportOpen] = useState(false)
-  const [exportEscala, setExportEscala] = useState<EscalaCompletaV3 | null>(null)
-  const exportCtrl = useExportController({ context: 'escala' })
-  const [regimeOverrides, setRegimeOverrides] = useState<Record<number, RegimeEscala>>({})
-  const [regerarModalOpen, setRegerarModalOpen] = useState(false)
-  const [regerarWarning, setRegerarWarning] = useState<string | null>(null)
-  const [preflightWarningsOpen, setPreflightWarningsOpen] = useState(false)
-  const [preflightWarningsText, setPreflightWarningsText] = useState<string[]>([])
-  const preflightResolveRef = useRef<((proceed: boolean) => void) | null>(null)
-  const [solverConfig, setSolverConfig] = useState<SolverSessionConfig>({
-    solveMode: 'rapido',
-    maxTimeSeconds: 30,
-    rulesOverride: {},
-  })
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [incluirAvisosCicloExport, setIncluirAvisosCicloExport] = useState(false)
+  const [incluirAvisosDetalhadoExport, setIncluirAvisosDetalhadoExport] = useState(true)
 
-  // Oficial tab state
-  const [oficialEscala, setOficialEscala] = useState<EscalaCompletaV3 | null>(null)
-  const [loadingOficial, setLoadingOficial] = useState(false)
-  const [oficialLoaded, setOficialLoaded] = useState(false)
-
-  const prevAlocacoesRef = useRef<Alocacao[]>([])
-  const [solverLogs, setSolverLogs] = useState<string[]>([])
-  const solverLogsEndRef = useRef<HTMLDivElement>(null)
-  const solverStartRef = useRef<number>(0)
-
-  const getContratoRegime = useCallback((colab: Colaborador): RegimeEscala => {
-    const tc = tiposContrato?.find((t) => t.id === colab.tipo_contrato_id)
-    if (tc?.regime_escala) return tc.regime_escala
-    return (tc?.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1'
-  }, [tiposContrato])
-
-  const regimesOverridePayload = useCallback(() => {
-    return (colaboradores ?? [])
-      .filter((c) => regimeOverrides[c.id] && regimeOverrides[c.id] !== getContratoRegime(c))
-      .map((c) => ({
-        colaborador_id: c.id,
-        regime_escala: regimeOverrides[c.id]!,
-      }))
-  }, [colaboradores, regimeOverrides, getContratoRegime])
-
-  // Auto-scroll solver logs and listen for solver-log IPC events
+  // Load most recent escala (RASCUNHO primeiro, depois OFICIAL)
   useEffect(() => {
-    if (solverLogsEndRef.current) {
-      solverLogsEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [solverLogs])
+    loadEscala()
+  }, [setorId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!gerando) return
-    setSolverLogs([])
-    solverStartRef.current = Date.now()
-
-    const handler = (...args: any[]) => {
-      const line = String(args[0] ?? '')
-      if (line) {
-        const elapsed = ((Date.now() - solverStartRef.current) / 1000).toFixed(1)
-        setSolverLogs(prev => [...prev, `[${elapsed}s] ${line}`])
-      }
-    }
-
-    window.electron.ipcRenderer.on('solver-log', handler)
-    return () => {
-      window.electron.ipcRenderer.removeAllListeners('solver-log')
-    }
-  }, [gerando])
-
-  // Historico tab state
-  const [escalasArquivadas, setEscalasArquivadas] = useState<Escala[]>([])
-  const [loadingHistorico, setLoadingHistorico] = useState(false)
-  const [historicoLoaded, setHistoricoLoaded] = useState(false)
-  const [expandedHistorico, setExpandedHistorico] = useState<number | null>(null)
-  const [historicoDetail, setHistoricoDetail] = useState<EscalaCompletaV3 | null>(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
-
-  // Ciclo rotativo state
-  const [cicloDetecting, setCicloDetecting] = useState(false)
-  const [cicloResult, setCicloResult] = useState<{
-    ciclo_detectado: boolean
-    T: number
-    P: number
-    semanas: number
-    match_percent: number
-  } | null>(null)
-  const [cicloSaving, setCicloSaving] = useState(false)
-  const [cicloNome, setCicloNome] = useState('')
-  const [showCicloSaveDialog, setShowCicloSaveDialog] = useState(false)
-  const [ciclosModelos, setCiclosModelos] = useState<ModeloCicloEscala[]>([])
-  const [ciclosLoaded, setCiclosLoaded] = useState(false)
-  const [gerandoPorCiclo, setGerandoPorCiclo] = useState(false)
-
-  // Generate escala
-  async function handleGerar() {
-    setRegerarWarning(null)
-    setRegerarModalOpen(false)
-    const regimesOverride = regimesOverridePayload()
-
-    setPreflightLoading(true)
+  async function loadEscala() {
+    setLoading(true)
     try {
-      const preflight = await escalasService.preflight(setorId, {
-        data_inicio: dataInicio,
-        data_fim: dataFim,
-        regimes_override: regimesOverride,
-      })
-
-      if (!preflight.ok) {
-        toast.error(preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao')
+      // Tentar rascunho primeiro
+      const rascunhos = await escalasService.listarPorSetor(setorId, { status: 'RASCUNHO' })
+      if (rascunhos.length > 0) {
+        const detail = await escalasService.buscar(rascunhos[0].id)
+        setEscalaCompleta(detail)
         return
       }
-
-      if (preflight.warnings.length > 0) {
-        const warningsList = preflight.warnings.map(
-          (w) => `${w.mensagem}${w.detalhe ? ` (${w.detalhe})` : ''}`,
-        )
-        setPreflightWarningsText(warningsList)
-        setPreflightLoading(false)
-        const proceed = await new Promise<boolean>((resolve) => {
-          preflightResolveRef.current = resolve
-          setPreflightWarningsOpen(true)
-        })
-        if (!proceed) return
-      }
-    } catch (err) {
-      toast.error(mapError(err) || 'Falha no preflight da escala')
-      return
-    } finally {
-      setPreflightLoading(false)
-    }
-
-    setGerando(true)
-    try {
-      const result = await escalasService.gerar(setorId, {
-        data_inicio: dataInicio,
-        data_fim: dataFim,
-        regimes_override: regimesOverride,
-        solveMode: solverConfig.solveMode,
-        maxTimeSeconds: solverConfig.maxTimeSeconds,
-        rulesOverride: solverConfig.rulesOverride,
-      })
-      setEscalaCompleta(result)
-      toast.success('Escala gerada')
-      // Reset oficial/historico caches so they reload if user switches tabs
-      setOficialLoaded(false)
-      setHistoricoLoaded(false)
-    } catch (err) {
-      const friendly = mapError(err) || 'Nao foi possivel gerar a escala.'
-      toast.error(friendly)
-    } finally {
-      setGerando(false)
-    }
-  }
-
-  // Officialize
-  async function handleOficializar() {
-    if (!escalaCompleta) return
-    setOficializando(true)
-    try {
-      await escalasService.oficializar(escalaCompleta.escala.id)
-      toast.success('Escala oficializada')
-      setEscalaCompleta(null)
-      setOficialLoaded(false)
-      setHistoricoLoaded(false)
-      setRegerarWarning(null)
-    } catch (err) {
-      const msg = mapError(err) || 'Erro ao oficializar'
-      if (msg.includes('ESCALA_DESATUALIZADA')) {
-        const friendly = msg.replace('ESCALA_DESATUALIZADA:', '').trim()
-        setRegerarWarning(friendly || 'A simulacao ficou desatualizada e precisa ser gerada novamente.')
-        setRegerarModalOpen(true)
+      // Senão, oficial
+      const oficiais = await escalasService.listarPorSetor(setorId, { status: 'OFICIAL' })
+      if (oficiais.length > 0) {
+        const detail = await escalasService.buscar(oficiais[0].id)
+        setEscalaCompleta(detail)
         return
       }
-      toast.error(msg)
-    } finally {
-      setOficializando(false)
-    }
-  }
-
-  // Cell click toggle (Smart Recalc)
-  async function handleCelulaClick(colaboradorId: number, data: string, statusAtual: string) {
-    if (statusAtual === 'INDISPONIVEL') return
-    if (!escalaCompleta) return
-    if (ajustando) return
-
-    const novoStatus = statusAtual === 'TRABALHO' ? 'FOLGA' : 'TRABALHO'
-    setAjustando({ colaboradorId, data })
-    prevAlocacoesRef.current = escalaCompleta.alocacoes
-
-    try {
-      const result = await escalasService.ajustar(escalaCompleta.escala.id, {
-        alocacoes: [{ colaborador_id: colaboradorId, data, status: novoStatus }],
-      })
-      setEscalaCompleta(result)
-
-      // Diff para flash nas celulas alteradas
-      const prev = new Map(prevAlocacoesRef.current.map((a) => [`${a.colaborador_id}-${a.data}`, a]))
-      const changed = new Set<string>()
-      for (const a of result.alocacoes) {
-        const key = `${a.colaborador_id}-${a.data}`
-        const p = prev.get(key)
-        if (!p || p.status !== a.status || p.hora_inicio !== a.hora_inicio || p.hora_fim !== a.hora_fim) {
-          changed.add(key)
-        }
-      }
-      setChangedCells(changed)
-      setTimeout(() => setChangedCells(new Set()), 1500)
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao ajustar escala')
-    } finally {
-      setAjustando(null)
-    }
-  }
-
-  // Discard
-  async function handleDescartar() {
-    if (!escalaCompleta) return
-    setDescartando(true)
-    try {
-      await escalasService.deletar(escalaCompleta.escala.id)
-      toast.success('Escala descartada')
       setEscalaCompleta(null)
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao descartar')
-    } finally {
-      setDescartando(false)
-    }
-  }
-
-  // Load oficial tab
-  async function loadOficial() {
-    if (oficialLoaded) return
-    setLoadingOficial(true)
-    try {
-      const escalas = await escalasService.listarPorSetor(setorId, { status: 'OFICIAL' })
-      if (escalas.length > 0) {
-        const detail = await escalasService.buscar(escalas[0].id)
-        setOficialEscala(detail)
-      } else {
-        setOficialEscala(null)
-      }
-      setOficialLoaded(true)
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao carregar escala oficial')
-    } finally {
-      setLoadingOficial(false)
-    }
-  }
-
-  // Load historico tab
-  async function loadHistorico() {
-    if (historicoLoaded) return
-    setLoadingHistorico(true)
-    try {
-      const escalas = await escalasService.listarPorSetor(setorId, { status: 'ARQUIVADA' })
-      setEscalasArquivadas(escalas)
-      setHistoricoLoaded(true)
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao carregar historico')
-    } finally {
-      setLoadingHistorico(false)
-    }
-  }
-
-  // Load historico detail
-  async function loadHistoricoDetail(escalaId: number) {
-    if (expandedHistorico === escalaId) {
-      setExpandedHistorico(null)
-      setHistoricoDetail(null)
-      return
-    }
-    setLoadingDetail(true)
-    setExpandedHistorico(escalaId)
-    try {
-      const detail = await escalasService.buscar(escalaId)
-      setHistoricoDetail(detail)
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao carregar detalhes')
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
-
-  // Ciclo rotativo handlers
-  async function handleDetectarCiclo() {
-    if (!escalaCompleta) return
-    setCicloDetecting(true)
-    setCicloResult(null)
-    try {
-      const result = await escalasService.detectarCicloRotativo(escalaCompleta.escala.id)
-      setCicloResult(result)
-      if (result.ciclo_detectado) {
-        toast.success(`Ciclo detectado: periodo de ${result.P} semana(s)`)
-      } else {
-        toast.info('Nenhum ciclo rotativo detectado nesta escala')
-      }
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao detectar ciclo')
-    } finally {
-      setCicloDetecting(false)
-    }
-  }
-
-  async function handleSalvarCiclo() {
-    if (!escalaCompleta || !cicloResult?.ciclo_detectado || !cicloNome.trim()) return
-    setCicloSaving(true)
-    try {
-      await escalasService.salvarCicloRotativo({
-        setor_id: setorId,
-        nome: cicloNome.trim(),
-        semanas_no_ciclo: cicloResult.P,
-        origem_escala_id: escalaCompleta.escala.id,
-        itens: [],
-      })
-      toast.success('Ciclo rotativo salvo')
-      setShowCicloSaveDialog(false)
-      setCicloNome('')
-      setCiclosLoaded(false)
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao salvar ciclo')
-    } finally {
-      setCicloSaving(false)
-    }
-  }
-
-  async function loadCiclosModelos() {
-    if (ciclosLoaded) return
-    try {
-      const ciclos = await escalasService.listarCiclosRotativos(setorId)
-      setCiclosModelos(ciclos)
-      setCiclosLoaded(true)
     } catch {
-      setCiclosModelos([])
-      setCiclosLoaded(true)
-    }
-  }
-
-  async function handleGerarPorCiclo(cicloModeloId: number) {
-    setGerandoPorCiclo(true)
-    try {
-      const result = await escalasService.gerarPorCicloRotativo(cicloModeloId, dataInicio, dataFim)
-      setEscalaCompleta(result)
-      toast.success('Escala gerada a partir do ciclo rotativo')
-      setOficialLoaded(false)
-      setHistoricoLoaded(false)
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao gerar por ciclo')
+      setEscalaCompleta(null)
     } finally {
-      setGerandoPorCiclo(false)
+      setLoading(false)
     }
   }
 
-  // Tab change handler
-  function handleTabChange(value: string) {
-    if (value === 'oficial') loadOficial()
-    if (value === 'historico') loadHistorico()
+  // Count violations for tab badge
+  const violacoesCount = escalaCompleta?.violacoes.length ?? 0
+  const setoresComEscala = useMemo(() => new Set((resumoPorSetor ?? []).map((s) => s.setor_id)), [resumoPorSetor])
+  const outrosSetores = useMemo(
+    () => (setores ?? []).filter((s) => s.id !== setorId && setoresComEscala.has(s.id)),
+    [setores, setorId, setoresComEscala],
+  )
+
+  // Export handlers
+  function renderExportHTML(modo: 'ciclo' | 'detalhado', incluirAvisos: boolean) {
+    if (!escalaCompleta || !setor || !colaboradores) return null
+    const html = (
+      <ExportarEscala
+        escala={escalaCompleta.escala}
+        alocacoes={escalaCompleta.alocacoes}
+        colaboradores={colaboradores}
+        setor={setor}
+        violacoes={escalaCompleta.violacoes}
+        tiposContrato={tiposContrato ?? []}
+        funcoes={funcoes ?? []}
+        horariosSemana={horariosSemana ?? []}
+        modo={modo}
+        incluirAvisos={incluirAvisos}
+        modoRender="download"
+      />
+    )
+    return { html, setorNome: setor.nome }
   }
 
-  // Print handler
-  function handleImprimir(ec: EscalaCompletaV3) {
-    if (!setor || !colaboradores) return
+  function handlePrintCiclo() {
+    if (!escalaCompleta || !setor || !colaboradores) return
     const printWindow = window.open('', '_blank')
     if (!printWindow) {
       toast.error('Bloqueio de popup detectado. Permita popups para imprimir.')
       return
     }
-
-    // Render ExportarEscala to HTML string
     import('react-dom/server').then(({ renderToStaticMarkup }) => {
-      const html = renderToStaticMarkup(
-        <ExportarEscala
-          escala={ec.escala}
-          alocacoes={ec.alocacoes}
-          colaboradores={colaboradores}
-          setor={setor}
-          tiposContrato={tiposContrato ?? []}
-          funcoes={funcoes ?? []}
-          horariosSemana={horariosSemana ?? []}
-        />
-      )
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Escala - ${setor.nome}</title>
-          </head>
-          <body style="margin: 0; padding: 0;">
-            ${html}
-          </body>
-        </html>
-      `)
+      const payload = renderExportHTML('ciclo', incluirAvisosCicloExport)
+      if (!payload) return
+      const html = renderToStaticMarkup(payload.html)
+      const fullHTML = buildStandaloneHtml(html, {
+        title: `Escala - ${setor.nome}`,
+      })
+      printWindow.document.write(fullHTML)
       printWindow.document.close()
       printWindow.focus()
-
-      // Wait for styles to load, then print
-      setTimeout(() => {
-        printWindow.print()
-      }, 250)
+      setTimeout(() => printWindow.print(), 250)
     })
   }
 
-  // Extract indicators from backend response
-  function getIndicators(ec: EscalaCompletaV3) {
-    return {
-      pontuacao: ec.indicadores.pontuacao,
-      coberturaPercent: ec.indicadores.cobertura_percent,
-      violacoesHard: ec.indicadores.violacoes_hard,
-      violacoesSoft: ec.indicadores.violacoes_soft,
-      equilibrio: ec.indicadores.equilibrio,
-    }
+  function handleExportHTMLCiclo() {
+    if (!escalaCompleta || !setor || !colaboradores) return
+    import('react-dom/server').then(({ renderToStaticMarkup }) => {
+      const payload = renderExportHTML('ciclo', incluirAvisosCicloExport)
+      if (!payload) return
+      const html = renderToStaticMarkup(payload.html)
+      const fullHTML = buildStandaloneHtml(html, {
+        title: `Escala - ${setor.nome}`,
+      })
+      const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
+      exportarService.salvarHTML(fullHTML, `escala-ciclo-${slug}.html`).then((result) => {
+        if (result) toast.success('HTML salvo com sucesso')
+      }).catch(() => toast.error('Erro ao exportar HTML'))
+    })
   }
 
-  // Open export modal for a given escala
-  function handleExportar(ec: EscalaCompletaV3) {
-    setExportEscala(ec)
-    setExportOpen(true)
+  function handleExportHTMLDetalhado() {
+    if (!escalaCompleta || !setor || !colaboradores) return
+    import('react-dom/server').then(({ renderToStaticMarkup }) => {
+      const payload = renderExportHTML('detalhado', incluirAvisosDetalhadoExport)
+      if (!payload) return
+      const html = renderToStaticMarkup(payload.html)
+      const fullHTML = buildStandaloneHtml(html, {
+        title: `Escala - ${setor.nome}`,
+      })
+      const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
+      exportarService.salvarHTML(fullHTML, `escala-detalhada-${slug}.html`).then((result) => {
+        if (result) toast.success('HTML detalhado salvo com sucesso')
+      }).catch(() => toast.error('Erro ao exportar HTML detalhado'))
+    })
   }
 
-  // Generate per-funcionario HTML
-  function renderFuncHTML(colabId: number): string {
-    if (!exportEscala || !setor || !colaboradores || !tiposContrato) return ''
+  function handleExportCSV() {
+    if (!escalaCompleta || !setor || !colaboradores) return
+    const csvAloc = gerarCSVAlocacoes([escalaCompleta], [setor], colaboradores)
+    const csvViol = gerarCSVViolacoes([escalaCompleta], [setor])
+    const csvDelta = gerarCSVComparacaoDemanda([escalaCompleta], [setor])
+    const combined = `${csvAloc}\n\n${csvViol}\n\n${csvDelta}`
+    const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
+    exportarService.salvarCSV(combined, `escala-${slug}.csv`).then((result) => {
+      if (result) toast.success('CSV salvo com sucesso')
+    }).catch(() => toast.error('Erro ao exportar CSV'))
+  }
+
+  function handleExportFuncionario(colabId: number) {
+    if (!escalaCompleta || !setor || !colaboradores || !tiposContrato) return
     const colab = colaboradores.find((c) => c.id === colabId)
-    if (!colab) return ''
+    if (!colab) return
     const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
     const r = regrasMap.get(colabId)
-    return gerarHTMLFuncionario({
+    const html = gerarHTMLFuncionario({
       nome: colab.nome,
       contrato: tc?.nome ?? '',
       horasSemanais: tc?.horas_semanais ?? colab.horas_semanais,
       setor: setor.nome,
-      periodo: { inicio: exportEscala.escala.data_inicio, fim: exportEscala.escala.data_fim },
-      alocacoes: exportEscala.alocacoes.filter((a) => a.colaborador_id === colabId),
-      violacoes: exportEscala.violacoes.filter((v) => v.colaborador_id === colabId),
+      periodo: { inicio: escalaCompleta.escala.data_inicio, fim: escalaCompleta.escala.data_fim },
+      alocacoes: escalaCompleta.alocacoes.filter((a) => a.colaborador_id === colabId),
+      violacoes: escalaCompleta.violacoes.filter((v) => v.colaborador_id === colabId),
       regra: r ? { folga_fixa_dia_semana: r.folga_fixa_dia_semana ?? null, folga_variavel_dia_semana: r.folga_variavel_dia_semana ?? null } : undefined,
     })
+    const fname = colab.nome.replace(/\s+/g, '_')
+    exportarService.salvarHTML(html, `escala-${fname}.html`).then((result) => {
+      if (result) toast.success(`Escala de ${colab.nome} salva`)
+    }).catch(() => toast.error('Erro ao exportar'))
   }
 
-  async function handleCSVExportEscala() {
-    if (!exportEscala || !setor || !colaboradores) return
-    const csvAloc = gerarCSVAlocacoes([exportEscala], [setor], colaboradores)
-    const csvViol = gerarCSVViolacoes([exportEscala], [setor])
-    const csvDelta = gerarCSVComparacaoDemanda([exportEscala], [setor])
-    const combined = `${csvAloc}\n\n${csvViol}\n\n${csvDelta}`
-    await exportCtrl.handleCSV(combined, `escala-${setor.nome.toLowerCase().replace(/\s+/g, '-')}.csv`)
+  function handleAbrirOutroSetor(setorDestinoId: number) {
+    navigate(`/setores/${setorDestinoId}/escala`)
   }
 
+  // Loading / no data states
   if (!setor || !colaboradores) {
     return (
       <div className="flex flex-1 flex-col">
         <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Escala' }, { label: 'Carregando...' }]} />
         <div className="flex items-center justify-center p-16">
-          <p className="text-sm text-muted-foreground">Carregando...</p>
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       </div>
     )
@@ -621,1227 +399,219 @@ export function EscalaPagina() {
       />
 
       <div className="flex-1 space-y-4 p-6">
-        <Tabs defaultValue="simulacao" onValueChange={handleTabChange} className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="simulacao">Simulacao</TabsTrigger>
-            <TabsTrigger value="oficial">Oficial</TabsTrigger>
-            <TabsTrigger value="historico">Historico</TabsTrigger>
-          </TabsList>
-
-          {/* TAB: Simulacao */}
-          <TabsContent value="simulacao" className="relative space-y-4">
-            {/* Loading overlay durante geracao */}
-            {(gerando || preflightLoading) && (
-              <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm animate-in fade-in-0 duration-200">
-                <Card className="w-full max-w-md border-2 shadow-lg">
-                  <CardContent className="flex flex-col items-center justify-center gap-4 py-12">
-                    <Loader2 className="size-12 animate-spin text-primary" />
-                    <p className="text-center text-sm font-medium text-foreground">
-                      {preflightLoading ? 'Validando preflight...' : `Gerando escala para ${setor.nome}...`}
-                    </p>
-                    <p className="text-center text-xs text-muted-foreground">
-                      {preflightLoading
-                        ? 'Checando bloqueios e avisos antes da geracao.'
-                        : 'O motor esta calculando horarios e distribuicoes. Aguarde.'}
-                    </p>
-                  </CardContent>
-                </Card>
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : escalaCompleta ? (
+          <>
+            {/* Header com info + controles */}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  {setor.nome} — Detalhes da Escala
+                </h2>
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    {formatarData(escalaCompleta.escala.data_inicio)} — {formatarData(escalaCompleta.escala.data_fim)}
+                  </p>
+                  <StatusBadge status={escalaCompleta.escala.status as 'OFICIAL' | 'RASCUNHO'} />
+                </div>
               </div>
-            )}
-
-            {/* Generate controls */}
-            <Card className={gerando || preflightLoading ? 'pointer-events-none opacity-60' : ''}>
-              <CardContent className="flex flex-wrap items-end gap-4 p-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">Data Inicio</Label>
-                  <Input
-                    type="date"
-                    value={dataInicio}
-                    onChange={(e) => setDataInicio(e.target.value)}
-                    className="w-[160px]"
-                    disabled={gerando || preflightLoading}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Data Fim</Label>
-                  <Input
-                    type="date"
-                    value={dataFim}
-                    onChange={(e) => setDataFim(e.target.value)}
-                    className="w-[160px]"
-                    disabled={gerando || preflightLoading}
-                  />
-                </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="outline" disabled={gerando || preflightLoading}>
-                      Cenário 5x2/6x1
-                      {regimesOverridePayload().length > 0 && (
-                        <Badge variant="secondary" className="ml-2">
-                          {regimesOverridePayload().length}
-                        </Badge>
-                      )}
+              <div className="flex items-center gap-2">
+                {/* Export dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="gap-1.5">
+                      <Download className="size-3.5" />
+                      Exportar
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="max-w-2xl">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Cenário de Regimes (simulação)</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Ajuste 5x2/6x1 por colaborador apenas para esta simulação. Não altera cadastro.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={handleExportHTMLCiclo}>
+                      <FileText className="mr-2 size-3.5" />
+                      Ciclo (HTML)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportHTMLDetalhado}>
+                      <FileText className="mr-2 size-3.5" />
+                      Detalhado (HTML)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handlePrintCiclo}>
+                      <Printer className="mr-2 size-3.5" />
+                      Imprimir Ciclo
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportCSV}>
+                      <FileText className="mr-2 size-3.5" />
+                      CSV
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs">Avisos no export</DropdownMenuLabel>
+                    <DropdownMenuCheckboxItem
+                      checked={incluirAvisosCicloExport}
+                      onCheckedChange={(checked) => setIncluirAvisosCicloExport(Boolean(checked))}
+                    >
+                      Incluir no ciclo
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={incluirAvisosDetalhadoExport}
+                      onCheckedChange={(checked) => setIncluirAvisosDetalhadoExport(Boolean(checked))}
+                    >
+                      Incluir no detalhado
+                    </DropdownMenuCheckboxItem>
+                    {colaboradores.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs">Por Funcionario</DropdownMenuLabel>
+                        {colaboradores.map((c) => (
+                          <DropdownMenuItem key={c.id} onClick={() => handleExportFuncionario(c.id)}>
+                            {c.nome}
+                          </DropdownMenuItem>
+                        ))}
+                      </>
+                    )}
+                    {outrosSetores.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>Outro setor</DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="max-h-72 w-56 overflow-y-auto">
+                            {outrosSetores.map((s) => (
+                              <DropdownMenuItem key={s.id} onClick={() => handleAbrirOutroSetor(s.id)}>
+                                {s.nome}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
 
-                    <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
-                      {colaboradores.map((colab) => {
-                        const regimePadrao = getContratoRegime(colab)
-                        const regimeAtual = regimeOverrides[colab.id] ?? 'AUTO'
-                        return (
-                          <div key={colab.id} className="grid grid-cols-1 gap-2 rounded border p-3 md:grid-cols-[1fr_220px] md:items-center">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">{colab.nome}</p>
-                              <p className="text-xs text-muted-foreground">
-                                Padrão do contrato: {regimePadrao}
-                              </p>
-                            </div>
-                            <Select
-                              value={regimeAtual}
-                              onValueChange={(value) => {
-                                setRegimeOverrides((prev) => {
-                                  const next = { ...prev }
-                                  if (value === 'AUTO') {
-                                    delete next[colab.id]
-                                  } else {
-                                    next[colab.id] = value as RegimeEscala
-                                  }
-                                  return next
-                                })
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Usar padrão" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="AUTO">Usar padrão ({regimePadrao})</SelectItem>
-                                <SelectItem value="5X2">5x2</SelectItem>
-                                <SelectItem value="6X1">6x1</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    <AlertDialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => setRegimeOverrides({})}
-                        disabled={Object.keys(regimeOverrides).length === 0}
-                      >
-                        Limpar overrides
-                      </Button>
-                      <AlertDialogAction>Aplicar cenário</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setDrawerOpen(true)}
-                  disabled={gerando || preflightLoading}
-                  title="Configuracoes de geracao"
-                >
-                  <Settings2 className="size-4" />
-                </Button>
-
-                <Button onClick={handleGerar} disabled={gerando || preflightLoading}>
-                  {gerando ? (
-                    <Loader2 className="mr-1 size-4 animate-spin" />
-                  ) : (
-                    <CalendarDays className="mr-1 size-4" />
-                  )}
-                  {preflightLoading ? 'Validando...' : gerando ? 'Gerando...' : 'Gerar Escala'}
-                </Button>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold">Resultado</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Escala pronta para exportacao de ciclo para os colaboradores.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className={violacoesCount > 0 ? 'border-amber-200 text-amber-700' : 'border-emerald-200 text-emerald-700'}>
+                    {violacoesCount > 0
+                      ? `${violacoesCount} aviso${violacoesCount > 1 ? 's' : ''}`
+                      : 'Sem avisos relevantes'}
+                  </Badge>
+                </div>
               </CardContent>
             </Card>
 
-            {gerando && (
-              <Card className="border-blue-500/30 bg-blue-950/20">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Terminal className="size-4 text-blue-400" />
-                    <span>Solver OR-Tools</span>
-                    <Loader2 className="ml-auto size-4 animate-spin text-blue-400" />
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[200px] overflow-y-auto rounded-md border border-border/50 bg-black/40 p-3 font-mono text-xs text-green-400">
-                    {solverLogs.length === 0 ? (
-                      <div className="text-muted-foreground">Iniciando solver...</div>
-                    ) : (
-                      solverLogs.map((line, i) => (
-                        <div key={i} className="leading-5">
-                          {line}
-                        </div>
-                      ))
-                    )}
-                    <div ref={solverLogsEndRef} />
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    O solver esta buscando a melhor escala possivel. Isso pode levar alguns minutos.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold">Ciclo (previa de exportacao)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[70vh] overflow-auto rounded-md border bg-white">
+                  <ExportarEscala
+                    escala={escalaCompleta.escala}
+                    alocacoes={escalaCompleta.alocacoes}
+                    colaboradores={colaboradores}
+                    setor={setor}
+                    violacoes={escalaCompleta.violacoes}
+                    tiposContrato={tiposContrato ?? []}
+                    funcoes={funcoes ?? []}
+                    horariosSemana={horariosSemana ?? []}
+                    modo="ciclo"
+                    modoRender="view"
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* Ciclos Rotativos Salvos */}
-            {!escalaCompleta && !gerando && (
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                    <Repeat className="size-4 text-primary" />
-                    Ciclos Rotativos
-                  </CardTitle>
-                  {!ciclosLoaded && (
-                    <Button variant="outline" size="sm" onClick={loadCiclosModelos}>
-                      Carregar ciclos
-                    </Button>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  {!ciclosLoaded ? (
-                    <p className="text-xs text-muted-foreground">
-                      Clique em &quot;Carregar ciclos&quot; para ver modelos salvos.
-                    </p>
-                  ) : ciclosModelos.length === 0 ? (
-                    <EmptyState
-                      icon={Repeat}
-                      title="Nenhum ciclo salvo"
-                      description="Gere uma escala de multiplas semanas e detecte o ciclo para salvar um modelo reutilizavel."
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-end">
+                <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />
+              </div>
+
+              <Tabs defaultValue="escala" className="space-y-4">
+                <TabsList>
+                  <TabsTrigger value="escala">Escala</TabsTrigger>
+                  <TabsTrigger value="avisos" className="gap-1.5">
+                    Avisos
+                    {violacoesCount > 0 && (
+                      <Badge variant="secondary" className="ml-1 size-5 justify-center rounded-full p-0 text-[10px]">
+                        {violacoesCount}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="escala">
+                  {escalaViewMode === 'grid' ? (
+                    <EscalaGrid
+                      colaboradores={colaboradores}
+                      alocacoes={escalaCompleta.alocacoes}
+                      dataInicio={escalaCompleta.escala.data_inicio}
+                      dataFim={escalaCompleta.escala.data_fim}
+                      demandas={demandas ?? undefined}
+                      tiposContrato={tiposContrato ?? undefined}
+                      funcoes={funcoes ?? undefined}
+                      readOnly
+                      regrasMap={regrasMap}
                     />
                   ) : (
-                    <div className="space-y-2">
-                      {ciclosModelos.map((ciclo) => (
-                        <div
-                          key={ciclo.id}
-                          className="flex items-center justify-between rounded-lg border px-4 py-3"
-                        >
-                          <div>
-                            <p className="text-sm font-medium">{ciclo.nome}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {ciclo.semanas_no_ciclo} semana(s) de ciclo
-                              {ciclo.criado_em && ` · Criado em ${formatarData(ciclo.criado_em.split('T')[0])}`}
-                            </p>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleGerarPorCiclo(ciclo.id)}
-                            disabled={gerandoPorCiclo || !dataInicio || !dataFim}
-                          >
-                            {gerandoPorCiclo ? (
-                              <Loader2 className="mr-1 size-3.5 animate-spin" />
-                            ) : (
-                              <CalendarDays className="mr-1 size-3.5" />
-                            )}
-                            Gerar por ciclo
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
+                    <TimelineGrid
+                      colaboradores={colaboradores}
+                      alocacoes={escalaCompleta.alocacoes}
+                      setor={setor}
+                      dataSelecionada={escalaCompleta.escala.data_inicio}
+                      dataInicio={escalaCompleta.escala.data_inicio}
+                      dataFim={escalaCompleta.escala.data_fim}
+                      demandas={demandas ?? undefined}
+                      tiposContrato={tiposContrato ?? undefined}
+                      horariosSemana={horariosSemana ?? undefined}
+                      regrasMap={regrasMap}
+                      readOnly
+                    />
                   )}
-                </CardContent>
-              </Card>
-            )}
+                </TabsContent>
 
-            {escalaCompleta ? (
-              <SimulacaoResult
-                escalaCompleta={escalaCompleta}
-                colaboradores={colaboradores}
-                demandas={demandas ?? []}
-                tiposContrato={tiposContrato ?? []}
-                setorNome={setor.nome}
-                expandViolacoes={expandViolacoes}
-                setExpandViolacoes={setExpandViolacoes}
-                onOficializar={handleOficializar}
-                onDescartar={handleDescartar}
-                onImprimir={handleImprimir}
-                onExportar={handleExportar}
-                getIndicators={getIndicators}
-                oficializando={oficializando}
-                descartando={descartando}
-                precisaRegerar={Boolean(regerarWarning)}
-                mensagemRegerar={regerarWarning}
-                onRegerar={handleGerar}
-                onCelulaClick={handleCelulaClick}
-                ajustando={ajustando}
-                changedCells={changedCells}
-                funcoes={funcoes ?? undefined}
-                escalaViewMode={escalaViewMode}
-                setEscalaViewMode={setEscalaViewMode}
-                setor={setor}
-                onDetectarCiclo={handleDetectarCiclo}
-                cicloDetecting={cicloDetecting}
-                cicloResult={cicloResult}
-                onSalvarCicloOpen={() => setShowCicloSaveDialog(true)}
-                horariosSemana={horariosSemana ?? undefined}
-                regrasMap={regrasMap}
-              />
-            ) : (
-              <Card>
-                <CardContent className="py-8">
-                  <div className="flex flex-col items-center justify-center mb-6">
-                    <CalendarDays className="mb-3 size-10 text-muted-foreground/30" />
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Nenhuma escala gerada para {setor.nome}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground/70">
-                      Selecione o periodo acima e clique em &quot;Gerar Escala&quot;
-                    </p>
-                  </div>
-
-                  {/* Equipe do setor */}
-                  {colaboradores.length > 0 && (
-                    <div className="border-t pt-5">
-                      <p className="text-xs font-semibold text-foreground mb-3">
-                        Equipe do setor ({colaboradores.length} colaborador{colaboradores.length > 1 ? 'es' : ''})
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {colaboradores.map((colab) => {
-                          const contratoNome = tiposContrato?.find(tc => tc.id === colab.tipo_contrato_id)?.nome
-                          return (
-                            <div
-                              key={colab.id}
-                              className="flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2"
-                            >
-                              <div
-                                className={cn(
-                                  'flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
-                                  colab.sexo === 'F'
-                                    ? 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300'
-                                    : 'bg-sky-100 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300',
-                                )}
-                              >
-                                {iniciais(colab.nome)}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-medium text-foreground leading-tight truncate">
-                                  {colab.nome.split(' ').slice(0, 2).join(' ')}
-                                </p>
-                                {contratoNome && (
-                                  <p className="text-[10px] text-muted-foreground truncate">{contratoNome}</p>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
+                <TabsContent value="avisos" className="space-y-4">
+                  <ResumoTable
+                    colaboradores={colaboradores}
+                    alocacoes={escalaCompleta.alocacoes}
+                    violacoes={escalaCompleta.violacoes}
+                    tiposContrato={tiposContrato ?? []}
+                    dataInicio={escalaCompleta.escala.data_inicio}
+                    dataFim={escalaCompleta.escala.data_fim}
+                  />
+                  {escalaCompleta.violacoes.length > 0 ? (
+                    <ViolacoesAgrupadas violacoes={escalaCompleta.violacoes} />
+                  ) : (
+                    <Card>
+                      <CardContent className="pt-6">
+                        <p className="text-sm text-muted-foreground">Sem avisos para esta escala.</p>
+                      </CardContent>
+                    </Card>
                   )}
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          {/* TAB: Oficial */}
-          <TabsContent value="oficial" className="space-y-4">
-            {loadingOficial ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="mb-2 size-6 animate-spin text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Carregando escala oficial...</p>
-              </div>
-            ) : oficialEscala ? (
-              <>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                          Escala Oficial: {setor.nome} - {formatarMes(oficialEscala.escala.data_inicio)}
-                          <Badge
-                            variant="outline"
-                            className="border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
-                          >
-                            <CheckCircle2 className="mr-1 size-3" /> Oficial
-                          </Badge>
-                        </CardTitle>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Oficializada em {formatarData(oficialEscala.escala.criada_em.split('T')[0])} |
-                          Pontuacao: {oficialEscala.escala.pontuacao ?? '-'}
-                        </p>
-                      </div>
-                      <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {escalaViewMode === 'grid' ? (
-                      <EscalaGrid
-                        colaboradores={colaboradores}
-                        alocacoes={oficialEscala.alocacoes}
-                        dataInicio={oficialEscala.escala.data_inicio}
-                        dataFim={oficialEscala.escala.data_fim}
-                        demandas={demandas ?? undefined}
-                        tiposContrato={tiposContrato ?? undefined}
-                        funcoes={funcoes ?? undefined}
-                        readOnly
-                        regrasMap={regrasMap}
-                      />
-                    ) : (
-                      <TimelineGrid
-                        colaboradores={colaboradores}
-                        alocacoes={oficialEscala.alocacoes}
-                        setor={setor}
-                        dataSelecionada={oficialEscala.escala.data_inicio}
-                        dataInicio={oficialEscala.escala.data_inicio}
-                        dataFim={oficialEscala.escala.data_fim}
-                        demandas={demandas ?? undefined}
-                        tiposContrato={tiposContrato ?? undefined}
-                        horariosSemana={horariosSemana ?? undefined}
-                        regrasMap={regrasMap}
-                        readOnly
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-                <div className="flex items-center gap-3">
-                  <Button variant="outline" onClick={() => handleExportar(oficialEscala)}>
-                    <Download className="mr-1 size-4" />
-                    Exportar
-                  </Button>
-                  <Button variant="outline" onClick={() => handleImprimir(oficialEscala)}>
-                    <Printer className="mr-1 size-4" />
-                    Imprimir
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-16">
-                  <CalendarDays className="mb-4 size-12 text-muted-foreground/30" />
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Nenhuma escala oficial para {setor.nome}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground/70">
-                    Gere na aba Simulacao e oficialize.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          {/* TAB: Historico */}
-          <TabsContent value="historico" className="space-y-4">
-            {loadingHistorico ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="mb-2 size-6 animate-spin text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Carregando historico...</p>
-              </div>
-            ) : escalasArquivadas.length > 0 ? (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-semibold">
-                    Escalas Anteriores (Arquivadas)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {escalasArquivadas.map((esc) => (
-                    <div key={esc.id}>
-                      <div className="flex items-center justify-between rounded-lg border p-4">
-                        <div className="flex items-center gap-3">
-                          <CalendarDays className="size-5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm font-medium capitalize text-foreground">
-                              {formatarMes(esc.data_inicio)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatarData(esc.data_inicio)} a {formatarData(esc.data_fim)}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <PontuacaoBadge pontuacao={esc.pontuacao ?? 0} />
-                          <Badge variant="outline" className="text-muted-foreground">
-                            Arquivada
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => loadHistoricoDetail(esc.id)}
-                          >
-                            <Eye className="mr-1 size-3.5" />
-                            {expandedHistorico === esc.id ? 'Fechar' : 'Ver'}
-                          </Button>
-                        </div>
-                      </div>
-                      {expandedHistorico === esc.id && (
-                        <div className="mt-2 rounded-lg border p-4">
-                          {loadingDetail ? (
-                            <div className="flex flex-col items-center justify-center py-8">
-                              <Loader2 className="mb-2 size-6 animate-spin text-muted-foreground" />
-                              <p className="text-center text-sm text-muted-foreground">
-                                Carregando detalhes...
-                              </p>
-                            </div>
-                          ) : historicoDetail ? (
-                            <>
-                              <div className="flex justify-end mb-3">
-                                <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />
-                              </div>
-                              {escalaViewMode === 'grid' ? (
-                                <EscalaGrid
-                                  colaboradores={colaboradores}
-                                  alocacoes={historicoDetail.alocacoes}
-                                  dataInicio={historicoDetail.escala.data_inicio}
-                                  dataFim={historicoDetail.escala.data_fim}
-                                  demandas={demandas ?? undefined}
-                                  tiposContrato={tiposContrato ?? undefined}
-                                  funcoes={funcoes ?? undefined}
-                                  readOnly
-                                  regrasMap={regrasMap}
-                                />
-                              ) : (
-                                <TimelineGrid
-                                  colaboradores={colaboradores}
-                                  alocacoes={historicoDetail.alocacoes}
-                                  setor={setor}
-                                  dataSelecionada={historicoDetail.escala.data_inicio}
-                                  dataInicio={historicoDetail.escala.data_inicio}
-                                  dataFim={historicoDetail.escala.data_fim}
-                                  demandas={demandas ?? undefined}
-                                  tiposContrato={tiposContrato ?? undefined}
-                                  horariosSemana={horariosSemana ?? undefined}
-                                  regrasMap={regrasMap}
-                                  readOnly
-                                />
-                              )}
-                            </>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-16">
-                  <CalendarDays className="mb-4 size-12 text-muted-foreground/30" />
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Nenhuma escala arquivada
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      <AlertDialog open={regerarModalOpen} onOpenChange={setRegerarModalOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Simulação desatualizada</AlertDialogTitle>
-            <AlertDialogDescription>
-              {regerarWarning ?? 'Houve mudanças no cenário e a escala precisa ser gerada novamente antes de oficializar.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Fechar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setRegerarModalOpen(false)
-                handleGerar()
-              }}
-            >
-              Regerar simulação
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Preflight Warnings Modal */}
-      <AlertDialog open={preflightWarningsOpen} onOpenChange={(open) => {
-        if (!open) {
-          preflightResolveRef.current?.(false)
-          preflightResolveRef.current = null
-          setPreflightWarningsOpen(false)
-        }
-      }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-500" />
-              Avisos do preflight
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm">
-                <p>O sistema detectou os seguintes avisos antes de gerar a escala:</p>
-                <ul className="list-disc pl-5 space-y-1">
-                  {preflightWarningsText.map((w, i) => (
-                    <li key={i}>{w}</li>
-                  ))}
-                </ul>
-                <p className="pt-2">Deseja continuar com a geração mesmo assim?</p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              preflightResolveRef.current?.(false)
-              preflightResolveRef.current = null
-              setPreflightWarningsOpen(false)
-            }}>
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              preflightResolveRef.current?.(true)
-              preflightResolveRef.current = null
-              setPreflightWarningsOpen(false)
-            }}>
-              Continuar mesmo assim
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Export Modal */}
-      {setor && colaboradores && exportEscala && (
-        <ExportModal
-          open={exportOpen}
-          onOpenChange={setExportOpen}
-          context="escala"
-          titulo={`Exportar Escala — ${setor.nome}`}
-          formato={exportCtrl.formato}
-          onFormatoChange={exportCtrl.setFormato}
-          opcoes={exportCtrl.opcoes}
-          onOpcoesChange={exportCtrl.setOpcoes}
-          colaboradores={colaboradores.map((c) => ({ id: c.id, nome: c.nome }))}
-          funcionarioId={exportCtrl.funcionarioId}
-          onFuncionarioChange={exportCtrl.setFuncionarioId}
-          onExportHTML={() => {
-            const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
-            if (exportCtrl.formato === 'funcionario' && exportCtrl.funcionarioId) {
-              const html = renderFuncHTML(exportCtrl.funcionarioId)
-              const colab = colaboradores.find((c) => c.id === exportCtrl.funcionarioId)
-              const fname = colab ? colab.nome.replace(/\s+/g, '_') : 'funcionario'
-              exportarService.salvarHTML(html, `escala-${fname}.html`).then(() => toast.success('HTML salvo'))
-            } else if (exportCtrl.formato === 'batch') {
-              exportCtrl.handleBatch(
-                colaboradores.map((c) => ({ id: c.id, nome: c.nome })),
-                renderFuncHTML,
-              )
-            } else {
-              exportCtrl.handleExportHTML(`escala-${slug}.html`)
-            }
-          }}
-          onPrint={() => {
-            const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
-            if (exportCtrl.formato === 'funcionario' && exportCtrl.funcionarioId) {
-              const html = renderFuncHTML(exportCtrl.funcionarioId)
-              const colab = colaboradores.find((c) => c.id === exportCtrl.funcionarioId)
-              const fname = colab ? colab.nome.replace(/\s+/g, '_') : 'funcionario'
-              exportarService.imprimirPDF(html, `escala-${fname}.pdf`).then(() => toast.success('PDF salvo'))
-            } else {
-              exportCtrl.handlePrint(`escala-${slug}.pdf`)
-            }
-          }}
-          onCSV={handleCSVExportEscala}
-          loading={exportCtrl.loading}
-          progress={exportCtrl.progress}
-        >
-          <ExportarEscala
-            escala={exportEscala.escala}
-            alocacoes={exportEscala.alocacoes}
-            colaboradores={colaboradores}
-            setor={setor}
-            violacoes={exportEscala.violacoes}
-            tiposContrato={tiposContrato ?? []}
-            funcoes={funcoes ?? []}
-            horariosSemana={horariosSemana ?? []}
-            opcoes={exportCtrl.opcoes}
-          />
-        </ExportModal>
-      )}
-
-      {/* Salvar Ciclo Dialog */}
-      <Dialog open={showCicloSaveDialog} onOpenChange={setShowCicloSaveDialog}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Salvar Ciclo Rotativo</DialogTitle>
-            <DialogDescription>
-              Salve este padrao como modelo reutilizavel para gerar escalas futuras.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Nome do Ciclo</Label>
-              <Input
-                placeholder="Ex: Padrao Verao, Ciclo Normal"
-                value={cicloNome}
-                onChange={(e) => setCicloNome(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSalvarCiclo()
-                }}
-                autoFocus
-              />
+                </TabsContent>
+              </Tabs>
             </div>
-            {cicloResult?.ciclo_detectado && (
-              <div className="rounded-lg border bg-muted/20 p-3 text-xs space-y-1">
-                <p><strong>Periodo:</strong> {cicloResult.P} semana(s)</p>
-                <p><strong>Match:</strong> {cicloResult.match_percent}%</p>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCicloSaveDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSalvarCiclo}
-              disabled={cicloSaving || !cicloNome.trim()}
-            >
-              {cicloSaving ? 'Salvando...' : 'Salvar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <SolverConfigDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        config={solverConfig}
-        onConfigChange={setSolverConfig}
-      />
-    </div>
-  )
-}
-
-// ─── Simulacao Result Sub-component ──────────────────────────────────────────
-
-interface SimulacaoResultProps {
-  escalaCompleta: EscalaCompletaV3
-  colaboradores: Colaborador[]
-  demandas: import('@shared/index').Demanda[]
-  tiposContrato: import('@shared/index').TipoContrato[]
-  setorNome: string
-  expandViolacoes: boolean
-  setExpandViolacoes: (v: boolean) => void
-  onOficializar: () => void
-  onDescartar: () => void
-  onImprimir: (ec: EscalaCompletaV3) => void
-  onExportar: (ec: EscalaCompletaV3) => void
-  getIndicators: (ec: EscalaCompletaV3) => {
-    pontuacao: number
-    coberturaPercent: number
-    violacoesHard: number
-    violacoesSoft: number
-    equilibrio: number
-  }
-  oficializando: boolean
-  descartando: boolean
-  precisaRegerar: boolean
-  mensagemRegerar: string | null
-  onRegerar: () => void
-  onCelulaClick?: (colaboradorId: number, data: string, statusAtual: string) => void
-  ajustando?: { colaboradorId: number; data: string } | null
-  changedCells?: Set<string>
-  funcoes?: Funcao[]
-  escalaViewMode: 'grid' | 'timeline'
-  setEscalaViewMode: (mode: 'grid' | 'timeline') => void
-  setor: Setor
-  onDetectarCiclo?: () => void
-  cicloDetecting?: boolean
-  cicloResult?: {
-    ciclo_detectado: boolean
-    T: number
-    P: number
-    semanas: number
-    match_percent: number
-  } | null
-  onSalvarCicloOpen?: () => void
-  horariosSemana?: import('@shared/index').SetorHorarioSemana[]
-  regrasMap?: Map<number, RegraHorarioColaborador>
-}
-
-function SimulacaoResult({
-  escalaCompleta,
-  colaboradores,
-  demandas,
-  tiposContrato,
-  funcoes,
-  setorNome,
-  expandViolacoes,
-  setExpandViolacoes,
-  onOficializar,
-  onDescartar,
-  onImprimir,
-  onExportar,
-  getIndicators,
-  oficializando,
-  descartando,
-  precisaRegerar,
-  mensagemRegerar,
-  onRegerar,
-  onCelulaClick,
-  ajustando,
-  changedCells = new Set(),
-  escalaViewMode,
-  setEscalaViewMode,
-  setor,
-  onDetectarCiclo,
-  cicloDetecting = false,
-  cicloResult = null,
-  onSalvarCicloOpen,
-  horariosSemana,
-  regrasMap,
-}: SimulacaoResultProps) {
-  const indicators = getIndicators(escalaCompleta)
-  const violacoes = escalaCompleta.violacoes
-  const decisoes = escalaCompleta.decisoes ?? []
-  const comparacao = escalaCompleta.comparacao_demanda ?? []
-  const antipatterns = escalaCompleta.antipatterns ?? []
-
-  // Build Set of violated cells (HARD only) for grid highlighting
-  const violatedCells = new Set(
-    violacoes
-      .filter((v) => v.severidade === 'HARD' && v.data)
-      .map((v) => `${v.colaborador_id}-${v.data}`)
-  )
-
-  return (
-    <>
-      {/* Indicadores */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <IndicatorCard
-          icon={TrendingUp}
-          value={`${indicators.pontuacao}/100`}
-          label="Score"
-          colorClass={
-            indicators.pontuacao >= 70
-              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
-              : indicators.pontuacao >= 50
-              ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
-              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
-          }
-        />
-        <IndicatorCard
-          icon={CheckCircle2}
-          value={`${indicators.coberturaPercent}%`}
-          label="Cobertura"
-          colorClass={
-            indicators.coberturaPercent >= 95
-              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
-              : indicators.coberturaPercent >= 80
-              ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
-              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
-          }
-        />
-        <IndicatorCard
-          icon={indicators.violacoesHard === 0 ? CheckCircle2 : XCircle}
-          value={indicators.violacoesHard}
-          label="Infrações CLT"
-          colorClass={
-            indicators.violacoesHard === 0
-              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
-              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
-          }
-        />
-        <IndicatorCard
-          icon={indicators.violacoesSoft === 0 ? CheckCircle2 : AlertTriangle}
-          value={indicators.violacoesSoft}
-          label="Antipadrões"
-          colorClass={
-            indicators.violacoesSoft === 0
-              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
-              : 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
-          }
-        />
-        <IndicatorCard
-          icon={Shield}
-          value={`${indicators.equilibrio}%`}
-          label="Equidade"
-          colorClass={
-            indicators.equilibrio >= 80
-              ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
-              : indicators.equilibrio >= 50
-              ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400'
-              : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
-          }
-        />
-      </div>
-
-      {/* Rule Compliance Badge */}
-      {escalaCompleta.diagnostico && (
-        <RuleComplianceBadge diagnostico={escalaCompleta.diagnostico} />
-      )}
-
-      {/* Resumo Folgas */}
-      {colaboradores && regrasMap && (
-        <ResumoFolgas
-          colaboradores={colaboradores}
-          alocacoes={escalaCompleta.alocacoes}
-          regrasMap={regrasMap}
-        />
-      )}
-
-      {/* Grid */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-base font-semibold">
-            Escala: {setorNome} - {formatarMes(escalaCompleta.escala.data_inicio)}
-            <Badge
-              variant="outline"
-              className="ml-2 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-xs text-amber-700 dark:text-amber-300"
-            >
-              <Clock className="mr-1 size-3" /> Rascunho
-            </Badge>
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <EscalaViewToggle mode={escalaViewMode} onChange={setEscalaViewMode} />
-            <PontuacaoBadge pontuacao={indicators.pontuacao} />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {escalaViewMode === 'grid' ? (
-            <EscalaGrid
-              colaboradores={colaboradores}
-              alocacoes={escalaCompleta.alocacoes}
-              dataInicio={escalaCompleta.escala.data_inicio}
-              dataFim={escalaCompleta.escala.data_fim}
-              demandas={demandas}
-              tiposContrato={tiposContrato}
-              funcoes={funcoes}
-              readOnly={false}
-              onCelulaClick={onCelulaClick}
-              loadingCell={ajustando ?? undefined}
-              changedCells={changedCells}
-              violatedCells={violatedCells}
-              regrasMap={regrasMap}
-            />
-          ) : (
-            <TimelineGrid
-              colaboradores={colaboradores}
-              alocacoes={escalaCompleta.alocacoes}
-              setor={setor}
-              dataSelecionada={escalaCompleta.escala.data_inicio}
-              dataInicio={escalaCompleta.escala.data_inicio}
-              dataFim={escalaCompleta.escala.data_fim}
-              demandas={demandas}
-              tiposContrato={tiposContrato}
-              horariosSemana={horariosSemana ?? undefined}
-              readOnly={false}
-              onCelulaClick={onCelulaClick}
-              loadingCell={ajustando ?? undefined}
-              changedCells={changedCells}
-              violatedCells={violatedCells}
-              regrasMap={regrasMap}
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Violacoes */}
-      {violacoes.length > 0 && (
-        <Card>
-          <CardHeader
-            className="cursor-pointer pb-2"
-            onClick={() => setExpandViolacoes(!expandViolacoes)}
-          >
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <AlertTriangle className="size-4 text-amber-500 dark:text-amber-400" />
-              Violacoes ({violacoes.length})
-              <span className="text-xs font-normal text-muted-foreground">
-                {expandViolacoes ? '(clique para fechar)' : '(clique para expandir)'}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          {expandViolacoes && (
-            <CardContent className="space-y-4 pt-0">
-              <ViolacoesAgrupadas violacoes={violacoes} />
-            </CardContent>
-          )}
-        </Card>
-      )}
-
-      {/* Delta de Cobertura (v3) */}
-      {comparacao.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <TrendingUp className="size-4 text-primary" />
-              Planejado x Executado
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1.5">
-              {(() => {
-                // Group by data, show summary per day
-                const porDia = new Map<string, { planejado: number; executado: number; delta: number }>()
-                for (const slot of comparacao) {
-                  const prev = porDia.get(slot.data) ?? { planejado: 0, executado: 0, delta: 0 }
-                  porDia.set(slot.data, {
-                    planejado: prev.planejado + slot.planejado,
-                    executado: prev.executado + slot.executado,
-                    delta: prev.delta + slot.delta,
-                  })
-                }
-                const dias = Array.from(porDia.entries()).slice(0, 7)
-                return dias.map(([data, vals]) => {
-                  const pct = vals.planejado > 0 ? Math.round((vals.executado / vals.planejado) * 100) : 100
-                  const isNegative = vals.delta < 0
-                  const isPositive = vals.delta > 0
-                  return (
-                    <div key={data} className="flex items-center gap-3 text-xs">
-                      <span className="w-20 text-muted-foreground shrink-0">
-                        {new Date(data + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
-                      </span>
-                      <Progress
-                        value={Math.min(100, pct)}
-                        className={cn(
-                          'flex-1 h-3',
-                          isNegative
-                            ? '[&>div]:bg-destructive/50'
-                            : isPositive
-                              ? '[&>div]:bg-amber-400/70'
-                              : '[&>div]:bg-emerald-500/60',
-                        )}
-                      />
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'shrink-0 text-[10px] font-semibold tabular-nums',
-                          isNegative
-                            ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                            : isPositive
-                              ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300'
-                              : 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300',
-                        )}
-                      >
-                        {isPositive ? '+' : ''}{vals.delta}
-                      </Badge>
-                    </div>
-                  )
-                })
-              })()}
-            </div>
-            {comparacao.length > 7 && (
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                Mostrando primeiros 7 dias. Total: {comparacao.length} slots.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Por que? — Decisoes do Motor (v3) */}
-      {(decisoes.length > 0 || antipatterns.length > 0) && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Info className="size-4 text-muted-foreground" />
-              Por que?
-              <span className="text-xs font-normal text-muted-foreground">
-                {decisoes.length > 0 ? `${decisoes.length} decisoes do motor` : ''}
-                {antipatterns.length > 0 ? `${decisoes.length > 0 ? ' · ' : ''}${antipatterns.length} antipatterns` : ''}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {antipatterns.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Antipatterns detectados
-                </p>
-                {antipatterns.map((ap, i) => {
-                  const isGrave = ap.tier === 1
-                  return (
-                    <Alert
-                      key={i}
-                      variant={isGrave ? 'destructive' : 'default'}
-                      className={cn('py-2.5 text-xs', !isGrave && 'border-amber-400/50 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-950/20')}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="shrink-0 text-[9px] h-4">
-                          {ap.tier}
-                        </Badge>
-                        <span className="font-medium">{ap.mensagem_rh}</span>
-                      </div>
-                      {ap.sugestao && (
-                        <AlertDescription className="mt-1 ml-0">{ap.sugestao}</AlertDescription>
-                      )}
-                    </Alert>
-                  )
-                })}
-              </div>
-            )}
-            {decisoes.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Decisoes do motor
-                </p>
-                <div className="max-h-64 overflow-y-auto space-y-1">
-                  {decisoes.slice(0, 50).map((d, i) => (
-                    <div key={i} className="flex items-start gap-2 rounded border bg-muted/20 px-2.5 py-2 text-xs">
-                      <span className="shrink-0 font-medium text-foreground">
-                        {d.colaborador_nome.split(' ')[0]}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {new Date(d.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                      </span>
-                      <Badge variant="outline" className="shrink-0 text-[9px] h-4">{d.acao}</Badge>
-                      <span className="text-muted-foreground flex-1">{d.razao}</span>
-                    </div>
-                  ))}
-                  {decisoes.length > 50 && (
-                    <p className="text-[10px] text-muted-foreground text-center py-1">
-                      +{decisoes.length - 50} decisoes nao exibidas
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Ciclo Rotativo — Deteccao */}
-      {onDetectarCiclo && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Repeat className="size-4 text-primary" />
-              Ciclo Rotativo
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onDetectarCiclo}
-                disabled={cicloDetecting}
-              >
-                {cicloDetecting ? (
-                  <Loader2 className="mr-1 size-3.5 animate-spin" />
-                ) : (
-                  <Repeat className="mr-1 size-3.5" />
-                )}
-                {cicloDetecting ? 'Detectando...' : 'Detectar Ciclo'}
+          </>
+        ) : (
+          <EmptyState
+            icon={CalendarDays}
+            title="Nenhuma escala encontrada"
+            description="Gere uma escala a partir do painel do setor"
+            action={
+              <Button variant="outline" asChild>
+                <Link to={`/setores/${setorId}`}>Voltar ao Setor</Link>
               </Button>
-              <p className="text-xs text-muted-foreground">
-                Analisa se a escala gerada segue um padrao rotativo reutilizavel.
-              </p>
-            </div>
-            {cicloResult && (
-              <div className="rounded-lg border p-4 space-y-2">
-                {cicloResult.ciclo_detectado ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
-                        Ciclo Detectado
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        Match: {cicloResult.match_percent}%
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Transiente (T)</p>
-                        <p className="font-medium">{cicloResult.T} semana(s)</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Periodo (P)</p>
-                        <p className="font-medium">{cicloResult.P} semana(s)</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Total semanas</p>
-                        <p className="font-medium">{cicloResult.semanas}</p>
-                      </div>
-                    </div>
-                    {onSalvarCicloOpen && (
-                      <Button variant="outline" size="sm" onClick={onSalvarCicloOpen}>
-                        <Save className="mr-1 size-3.5" />
-                        Salvar como modelo
-                      </Button>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Nenhum padrao rotativo detectado nesta escala. Tente gerar uma escala com mais semanas para melhorar a deteccao.
-                  </p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center gap-3">
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button disabled={oficializando || !!ajustando || indicators.violacoesHard > 0 || precisaRegerar}>
-              <CheckCircle2 className="mr-1 size-4" />
-              {oficializando ? 'Oficializando...' : 'Oficializar'}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Oficializar escala?</AlertDialogTitle>
-              <AlertDialogDescription>
-                A escala oficial anterior (se houver) sera arquivada automaticamente.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={onOficializar}>Oficializar</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        {indicators.violacoesHard > 0 && (
-          <span className="text-xs text-destructive">
-            Corrija {indicators.violacoesHard} violacao(oes) critica(s) antes de oficializar
-          </span>
+            }
+          />
         )}
-        {precisaRegerar && (
-          <span className="text-xs text-amber-700 dark:text-amber-300">
-            {mensagemRegerar ?? 'Simulacao desatualizada. Gere novamente antes de oficializar.'}
-          </span>
-        )}
-        {precisaRegerar && (
-          <Button variant="outline" onClick={onRegerar} disabled={oficializando || !!ajustando}>
-            Regerar agora
-          </Button>
-        )}
-        <Button variant="outline" onClick={() => onExportar(escalaCompleta)} disabled={!!ajustando}>
-          <Download className="mr-1 size-4" />
-          Exportar
-        </Button>
-        <Button variant="outline" onClick={() => onImprimir(escalaCompleta)} disabled={!!ajustando}>
-          <Printer className="mr-1 size-4" />
-          Imprimir
-        </Button>
-        <div className="flex-1" />
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" className="text-destructive hover:bg-destructive/5" disabled={descartando || !!ajustando}>
-              <Trash2 className="mr-1 size-4" />
-              {descartando ? 'Descartando...' : 'Descartar'}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Descartar escala?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Descartar esta simulacao? A escala sera removida permanentemente.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={onDescartar}>Descartar</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
-    </>
+    </div>
   )
 }

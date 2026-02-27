@@ -1,7 +1,7 @@
 import { client } from './client'
 import type { TipoContrato, PerfilHorarioContrato } from '@shared/index'
 
-type CriarTipoContratoData = Omit<TipoContrato, 'id'>
+type CriarTipoContratoData = Pick<TipoContrato, 'nome' | 'horas_semanais' | 'regime_escala' | 'dias_trabalho' | 'max_minutos_dia'>
 
 export const tiposContratoService = {
   listar: () =>

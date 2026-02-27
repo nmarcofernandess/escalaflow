@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation, createHashRouter } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { useIaStore } from '@/store/iaStore'
 import { AppSidebar } from './componentes/AppSidebar'
@@ -24,7 +24,7 @@ import { MemoriaPagina } from './paginas/MemoriaPagina'
 import { IaPagina } from './paginas/IaPagina'
 import { NaoEncontrado } from './paginas/NaoEncontrado'
 
-export function App() {
+function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [tourCompleted, setTourCompleted] = useState(() =>
@@ -68,23 +68,7 @@ export function App() {
           <div id={TOUR_STEP_IDS.CONTENT_AREA} className="flex min-h-0 flex-1">
             <main className="min-h-0 flex-1 min-w-0 overflow-auto">
               <ErrorBoundary>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/setores" element={<SetorLista />} />
-                  <Route path="/setores/:id" element={<SetorDetalhe />} />
-                  <Route path="/setores/:id/escala" element={<EscalaPagina />} />
-                  <Route path="/escalas" element={<EscalasHub />} />
-                  <Route path="/colaboradores" element={<ColaboradorLista />} />
-                  <Route path="/colaboradores/:id" element={<ColaboradorDetalhe />} />
-                  <Route path="/tipos-contrato" element={<ContratoLista />} />
-                  <Route path="/empresa" element={<EmpresaConfig />} />
-                  <Route path="/feriados" element={<FeriadosPagina />} />
-                  <Route path="/configuracoes" element={<ConfiguracoesPagina />} />
-                  <Route path="/regras" element={<RegrasPagina />} />
-                  <Route path="/memoria" element={<MemoriaPagina />} />
-                  <Route path="/ia" element={<IaPagina />} />
-                  <Route path="*" element={<NaoEncontrado />} />
-                </Routes>
+                <Outlet />
               </ErrorBoundary>
             </main>
             {location.pathname !== '/ia' && <IaChatPanel />}
@@ -95,3 +79,26 @@ export function App() {
     </SidebarProvider>
   )
 }
+
+export const router = createHashRouter([
+  {
+    element: <AppLayout />,
+    children: [
+      { path: '/', element: <Dashboard /> },
+      { path: '/setores', element: <SetorLista /> },
+      { path: '/setores/:id', element: <SetorDetalhe /> },
+      { path: '/setores/:id/escala', element: <EscalaPagina /> },
+      { path: '/escalas', element: <EscalasHub /> },
+      { path: '/colaboradores', element: <ColaboradorLista /> },
+      { path: '/colaboradores/:id', element: <ColaboradorDetalhe /> },
+      { path: '/tipos-contrato', element: <ContratoLista /> },
+      { path: '/empresa', element: <EmpresaConfig /> },
+      { path: '/feriados', element: <FeriadosPagina /> },
+      { path: '/configuracoes', element: <ConfiguracoesPagina /> },
+      { path: '/regras', element: <RegrasPagina /> },
+      { path: '/memoria', element: <MemoriaPagina /> },
+      { path: '/ia', element: <IaPagina /> },
+      { path: '*', element: <NaoEncontrado /> },
+    ],
+  },
+])

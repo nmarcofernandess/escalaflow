@@ -51,7 +51,6 @@ from constraints import (
     add_h15_estagiario_jornada,
     add_h16_estagiario_hora_extra,
     add_h17_h18_feriado_proibido,
-    add_h19_folga_comp_domingo,
     add_min_diario,
     add_min_diario_soft_penalty,
     add_surplus_soft,
@@ -249,7 +248,22 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
     end_h, end_m = map(int, empresa["hora_fechamento"].split(":"))
 
     grid_min = int(empresa.get("grid_minutos", 30))
-    S = ((end_h * 60 + end_m) - base_h * 60) // grid_min
+    horario_por_dia = empresa.get("horario_por_dia", {})
+
+    # S = slots do MAIOR dia (grade uniforme pro CP-SAT)
+    if horario_por_dia:
+        max_minutes = 0
+        min_base = base_h * 60
+        for dia_info in horario_por_dia.values():
+            ab_h, ab_m = map(int, dia_info["abertura"].split(":"))
+            fe_h, fe_m = map(int, dia_info["fechamento"].split(":"))
+            minutes = (fe_h * 60 + fe_m) - (ab_h * 60 + ab_m)
+            max_minutes = max(max_minutes, minutes)
+            min_base = min(min_base, ab_h * 60 + ab_m)
+        base_h = min_base // 60
+        S = max_minutes // grid_min
+    else:
+        S = ((end_h * 60 + end_m) - base_h * 60) // grid_min
 
     tolerance = int(empresa.get("tolerancia_semanal_min", 30))
     min_lunch_min = int(empresa.get("min_intervalo_almoco_min", 60))
@@ -274,6 +288,25 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
         for d in range(D):
             for s in range(S):
                 work[c, d, s] = model.new_bool_var(f"w_{c}_{d}_{s}")
+
+    # Per-day closing: zero slots beyond each day's closing hour
+    day_max_slot: Dict[int, int] = {}
+    if horario_por_dia:
+        for d_idx, day_str in enumerate(days):
+            d_date = date.fromisoformat(day_str)
+            # Python weekday: 0=Mon..6=Sun → convert to 0=Sun..6=Sat
+            dow_adjusted = (d_date.weekday() + 1) % 7
+            dia_info = horario_por_dia.get(str(dow_adjusted))
+            if dia_info:
+                fe_h, fe_m = map(int, dia_info["fechamento"].split(":"))
+                day_slots = ((fe_h * 60 + fe_m) - base_h * 60) // grid_min
+                day_max_slot[d_idx] = min(max(day_slots, 0), S)
+
+    if day_max_slot:
+        for c in range(C):
+            for d_idx, max_s in day_max_slot.items():
+                for s in range(max_s, S):
+                    model.Add(work[c, d_idx, s] == 0)
 
     # Apply pinned_cells constraints
     pinned_cells = data.get("pinned_cells", [])
@@ -532,7 +565,6 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
     )
     add_h16_estagiario_hora_extra(model, weekly_minutes_by_colab, colabs, C, week_chunks)
     add_h17_h18_feriado_proibido(model, works_day, C, holiday_prohibited_indices)
-    add_h19_folga_comp_domingo(model, works_day, C, D, sunday_indices)
 
     # v4: Regra hard de janela por colaborador (skip in emergency pass)
     if not skip_time_window_hard:
@@ -567,7 +599,7 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
 
     deficit = add_demand_soft(model, work, demand_by_slot, C, D, S) if rule_is('S_DEFICIT', 'ON') != 'OFF' else {}
     surplus = add_surplus_soft(model, work, demand_by_slot, C, D, S) if rule_is('S_SURPLUS', 'ON') != 'OFF' else {}
-    ap1_excess = add_ap1_jornada_excessiva(model, work, C, D, S) if rule_is('S_AP1_EXCESS', 'ON') != 'OFF' else []
+    ap1_excess = add_ap1_jornada_excessiva(model, work, C, D, S, grid_min=grid_min) if rule_is('S_AP1_EXCESS', 'ON') != 'OFF' else []
 
     # v4: Novos soft constraints
     domingo_ciclo_penalties = add_domingo_ciclo_soft(model, works_day, colabs, C, sunday_indices) if rule_is('S_DOMINGO_CICLO', 'ON') != 'OFF' else []
@@ -717,6 +749,10 @@ def extract_solution(
                     "minutos_almoco": 0,
                     "intervalo_15min": False,
                     "funcao_id": colabs[c].get("funcao_id"),
+                    "hora_intervalo_inicio": None,
+                    "hora_intervalo_fim": None,
+                    "hora_real_inicio": None,
+                    "hora_real_fim": None,
                 })
                 decisoes.append({
                     "colaborador_id": colab_id,
@@ -750,8 +786,42 @@ def extract_solution(
                 almoco_fim = slot_to_time(gap_end + 1, base_h, grid_min)
                 minutos_almoco = len(gap_slots) * grid_min
 
-            # Intervalo 15min: jornada >4h e <=6h
+            # Intervalo 15min: jornada >4h e <=6h (Art. 71 §1 CLT)
             intervalo_15min = 240 < minutos <= 360
+
+            # H7 post-processing: posicionar break 15min e calcular hora real
+            hora_intervalo_inicio = None
+            hora_intervalo_fim = None
+            hora_real_inicio = None
+            hora_real_fim = None
+
+            if intervalo_15min and inicio and fim:
+                hi_min = int(inicio[:2]) * 60 + int(inicio[3:5])
+                hf_min = int(fim[:2]) * 60 + int(fim[3:5])
+
+                # Posicao do break: janela 2h apos inicio ate 1h antes do fim
+                janela_ini = hi_min + 120
+                janela_fim_brk = hf_min - 60
+                if janela_ini >= janela_fim_brk:
+                    break_min = (hi_min + hf_min) // 2  # fallback: meio da jornada
+                else:
+                    break_min = (janela_ini + janela_fim_brk) // 2
+
+                hora_intervalo_inicio = f"{break_min // 60:02d}:{break_min % 60:02d}"
+                hora_intervalo_fim = f"{(break_min + 15) // 60:02d}:{(break_min + 15) % 60:02d}"
+
+                # Extrapolacao: 15min sao "purgaveis" (CLT > horario setor/colab)
+                # So NAO ultrapassam contrato/perfil (max_minutos_dia)
+                max_dia = colabs[c].get("max_minutos_dia")
+                if max_dia and (minutos + 15) > max_dia:
+                    # Contrato prevalece — break absorvido, sem esticar
+                    hora_real_inicio = inicio
+                    hora_real_fim = fim
+                else:
+                    # Default: estender no fim (sair 15min depois)
+                    hora_real_inicio = inicio
+                    real_fim_min = hf_min + 15
+                    hora_real_fim = f"{real_fim_min // 60:02d}:{real_fim_min % 60:02d}"
 
             alocacoes.append({
                 "colaborador_id": colab_id,
@@ -766,6 +836,10 @@ def extract_solution(
                 "minutos_almoco": minutos_almoco,
                 "intervalo_15min": intervalo_15min,
                 "funcao_id": colabs[c].get("funcao_id"),
+                "hora_intervalo_inicio": hora_intervalo_inicio,
+                "hora_intervalo_fim": hora_intervalo_fim,
+                "hora_real_inicio": hora_real_inicio,
+                "hora_real_fim": hora_real_fim,
             })
             decisoes.append({
                 "colaborador_id": colab_id,

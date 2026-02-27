@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS tipos_contrato (
     horas_semanais INTEGER NOT NULL,
     regime_escala TEXT NOT NULL DEFAULT '6X1' CHECK (regime_escala IN ('5X2', '6X1')),
     dias_trabalho INTEGER NOT NULL,
-    max_minutos_dia INTEGER NOT NULL DEFAULT 600
+    max_minutos_dia INTEGER NOT NULL DEFAULT 600,
+    protegido_sistema BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS setores (
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS setores (
     icone TEXT,
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
+    regime_escala TEXT NOT NULL DEFAULT '5X2' CHECK (regime_escala IN ('5X2', '6X1')),
     ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -646,36 +648,13 @@ async function migrateSchema(): Promise<void> {
   await addColumnIfMissing('ia_memorias', 'origem', "TEXT NOT NULL DEFAULT 'manual'")
   await addColumnIfMissing('ia_memorias', 'embedding', 'vector(768)')
 
-  // --- v16: Simplificar horarios 4→2 campos (inicio/fim) ---
-  // contrato_perfis_horario
+  // --- v16: inicio/fim já existem no DDL. Colunas legadas (inicio_min/max, fim_min/max) removidas. ---
   await addColumnIfMissing('contrato_perfis_horario', 'inicio', 'TEXT')
   await addColumnIfMissing('contrato_perfis_horario', 'fim', 'TEXT')
-  await execute(`UPDATE contrato_perfis_horario SET inicio = inicio_min WHERE inicio IS NULL AND inicio_min IS NOT NULL`)
-  await execute(`UPDATE contrato_perfis_horario SET fim = fim_max WHERE fim IS NULL AND fim_max IS NOT NULL`)
-  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS inicio_min') } catch { /* PGlite may not support */ }
-  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS inicio_max') } catch { /* */ }
-  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS fim_min') } catch { /* */ }
-  try { await execDDL('ALTER TABLE contrato_perfis_horario DROP COLUMN IF EXISTS fim_max') } catch { /* */ }
-
-  // colaborador_regra_horario
   await addColumnIfMissing('colaborador_regra_horario', 'inicio', 'TEXT')
   await addColumnIfMissing('colaborador_regra_horario', 'fim', 'TEXT')
-  await execute(`UPDATE colaborador_regra_horario SET inicio = inicio_min WHERE inicio IS NULL AND inicio_min IS NOT NULL`)
-  await execute(`UPDATE colaborador_regra_horario SET fim = fim_max WHERE fim IS NULL AND fim_max IS NOT NULL`)
-  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS inicio_min') } catch { /* */ }
-  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS inicio_max') } catch { /* */ }
-  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS fim_min') } catch { /* */ }
-  try { await execDDL('ALTER TABLE colaborador_regra_horario DROP COLUMN IF EXISTS fim_max') } catch { /* */ }
-
-  // colaborador_regra_horario_excecao_data
   await addColumnIfMissing('colaborador_regra_horario_excecao_data', 'inicio', 'TEXT')
   await addColumnIfMissing('colaborador_regra_horario_excecao_data', 'fim', 'TEXT')
-  await execute(`UPDATE colaborador_regra_horario_excecao_data SET inicio = inicio_min WHERE inicio IS NULL AND inicio_min IS NOT NULL`)
-  await execute(`UPDATE colaborador_regra_horario_excecao_data SET fim = fim_max WHERE fim IS NULL AND fim_max IS NOT NULL`)
-  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS inicio_min') } catch { /* */ }
-  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS inicio_max') } catch { /* */ }
-  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS fim_min') } catch { /* */ }
-  try { await execDDL('ALTER TABLE colaborador_regra_horario_excecao_data DROP COLUMN IF EXISTS fim_max') } catch { /* */ }
 
   // --- v9: dia_semana_regra em colaborador_regra_horario ---
   await addColumnIfMissing('colaborador_regra_horario', 'dia_semana_regra',
@@ -756,6 +735,25 @@ async function migrateSchema(): Promise<void> {
   // --- v18: Folga variavel condicional ---
   await addColumnIfMissing('colaborador_regra_horario', 'folga_variavel_dia_semana',
     "TEXT CHECK (folga_variavel_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB') OR folga_variavel_dia_semana IS NULL) DEFAULT NULL")
+
+  // --- v19: H7 campos de intervalo 15min (hora real + posicao do break) ---
+  await addColumnIfMissing('alocacoes', 'hora_intervalo_inicio', 'TEXT')
+  await addColumnIfMissing('alocacoes', 'hora_intervalo_fim', 'TEXT')
+  await addColumnIfMissing('alocacoes', 'hora_real_inicio', 'TEXT')
+  await addColumnIfMissing('alocacoes', 'hora_real_fim', 'TEXT')
+
+  // --- v20: Regime por setor + contratos de sistema protegidos ---
+  await addColumnIfMissing(
+    'setores',
+    'regime_escala',
+    "TEXT NOT NULL DEFAULT '5X2' CHECK (regime_escala IN ('5X2', '6X1'))",
+  )
+  await addColumnIfMissing('tipos_contrato', 'protegido_sistema', 'BOOLEAN NOT NULL DEFAULT FALSE')
+  await execute(
+    `UPDATE tipos_contrato
+     SET protegido_sistema = TRUE
+     WHERE nome IN ('CLT 44h', 'CLT 36h', 'Estagiario', 'Intermitente')`,
+  )
 }
 
 // ============================================================================
@@ -772,5 +770,5 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_V8_MEMORIAS)
   await execDDL(DDL_V7_KNOWLEDGE)
   await migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v18 + Folga Variavel)')
+  console.log('[DB] Tabelas criadas com sucesso (v20 + regime por setor + contratos protegidos)')
 }

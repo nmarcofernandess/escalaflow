@@ -16,6 +16,8 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { PageHeader } from '@/componentes/PageHeader'
+import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { empresaService } from '@/servicos/empresa'
 import { useApiData } from '@/hooks/useApiData'
 import { toast } from 'sonner'
@@ -58,6 +60,8 @@ export function EmpresaConfig() {
     resolver: zodResolver(empresaSchema),
     defaultValues: { nome: '', cnpj: '', telefone: '' },
   })
+
+  const blocker = useDirtyGuard({ isDirty: form.formState.isDirty })
 
   useEffect(() => {
     if (empresa) {
@@ -269,6 +273,8 @@ export function EmpresaConfig() {
           </CardContent>
         </Card>
       </div>
+
+      <DirtyGuardDialog blocker={blocker} />
     </div>
   )
 }

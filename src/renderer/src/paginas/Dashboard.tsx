@@ -8,6 +8,7 @@ import {
   ArrowRight,
   CalendarDays,
   CircleAlert,
+  RefreshCw,
 } from 'lucide-react'
 import { SetorIcon } from '@/componentes/IconPicker'
 import { CORES_VIOLACAO } from '@/lib/cores'
@@ -111,22 +112,27 @@ export function Dashboard() {
                       <div className="flex items-center gap-3">
                         <StatusBadge status={setor.escala_atual} />
                         {setor.violacoes_pendentes > 0 && (
-                          <Badge variant="outline" className={`${CORES_VIOLACAO.SOFT.border} ${CORES_VIOLACAO.SOFT.bg} ${CORES_VIOLACAO.SOFT.text}`}>
-                            {setor.violacoes_pendentes} alertas
+                          <Badge variant="outline" className={`${CORES_VIOLACAO.HARD.border} ${CORES_VIOLACAO.HARD.bg} ${CORES_VIOLACAO.HARD.text}`}>
+                            {setor.violacoes_pendentes} {setor.violacoes_pendentes === 1 ? 'violacao' : 'violacoes'}
                           </Badge>
                         )}
+                        {setor.escala_desatualizada && (
+                          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                            <RefreshCw className="mr-1 size-3" /> Desatualizada
+                          </Badge>
+                        )}
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to={`/setores/${setor.id}`}>
+                            Abrir Setor
+                          </Link>
+                        </Button>
                         {(setor.escala_atual === 'OFICIAL' || setor.escala_atual === 'RASCUNHO') && (
-                          <Button variant="outline" size="sm" asChild>
+                          <Button variant="ghost" size="sm" asChild>
                             <Link to={`/setores/${setor.id}/escala`}>
-                              <CalendarDays className="mr-1 size-3" /> Ver Escala
+                              <CalendarDays className="mr-1 size-3" /> Detalhes
                             </Link>
                           </Button>
                         )}
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link to={`/setores/${setor.id}`}>
-                            <ArrowRight className="size-4" />
-                          </Link>
-                        </Button>
                       </div>
                     </div>
                   ))
@@ -150,18 +156,27 @@ export function Dashboard() {
                     Nenhum alerta ativo
                   </p>
                 ) : (
-                  dados.alertas.map((alerta, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-3 rounded-lg border border-amber-100 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30 p-3"
-                    >
-                      <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
-                      <div className="flex-1">
-                        <p className="text-xs font-medium text-amber-800 dark:text-amber-300">{alerta.setor_nome}</p>
-                        <p className="text-xs text-amber-700 dark:text-amber-300">{alerta.mensagem}</p>
+                  dados.alertas.map((alerta, i) => {
+                    const isHard = alerta.tipo === 'VIOLACAO_HARD'
+                    const borderCls = isHard
+                      ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/30'
+                      : 'border-amber-100 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30'
+                    const iconCls = isHard ? 'text-red-500' : 'text-amber-500'
+                    const titleCls = isHard ? 'text-red-800 dark:text-red-300' : 'text-amber-800 dark:text-amber-300'
+                    const textCls = isHard ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-start gap-3 rounded-lg border p-3 ${borderCls}`}
+                      >
+                        <CircleAlert className={`mt-0.5 size-4 shrink-0 ${iconCls}`} />
+                        <div className="flex-1">
+                          <p className={`text-xs font-medium ${titleCls}`}>{alerta.setor_nome}</p>
+                          <p className={`text-xs ${textCls}`}>{alerta.mensagem}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </CardContent>
             </Card>

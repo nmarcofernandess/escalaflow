@@ -1,0 +1,97 @@
+{
+  "status": "complete",
+  "findings": {
+    "relevant_files": [
+      "src/renderer/src/componentes/AppSidebar.tsx",
+      "src/renderer/src/paginas/ConfiguracoesPagina.tsx",
+      "src/renderer/src/paginas/ColaboradorDetalhe.tsx",
+      "src/renderer/src/paginas/SetorDetalhe.tsx",
+      "src/renderer/src/paginas/EmpresaConfig.tsx",
+      "src/main/ia/tools.ts",
+      "src/renderer/src/App.tsx",
+      "src/renderer/src/main.tsx",
+      "src/renderer/src/components/ui/tabs.tsx",
+      "src/renderer/src/components/ui/collapsible.tsx",
+      "src/renderer/src/components/ui/alert-dialog.tsx",
+      "src/renderer/src/hooks/useApiData.ts",
+      "src/renderer/src/lib/tour-constants.ts",
+      "src/renderer/src/componentes/TourSetup.tsx"
+    ],
+    "patterns": [
+      "Pattern 1: Pages follow flex-1 flex-col layout pattern - NO overflow-y-auto on page wrappers (Layout Contract)",
+      "Pattern 2: Forms use react-hook-form with zodResolver and typed generics: useForm<FormInput, unknown, FormData>",
+      "Pattern 3: Each page has PageHeader with breadcrumbs array and optional actions prop",
+      "Pattern 4: Cards use shadcn Card/CardHeader/CardTitle/CardContent consistently",
+      "Pattern 5: Sidebar uses configNav array for config group items - simple filter to remove 3 items",
+      "Pattern 6: App uses HashRouter (main.tsx line 13) with Routes component - NOT a data router",
+      "Pattern 7: Hooks live in src/renderer/src/hooks/ with use* naming convention",
+      "Pattern 8: Components live in src/renderer/src/componentes/ (Portuguese naming)",
+      "Pattern 9: shadcn components in src/renderer/src/components/ui/ (already have Tabs, Collapsible, AlertDialog)",
+      "Pattern 10: ConfiguracoesPagina has iaForm with useForm - card IA is lines 521-694",
+      "Pattern 11: ColaboradorDetalhe is 1311 lines with 7 distinct sections: Info Pessoal (Card A, L595-663), Contrato (Card B, L665-778), Preferencias (Card C, L780-845), Regras Horario (Card E, L848-1044), Excecoes Data (Card F, L1046-1108), Excecoes (Card D, L1110-1178), Dialogs (L1182-1311)",
+      "Pattern 12: ColaboradorDetalhe has colabForm covering Cards A-C (react-hook-form), while Cards E-F-G use raw useState",
+      "Pattern 13: tools.ts applyColaboradorDefaults at line 1078: if (!dados.sexo) dados.sexo = 'M' - called at lines 1650 and 2463",
+      "Pattern 14: colabSchema already has z.enum(['M', 'F']) with message, but defaultValues has sexo: 'M' at line 183",
+      "Pattern 15: Tour system references NAV_CONTRATOS and NAV_REGRAS steps that target sidebar items being removed"
+    ],
+    "approach": "Execute in order Fase 3 -> 4 -> 5. Fase 3: Remove 3 items from configNav array in AppSidebar.tsx, add Collapsible section to ConfiguracoesPagina moving IA card inside and adding links card. Fase 4: CRITICAL - app uses HashRouter (not data router), so useBlocker will NOT work. Must implement dirty state with custom approach: intercept Link clicks via useNavigate wrapper + beforeunload for window close. Alternative: migrate HashRouter to createHashRouter (data router) to enable useBlocker - this is the cleaner solution (~20 lines change in main.tsx + App.tsx). Fase 5: Wrap ColaboradorDetalhe content in shadcn Tabs (Geral/Horarios/Ausencias), unify Cards A+B+C into single card, fix sexo default to empty string.",
+    "risks": [
+      "CRITICAL: HashRouter does NOT support useBlocker - requires either migration to createHashRouter (data router) or custom dirty state implementation. The PRD assumes useBlocker works. Migration to createHashRouter is recommended but requires converting <Routes>/<Route> to route objects and using RouterProvider pattern.",
+      "Tour system (TourSetup.tsx) references NAV_CONTRATOS and NAV_REGRAS sidebar items at steps 7 and 11. Removing these sidebar items will break those tour steps - they need to be removed or reassigned.",
+      "ColaboradorDetalhe is 1311 lines - refactoring into tabs requires careful preservation of all useState and useEffect hooks that are shared across tabs (e.g., colabForm is used by Cards A-C but Save button is in PageHeader).",
+      "ColaboradorDetalhe Cards E-G use raw useState (not react-hook-form). Dirty state via colabForm.formState.isDirty only covers Cards A-C. PRD explicitly accepts this partial coverage.",
+      "ConfiguracoesPagina IA card is ~170 lines of JSX with complex state (provider configs, model catalog, etc). Moving it inside Collapsible requires careful cut-paste to preserve all closures.",
+      "sexo default fix in tools.ts: the applyColaboradorDefaults function is called from both 'criar' (L1650) and 'cadastrar_lote' (L2463). Both call sites need the sexo validation before defaults are applied.",
+      "ColaboradorDetalhe sexo default change from 'M' to '' - the Select component with empty string value may show empty trigger. Need placeholder text."
+    ],
+    "dependencies": [
+      "shadcn/ui Tabs component - ALREADY INSTALLED at src/renderer/src/components/ui/tabs.tsx",
+      "shadcn/ui Collapsible component - ALREADY INSTALLED at src/renderer/src/components/ui/collapsible.tsx",
+      "shadcn/ui AlertDialog component - ALREADY INSTALLED at src/renderer/src/components/ui/alert-dialog.tsx",
+      "react-router-dom v7.1.0 - HashRouter in use, useBlocker available in react-router but requires data router",
+      "react-hook-form - all 4 target pages already use it with formState.isDirty available",
+      "lucide-react icons - FileText, ShieldCheck/Shield, Brain needed for links rapidos card",
+      "No new external dependencies needed",
+      "No database/schema changes needed"
+    ],
+    "critical_details": {
+      "router_architecture": {
+        "current": "HashRouter (main.tsx L13) + Routes/Route (App.tsx L71-87) - legacy non-data router",
+        "useBlocker_compatible": false,
+        "migration_option": "Convert to createHashRouter + RouterProvider. Requires: (1) route config object, (2) RouterProvider in main.tsx, (3) App becomes layout route. ~50 lines changed across main.tsx + App.tsx. All existing routes/navigation/useNavigate/useLocation continue working.",
+        "fallback_option": "Custom hook with window.addEventListener('beforeunload') for tab close + custom navigation interception. Less robust - won't catch programmatic navigate() calls."
+      },
+      "colaborador_detalhe_structure": {
+        "total_lines": 1311,
+        "card_a_info_pessoal": "Lines 595-663 (nome, sexo, setor)",
+        "card_b_contrato": "Lines 665-778 (tipo_contrato, horas, tipo_trabalhador, funcao)",
+        "card_c_preferencias": "Lines 780-845 (prefere_turno, evitar_dia_semana)",
+        "card_d_excecoes": "Lines 1110-1178 (ferias, atestado, bloqueio list)",
+        "card_e_regras_horario": "Lines 848-1044 (regra padrao + regras por dia)",
+        "card_f_excecoes_data": "Lines 1046-1108 (excecoes por data list)",
+        "dialog_exc_data": "Lines 1182-1244",
+        "dialog_nova_excecao": "Lines 1247-1308",
+        "form_scope": "colabForm covers cards A-C only. Cards E-F use useState.",
+        "tab_mapping": {
+          "geral": "Cards A+B+C (unified) - colabForm fields",
+          "horarios": "Cards E+F - useState regras",
+          "ausencias": "Card D + dialog nova excecao"
+        }
+      },
+      "sidebar_items_to_remove": [
+        { "label": "Tipos de Contrato", "to": "/tipos-contrato", "tour_step": "NAV_CONTRATOS (TourSetup step 7)" },
+        { "label": "Regras", "to": "/regras", "tour_step": "NAV_REGRAS (TourSetup step 11)" },
+        { "label": "Memoria", "to": "/memoria", "tour_step": "none" }
+      ],
+      "sexo_fix_locations": [
+        { "file": "src/renderer/src/paginas/ColaboradorDetalhe.tsx", "line": 183, "current": "sexo: 'M'", "change": "sexo: '' as any" },
+        { "file": "src/main/ia/tools.ts", "line": 1078, "current": "if (!dados.sexo) dados.sexo = 'M'", "change": "remove line, add toolError check before applyDefaults" }
+      ],
+      "configuracoes_pagina": {
+        "current_card_order": ["Aparencia (L434-518)", "Assistente IA (L521-694)", "Atualizacoes (L697-783)", "Backup (L786-899)"],
+        "target_card_order": ["Aparencia", "Atualizacoes", "Backup", "Collapsible Avancado (contains: IA card + Links card)"]
+      }
+    }
+  },
+  "completed_at": "2026-02-26T12:30:00-03:00"
+}

@@ -432,6 +432,18 @@ export function EscalaGrid({
           <div className="size-3 rounded border border-sky-200 dark:border-sky-800 bg-sky-100 dark:bg-sky-950/30" />
           DOMINGO (trab.)
         </div>
+        {regrasMap && regrasMap.size > 0 && (
+          <>
+            <div className="flex items-center gap-1.5">
+              <div className="size-3 rounded border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center text-[7px] font-bold text-blue-600 dark:text-blue-400">F</div>
+              Folga Fixa
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="size-3 rounded border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 flex items-center justify-center text-[7px] font-bold text-purple-600 dark:text-purple-400">V</div>
+              Folga Variavel
+            </div>
+          </>
+        )}
         <div className="flex items-center gap-1.5">
           <div className="size-3 rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30" />
           INDISPONIVEL

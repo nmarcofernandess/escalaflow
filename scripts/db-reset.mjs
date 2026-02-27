@@ -2,20 +2,27 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
-const defaultDb = path.join(root, 'data', 'escalaflow.db')
-const dbPath = (process.env.ESCALAFLOW_DB_PATH && process.env.ESCALAFLOW_DB_PATH.trim()) || defaultDb
 
-const files = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]
+// PGlite data directories (dev mode uses out/data/, packaged uses userData)
+const paths = [
+  path.join(root, 'out', 'data', 'escalaflow-pg'),
+  path.join(root, 'data', 'escalaflow-pg'),
+]
+
+// Allow override via env
+const overridePath = process.env.ESCALAFLOW_DB_PATH?.trim()
+if (overridePath) paths.unshift(overridePath)
+
 let removed = 0
 
-for (const file of files) {
-  if (fs.existsSync(file)) {
-    fs.rmSync(file, { force: true })
+for (const dir of paths) {
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true })
     removed += 1
-    console.log(`[db:reset] removido: ${file}`)
+    console.log(`[db:reset] removido: ${dir}`)
   } else {
-    console.log(`[db:reset] nao existe: ${file}`)
+    console.log(`[db:reset] nao existe: ${dir}`)
   }
 }
 
-console.log(`[db:reset] concluido. Arquivos removidos: ${removed}/${files.length}`)
+console.log(`[db:reset] concluido. Diretorios removidos: ${removed}/${paths.length}`)

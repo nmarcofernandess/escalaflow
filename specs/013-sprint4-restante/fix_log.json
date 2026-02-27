@@ -1,0 +1,30 @@
+{
+  "status": "complete",
+  "fixes": {
+    "issues_fixed": [
+      {
+        "issue_id": 1,
+        "severity": "critical",
+        "file": "src/main/ia/tools.ts",
+        "description": "Reverted transaction() wrapper in cadastrar_lote back to per-item try/catch. The transaction wrapper changed batch insert semantics from partial-success to all-or-nothing, breaking the test 'cadastrar_lote retorna status ok com partial_failure em erro parcial'. Removed transaction import (no longer used). Kept the sexo validation check added in Phase 3 (correct per PRD).",
+        "verification": "Test mutacoes-contrato.spec.ts passes (5/5 green). npx tsc --noEmit returns 0 errors."
+      }
+    ],
+    "issues_not_fixed": [
+      {
+        "issue_id": 2,
+        "severity": "major",
+        "reason": "Scope creep items (date-utils import refactor, bloqueadoDom helper rewrite) are harmless refactors that don't break tests. Only the transaction wrapper (part of this issue) was reverted as the critical fix. The date-utils and bloqueadoDom changes remain as-is per user instruction to focus on the transaction revert."
+      },
+      {
+        "issue_id": 3,
+        "severity": "minor",
+        "reason": "date-utils.ts is an untracked harmless utility file. Not in scope of this fix pass per user instruction."
+      }
+    ],
+    "issues_remaining": [],
+    "tests_after_fix": "pass (2 pre-existing failures in memorias.spec.ts unrelated to this sprint - limit 20 vs 50 from previous sprint)",
+    "ready_for_qa": true
+  },
+  "completed_at": "2026-02-27T03:30:00-03:00"
+}

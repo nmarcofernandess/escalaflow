@@ -15,7 +15,7 @@ export const setoresService = {
   buscar: (id: number) =>
     client['setores.buscar']({ id }) as Promise<Setor>,
 
-  criar: (data: { nome: string; hora_abertura: string; hora_fechamento: string; icone?: string | null }) =>
+  criar: (data: { nome: string; hora_abertura: string; hora_fechamento: string; regime_escala?: '5X2' | '6X1'; icone?: string | null }) =>
     client['setores.criar'](data) as Promise<Setor>,
 
   atualizar: (id: number, data: Partial<Setor>) =>

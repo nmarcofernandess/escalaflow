@@ -6,6 +6,7 @@ const queryMocks = vi.hoisted(() => ({
   queryAll: vi.fn(),
   execute: vi.fn(),
   insertReturningId: vi.fn(),
+  transaction: vi.fn(),
 }))
 
 vi.mock('../../../src/main/db/query', () => queryMocks)
@@ -47,6 +48,7 @@ function setupMutationMocks(opts?: { failInsertCalls?: number[] }) {
   queryMocks.execute.mockImplementation(async () => {
     return { changes: 1 }
   })
+  queryMocks.transaction.mockImplementation(async (fn: () => Promise<unknown>) => fn())
 
   queryMocks.insertReturningId.mockImplementation(async () => {
     insertCall++
@@ -121,7 +123,7 @@ describe('executeTool mutações (contrato padronizado)', () => {
     )
   })
 
-  it('cadastrar_lote retorna status ok com partial_failure em erro parcial', async () => {
+  it('cadastrar_lote retorna erro atomico quando qualquer insert falha', async () => {
     setupMutationMocks({ failInsertCalls: [2] })
 
     const result = await executeTool('cadastrar_lote', {
@@ -132,22 +134,21 @@ describe('executeTool mutações (contrato padronizado)', () => {
       ],
     })
 
-    expect(result.status).toBe('ok')
-    expect(result.sucesso).toBe(false)
-    expect(result.total_criado).toBe(1)
+    expect(result.status).toBe('error')
+    expect(result.code).toBe('CADASTRAR_LOTE_ATOMICO_FALHOU')
+    expect(result.total_criado).toBe(0)
     expect(result.total_erros).toBe(1)
-    expect(result.summary).toMatch(/parcial/i)
     expect(result._meta).toEqual(
       expect.objectContaining({
         tool_kind: 'action',
         action: 'batch-create',
         entidade: 'setores',
-        partial_failure: true,
+        atomic: true,
       }),
     )
   })
 
-  it('cadastrar_lote retorna status error quando todos os inserts falham', async () => {
+  it('cadastrar_lote retorna status error quando inserts falham no primeiro registro', async () => {
     setupMutationMocks({ failInsertCalls: [1, 2] })
 
     const result = await executeTool('cadastrar_lote', {
@@ -159,9 +160,9 @@ describe('executeTool mutações (contrato padronizado)', () => {
     })
 
     expect(result.status).toBe('error')
-    expect(result.code).toBe('CADASTRAR_LOTE_FALHOU_TOTAL')
-    expect(result.erro).toMatch(/Nenhum registro foi criado/i)
+    expect(result.code).toBe('CADASTRAR_LOTE_ATOMICO_FALHOU')
+    expect(result.erro).toMatch(/Nenhum registro foi persistido/i)
     expect(result.total_criado).toBe(0)
-    expect(result.total_erros).toBe(2)
+    expect(result.total_erros).toBe(1)
   })
 })

@@ -1,0 +1,364 @@
+{
+  "status": "complete",
+  "plan": {
+    "feature": "Sprint 4 Restante: Sidebar + Dirty State + ColaboradorDetalhe Tabs",
+    "workflow_type": "refactor",
+    "phases": [
+      {
+        "id": "phase-0-router-migration",
+        "name": "Router Migration (HashRouter to Data Router)",
+        "description": "Migrate from HashRouter (non-data router) to createHashRouter + RouterProvider so that useBlocker works for dirty state protection in Phase 2. React Router v7 still exports createHashRouter in react-router package. Routes must be converted from JSX <Route> elements to route config objects. All existing navigation (useNavigate, useLocation, Link) continues working unchanged.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "subtask-0-1",
+            "description": "Convert App.tsx routes from JSX <Routes>/<Route> to createHashRouter route config objects. App becomes a layout route component that renders <Outlet> instead of inline <Routes>. The layout route wraps SidebarProvider, AppSidebar, SidebarInset, main, IaChatPanel, TourSetup — everything currently in App(). Route children are defined as route config objects with path + element (lazy not needed). ErrorBoundary wraps each route's errorElement or stays as layout-level.",
+            "files_to_modify": ["src/renderer/src/App.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "current_structure": "App() renders <Routes><Route path='/' element={<Dashboard/>}/> ... </Routes> inline",
+              "target_structure": "App() becomes AppLayout() with <Outlet/>. createHashRouter([{ element: <AppLayout/>, children: [{path:'/', element:<Dashboard/>}, ...] }]) exported. main.tsx uses <RouterProvider router={router}/>",
+              "key_hooks_to_preserve": [
+                "useNavigate() for tour navigation — moves into AppLayout",
+                "useLocation() for IaChatPanel conditional + sidebar active state — stays in AppLayout",
+                "useIaStore() for Cmd+J toggle — stays in AppLayout",
+                "TourProvider wrapping — stays in AppLayout"
+              ],
+              "critical": "The <main> element with overflow-auto MUST remain as the single scroll owner. Layout chain cannot break."
+            },
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-0-2",
+            "description": "Update main.tsx to use RouterProvider instead of <HashRouter>. Remove HashRouter import, import createHashRouter from react-router and RouterProvider from react-router/dom (or react-router). Import the router config from App.tsx. ThemeProvider and TooltipProvider stay as outer wrappers around RouterProvider.",
+            "files_to_modify": ["src/renderer/src/main.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "current": "<HashRouter><TooltipProvider><App/></TooltipProvider></HashRouter>",
+              "target": "<TooltipProvider><RouterProvider router={router}/></TooltipProvider>",
+              "note": "ThemeProvider must wrap RouterProvider since useTheme is used in AppSidebar. Toaster can be outside RouterProvider."
+            },
+            "verification": {
+              "type": "command",
+              "command": "cd /Users/marcofernandes/escalaflow && npm run dev",
+              "expected": "App loads, all routes navigate correctly, no console errors. Test: click Dashboard, Setores, Colaboradores, Escalas, Configuracoes, Empresa — all render. Browser back/forward works."
+            },
+            "status": "complete"
+          }
+        ]
+      },
+      {
+        "id": "phase-1-sidebar-config",
+        "name": "Fase 3: Sidebar Cleanup + ConfiguracoesPagina Avancado",
+        "description": "Remove 3 sidebar items (Tipos de Contrato, Regras, Memoria), fix tour steps that reference removed items, and add Collapsible 'Configuracoes Avancadas' section to ConfiguracoesPagina containing the IA config card (moved) and a Links Rapidos card.",
+        "depends_on": [],
+        "subtasks": [
+          {
+            "id": "subtask-1-1",
+            "description": "Remove 3 items from configNav array in AppSidebar.tsx. Keep only Feriados. The configNav array at line 62 currently has 4 items — filter to just [{label:'Feriados', to:'/feriados', icon:CalendarDays}]. Remove unused icon imports (FileText, ShieldCheck, Brain) if no longer referenced elsewhere in the file.",
+            "files_to_modify": ["src/renderer/src/componentes/AppSidebar.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "current_configNav": "[Tipos de Contrato, Feriados, Regras, Memoria]",
+              "target_configNav": "[Feriados]",
+              "tour_ids_affected": "NAV_CONTRATOS and NAV_REGRAS tour IDs are no longer assigned to any sidebar item"
+            },
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-1-2",
+            "description": "Fix tour steps in TourSetup.tsx. Remove step 7 (NAV_CONTRATOS — Tipos de Contrato) and step 11 (NAV_REGRAS — Regras do Motor) from the tourSteps array since those sidebar items no longer exist. Renumber remaining steps mentally but array indices handle themselves. Also remove NAV_CONTRATOS and NAV_REGRAS from TOUR_STEP_IDS in tour-constants.ts since they are no longer used anywhere.",
+            "files_to_modify": [
+              "src/renderer/src/componentes/TourSetup.tsx",
+              "src/renderer/src/lib/tour-constants.ts"
+            ],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "steps_to_remove": [
+                "Step 7 (index 6): NAV_CONTRATOS — 'Tipos de Contrato' with onEnter navigateTo('/tipos-contrato')",
+                "Step 11 (index 10): NAV_REGRAS — 'Regras do Motor'"
+              ],
+              "remaining_steps_after": "12 steps (was 14)",
+              "constants_to_remove": "NAV_CONTRATOS, NAV_REGRAS from TOUR_STEP_IDS"
+            },
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors. No references to NAV_CONTRATOS or NAV_REGRAS remain."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-1-3",
+            "description": "Add Collapsible 'Configuracoes Avancadas' section to ConfiguracoesPagina.tsx AFTER the Backup card. The Collapsible starts closed by default. Inside it: (1) Move the existing IA config card (currently lines ~521-694) into the Collapsible content, (2) Add a new 'Links Rapidos' card with 3 navigation links using react-router Link: Tipos de Contrato (/tipos-contrato, FileText icon), Regras do Motor (/regras, ShieldCheck icon), Base de Conhecimento (/memoria, Brain icon). Each link should have icon + label + ChevronRight or ExternalLink indicator. Import Collapsible, CollapsibleTrigger, CollapsibleContent from shadcn. Import ChevronsUpDown for trigger icon.",
+            "files_to_modify": ["src/renderer/src/paginas/ConfiguracoesPagina.tsx"],
+            "files_to_create": [],
+            "patterns_from": ["src/renderer/src/components/ui/collapsible.tsx"],
+            "details": {
+              "card_order_after": ["Aparencia", "Atualizacoes", "Backup", "Collapsible Avancado (IA card + Links Rapidos card)"],
+              "collapsible_structure": {
+                "trigger": "Button variant='ghost' with 'Configuracoes Avancadas' label + ChevronsUpDown icon",
+                "content": ["Existing IA config card (cut-paste, preserve all closures/state)", "New Links Rapidos card with 3 Link items"]
+              },
+              "new_imports": ["Collapsible, CollapsibleTrigger, CollapsibleContent from @/components/ui/collapsible", "Link from react-router-dom", "FileText, ShieldCheck, Brain, ChevronRight from lucide-react (some may already be imported)"]
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Navigate to /configuracoes. Verify: (1) Collapsible 'Avancado' appears after Backup card, (2) It starts CLOSED, (3) Clicking opens it showing IA card + Links card, (4) Links navigate correctly to /tipos-contrato, /regras, /memoria, (5) IA config form still saves correctly, (6) Dark mode renders properly."
+            },
+            "status": "complete"
+          }
+        ]
+      },
+      {
+        "id": "phase-2-dirty-state",
+        "name": "Fase 4: Dirty State Protection",
+        "description": "Create useDirtyGuard hook (uses useBlocker from react-router) and DirtyGuardDialog component (uses shadcn AlertDialog). Apply to 4 pages: ColaboradorDetalhe, SetorDetalhe, EmpresaConfig, ConfiguracoesPagina. Requires Phase 0 (router migration) to be complete for useBlocker to work.",
+        "depends_on": ["phase-0-router-migration"],
+        "subtasks": [
+          {
+            "id": "subtask-2-1",
+            "description": "Create useDirtyGuard hook at src/renderer/src/hooks/useDirtyGuard.ts (~50 lines). Takes { isDirty: boolean, message?: string }. Uses useBlocker(isDirty) from 'react-router' to block navigation when form is dirty. Also adds window beforeunload listener as fallback for window/tab close. Returns the blocker object for use with DirtyGuardDialog. The useBlocker from react-router v7 returns { state: 'unblocked' | 'blocked' | 'proceeding', reset(), proceed() }.",
+            "files_to_modify": [],
+            "files_to_create": ["src/renderer/src/hooks/useDirtyGuard.ts"],
+            "patterns_from": ["src/renderer/src/hooks/useApiData.ts"],
+            "details": {
+              "hook_signature": "export function useDirtyGuard({ isDirty, message }: { isDirty: boolean; message?: string }): Blocker",
+              "imports": "useBlocker, Blocker from 'react-router'; useEffect from 'react'",
+              "beforeunload_logic": "useEffect that adds/removes beforeunload listener based on isDirty. Event.preventDefault() + returnValue = message for browser native dialog.",
+              "return": "The Blocker object from useBlocker"
+            },
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-2-2",
+            "description": "Create DirtyGuardDialog component at src/renderer/src/componentes/DirtyGuardDialog.tsx (~30 lines). Takes blocker: Blocker prop. If blocker.state !== 'blocked', returns null. Otherwise renders shadcn AlertDialog (open={true}) with: Title='Alteracoes nao salvas', Description='Voce tem alteracoes que nao foram salvas. Deseja sair mesmo assim?', Cancel button='Continuar editando' (calls blocker.reset()), Confirm button='Sair sem salvar' (calls blocker.proceed(), variant destructive).",
+            "files_to_modify": [],
+            "files_to_create": ["src/renderer/src/componentes/DirtyGuardDialog.tsx"],
+            "patterns_from": ["src/renderer/src/components/ui/alert-dialog.tsx"],
+            "details": {
+              "component_signature": "export function DirtyGuardDialog({ blocker }: { blocker: Blocker })",
+              "imports": "Blocker from 'react-router'; AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle from @/components/ui/alert-dialog",
+              "critical": "AlertDialog open={blocker.state === 'blocked'} — controlled mode, no trigger needed"
+            },
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-2-3",
+            "description": "Apply useDirtyGuard + DirtyGuardDialog to EmpresaConfig.tsx (easiest page — single form). Import both. Call: const blocker = useDirtyGuard({ isDirty: form.formState.isDirty }). Add <DirtyGuardDialog blocker={blocker} /> at end of JSX return (before closing div).",
+            "files_to_modify": ["src/renderer/src/paginas/EmpresaConfig.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "form_variable": "form (useForm at top of component)",
+              "isDirty_source": "form.formState.isDirty",
+              "placement": "Import useDirtyGuard, DirtyGuardDialog. Call hook after form declaration. Render dialog at bottom of JSX."
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Navigate to /empresa. Edit company name. Click sidebar link. Dialog should appear. Click 'Continuar editando' — stays on page. Edit again, click sidebar — click 'Sair sem salvar' — navigates away. Save form, then navigate — no dialog."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-2-4",
+            "description": "Apply useDirtyGuard + DirtyGuardDialog to ConfiguracoesPagina.tsx. The IA form (iaForm) is the one that needs protection. Call: const blocker = useDirtyGuard({ isDirty: iaForm.formState.isDirty }). Add <DirtyGuardDialog blocker={blocker} /> at end of JSX.",
+            "files_to_modify": ["src/renderer/src/paginas/ConfiguracoesPagina.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "form_variable": "iaForm (useForm for IA config)",
+              "isDirty_source": "iaForm.formState.isDirty",
+              "note": "This page was already modified in phase-1 (Collapsible). Apply dirty guard to the same file."
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Navigate to /configuracoes. Open Avancado collapsible. Edit IA API key. Navigate away — dialog appears."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-2-5",
+            "description": "Apply useDirtyGuard + DirtyGuardDialog to SetorDetalhe.tsx. The setorForm covers the main setor data card. Call: const blocker = useDirtyGuard({ isDirty: setorForm.formState.isDirty }). Add <DirtyGuardDialog blocker={blocker} /> at end of JSX.",
+            "files_to_modify": ["src/renderer/src/paginas/SetorDetalhe.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "form_variable": "setorForm (useForm for setor data)",
+              "isDirty_source": "setorForm.formState.isDirty",
+              "note": "SetorDetalhe has multiple sections but only the main setor form is covered by react-hook-form. Other sections (demandas, escalas) save individually."
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Navigate to /setores/:id. Edit setor name. Navigate away — dialog appears. Save and navigate — no dialog."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-2-6",
+            "description": "Apply useDirtyGuard + DirtyGuardDialog to ColaboradorDetalhe.tsx. The colabForm covers Cards A-C (info pessoal, contrato, preferencias). Call: const blocker = useDirtyGuard({ isDirty: colabForm.formState.isDirty }). Add <DirtyGuardDialog blocker={blocker} /> at end of JSX. Cards E-G use raw useState and are NOT covered — this is explicitly accepted per PRD constraints.",
+            "files_to_modify": ["src/renderer/src/paginas/ColaboradorDetalhe.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "form_variable": "colabForm (useForm for colaborador cards A-C)",
+              "isDirty_source": "colabForm.formState.isDirty",
+              "partial_coverage": "Only Cards A-C (nome, sexo, setor, contrato, funcao, horas, preferencias). Cards E-G (regras horario, excecoes data) save individually via useState — risk accepted."
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Navigate to /colaboradores/:id. Edit nome. Navigate away — dialog appears. Save and navigate — no dialog."
+            },
+            "status": "complete"
+          }
+        ]
+      },
+      {
+        "id": "phase-3-colaborador-tabs",
+        "name": "Fase 5: ColaboradorDetalhe Tabs + Sexo Fix",
+        "description": "Reorganize ColaboradorDetalhe.tsx (1311 lines) into 3 shadcn Tabs: Geral (Cards A+B+C unified), Horarios (Cards E+F+G), Ausencias (Card D with badge). Also fix sexo default from 'M' to empty string in both frontend and IA tools.",
+        "depends_on": ["phase-2-dirty-state"],
+        "subtasks": [
+          {
+            "id": "subtask-3-1",
+            "description": "Wrap ColaboradorDetalhe content area (below PageHeader) in shadcn Tabs component with 3 tabs: 'Geral', 'Horarios', 'Ausencias'. Use defaultValue='geral'. TabsList goes at the top of the content area. Each TabsContent wraps the relevant cards. Tab 'Ausencias' gets a Badge with count of active excecoes (excecoes.length or filtered by date). Import Tabs, TabsList, TabsTrigger, TabsContent from @/components/ui/tabs and Badge from @/components/ui/badge.",
+            "files_to_modify": ["src/renderer/src/paginas/ColaboradorDetalhe.tsx"],
+            "files_to_create": [],
+            "patterns_from": ["src/renderer/src/components/ui/tabs.tsx"],
+            "details": {
+              "tab_mapping": {
+                "geral": "Cards A (Info Pessoal, L595-663) + B (Contrato, L665-778) + C (Preferencias, L780-845) — will be unified in subtask-3-2",
+                "horarios": "Cards E (Regras Horario, L848-1044) + F (Excecoes Data, L1046-1108)",
+                "ausencias": "Card D (Excecoes, L1110-1178) + Dialog nova excecao (L1247-1308)"
+              },
+              "critical": [
+                "All useState hooks MUST remain at component top level (React rules of hooks) — they cannot be moved inside TabsContent",
+                "colabForm is used by Cards A-C AND by the Save button in PageHeader — form must span all tabs",
+                "Dialogs (exc_data L1182-1244, nova_excecao L1247-1308) must remain outside Tabs since they are portaled anyway",
+                "Layout: Tabs inside the content area div, NO overflow-y-auto added"
+              ],
+              "badge_for_ausencias": "Badge variant='secondary' showing count of active excecoes — e.g., excecoes.filter(e => !e.data_fim || new Date(e.data_fim) >= new Date()).length"
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Navigate to /colaboradores/:id. Verify 3 tabs render. Click each tab — content switches without crash. Save button in PageHeader still saves colabForm data. Ausencias tab shows badge with excecao count."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-3-2",
+            "description": "Unify Cards A + B + C into a single Card 'Dados do Colaborador' inside TabsContent value='geral'. Currently they are 3 separate Card components. Merge into 1 Card with: (1) Grid 2-col for main fields (nome, sexo, setor, funcao, tipo_contrato, horas_semanais, tipo_trabalhador), (2) Separator, (3) Section 'Preferencias' with prefere_turno and evitar_dia_semana. All fields remain part of colabForm (react-hook-form). Remove the 3 individual CardHeader/CardTitle wrappers.",
+            "files_to_modify": ["src/renderer/src/paginas/ColaboradorDetalhe.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "layout": "Single Card → CardHeader 'Dados do Colaborador' → CardContent → grid grid-cols-2 gap-4 for fields → Separator → 'Preferencias' sub-section",
+              "fields_in_grid": ["nome (full width / col-span-2)", "sexo", "setor_id", "funcao_id", "tipo_contrato_id", "horas_semanais", "tipo_trabalhador"],
+              "fields_in_preferencias": ["prefere_turno (Select)", "evitar_dia_semana (Select/multi)"],
+              "note": "This is a JSX restructure only — no logic changes. All FormField controllers stay the same."
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Tab Geral shows single unified card. All 9+ fields render correctly. Form validation still works. Save button saves all fields."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-3-3",
+            "description": "Fix sexo default in ColaboradorDetalhe.tsx. Change defaultValues.sexo from 'M' to '' (empty string). The Zod schema already has z.enum(['M','F']) which will reject empty string on submit — this forces the user to explicitly choose. Add a placeholder to the sexo Select trigger like 'Selecione' so it does not show blank.",
+            "files_to_modify": ["src/renderer/src/paginas/ColaboradorDetalhe.tsx"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "line_183": "sexo: 'M' → sexo: '' (as any to satisfy z.enum typing, or use z.enum(['M','F','']).refine with transform)",
+              "select_placeholder": "Add <SelectValue placeholder='Selecione' /> to the sexo Select",
+              "zod_approach": "Keep z.enum(['M','F']) in colabSchema. For defaultValues, use sexo: '' as '' — the form will show placeholder, and Zod will catch empty on submit with proper error message."
+            },
+            "verification": {
+              "type": "manual",
+              "instructions": "Create new colaborador — sexo shows 'Selecione' placeholder, not 'M'. Submit without choosing sexo — validation error appears. Choose M or F — submit works."
+            },
+            "status": "complete"
+          },
+          {
+            "id": "subtask-3-4",
+            "description": "Fix sexo default in IA tools.ts. Remove the line 'if (!dados.sexo) dados.sexo = 'M'' from applyColaboradorDefaults function (~line 1078). Instead, in the 'criar' tool handler (around line 1650), BEFORE calling applyColaboradorDefaults, check if dados.sexo is missing/empty. If so, return toolError with correction message asking the IA to ask the user for the collaborator's sex. Same check needed in 'cadastrar_lote' tool handler (~line 2463) — if any item in the batch is missing sexo, return toolError listing which items need sexo.",
+            "files_to_modify": ["src/main/ia/tools.ts"],
+            "files_to_create": [],
+            "patterns_from": [],
+            "details": {
+              "remove_line": "if (!dados.sexo) dados.sexo = 'M' from applyColaboradorDefaults",
+              "criar_handler_check": "Before applyColaboradorDefaults: if (!dados.sexo) return toolError('Campo sexo e obrigatorio', { correction: 'Pergunte ao usuario se o colaborador e masculino (M) ou feminino (F) antes de cadastrar.' })",
+              "cadastrar_lote_check": "Before loop/applyDefaults: filter items without sexo, if any return toolError listing names that need sexo",
+              "toolError_pattern": "Uses existing toolError() helper with correction field"
+            },
+            "verification": {
+              "type": "typecheck",
+              "command": "cd /Users/marcofernandes/escalaflow && npx tsc --noEmit",
+              "expected": "No TypeScript errors"
+            },
+            "status": "complete"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "total_phases": 4,
+      "total_subtasks": 13,
+      "estimated_complexity": "high",
+      "phase_breakdown": {
+        "phase-0": "2 subtasks — Router migration prerequisite (~50 lines across 2 files)",
+        "phase-1": "3 subtasks — Sidebar cleanup + tour fix + ConfiguracoesPagina collapsible",
+        "phase-2": "6 subtasks — Hook + Component + apply to 4 pages",
+        "phase-3": "4 subtasks — Tabs wrapper + card unification + sexo fix frontend + sexo fix backend"
+      },
+      "files_created": [
+        "src/renderer/src/hooks/useDirtyGuard.ts",
+        "src/renderer/src/componentes/DirtyGuardDialog.tsx"
+      ],
+      "files_modified": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/main.tsx",
+        "src/renderer/src/componentes/AppSidebar.tsx",
+        "src/renderer/src/componentes/TourSetup.tsx",
+        "src/renderer/src/lib/tour-constants.ts",
+        "src/renderer/src/paginas/ConfiguracoesPagina.tsx",
+        "src/renderer/src/paginas/EmpresaConfig.tsx",
+        "src/renderer/src/paginas/SetorDetalhe.tsx",
+        "src/renderer/src/paginas/ColaboradorDetalhe.tsx",
+        "src/main/ia/tools.ts"
+      ],
+      "critical_risks": [
+        "Router migration (phase-0) is the riskiest change — if createHashRouter breaks any navigation, all downstream phases are affected. Must verify ALL routes work after migration.",
+        "ColaboradorDetalhe is 1311 lines. Tab restructure (phase-3) must preserve all hooks at top level and keep colabForm spanning across tabs.",
+        "ConfiguracoesPagina IA card move (~170 lines of JSX with complex state) into Collapsible must preserve all closures."
+      ],
+      "parallelization": "Phase 0 and Phase 1 can run in parallel (no file overlap). Phase 2 depends on Phase 0. Phase 3 depends on Phase 2 (dirty guard already applied to ColaboradorDetalhe before tabs restructure)."
+    }
+  },
+  "completed_at": "2026-02-26T13:00:00-03:00"
+}

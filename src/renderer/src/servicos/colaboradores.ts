@@ -2,6 +2,8 @@ import { client } from './client'
 import type {
   Colaborador,
   CriarColaboradorRequest,
+  AtribuirPostoResult,
+  ColaboradorPostoSnapshotItem,
   RegraHorarioColaborador,
   RegraHorarioColaboradorExcecaoData,
   DiaSemana,
@@ -19,6 +21,18 @@ export const colaboradoresService = {
 
   atualizar: (id: number, data: Partial<Colaborador>) =>
     client['colaboradores.atualizar']({ id, ...data } as any) as Promise<Colaborador>,
+
+  atribuirPosto: (data: {
+    colaborador_id: number
+    funcao_id: number | null
+    estrategia?: 'swap' | 'strict'
+  }) =>
+    client['colaboradores.atribuirPosto'](data) as Promise<AtribuirPostoResult>,
+
+  restaurarPostos: (data: {
+    snapshot: ColaboradorPostoSnapshotItem[]
+  }) =>
+    client['colaboradores.restaurarPostos'](data) as Promise<{ ok: true }>,
 
   deletar: (id: number) =>
     client['colaboradores.deletar']({ id }) as Promise<void>,

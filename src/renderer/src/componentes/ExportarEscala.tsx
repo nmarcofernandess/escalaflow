@@ -19,7 +19,9 @@ interface ExportarEscalaProps {
   tiposContrato?: TipoContrato[]
   funcoes?: Funcao[]
   horariosSemana?: SetorHorarioSemana[]
-  opcoes?: { avisos?: boolean; horas?: boolean }
+  modo?: 'ciclo' | 'detalhado'
+  incluirAvisos?: boolean
+  modoRender?: 'view' | 'download'
 }
 
 interface TimeSlot {
@@ -46,8 +48,13 @@ export function ExportarEscala({
   tiposContrato = [],
   funcoes = [],
   horariosSemana = [],
-  opcoes = {},
+  modo = 'ciclo',
+  incluirAvisos,
+  modoRender = 'view',
 }: ExportarEscalaProps) {
+  const modoDetalhado = modo === 'detalhado'
+  const deveIncluirAvisos = incluirAvisos ?? modoDetalhado
+  const isDownload = modoRender === 'download'
   // Generate all dates in range
   const allDates: Date[] = []
   const start = new Date(escala.data_inicio + 'T00:00:00')
@@ -175,6 +182,9 @@ export function ExportarEscala({
     }
   }
   if (currentWeek.length > 0) weeks.push(currentWeek)
+  const violacoesHard = violacoes.filter((v) => v.severidade === 'HARD')
+  const violacoesSoft = violacoes.filter((v) => v.severidade === 'SOFT')
+  const violacoesResumo = violacoes.slice(0, 8)
 
   const statusBadgeStyle = (status: string): React.CSSProperties => {
     const base = {
@@ -196,7 +206,14 @@ export function ExportarEscala({
   }
 
   return (
-    <div style={{ fontFamily: 'Arial, sans-serif', padding: '20px', fontSize: '12px' }}>
+    <div
+      style={{
+        fontFamily: 'Arial, sans-serif',
+        padding: '20px',
+        fontSize: '12px',
+        background: isDownload ? '#fff' : undefined,
+      }}
+    >
       {/* Header */}
       <div style={{ marginBottom: '16px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
         <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 8px 0', color: '#111827' }}>
@@ -206,9 +223,11 @@ export function ExportarEscala({
           <span>
             <strong>Período:</strong> {formatarData(escala.data_inicio)} a {formatarData(escala.data_fim)}
           </span>
-          <span>
-            <strong>Pontuação:</strong> {escala.pontuacao ?? '-'}
-          </span>
+          {modoDetalhado && (
+            <span>
+              <strong>Pontuação:</strong> {escala.pontuacao ?? '-'}
+            </span>
+          )}
           <span>
             <strong>Status:</strong> <span style={statusBadgeStyle(escala.status)}>{escala.status}</span>
           </span>
@@ -315,16 +334,23 @@ export function ExportarEscala({
                         {status === 'TRABALHO' ? (
                           <>
                             <div style={{ fontWeight: '600', fontSize: '10px' }}>
-                              {formatTime(alloc?.hora_inicio ?? null)} - {formatTime(alloc?.hora_fim ?? null)}
+                              {formatTime(alloc?.hora_real_inicio ?? alloc?.hora_inicio ?? null)} - {formatTime(alloc?.hora_real_fim ?? alloc?.hora_fim ?? null)}
                             </div>
-                            {alloc?.hora_almoco_inicio && alloc?.hora_almoco_fim && (
+                            {modoDetalhado && alloc?.hora_almoco_inicio && alloc?.hora_almoco_fim && (
                               <div style={{ fontSize: '8px', opacity: 0.9 }}>
                                 Almoço {alloc.hora_almoco_inicio} - {alloc.hora_almoco_fim}
                               </div>
                             )}
-                            <div style={{ fontSize: '8px', opacity: 0.85, marginTop: '1px' }}>
-                              Posto {posto}
-                            </div>
+                            {modoDetalhado && alloc?.intervalo_15min && alloc?.hora_intervalo_inicio && alloc?.hora_intervalo_fim && (
+                              <div style={{ fontSize: '8px', opacity: 0.9, color: '#7c3aed' }}>
+                                Pausa {alloc.hora_intervalo_inicio}-{alloc.hora_intervalo_fim}
+                              </div>
+                            )}
+                            {modoDetalhado && (
+                              <div style={{ fontSize: '8px', opacity: 0.85, marginTop: '1px' }}>
+                                Posto {posto}
+                              </div>
+                            )}
                           </>
                         ) : status === 'FOLGA' ? (
                           <span style={{ fontSize: '9px', fontWeight: '500' }}>F</span>
@@ -342,6 +368,7 @@ export function ExportarEscala({
       ))}
 
       {/* Timeline detalhada por dia */}
+      {modoDetalhado && (
       <div style={{ marginTop: '24px' }}>
         <h2
           style={{
@@ -618,9 +645,10 @@ export function ExportarEscala({
           )
         })}
       </div>
+      )}
 
       {/* Horas por Colaborador */}
-      {opcoes.horas && colaboradores.length > 0 && (
+      {modoDetalhado && colaboradores.length > 0 && (
         <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
             Horas por Colaborador
@@ -672,21 +700,53 @@ export function ExportarEscala({
         </div>
       )}
 
-      {/* Violacoes / Avisos */}
-      {opcoes.avisos && violacoes.length > 0 && (
+      {/* Avisos resumidos no modo ciclo */}
+      {!modoDetalhado && deveIncluirAvisos && violacoes.length > 0 && (
+        <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
+            Avisos ({violacoes.length})
+          </h2>
+          <p style={{ marginBottom: '8px', fontSize: '10px', color: '#4b5563' }}>
+            Críticas: {violacoesHard.length} | Alertas: {violacoesSoft.length}
+          </p>
+          {violacoesResumo.map((v, i) => (
+            <div
+              key={i}
+              style={{
+                padding: '6px 10px',
+                marginBottom: '4px',
+                background: v.severidade === 'HARD' ? '#fef2f2' : '#fffbeb',
+                border: v.severidade === 'HARD' ? '1px solid #fecaca' : '1px solid #fde68a',
+                borderRadius: '4px',
+                fontSize: '10px',
+                color: v.severidade === 'HARD' ? '#991b1b' : '#78350f',
+              }}
+            >
+              <strong>{v.colaborador_nome}</strong> — {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
+              {v.data && <span style={{ marginLeft: '8px' }}>({formatarData(v.data)})</span>}
+            </div>
+          ))}
+          {violacoes.length > violacoesResumo.length && (
+            <p style={{ marginTop: '4px', fontSize: '10px', color: '#6b7280' }}>
+              ... e mais {violacoes.length - violacoesResumo.length} aviso(s).
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Violacoes / Avisos detalhados */}
+      {modoDetalhado && deveIncluirAvisos && violacoes.length > 0 && (
         <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
             Violações ({violacoes.length})
           </h2>
           {/* HARD */}
-          {violacoes.filter((v) => v.severidade === 'HARD').length > 0 && (
+          {violacoesHard.length > 0 && (
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '11px', fontWeight: '600', color: '#dc2626', marginBottom: '6px' }}>
                 Críticas (HARD)
               </h3>
-              {violacoes
-                .filter((v) => v.severidade === 'HARD')
-                .map((v, i) => (
+              {violacoesHard.map((v, i) => (
                   <div
                     key={i}
                     style={{
@@ -706,14 +766,12 @@ export function ExportarEscala({
             </div>
           )}
           {/* SOFT */}
-          {violacoes.filter((v) => v.severidade === 'SOFT').length > 0 && (
+          {violacoesSoft.length > 0 && (
             <div>
               <h3 style={{ fontSize: '11px', fontWeight: '600', color: '#92400e', marginBottom: '6px' }}>
                 Alertas (SOFT)
               </h3>
-              {violacoes
-                .filter((v) => v.severidade === 'SOFT')
-                .map((v, i) => (
+              {violacoesSoft.map((v, i) => (
                   <div
                     key={i}
                     style={{
@@ -748,7 +806,10 @@ export function ExportarEscala({
         }}
       >
         <div>
-          <strong>Legenda:</strong> F = Folga | I = Indisponível | ALM = almoço | Posto = posição no fluxo
+          <strong>Legenda:</strong>{' '}
+          {modoDetalhado
+            ? 'F = Folga | I = Indisponível | ALM = almoço | Pausa = intervalo 15min (CLT Art. 71) | Posto = posição no fluxo'
+            : 'F = Folga | I = Indisponível | Horário = jornada do dia'}
         </div>
         <div>
           Gerada em {new Date().toLocaleDateString('pt-BR')} | <strong>EscalaFlow v2</strong>
