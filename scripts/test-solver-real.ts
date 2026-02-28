@@ -1,112 +1,116 @@
-import { buildSolverInput, runSolver } from '../src/main/motor/solver-bridge'
-import { getDb, closeDb } from '../src/main/db/database'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import fs from 'node:fs'
+import { buildSolverInput, runSolver } from '../src/main/motor/solver-bridge'
+import { initDb, closeDb } from '../src/main/db/pglite'
+import { createTables } from '../src/main/db/schema'
+import { queryOne } from '../src/main/db/query'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
 
-// Forca o caminho do DB para o ambiente de dev local
-process.env.ESCALAFLOW_DB_PATH = process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'data', 'escalaflow.db')
+// DB real usado em dev pelo app Electron.
+process.env.ESCALAFLOW_DB_PATH = process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'out', 'data', 'escalaflow-pg')
 
 async function main() {
-    const args = process.argv.slice(2)
-    console.log('[test-solver] Iniciando smoke test end-to-end do motor via ponte TypeScript')
+  const args = process.argv.slice(2)
+  console.log('[test-solver] Iniciando smoke test end-to-end do motor via bridge TypeScript')
 
-    // Parametros padrao
-    const setorId = args[0] ? parseInt(args[0], 10) : 1
-    let dataInicio = '2026-03-01'
-    let dataFim = '2026-03-31'
+  const setorId = args[0] ? parseInt(args[0], 10) : 1
+  const dataInicio = args[1] ?? '2026-03-02'
+  const dataFim = args[2] ?? '2026-04-26'
+  const solveMode: 'rapido' | 'otimizado' = 'rapido'
+  const rigorLevel: 'ALTO' | 'MEDIO' | 'BAIXO' = 'ALTO'
 
-    if (args[1]) dataInicio = args[1]
-    if (args[2]) dataFim = args[2]
+  console.log(`[test-solver] DB Path: ${process.env.ESCALAFLOW_DB_PATH}`)
+  console.log(`[test-solver] Setor: ${setorId} | Periodo: ${dataInicio} a ${dataFim}`)
+  console.log(`[test-solver] Mode: ${solveMode} | Rigor: ${rigorLevel}`)
 
-    const solveMode: any = 'rapido'
-    const rigorLevel: any = 'ALTO'
+  try {
+    await initDb()
+    await createTables()
 
-    console.log(`[test-solver] DB Path: ${process.env.ESCALAFLOW_DB_PATH}`)
-    console.log(`[test-solver] Setor: ${setorId} | Periodo: ${dataInicio} a ${dataFim}`)
-    console.log(`[test-solver] Mode: ${solveMode} | Rigor: ${rigorLevel}`)
-
-    try {
-        // Valida DB connection
-        const db = getDb()
-        const setorRows = db.prepare('SELECT id, nome FROM setores WHERE id = ?').get(setorId)
-        if (!setorRows) {
-            console.error(`[test-solver] ERRO: Setor ${setorId} nao encontrado no banco.`)
-            process.exit(1)
-        }
-
-        // 1. Constroi o Payload Exatamente como o Backend faria
-        const t0 = performance.now()
-        const payload = buildSolverInput(setorId, dataInicio, dataFim, [], {
-            solveMode: solveMode,
-            nivelRigor: rigorLevel
-        })
-        const payloadMs = performance.now() - t0
-
-        console.log(`[test-solver] Payload gerado em ${Math.round(payloadMs)}ms. Colaboradores: ${payload.colaboradores.length}`)
-
-        // 2. Roda o Solver usando o bridge
-        const t1 = performance.now()
-        console.log('[test-solver] Executando o subprocesso do python...')
-
-        const output = await runSolver(payload, 300000, (line) => {
-            // Repassa logs do motor (exibicao do modulo de logs do solver python)
-            console.log(`[motor] ${line}`)
-        })
-
-        const solveMs = performance.now() - t1
-
-        console.log('\n[test-solver] === RESULTADO ===')
-        console.log(`Status: ${output.status}`)
-        console.log(`Sucesso: ${output.sucesso}`)
-        console.log(`Solve Time Interno: ${output.solve_time_ms}ms`)
-        console.log(`Tempo Total JS: ${Math.round(solveMs)}ms`)
-
-        if (output.indicadores) {
-            console.log(`Cobertura: ${output.indicadores.cobertura_percent}%`)
-            console.log(`Total Turnos: ${(output.indicadores as any).total_turnos || 'N/A'}`)
-        }
-
-        if (output.erro) {
-            console.log(`\nERRO DO SOLVER: ${output.erro.mensagem}\nDetalhes/Sugestões: ${JSON.stringify((output.erro as any).detalhes || output.erro.sugestoes)}`);
-        }
-
-        if (output.sucesso && output.alocacoes) {
-            console.log('\n[test-solver] TESTE PASSOU COM SUCESSO 🎉')
-
-            // Formatando o resultado em uma tabela para visualizacao rapida
-            console.log('\n=== PREVIEW DA ESCALA GERADA ===')
-            const cols = payload.colaboradores
-            const previewData: any[] = []
-
-            for (const col of cols) {
-                const turnosDoColaborador = output.alocacoes.filter((e: any) => e.colaborador_id === col.id)
-                const turnosResumo = turnosDoColaborador.map((t: any) => `${t.data.split('-')[2]}: ${t.status === 'FOLGA' ? 'FOLGA' : t.hora_inicio + '-' + t.hora_fim}`).join(', ')
-                previewData.push({
-                    ID: col.id,
-                    Nome: col.nome,
-                    Turnos: turnosResumo.substring(0, 80) + (turnosResumo.length > 80 ? '...' : '')
-                })
-            }
-
-            console.table(previewData)
-
-        } else if (output.sucesso) {
-            console.log('\n[test-solver] TESTE PASSOU COM SUCESSO 🎉 (Porém sem array de alocacoes no output)')
-        } else {
-            console.warn('\n[test-solver] TESTE FINALIZOU COM TRATAMENTO (Infeasible/Error).')
-        }
-
-    } catch (err: any) {
-        console.error('\n[test-solver] ERRO FATAL no processo TypeScript:', err.message)
-        console.error(err)
-        process.exit(1)
-    } finally {
-        closeDb()
+    const setor = await queryOne<{ id: number; nome: string }>(
+      'SELECT id, nome FROM setores WHERE id = $1 AND ativo = TRUE LIMIT 1',
+      setorId,
+    )
+    if (!setor) {
+      console.error(`[test-solver] ERRO: Setor ${setorId} nao encontrado/ativo no banco.`)
+      process.exit(1)
     }
+
+    const t0 = performance.now()
+    const payload = await buildSolverInput(setorId, dataInicio, dataFim, [], {
+      solveMode,
+      nivelRigor: rigorLevel,
+    })
+    const payloadMs = performance.now() - t0
+
+    console.log(
+      `[test-solver] Payload gerado em ${Math.round(payloadMs)}ms. ` +
+      `Colaboradores: ${payload.colaboradores.length} | Demandas: ${payload.demanda.length}`,
+    )
+
+    if (process.env.SOLVER_DUMP_INPUT === '1') {
+      const dumpPath = path.join(rootDir, 'tmp', `solver-input-setor-${setorId}.json`)
+      fs.mkdirSync(path.dirname(dumpPath), { recursive: true })
+      fs.writeFileSync(dumpPath, JSON.stringify(payload, null, 2), 'utf-8')
+      console.log(`[test-solver] Input salvo em: ${dumpPath}`)
+    }
+
+    const t1 = performance.now()
+    console.log('[test-solver] Executando subprocesso Python...')
+
+    const output = await runSolver(payload, 300_000, (line) => {
+      console.log(`[motor] ${line}`)
+    })
+
+    const solveMs = performance.now() - t1
+
+    console.log('\n[test-solver] === RESULTADO ===')
+    console.log(`Status: ${output.status}`)
+    console.log(`Sucesso: ${output.sucesso}`)
+    console.log(`Solve Time Interno: ${output.solve_time_ms}ms`)
+    console.log(`Tempo Total JS: ${Math.round(solveMs)}ms`)
+
+    if (output.indicadores) {
+      console.log(`Cobertura: ${output.indicadores.cobertura_percent}%`)
+      console.log(`Pontuacao: ${output.indicadores.pontuacao}`)
+    }
+
+    if (output.erro) {
+      console.log(
+        `\nERRO DO SOLVER: ${output.erro.mensagem}` +
+        `\nSugestoes: ${JSON.stringify(output.erro.sugestoes ?? [])}`,
+      )
+    }
+
+    if (output.sucesso && output.alocacoes) {
+      console.log('\n[test-solver] TESTE PASSOU COM SUCESSO')
+      const previewData = payload.colaboradores.map((col) => {
+        const turnos = output.alocacoes!
+          .filter((e) => e.colaborador_id === col.id)
+          .map((t) => `${t.data.slice(8, 10)}: ${t.status === 'FOLGA' ? 'FOLGA' : `${t.hora_inicio}-${t.hora_fim}`}`)
+          .join(', ')
+        return {
+          ID: col.id,
+          Nome: col.nome,
+          Turnos: turnos.substring(0, 80) + (turnos.length > 80 ? '...' : ''),
+        }
+      })
+      console.table(previewData)
+    } else if (output.sucesso) {
+      console.log('\n[test-solver] TESTE PASSOU (sem alocacoes no output)')
+    } else {
+      console.warn('\n[test-solver] TESTE FINALIZOU COM INFEASIBLE/ERROR')
+    }
+  } catch (err: any) {
+    console.error('\n[test-solver] ERRO FATAL no processo TypeScript:', err.message)
+    console.error(err)
+    process.exit(1)
+  } finally {
+    await closeDb()
+  }
 }
 
-main()
+void main()

@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -25,6 +26,13 @@ export interface SetorExportItem {
   nome: string
   checked: boolean
   temEscala: boolean
+}
+
+export interface EscalaExportContent {
+  ciclo: boolean
+  timeline: boolean
+  funcionarios: boolean
+  avisos: boolean
 }
 
 export interface ExportModalProps {
@@ -45,6 +53,8 @@ export interface ExportModalProps {
   onCSV?: () => void
   loading?: boolean
   progress?: number
+  conteudoEscala?: EscalaExportContent
+  onConteudoEscalaChange?: (next: EscalaExportContent) => void
 }
 
 export function ExportModal({
@@ -65,7 +75,10 @@ export function ExportModal({
   onCSV,
   loading = false,
   progress = 0,
+  conteudoEscala,
+  onConteudoEscalaChange,
 }: ExportModalProps) {
+  const isEscala = context === 'escala'
   const isBatch = formato === 'batch' || formato === 'batch-geral'
   const isCSV = formato === 'csv'
 
@@ -86,13 +99,10 @@ export function ExportModal({
 
           {/* Right: Options (~40%) */}
           <div className="flex-[2] space-y-5 overflow-y-auto">
-            {context === 'escala' ? (
-              <EscalaOptions
-                formato={formato}
-                onFormatoChange={onFormatoChange}
-                colaboradores={colaboradores}
-                funcionarioId={funcionarioId}
-                onFuncionarioChange={onFuncionarioChange}
+            {isEscala ? (
+              <EscalaContentOptions
+                conteudo={conteudoEscala}
+                onChange={onConteudoEscalaChange}
               />
             ) : (
               <HubOptions
@@ -108,121 +118,145 @@ export function ExportModal({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          {isBatch && loading ? (
-            <div className="flex flex-1 items-center gap-3">
-              <Progress value={progress} className="flex-1" />
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {Math.round(progress)}%
-              </span>
-            </div>
-          ) : (
-            <>
-              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
-                Cancelar
+        {isEscala ? (
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
+              Cancelar
+            </Button>
+            {onCSV && (
+              <Button variant="outline" onClick={onCSV} disabled={loading}>
+                {loading ? (
+                  <Loader2 className="mr-1 size-4 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="mr-1 size-4" />
+                )}
+                CSV
               </Button>
-              {isCSV && onCSV ? (
-                <Button onClick={onCSV} disabled={loading}>
-                  {loading ? (
-                    <Loader2 className="mr-1 size-4 animate-spin" />
-                  ) : (
-                    <FileSpreadsheet className="mr-1 size-4" />
-                  )}
-                  Baixar CSV
-                </Button>
+            )}
+            <Button variant="outline" onClick={onExportHTML} disabled={loading}>
+              {loading ? (
+                <Loader2 className="mr-1 size-4 animate-spin" />
               ) : (
-                <>
-                  <Button variant="outline" onClick={onExportHTML} disabled={loading}>
-                    {loading ? (
-                      <Loader2 className="mr-1 size-4 animate-spin" />
-                    ) : (
-                      <Download className="mr-1 size-4" />
-                    )}
-                    Baixar HTML
-                  </Button>
-                  <Button onClick={onPrint} disabled={loading}>
-                    {loading ? (
-                      <Loader2 className="mr-1 size-4 animate-spin" />
-                    ) : (
-                      <Printer className="mr-1 size-4" />
-                    )}
-                    Imprimir
-                  </Button>
-                </>
+                <Download className="mr-1 size-4" />
               )}
-            </>
-          )}
-        </DialogFooter>
+              Baixar HTML
+            </Button>
+            <Button onClick={onPrint} disabled={loading}>
+              {loading ? (
+                <Loader2 className="mr-1 size-4 animate-spin" />
+              ) : (
+                <Printer className="mr-1 size-4" />
+              )}
+              Imprimir
+            </Button>
+          </DialogFooter>
+        ) : (
+          <DialogFooter className="gap-2 sm:gap-0">
+            {isBatch && loading ? (
+              <div className="flex flex-1 items-center gap-3">
+                <Progress value={progress} className="flex-1" />
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {Math.round(progress)}%
+                </span>
+              </div>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
+                  Cancelar
+                </Button>
+                {isCSV && onCSV ? (
+                  <Button onClick={onCSV} disabled={loading}>
+                    {loading ? (
+                      <Loader2 className="mr-1 size-4 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="mr-1 size-4" />
+                    )}
+                    Baixar CSV
+                  </Button>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={onExportHTML} disabled={loading}>
+                      {loading ? (
+                        <Loader2 className="mr-1 size-4 animate-spin" />
+                      ) : (
+                        <Download className="mr-1 size-4" />
+                      )}
+                      Baixar HTML
+                    </Button>
+                    <Button onClick={onPrint} disabled={loading}>
+                      {loading ? (
+                        <Loader2 className="mr-1 size-4 animate-spin" />
+                      ) : (
+                        <Printer className="mr-1 size-4" />
+                      )}
+                      Imprimir
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )
 }
 
-// ─── Escala Context Options ─────────────────────────────────────────────────
+// ─── Escala Context Content Toggles ─────────────────────────────────────────
 
-function EscalaOptions({
-  formato,
-  onFormatoChange,
-  colaboradores,
-  funcionarioId,
-  onFuncionarioChange,
+function EscalaContentOptions({
+  conteudo,
+  onChange,
 }: {
-  formato: string
-  onFormatoChange: (f: string) => void
-  colaboradores?: { id: number; nome: string }[]
-  funcionarioId?: number | null
-  onFuncionarioChange?: (id: number) => void
+  conteudo?: EscalaExportContent
+  onChange?: (next: EscalaExportContent) => void
 }) {
+  const value: EscalaExportContent = conteudo ?? {
+    ciclo: true,
+    timeline: false,
+    funcionarios: false,
+    avisos: false,
+  }
+  const disabled = !onChange
+
+  const toggle = (key: keyof EscalaExportContent, checked: boolean) => {
+    if (!onChange) return
+    onChange({ ...value, [key]: checked })
+  }
+
   return (
     <div className="space-y-4">
-      <Label className="text-sm font-medium">Formato</Label>
-      <RadioGroup value={formato} onValueChange={onFormatoChange}>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="completa" id="fmt-completa" />
-          <Label htmlFor="fmt-completa" className="text-sm font-normal">
-            Escala Completa (RH)
-          </Label>
+      <Label className="text-sm font-medium">Conteudo da exportacao</Label>
+      <div className="rounded-md border">
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <div>
+            <p className="text-sm font-medium">Ciclo</p>
+            <p className="text-[11px] text-muted-foreground">Tabela semanal da escala.</p>
+          </div>
+          <Switch checked={value.ciclo} onCheckedChange={(checked) => toggle('ciclo', checked)} disabled={disabled} />
         </div>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="funcionario" id="fmt-funcionario" />
-          <Label htmlFor="fmt-funcionario" className="text-sm font-normal">
-            Por Funcionario
-          </Label>
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <div>
+            <p className="text-sm font-medium">Timeline</p>
+            <p className="text-[11px] text-muted-foreground">Visao por faixa horaria e cobertura.</p>
+          </div>
+          <Switch checked={value.timeline} onCheckedChange={(checked) => toggle('timeline', checked)} disabled={disabled} />
         </div>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="batch" id="fmt-batch" />
-          <Label htmlFor="fmt-batch" className="text-sm font-normal">
-            Batch (todos individuais)
-          </Label>
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <div>
+            <p className="text-sm font-medium">Por funcionario</p>
+            <p className="text-[11px] text-muted-foreground">Inclui todos os funcionarios do setor.</p>
+          </div>
+          <Switch checked={value.funcionarios} onCheckedChange={(checked) => toggle('funcionarios', checked)} disabled={disabled} />
         </div>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="csv" id="fmt-csv" />
-          <Label htmlFor="fmt-csv" className="text-sm font-normal">
-            CSV (dados brutos)
-          </Label>
+        <div className="flex items-center justify-between px-3 py-2">
+          <div>
+            <p className="text-sm font-medium">Avisos</p>
+            <p className="text-[11px] text-muted-foreground">Inclui blocos de violacoes.</p>
+          </div>
+          <Switch checked={value.avisos} onCheckedChange={(checked) => toggle('avisos', checked)} disabled={disabled} />
         </div>
-      </RadioGroup>
-
-      {formato === 'funcionario' && colaboradores && onFuncionarioChange && (
-        <div className="space-y-2">
-          <Label className="text-sm">Funcionario</Label>
-          <Select
-            value={funcionarioId?.toString() ?? ''}
-            onValueChange={(v) => onFuncionarioChange(parseInt(v, 10))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione..." />
-            </SelectTrigger>
-            <SelectContent>
-              {colaboradores.map((c) => (
-                <SelectItem key={c.id} value={c.id.toString()}>
-                  {c.nome}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

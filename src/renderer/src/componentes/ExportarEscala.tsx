@@ -21,6 +21,8 @@ interface ExportarEscalaProps {
   horariosSemana?: SetorHorarioSemana[]
   modo?: 'ciclo' | 'detalhado'
   incluirAvisos?: boolean
+  incluirCiclo?: boolean
+  incluirTimeline?: boolean
   modoRender?: 'view' | 'download'
 }
 
@@ -50,10 +52,15 @@ export function ExportarEscala({
   horariosSemana = [],
   modo = 'ciclo',
   incluirAvisos,
+  incluirCiclo,
+  incluirTimeline,
   modoRender = 'view',
 }: ExportarEscalaProps) {
   const modoDetalhado = modo === 'detalhado'
-  const deveIncluirAvisos = incluirAvisos ?? modoDetalhado
+  const mostrarCiclo = incluirCiclo ?? true
+  const mostrarTimeline = incluirTimeline ?? modoDetalhado
+  const detalhadoAtivo = mostrarTimeline
+  const deveIncluirAvisos = incluirAvisos ?? detalhadoAtivo
   const isDownload = modoRender === 'download'
   // Generate all dates in range
   const allDates: Date[] = []
@@ -223,7 +230,7 @@ export function ExportarEscala({
           <span>
             <strong>Período:</strong> {formatarData(escala.data_inicio)} a {formatarData(escala.data_fim)}
           </span>
-          {modoDetalhado && (
+          {detalhadoAtivo && (
             <span>
               <strong>Pontuação:</strong> {escala.pontuacao ?? '-'}
             </span>
@@ -234,8 +241,8 @@ export function ExportarEscala({
         </div>
       </div>
 
-      {/* Weeks (resumo macro) */}
-      {weeks.map((weekDates, weekIndex) => (
+      {/* Weeks (resumo macro / ciclo) */}
+      {mostrarCiclo && weeks.map((weekDates, weekIndex) => (
         <div key={weekIndex} style={{ marginBottom: '24px', pageBreakInside: 'avoid' }}>
           <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
             Semana {weekIndex + 1} — {formatarData(toDateStr(weekDates[0]))} a{' '}
@@ -336,17 +343,17 @@ export function ExportarEscala({
                             <div style={{ fontWeight: '600', fontSize: '10px' }}>
                               {formatTime(alloc?.hora_real_inicio ?? alloc?.hora_inicio ?? null)} - {formatTime(alloc?.hora_real_fim ?? alloc?.hora_fim ?? null)}
                             </div>
-                            {modoDetalhado && alloc?.hora_almoco_inicio && alloc?.hora_almoco_fim && (
+                            {detalhadoAtivo && alloc?.hora_almoco_inicio && alloc?.hora_almoco_fim && (
                               <div style={{ fontSize: '8px', opacity: 0.9 }}>
                                 Almoço {alloc.hora_almoco_inicio} - {alloc.hora_almoco_fim}
                               </div>
                             )}
-                            {modoDetalhado && alloc?.intervalo_15min && alloc?.hora_intervalo_inicio && alloc?.hora_intervalo_fim && (
+                            {detalhadoAtivo && alloc?.intervalo_15min && alloc?.hora_intervalo_inicio && alloc?.hora_intervalo_fim && (
                               <div style={{ fontSize: '8px', opacity: 0.9, color: '#7c3aed' }}>
                                 Pausa {alloc.hora_intervalo_inicio}-{alloc.hora_intervalo_fim}
                               </div>
                             )}
-                            {modoDetalhado && (
+                            {detalhadoAtivo && (
                               <div style={{ fontSize: '8px', opacity: 0.85, marginTop: '1px' }}>
                                 Posto {posto}
                               </div>
@@ -368,7 +375,7 @@ export function ExportarEscala({
       ))}
 
       {/* Timeline detalhada por dia */}
-      {modoDetalhado && (
+      {mostrarTimeline && (
       <div style={{ marginTop: '24px' }}>
         <h2
           style={{
@@ -648,7 +655,7 @@ export function ExportarEscala({
       )}
 
       {/* Horas por Colaborador */}
-      {modoDetalhado && colaboradores.length > 0 && (
+      {mostrarTimeline && colaboradores.length > 0 && (
         <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
             Horas por Colaborador
@@ -701,7 +708,7 @@ export function ExportarEscala({
       )}
 
       {/* Avisos resumidos no modo ciclo */}
-      {!modoDetalhado && deveIncluirAvisos && violacoes.length > 0 && (
+      {!mostrarTimeline && deveIncluirAvisos && violacoes.length > 0 && (
         <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
             Avisos ({violacoes.length})
@@ -735,7 +742,7 @@ export function ExportarEscala({
       )}
 
       {/* Violacoes / Avisos detalhados */}
-      {modoDetalhado && deveIncluirAvisos && violacoes.length > 0 && (
+      {mostrarTimeline && deveIncluirAvisos && violacoes.length > 0 && (
         <div style={{ marginTop: '24px', pageBreakInside: 'avoid' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '10px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>
             Violações ({violacoes.length})
@@ -807,7 +814,7 @@ export function ExportarEscala({
       >
         <div>
           <strong>Legenda:</strong>{' '}
-          {modoDetalhado
+          {mostrarTimeline
             ? 'F = Folga | I = Indisponível | ALM = almoço | Pausa = intervalo 15min (CLT Art. 71) | Posto = posição no fluxo'
             : 'F = Folga | I = Indisponível | Horário = jornada do dia'}
         </div>

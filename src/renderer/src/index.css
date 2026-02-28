@@ -145,3 +145,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  .print-colors * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

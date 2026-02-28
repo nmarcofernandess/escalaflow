@@ -1082,11 +1082,16 @@ def add_dias_trabalho_soft_penalty(
 ) -> None:
     """DIAS_TRABALHO SOFT: penaliza desvio do numero esperado de dias/semana."""
     for c in range(C):
-        dias_esperados = int(colabs[c].get("dias_trabalho", 5))
+        regime_days = _resolve_regime_days(colabs[c])
         for chunk in week_chunks:
             available = [d for d in chunk if d not in blocked_days.get(c, set())]
             if not available:
                 continue
+            # Use the same prorata semantics as HARD DIAS_TRABALHO.
+            # This keeps fallback passes feasible on short trailing chunks
+            # (e.g., 1-2 day chunks at the end of the period).
+            dias_esperados = _prorata_weekly(regime_days, len(chunk))
+            dias_esperados = min(dias_esperados, len(available))
             work_sum = sum(works_day[c, d] for d in available)
             deviation = model.new_int_var(0, len(available), f"dt_soft_{c}_{chunk[0]}")
             model.add(deviation >= work_sum - dias_esperados)

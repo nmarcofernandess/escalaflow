@@ -182,6 +182,177 @@ async function buildInfeasibleMessage(
   return 'INFEASIBLE: Nao foi possivel gerar uma escala viavel com as regras e a equipe atuais. Revise demanda, excecoes, contratos e periodo.'
 }
 
+type DiaSemanaSigla = 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'
+type DiaSemanaSemDomingo = Exclude<DiaSemanaSigla, 'DOM'>
+
+const DIA_SEMANA_ORDENADA: DiaSemanaSigla[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
+const DIA_SEMANA_ORDENADA_SEM_DOM: DiaSemanaSemDomingo[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
+const DIA_SEMANA_BY_UTC_DAY: Record<number, DiaSemanaSigla> = {
+  0: 'DOM',
+  1: 'SEG',
+  2: 'TER',
+  3: 'QUA',
+  4: 'QUI',
+  5: 'SEX',
+  6: 'SAB',
+}
+
+function isoDateToUtcDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1))
+}
+
+function utcDateToIso(value: Date): string {
+  return value.toISOString().slice(0, 10)
+}
+
+function diaSemanaFromIso(value: string): DiaSemanaSigla {
+  return DIA_SEMANA_BY_UTC_DAY[isoDateToUtcDate(value).getUTCDay()] ?? 'SEG'
+}
+
+function detectarDiaMaisFrequente<T extends string>(countByDay: Map<T, number>, ordem: readonly T[]): T | null {
+  let melhorDia: T | null = null
+  let melhorCount = 0
+  for (const dia of ordem) {
+    const count = countByDay.get(dia) ?? 0
+    if (count > melhorCount) {
+      melhorDia = dia
+      melhorCount = count
+    }
+  }
+  return melhorDia
+}
+
+type AutoFolgaAlocacao = {
+  colaborador_id: number
+  data: string
+  status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
+}
+
+function detectarFolgaFixaPelaEscala(alocacoes: AutoFolgaAlocacao[]): DiaSemanaSigla | null {
+  const countByDay = new Map<DiaSemanaSigla, number>()
+  for (const aloc of alocacoes) {
+    if (aloc.status !== 'FOLGA') continue
+    const dia = diaSemanaFromIso(aloc.data)
+    countByDay.set(dia, (countByDay.get(dia) ?? 0) + 1)
+  }
+  return detectarDiaMaisFrequente(countByDay, DIA_SEMANA_ORDENADA)
+}
+
+function detectarFolgaVariavelPelaEscala(
+  alocacoes: AutoFolgaAlocacao[],
+  statusPorData: Map<string, AutoFolgaAlocacao['status']>,
+): DiaSemanaSemDomingo | null {
+  const countByDay = new Map<DiaSemanaSemDomingo, number>()
+
+  for (const aloc of alocacoes) {
+    if (aloc.status !== 'TRABALHO') continue
+    if (diaSemanaFromIso(aloc.data) !== 'DOM') continue
+
+    const domingo = isoDateToUtcDate(aloc.data)
+    for (let offset = 1; offset <= 6; offset += 1) {
+      const next = new Date(domingo)
+      next.setUTCDate(domingo.getUTCDate() + offset)
+      const nextIso = utcDateToIso(next)
+      const status = statusPorData.get(nextIso)
+      if (status !== 'FOLGA') continue
+
+      const dia = diaSemanaFromIso(nextIso)
+      if (dia === 'DOM') continue
+      countByDay.set(dia, (countByDay.get(dia) ?? 0) + 1)
+      break
+    }
+  }
+
+  return detectarDiaMaisFrequente(countByDay, DIA_SEMANA_ORDENADA_SEM_DOM)
+}
+
+async function autoDefinirFolgasPendentesPosOficializacao(escalaId: number, setorId: number): Promise<void> {
+  const colaboradores = await queryAll<{ id: number }>(
+    'SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = TRUE',
+    setorId,
+  )
+  if (colaboradores.length === 0) return
+
+  const regrasPadrao = await queryAll<{
+    id: number
+    colaborador_id: number
+    folga_fixa_dia_semana: DiaSemanaSigla | null
+    folga_variavel_dia_semana: DiaSemanaSemDomingo | null
+  }>(`
+    SELECT r.id, r.colaborador_id, r.folga_fixa_dia_semana, r.folga_variavel_dia_semana
+    FROM colaborador_regra_horario r
+    INNER JOIN colaboradores c ON c.id = r.colaborador_id
+    WHERE c.setor_id = ? AND c.ativo = TRUE AND r.ativo = TRUE AND r.dia_semana_regra IS NULL
+  `, setorId)
+
+  const regrasMap = new Map(regrasPadrao.map((regra) => [regra.colaborador_id, regra]))
+
+  const alocacoes = await queryAll<AutoFolgaAlocacao>(`
+    SELECT a.colaborador_id, a.data, a.status
+    FROM alocacoes a
+    INNER JOIN colaboradores c ON c.id = a.colaborador_id
+    WHERE a.escala_id = ? AND c.setor_id = ? AND c.ativo = TRUE
+    ORDER BY a.colaborador_id, a.data
+  `, escalaId, setorId)
+
+  const alocacoesPorColaborador = new Map<number, AutoFolgaAlocacao[]>()
+  const statusPorColaboradorData = new Map<number, Map<string, AutoFolgaAlocacao['status']>>()
+  for (const aloc of alocacoes) {
+    const alocs = alocacoesPorColaborador.get(aloc.colaborador_id) ?? []
+    alocs.push(aloc)
+    alocacoesPorColaborador.set(aloc.colaborador_id, alocs)
+
+    const statusMap = statusPorColaboradorData.get(aloc.colaborador_id) ?? new Map<string, AutoFolgaAlocacao['status']>()
+    statusMap.set(aloc.data, aloc.status)
+    statusPorColaboradorData.set(aloc.colaborador_id, statusMap)
+  }
+
+  for (const colaborador of colaboradores) {
+    const regra = regrasMap.get(colaborador.id)
+    const folgaFixaAtual = regra?.folga_fixa_dia_semana ?? null
+    const folgaVariavelAtual = regra?.folga_variavel_dia_semana ?? null
+    if (folgaFixaAtual && folgaVariavelAtual) continue
+
+    const alocs = alocacoesPorColaborador.get(colaborador.id) ?? []
+    if (alocs.length === 0) continue
+
+    const folgaFixaDetectada = folgaFixaAtual ?? detectarFolgaFixaPelaEscala(alocs)
+    let folgaVariavelDetectada = folgaVariavelAtual
+      ?? detectarFolgaVariavelPelaEscala(alocs, statusPorColaboradorData.get(colaborador.id) ?? new Map())
+
+    if (!folgaVariavelAtual && folgaVariavelDetectada && folgaVariavelDetectada === (folgaFixaAtual ?? folgaFixaDetectada)) {
+      folgaVariavelDetectada = null
+    }
+
+    const nextFolgaFixa = folgaFixaAtual ?? folgaFixaDetectada
+    const nextFolgaVariavel = folgaVariavelAtual ?? folgaVariavelDetectada
+    if (!nextFolgaFixa && !nextFolgaVariavel) continue
+
+    if (regra) {
+      await execute(
+        `UPDATE colaborador_regra_horario
+         SET folga_fixa_dia_semana = COALESCE(folga_fixa_dia_semana, ?),
+             folga_variavel_dia_semana = COALESCE(folga_variavel_dia_semana, ?)
+         WHERE id = ?`,
+        nextFolgaFixa,
+        nextFolgaVariavel,
+        regra.id,
+      )
+      continue
+    }
+
+    await execute(
+      `INSERT INTO colaborador_regra_horario
+        (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana, folga_variavel_dia_semana)
+       VALUES (?, NULL, TRUE, NULL, NULL, NULL, NULL, 2, 1, ?, ?)`,
+      colaborador.id,
+      nextFolgaFixa,
+      nextFolgaVariavel,
+    )
+  }
+}
+
 // =============================================================================
 // EMPRESA (2 handlers)
 // =============================================================================
@@ -1005,6 +1176,12 @@ const escalasOficializar = t.procedure
     // Oficializar esta
     await execute("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?", input.id)
 
+    try {
+      await autoDefinirFolgasPendentesPosOficializacao(input.id, escala.setor_id)
+    } catch (err) {
+      console.warn('[escalas.oficializar] Falha ao auto-definir folgas fixa/variavel:', err)
+    }
+
     return await queryOne('SELECT * FROM escalas WHERE id = ?', input.id)
   })
 
@@ -1768,6 +1945,7 @@ const colaboradoresSalvarRegraHorario = t.procedure
     domingo_ciclo_trabalho?: number
     domingo_ciclo_folga?: number
     folga_fixa_dia_semana?: string | null
+    folga_variavel_dia_semana?: string | null
   }>()
   .action(async ({ input }) => {
     const diaSemana = input.dia_semana_regra ?? null
@@ -1782,6 +1960,7 @@ const colaboradoresSalvarRegraHorario = t.procedure
     const domCicloTrabalho = isDiaEspecifico ? 2 : (input.domingo_ciclo_trabalho ?? 2)
     const domCicloFolga = isDiaEspecifico ? 1 : (input.domingo_ciclo_folga ?? 1)
     const folgaFixa = isDiaEspecifico ? null : (input.folga_fixa_dia_semana ?? null)
+    const folgaVariavel = isDiaEspecifico ? null : (input.folga_variavel_dia_semana ?? null)
 
     if (existe) {
       await execute(`
@@ -1792,7 +1971,8 @@ const colaboradoresSalvarRegraHorario = t.procedure
           preferencia_turno_soft = ?,
           domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
           domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
-          folga_fixa_dia_semana = ?
+          folga_fixa_dia_semana = ?,
+          folga_variavel_dia_semana = ?
         WHERE id = ?
       `,
         input.ativo !== undefined ? input.ativo : null,
@@ -1802,14 +1982,15 @@ const colaboradoresSalvarRegraHorario = t.procedure
         domCicloTrabalho,
         domCicloFolga,
         folgaFixa,
+        folgaVariavel,
         existe.id
       )
       return await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', existe.id)
     } else {
       const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario
-          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana, folga_variavel_dia_semana)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         input.colaborador_id,
         diaSemana,
@@ -1819,7 +2000,8 @@ const colaboradoresSalvarRegraHorario = t.procedure
         input.preferencia_turno_soft ?? null,
         domCicloTrabalho,
         domCicloFolga,
-        folgaFixa
+        folgaFixa,
+        folgaVariavel,
       )
       return await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', id)
     }

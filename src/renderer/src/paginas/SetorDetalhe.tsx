@@ -17,7 +17,6 @@ import {
   Save,
   GripVertical,
   ChevronDown,
-  CalendarDays,
   Users,
   ArrowRight,
   Archive,
@@ -44,6 +43,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Form,
   FormField,
@@ -85,23 +85,30 @@ import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { EmptyState } from '@/componentes/EmptyState'
 import { StatusBadge } from '@/componentes/StatusBadge'
-import { EscalaResultBanner } from '@/componentes/EscalaResultBanner'
+import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
+import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { IconPicker } from '@/componentes/IconPicker'
 import { DemandaEditor } from '@/componentes/DemandaEditor'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
+import { empresaService } from '@/servicos/empresa'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { funcoesService } from '@/servicos/funcoes'
 import { excecoesService } from '@/servicos/excecoes'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarData, mapError } from '@/lib/formatadores'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
+import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
+import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
+import { getPresetLabel, resolvePresetRange, type EscalaPeriodoPreset } from '@/lib/escala-periodo-preset'
 import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
 import { exportarService } from '@/servicos/exportar'
 import type {
+  DiaSemana,
+  Empresa,
   Setor,
   Demanda,
   DemandaExcecaoData,
@@ -172,13 +179,6 @@ const setorSchema = z.object({
 type SetorFormInput = z.input<typeof setorSchema>
 type SetorFormData = z.output<typeof setorSchema>
 
-function buildPeriodoGeracaoPadrao() {
-  const hoje = new Date()
-  const data_inicio = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1).toISOString().split('T')[0]
-  const data_fim = new Date(hoje.getFullYear(), hoje.getMonth() + 4, 0).toISOString().split('T')[0]
-  return { data_inicio, data_fim }
-}
-
 // ─── Main Component ────────────────────────────────────────────────────
 export function SetorDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -199,6 +199,10 @@ export function SetorDetalhe() {
     () => setoresService.buscar(setorId),
     [setorId],
   )
+  const { data: empresa } = useApiData<Empresa>(
+    () => empresaService.buscar(),
+    [],
+  )
 
   const { data: demandas, reload: reloadDemandas } = useApiData<Demanda[]>(
     () => setoresService.listarDemandas(setorId),
@@ -215,7 +219,7 @@ export function SetorDetalhe() {
     [setorId],
   )
 
-  const { data: escalas } = useApiData<Escala[]>(
+  const { data: escalas, reload: reloadEscalas } = useApiData<Escala[]>(
     () => escalasService.listarPorSetor(setorId),
     [setorId],
   )
@@ -235,13 +239,20 @@ export function SetorDetalhe() {
     [],
   )
 
-  const { data: regrasPadrao } = useApiData<RegraHorarioColaborador[]>(
+  const { data: regrasPadrao, reload: reloadRegrasPadrao } = useApiData<RegraHorarioColaborador[]>(
     () => colaboradoresService.listarRegrasPadraoSetor(setorId),
     [setorId],
   )
 
   const contratoMap = new Map((tiposContrato ?? []).map((tc) => [tc.id, tc.nome]))
   const funcoesList = useMemo(() => funcoes ?? [], [funcoes])
+  const inicioSemanaEscala = useMemo<DiaSemana>(() => {
+    const raw = (empresa?.corte_semanal ?? 'SEG_DOM').slice(0, 3).toUpperCase()
+    if (raw === 'SEG' || raw === 'TER' || raw === 'QUA' || raw === 'QUI' || raw === 'SEX' || raw === 'SAB' || raw === 'DOM') {
+      return raw
+    }
+    return 'SEG'
+  }, [empresa?.corte_semanal])
 
   // ─── State ───────────────────────────────────────────────────────────
   const [showPostoDialog, setShowPostoDialog] = useState(false)
@@ -261,14 +272,27 @@ export function SetorDetalhe() {
   } | null>(null)
 
   // Geracao inline
+  const [escalaTab, setEscalaTab] = useState<'simulacao' | 'oficial' | 'historico'>('simulacao')
+  const [periodoPreset, setPeriodoPreset] = useState<EscalaPeriodoPreset>('3_MESES')
   const [gerando, setGerando] = useState(false)
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
+  const [oficialCompleta, setOficialCompleta] = useState<EscalaCompletaV3 | null>(null)
+  const [historicoCompleta, setHistoricoCompleta] = useState<EscalaCompletaV3 | null>(null)
+  const [historicoSelecionadaId, setHistoricoSelecionadaId] = useState<number | null>(null)
+  const [carregandoTabEscala, setCarregandoTabEscala] = useState(false)
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
-  const [periodoGeracao, setPeriodoGeracao] = useState(() => buildPeriodoGeracaoPadrao())
+  const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
   const [solveModeGeracao, setSolveModeGeracao] = useState<'rapido' | 'otimizado'>('rapido')
   const [maxTimeGeracao, setMaxTimeGeracao] = useState(90)
-  const [incluirAvisosExportCiclo, setIncluirAvisosExportCiclo] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
+    ciclo: true,
+    timeline: false,
+    funcionarios: false,
+    avisos: false,
+  })
+  const [exportDetalhe, setExportDetalhe] = useState<EscalaCompletaV3 | null>(null)
 
   // Demanda excecao por data
   const [demandasExcecao, setDemandasExcecao] = useState<DemandaExcecaoData[]>([])
@@ -299,6 +323,14 @@ export function SetorDetalhe() {
     }
     return map
   }, [colaboradores, excecoesAtivas])
+
+  const regrasMap = useMemo(() => {
+    const map = new Map<number, RegraHorarioColaborador>()
+    for (const regra of regrasPadrao ?? []) {
+      map.set(regra.colaborador_id, regra)
+    }
+    return map
+  }, [regrasPadrao])
 
   const ocupanteMap = useMemo(() => {
     const map = new Map<number, Colaborador>()
@@ -494,9 +526,15 @@ export function SetorDetalhe() {
   }, [contratoMap, funcaoMap, getStatusColaborador])
 
   // ─── Escala ──────────────────────────────────────────────────────────
-  const escalaAtual = (escalas ?? []).length > 0
-    ? (escalas ?? []).reduce((a, b) => (a.criada_em > b.criada_em ? a : b))
-    : null
+  const escalasOrdenadas = useMemo(
+    () => [...(escalas ?? [])].sort((a, b) => b.criada_em.localeCompare(a.criada_em)),
+    [escalas],
+  )
+  const escalaOficialAtual = escalasOrdenadas.find((escala) => escala.status === 'OFICIAL') ?? null
+  const escalasHistorico = useMemo(() => {
+    const oficialAtualId = escalaOficialAtual?.id ?? null
+    return escalasOrdenadas.filter((escala) => escala.status !== 'RASCUNHO' && escala.id !== oficialAtualId)
+  }, [escalaOficialAtual?.id, escalasOrdenadas])
 
   // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -510,6 +548,71 @@ export function SetorDetalhe() {
       })
     }
   }, [setor, setorForm])
+
+  useEffect(() => {
+    setPeriodoGeracao(resolvePresetRange(periodoPreset, new Date(), inicioSemanaEscala))
+  }, [periodoPreset, inicioSemanaEscala])
+
+  useEffect(() => {
+    if (escalasHistorico.length === 0) {
+      setHistoricoSelecionadaId(null)
+      setHistoricoCompleta(null)
+      return
+    }
+    setHistoricoSelecionadaId((prev) => {
+      if (prev && escalasHistorico.some((escala) => escala.id === prev)) return prev
+      return escalasHistorico[0].id
+    })
+  }, [escalasHistorico])
+
+  const carregarDetalheEscala = useCallback(async (escalaId: number) => {
+    try {
+      return await escalasService.buscar(escalaId)
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao carregar escala')
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    let canceled = false
+
+    async function run() {
+      if (escalaTab === 'oficial') {
+        if (!escalaOficialAtual) {
+          setOficialCompleta(null)
+          setCarregandoTabEscala(false)
+          return
+        }
+        setCarregandoTabEscala(true)
+        const detail = await carregarDetalheEscala(escalaOficialAtual.id)
+        if (!canceled) setOficialCompleta(detail)
+        if (!canceled) setCarregandoTabEscala(false)
+        return
+      }
+
+      if (escalaTab === 'historico') {
+        if (!historicoSelecionadaId) {
+          setHistoricoCompleta(null)
+          setCarregandoTabEscala(false)
+          return
+        }
+        setCarregandoTabEscala(true)
+        const detail = await carregarDetalheEscala(historicoSelecionadaId)
+        if (!canceled) setHistoricoCompleta(detail)
+        if (!canceled) setCarregandoTabEscala(false)
+      }
+
+      if (escalaTab === 'simulacao') {
+        setCarregandoTabEscala(false)
+      }
+    }
+
+    void run()
+    return () => {
+      canceled = true
+    }
+  }, [carregarDetalheEscala, escalaOficialAtual, escalaTab, historicoSelecionadaId])
 
   // ─── Handlers ────────────────────────────────────────────────────────
   const handleSalvar = async (data: SetorFormData) => {
@@ -634,6 +737,7 @@ export function SetorDetalhe() {
     setOficializando(true)
     try {
       await escalasService.oficializar(escalaCompleta.escala.id)
+      await Promise.all([reloadEscalas(), reloadRegrasPadrao()])
       toast.success('Escala oficializada')
       setEscalaCompleta(null)
     } catch (err) {
@@ -662,39 +766,263 @@ export function SetorDetalhe() {
     }
   }
 
-  const handleExportarHTML = () => {
-    if (!escalaCompleta || !setor || !colaboradores) return
-    import('react-dom/server').then(({ renderToStaticMarkup }) => {
-      const html = renderToStaticMarkup(
+  const handleFolgaChange = useCallback(async (
+    colaboradorId: number,
+    field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana',
+    value: DiaSemana | null,
+  ) => {
+    try {
+      await colaboradoresService.salvarRegraHorario({
+        colaborador_id: colaboradorId,
+        [field]: value,
+      })
+      await reloadRegrasPadrao()
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao salvar folga')
+    }
+  }, [reloadRegrasPadrao])
+
+  const resolveExportColaboradores = useCallback(() => {
+    if (orderedColabs.length > 0) return orderedColabs
+    return colaboradores ?? []
+  }, [colaboradores, orderedColabs])
+
+  const hasConteudoSetorial = useCallback((conteudo: EscalaExportContent) => {
+    return conteudo.ciclo || conteudo.timeline
+  }, [])
+
+  const buildHTMLFuncionario = useCallback((detalhe: EscalaCompletaV3, colabId: number, incluirAvisos: boolean) => {
+    if (!setor || !tiposContrato) return null
+    const baseColaboradores = resolveExportColaboradores()
+    const colab = baseColaboradores.find((c) => c.id === colabId)
+    if (!colab) return null
+    const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
+    const regra = regrasMap.get(colabId)
+    const html = gerarHTMLFuncionario({
+      nome: colab.nome,
+      contrato: tc?.nome ?? '',
+      horasSemanais: tc?.horas_semanais ?? colab.horas_semanais,
+      setor: setor.nome,
+      periodo: { inicio: detalhe.escala.data_inicio, fim: detalhe.escala.data_fim },
+      alocacoes: detalhe.alocacoes.filter((a) => a.colaborador_id === colabId),
+      violacoes: incluirAvisos ? detalhe.violacoes.filter((v) => v.colaborador_id === colabId) : [],
+      regra: regra ? { folga_fixa_dia_semana: regra.folga_fixa_dia_semana ?? null, folga_variavel_dia_semana: regra.folga_variavel_dia_semana ?? null } : undefined,
+    })
+    return { html, colaboradorNome: colab.nome }
+  }, [regrasMap, resolveExportColaboradores, setor, tiposContrato])
+
+  const renderExportSetorial = useCallback((detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
+    if (!detalhe || !setor || !colaboradores) return
+    if (!hasConteudoSetorial(conteudo)) return null
+    const modo: 'ciclo' | 'detalhado' = conteudo.timeline ? 'detalhado' : 'ciclo'
+    const baseColaboradores = resolveExportColaboradores()
+    return {
+      modo,
+      jsx: (
         <ExportarEscala
-          escala={escalaCompleta.escala}
-          alocacoes={escalaCompleta.alocacoes}
-          colaboradores={colaboradores}
+          escala={detalhe.escala}
+          alocacoes={detalhe.alocacoes}
+          colaboradores={baseColaboradores}
           setor={setor}
-          violacoes={escalaCompleta.violacoes}
+          violacoes={detalhe.violacoes}
           tiposContrato={tiposContrato ?? []}
           funcoes={funcoes ?? []}
           horariosSemana={horariosSemana ?? []}
-          modo="ciclo"
-          incluirAvisos={incluirAvisosExportCiclo}
+          modo={modo}
+          incluirAvisos={conteudo.avisos}
+          incluirCiclo={conteudo.ciclo}
+          incluirTimeline={conteudo.timeline}
           modoRender="download"
-        />,
-      )
-      const fullHTML = buildStandaloneHtml(html, {
-        title: `Escala - ${setor.nome}`,
-      })
-      exportarService.salvarHTML(fullHTML, `escala-${setor.nome.toLowerCase().replace(/\s+/g, '-')}.html`).then((result) => {
-        if (result) toast.success('HTML salvo com sucesso')
-      }).catch(() => {
-        toast.error('Erro ao exportar HTML')
-      })
+        />
+      ),
+    }
+  }, [colaboradores, funcoes, hasConteudoSetorial, horariosSemana, resolveExportColaboradores, setor, tiposContrato])
+
+  const handleExportarHTML = async (detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
+    const payload = renderExportSetorial(detalhe, conteudo)
+    if (!payload || !setor) {
+      toast.error('Selecione Ciclo e/ou Timeline para exportar HTML setorial.')
+      return
+    }
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const html = renderToStaticMarkup(payload.jsx)
+    const fullHTML = buildStandaloneHtml(html, {
+      title: `Escala - ${setor.nome}`,
     })
+    const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
+    const prefix = payload.modo === 'ciclo' ? 'escala-ciclo' : 'escala-detalhada'
+    try {
+      const result = await exportarService.salvarHTML(fullHTML, `${prefix}-${slug}.html`)
+      if (result) toast.success(payload.modo === 'detalhado' ? 'HTML detalhado salvo com sucesso' : 'HTML salvo com sucesso')
+    } catch {
+      toast.error(payload.modo === 'detalhado' ? 'Erro ao exportar HTML detalhado' : 'Erro ao exportar HTML')
+    }
+  }
+
+  const handleImprimirHTML = async (detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
+    const payload = renderExportSetorial(detalhe, conteudo)
+    if (!payload || !setor) {
+      toast.error('Selecione Ciclo e/ou Timeline para imprimir.')
+      return
+    }
+    if (!detalhe || !setor || !colaboradores) return
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) {
+      toast.error('Bloqueio de popup detectado. Permita popups para imprimir.')
+      return
+    }
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const html = renderToStaticMarkup(payload.jsx)
+    const fullHTML = buildStandaloneHtml(html, {
+      title: `Escala - ${setor.nome}`,
+    })
+    printWindow.document.write(fullHTML)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => printWindow.print(), 250)
+  }
+
+  const handleExportarCSV = async (detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
+    if (!detalhe || !setor || !colaboradores) return
+    const baseColaboradores = resolveExportColaboradores()
+    const blocos: string[] = []
+    const incluirEscala = conteudo.ciclo || conteudo.timeline || conteudo.funcionarios
+    if (incluirEscala) {
+      blocos.push(gerarCSVAlocacoes([detalhe], [setor], baseColaboradores))
+      blocos.push(gerarCSVComparacaoDemanda([detalhe], [setor]))
+    }
+    if (conteudo.avisos) {
+      blocos.push(gerarCSVViolacoes([detalhe], [setor]))
+    }
+    if (blocos.length === 0) {
+      toast.error('Selecione ao menos um conteúdo para exportar CSV.')
+      return
+    }
+    const combined = blocos.join('\n\n')
+    const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
+    try {
+      const result = await exportarService.salvarCSV(combined, `escala-${slug}.csv`)
+      if (result) toast.success('CSV salvo com sucesso')
+    } catch {
+      toast.error('Erro ao exportar CSV')
+    }
+  }
+
+  const handleExportarFuncionariosBatch = async (detalhe: EscalaCompletaV3 | null, incluirAvisos: boolean) => {
+    if (!detalhe) return
+    const baseColaboradores = resolveExportColaboradores()
+    const arquivos = baseColaboradores
+      .map((colab) => {
+        const payload = buildHTMLFuncionario(detalhe, colab.id, incluirAvisos)
+        if (!payload) return null
+        return { nome: payload.colaboradorNome.replace(/\s+/g, '_'), html: payload.html }
+      })
+      .filter((item): item is { nome: string; html: string } => item != null)
+
+    if (arquivos.length === 0) {
+      toast.error('Nao foi possivel montar exportacao por funcionario.')
+      return
+    }
+    try {
+      const result = await exportarService.batchHTML(arquivos)
+      if (result) {
+        toast.success(`${result.count} arquivo(s) de funcionario salvos em ${result.pasta}`)
+      }
+    } catch {
+      toast.error('Erro ao exportar funcionarios em lote')
+    }
+  }
+
+  const abrirModalExportacao = (detalhe: EscalaCompletaV3 | null) => {
+    if (!detalhe) return
+    setExportDetalhe(detalhe)
+    setExportOpen(true)
+  }
+
+  const handleExportFromModal = async () => {
+    if (!exportDetalhe) return
+    const incluirSetorial = hasConteudoSetorial(conteudoExport)
+    const incluirFuncionarios = conteudoExport.funcionarios
+    if (!incluirSetorial && !incluirFuncionarios) {
+      toast.error('Ative Ciclo, Timeline ou Por funcionario para exportar HTML.')
+      return
+    }
+    if (incluirSetorial) {
+      await handleExportarHTML(exportDetalhe, conteudoExport)
+    }
+    if (incluirFuncionarios) {
+      await handleExportarFuncionariosBatch(exportDetalhe, conteudoExport.avisos)
+    }
+    setExportOpen(false)
+  }
+
+  const handlePrintFromModal = async () => {
+    if (!exportDetalhe) return
+    if (hasConteudoSetorial(conteudoExport)) {
+      await handleImprimirHTML(exportDetalhe, conteudoExport)
+      setExportOpen(false)
+      return
+    }
+    if (conteudoExport.funcionarios) {
+      toast.error('Impressao por funcionario em lote nao esta disponivel. Use Baixar HTML.')
+      return
+    }
+    toast.error('Ative Ciclo e/ou Timeline para imprimir.')
+  }
+
+  const handleCSVFromModal = async () => {
+    await handleExportarCSV(exportDetalhe, conteudoExport)
+    setExportOpen(false)
+  }
+
+  const renderExportPreview = () => {
+    if (!exportDetalhe || !setor || !colaboradores) return null
+    const baseColaboradores = resolveExportColaboradores()
+    const incluirSetorial = hasConteudoSetorial(conteudoExport)
+    return (
+      <div className="space-y-3">
+        {incluirSetorial ? (
+          <ExportarEscala
+            escala={exportDetalhe.escala}
+            alocacoes={exportDetalhe.alocacoes}
+            colaboradores={baseColaboradores}
+            setor={setor}
+            violacoes={exportDetalhe.violacoes}
+            tiposContrato={tiposContrato ?? []}
+            funcoes={funcoes ?? []}
+            horariosSemana={horariosSemana ?? []}
+            modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
+            incluirAvisos={conteudoExport.avisos}
+            incluirCiclo={conteudoExport.ciclo}
+            incluirTimeline={conteudoExport.timeline}
+          />
+        ) : (
+          <div className="rounded-md border bg-background p-4">
+            <p className="text-sm font-medium">Preview setorial desativada</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Ative <strong>Ciclo</strong> e/ou <strong>Timeline</strong> para visualizar aqui.
+            </p>
+          </div>
+        )}
+
+        {conteudoExport.funcionarios && (
+          <div className="rounded-md border bg-background p-4">
+            <p className="text-sm font-medium">Por funcionario ativo</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Serao gerados arquivos para todos os {baseColaboradores.length} funcionario(s) do setor.
+            </p>
+          </div>
+        )}
+      </div>
+    )
   }
 
   // Auto-load rascunho existente
   useEffect(() => {
     if (!escalas?.length) return
-    const rascunho = escalas.find((e) => e.status === 'RASCUNHO')
+    const rascunho = [...escalas]
+      .filter((e) => e.status === 'RASCUNHO')
+      .sort((a, b) => b.criada_em.localeCompare(a.criada_em))[0]
     if (rascunho && !escalaCompleta) {
       escalasService.buscar(rascunho.id).then(setEscalaCompleta).catch(() => {})
     }
@@ -949,6 +1277,8 @@ export function SetorDetalhe() {
                               <TableHead className="w-[60px] text-center">#</TableHead>
                               <TableHead className="w-[120px]">Posto</TableHead>
                               <TableHead>Titular</TableHead>
+                              <TableHead className="w-[84px] text-center">Variavel</TableHead>
+                              <TableHead className="w-[70px] text-center">Fixo</TableHead>
                               <TableHead className="w-[100px]">Contrato</TableHead>
                               <TableHead className="w-[60px]">Sexo</TableHead>
                               <TableHead className="w-[100px]">Status</TableHead>
@@ -964,6 +1294,7 @@ export function SetorDetalhe() {
                               const ocupante = ocupanteMap.get(posto.id)
                               const status = ocupante ? getStatusColaborador(ocupante.id) : '-'
                               const contratoNome = ocupante ? (contratoMap.get(ocupante.tipo_contrato_id) ?? 'Contrato') : '-'
+                              const regra = ocupante ? regrasMap.get(ocupante.id) : null
                               const editorAberto = editingPostoId === posto.id
 
                               return (
@@ -975,6 +1306,16 @@ export function SetorDetalhe() {
                                     ) : (
                                       <span className="text-sm italic text-muted-foreground">Vazio</span>
                                     )}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline" className={cn('text-[10px]', !regra?.folga_variavel_dia_semana && 'text-muted-foreground')}>
+                                      {regra?.folga_variavel_dia_semana ?? '-'}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline" className={cn('text-[10px]', !regra?.folga_fixa_dia_semana && 'text-muted-foreground')}>
+                                      {regra?.folga_fixa_dia_semana ?? '-'}
+                                    </Badge>
                                   </TableCell>
                                   <TableCell className="text-xs text-muted-foreground">{contratoNome}</TableCell>
                                   <TableCell className="text-xs text-muted-foreground">
@@ -1123,190 +1464,266 @@ export function SetorDetalhe() {
             </Card>
 
           <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
-                <div>
-                  <CardTitle className="text-base font-semibold">
-                    Escala
-                  </CardTitle>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Periodo de geracao:{' '}
-                    {periodoGeracao.data_inicio && periodoGeracao.data_fim
-                      ? `${formatarData(periodoGeracao.data_inicio)} — ${formatarData(periodoGeracao.data_fim)}`
-                      : 'nao definido'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <SlidersHorizontal className="size-3.5" />
-                        Configurar
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-80 space-y-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Configuracao de geracao</p>
-                        <p className="text-xs text-muted-foreground">
-                          Defina periodo e estrategia do solver para esta geracao.
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Data inicial</Label>
-                          <Input
-                            type="date"
-                            value={periodoGeracao.data_inicio}
-                            onChange={(e) => setPeriodoGeracao((prev) => ({ ...prev, data_inicio: e.target.value }))}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Data final</Label>
-                          <Input
-                            type="date"
-                            value={periodoGeracao.data_fim}
-                            onChange={(e) => setPeriodoGeracao((prev) => ({ ...prev, data_fim: e.target.value }))}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Estrategia</Label>
-                        <Select
-                          value={solveModeGeracao}
-                          onValueChange={(v) => setSolveModeGeracao(v as 'rapido' | 'otimizado')}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="rapido">Rapido</SelectItem>
-                            <SelectItem value="otimizado">Otimizado</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {solveModeGeracao === 'otimizado' && (
-                        <div className="space-y-1">
-                          <Label className="text-xs">Tempo maximo (segundos)</Label>
-                          <Input
-                            type="number"
-                            min={30}
-                            max={300}
-                            value={maxTimeGeracao}
-                            onChange={(e) => setMaxTimeGeracao(parseInt(e.target.value || '90', 10))}
-                          />
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-medium">Incluir avisos no export ciclo</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            Padrao recomendado: desativado para export operacional.
-                          </p>
-                        </div>
-                        <Switch
-                          checked={incluirAvisosExportCiclo}
-                          onCheckedChange={setIncluirAvisosExportCiclo}
-                        />
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  <Button size="sm" className="gap-1.5" onClick={handleGerar} disabled={gerando}>
-                    {gerando ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : escalaCompleta || (escalaAtual && escalaAtual.status === 'OFICIAL') ? (
-                      <RotateCcw className="size-3.5" />
-                    ) : (
-                      <Play className="size-3.5" />
-                    )}
-                    {escalaCompleta || (escalaAtual && escalaAtual.status === 'OFICIAL') ? 'Regerar' : 'Gerar Escala'}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {escalaCompleta ? (
-                  <div className="space-y-3">
-                    <EscalaResultBanner
-                      diagnostico={escalaCompleta.diagnostico}
-                      indicadores={escalaCompleta.indicadores}
-                      antipatterns={escalaCompleta.antipatterns.length}
-                      dataInicio={escalaCompleta.escala.data_inicio}
-                      dataFim={escalaCompleta.escala.data_fim}
-                      onAbrirDetalhes={() => navigate(`/setores/${setorId}/escala`)}
-                      onExportar={handleExportarHTML}
-                      onOficializar={handleOficializar}
-                      onDescartar={handleDescartar}
-                      oficializando={oficializando}
-                      descartando={descartando}
-                    />
-                    {(() => {
-                      const colabsComRegra = (regrasPadrao ?? []).filter(
-                        (r) => r.folga_fixa_dia_semana != null || r.folga_variavel_dia_semana != null,
-                      )
-                      if (colabsComRegra.length === 0) return null
-                      return (
-                        <div className="rounded-lg border bg-muted/30 px-4 py-3">
-                          <p className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Folgas configuradas</p>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Escala</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Tabs value={escalaTab} onValueChange={(value) => setEscalaTab(value as 'simulacao' | 'oficial' | 'historico')} className="space-y-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="simulacao">Simulacao</TabsTrigger>
+                  <TabsTrigger value="oficial">Oficial</TabsTrigger>
+                  <TabsTrigger value="historico">Historico</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="simulacao" className="space-y-4">
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Select value={periodoPreset} onValueChange={(value) => setPeriodoPreset(value as EscalaPeriodoPreset)}>
+                        <SelectTrigger className="h-8 w-[150px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="3_MESES">{getPresetLabel('3_MESES')}</SelectItem>
+                          <SelectItem value="6_MESES">{getPresetLabel('6_MESES')}</SelectItem>
+                          <SelectItem value="1_ANO">{getPresetLabel('1_ANO')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="gap-1.5">
+                            <SlidersHorizontal className="size-3.5" />
+                            Configurar
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-80 space-y-3">
                           <div className="space-y-1">
-                            {colabsComRegra.map((r) => {
-                              const colab = orderedColabs.find((c) => c.id === r.colaborador_id)
-                              if (!colab) return null
-                              const nome = colab.nome.split(' ').slice(0, 2).join(' ')
-                              const ff = r.folga_fixa_dia_semana
-                              const fv = r.folga_variavel_dia_semana
-                              return (
-                                <div key={r.colaborador_id} className="flex items-center gap-2">
-                                  <span className="text-xs font-medium text-foreground w-32 truncate">{nome}</span>
-                                  {ff != null && (
-                                    <Badge variant="outline" className="text-[10px] border-blue-500/40 text-blue-600 dark:text-blue-400">
-                                      [F] {ff}
-                                    </Badge>
-                                  )}
-                                  {fv != null && (
-                                    <Badge variant="outline" className="text-[10px] border-purple-500/40 text-purple-600 dark:text-purple-400">
-                                      (V) {fv}
-                                    </Badge>
-                                  )}
-                                </div>
-                              )
-                            })}
+                            <p className="text-sm font-medium">Configuracao de geracao</p>
+                            <p className="text-xs text-muted-foreground">
+                              Defina a estrategia do solver para a geracao desta simulacao.
+                            </p>
                           </div>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                ) : escalaAtual && escalaAtual.status === 'OFICIAL' ? (
-                  <div className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="flex items-center gap-3">
-                      <CalendarDays className="size-5 text-primary" />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
-                            {formatarData(escalaAtual.data_inicio)} — {formatarData(escalaAtual.data_fim)}
-                          </span>
-                          <StatusBadge status="OFICIAL" />
-                        </div>
-                        {escalaAtual.pontuacao !== null && (
-                          <p className="text-xs text-muted-foreground">
-                            Pontuacao: {escalaAtual.pontuacao}
-                          </p>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Estrategia</Label>
+                            <Select
+                              value={solveModeGeracao}
+                              onValueChange={(v) => setSolveModeGeracao(v as 'rapido' | 'otimizado')}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="rapido">Rapido</SelectItem>
+                                <SelectItem value="otimizado">Otimizado</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {solveModeGeracao === 'otimizado' && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Tempo maximo (segundos)</Label>
+                              <Input
+                                type="number"
+                                min={30}
+                                max={300}
+                                value={maxTimeGeracao}
+                                onChange={(e) => setMaxTimeGeracao(parseInt(e.target.value || '90', 10))}
+                              />
+                            </div>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+
+                      <Button size="sm" className="gap-1.5" onClick={handleGerar} disabled={gerando}>
+                        {gerando ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : escalaCompleta ? (
+                          <RotateCcw className="size-3.5" />
+                        ) : (
+                          <Play className="size-3.5" />
                         )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link to={`/setores/${setorId}/escala`}>Ver completo</Link>
+                        {escalaCompleta ? 'Regerar' : 'Gerar Escala'}
                       </Button>
+
+                      {escalaCompleta && (
+                        <>
+                          <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando}>
+                            {oficializando ? 'Oficializando...' : 'Oficializar'}
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando}>
+                            {descartando ? 'Descartando...' : 'Descartar'}
+                          </Button>
+                        </>
+                      )}
                     </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed px-4 py-5">
-                    <p className="text-sm font-medium text-foreground">Nenhuma escala gerada para este setor</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Ajuste o periodo em <strong>Configurar</strong> e clique em <strong>Gerar Escala</strong>.
+                    <p className="text-xs text-muted-foreground">
+                      Janela calculada: {formatarData(periodoGeracao.data_inicio)} — {formatarData(periodoGeracao.data_fim)}
                     </p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+
+                  {escalaCompleta ? (
+                    <div className="space-y-3 rounded-md border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold">Ciclo Rotativo</p>
+                          <StatusBadge status="RASCUNHO" />
+                          <Badge variant="outline" className={cn(
+                            escalaCompleta.violacoes.length > 0 ? 'border-amber-200 text-amber-700' : 'border-emerald-200 text-emerald-700',
+                          )}>
+                            {escalaCompleta.violacoes.length > 0 ? `${escalaCompleta.violacoes.length} aviso(s)` : 'Sem avisos relevantes'}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => abrirModalExportacao(escalaCompleta)}
+                          >
+                            Exportar
+                          </Button>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link to={`/setores/${setorId}/escala?escalaId=${escalaCompleta.escala.id}`}>Ver completo</Link>
+                          </Button>
+                        </div>
+                      </div>
+                      <EscalaCicloResumo
+                        escala={escalaCompleta.escala}
+                        alocacoes={escalaCompleta.alocacoes}
+                        colaboradores={orderedColabs}
+                        funcoes={postosOrdenados}
+                        regrasPadrao={regrasPadrao ?? []}
+                        onFolgaChange={handleFolgaChange}
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed px-4 py-5">
+                      <p className="text-sm font-medium text-foreground">Nenhuma simulacao gerada</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Selecione o periodo e clique em <strong>Gerar Escala</strong>.
+                      </p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="oficial" className="space-y-4">
+                  {!escalaOficialAtual ? (
+                    <div className="rounded-lg border border-dashed px-4 py-5">
+                      <p className="text-sm font-medium text-foreground">Nenhuma escala oficial encontrada</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Gere uma simulacao e oficialize para aparecer aqui.
+                      </p>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => setEscalaTab('simulacao')}>
+                        Ir para Simulacao
+                      </Button>
+                    </div>
+                  ) : carregandoTabEscala ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : oficialCompleta ? (
+                    <div className="space-y-3 rounded-md border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold">Ciclo Rotativo</p>
+                          <StatusBadge status="OFICIAL" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => abrirModalExportacao(oficialCompleta)}
+                          >
+                            Exportar
+                          </Button>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link to={`/setores/${setorId}/escala?escalaId=${oficialCompleta.escala.id}`}>Ver completo</Link>
+                          </Button>
+                        </div>
+                      </div>
+                      <EscalaCicloResumo
+                        escala={oficialCompleta.escala}
+                        alocacoes={oficialCompleta.alocacoes}
+                        colaboradores={orderedColabs}
+                        funcoes={postosOrdenados}
+                        regrasPadrao={regrasPadrao ?? []}
+                        onFolgaChange={handleFolgaChange}
+                      />
+                    </div>
+                  ) : null}
+                </TabsContent>
+
+                <TabsContent value="historico" className="space-y-4">
+                  {escalasHistorico.length === 0 ? (
+                    <div className="rounded-lg border border-dashed px-4 py-5">
+                      <p className="text-sm font-medium text-foreground">Historico vazio</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Ainda nao existem escalas arquivadas para este setor.
+                      </p>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => setEscalaTab('simulacao')}>
+                        Gerar primeira simulacao
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        {escalasHistorico.map((escala) => (
+                          <Button
+                            key={escala.id}
+                            type="button"
+                            size="sm"
+                            variant={historicoSelecionadaId === escala.id ? 'secondary' : 'outline'}
+                            onClick={() => setHistoricoSelecionadaId(escala.id)}
+                            className="h-auto items-start px-3 py-2"
+                          >
+                            <div className="text-left">
+                              <p className="text-xs font-medium">{formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)}</p>
+                              <p className="text-[10px] uppercase text-muted-foreground">{escala.status}</p>
+                            </div>
+                          </Button>
+                        ))}
+                      </div>
+
+                      {carregandoTabEscala ? (
+                        <div className="flex items-center justify-center py-10">
+                          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : historicoCompleta ? (
+                        <div className="space-y-3 rounded-md border p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold">Ciclo Rotativo</p>
+                              <Badge variant="outline" className="text-xs">
+                                {historicoCompleta.escala.status}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => abrirModalExportacao(historicoCompleta)}
+                              >
+                                Exportar
+                              </Button>
+                              <Button variant="outline" size="sm" asChild>
+                                <Link to={`/setores/${setorId}/escala?escalaId=${historicoCompleta.escala.id}`}>Ver completo</Link>
+                              </Button>
+                            </div>
+                          </div>
+                          <EscalaCicloResumo
+                            escala={historicoCompleta.escala}
+                            alocacoes={historicoCompleta.alocacoes}
+                            colaboradores={orderedColabs}
+                            funcoes={postosOrdenados}
+                            regrasPadrao={regrasPadrao ?? []}
+                            onFolgaChange={handleFolgaChange}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Excecoes de Demanda por Data — oculto (IA configura via tool) */}
@@ -1328,6 +1745,22 @@ export function SetorDetalhe() {
           </div>
         )}
       </div>
+
+      <ExportModal
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        context="escala"
+        titulo={`Exportar Escala — ${setor.nome}`}
+        formato="conteudo"
+        onFormatoChange={() => {}}
+        conteudoEscala={conteudoExport}
+        onConteudoEscalaChange={setConteudoExport}
+        onExportHTML={handleExportFromModal}
+        onPrint={handlePrintFromModal}
+        onCSV={handleCSVFromModal}
+      >
+        {renderExportPreview()}
+      </ExportModal>
 
       {/* ─── Excecao Demanda por Data Dialog ─── */}
       <Dialog open={showExcDemandaDialog} onOpenChange={setShowExcDemandaDialog}>
