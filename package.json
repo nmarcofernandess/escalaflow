@@ -1,6 +1,6 @@
 {
   "name": "escalaflow",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "App desktop offline para geração automática de escalas de trabalho em supermercados",
   "author": "Marco Fernandes",
   "private": true,
@@ -32,6 +32,7 @@
     "solver:test:db": "python3 scripts/solver_test_db.py --setor-id 1 --solve-mode rapido --nivel-rigor ALTO",
     "solver:test:real": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/test-solver-real.ts",
     "solver:test": "npm run solver:test:real",
+    "solver:cli": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/solver-cli.ts",
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "model:download": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/download-embedding-model.ts",
     "knowledge:seed": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/knowledge-seed.ts"

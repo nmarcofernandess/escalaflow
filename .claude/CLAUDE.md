@@ -177,10 +177,29 @@ npm run solver:build
 # Gera: solver-bin/escalaflow-solver (macOS) ou solver-bin/escalaflow-solver.exe (Windows)
 ```
 
-### Testar o motor localmente
+### CLI do Motor (dev)
 
 ```bash
-npm run solver:test   # smoke test no DB real
+npm run solver:cli -- list                           # lista setores disponíveis
+npm run solver:cli -- 2                              # roda Açougue (1 semana, próxima segunda)
+npm run solver:cli -- 2 2026-03-02 2026-03-08        # Açougue, período específico
+npm run solver:cli -- 1 2026-03-02 2026-04-26        # Caixa, 8 semanas
+npm run solver:cli -- 2 --mode otimizado             # mais tempo pro solver otimizar
+npm run solver:cli -- 2 --dump                       # salva input JSON em tmp/ (debug)
+npm run solver:cli -- 2 --json                       # output JSON raw (pipe)
+```
+
+**Requer:** app ter rodado ao menos 1x (banco em `out/data/escalaflow-pg`).
+
+**Output inclui:** status, indicadores, escala por colaborador (tabela), cobertura de demanda por dia (gaps agregados), horas por semana (se multi-semana).
+
+**Arquivo:** `scripts/solver-cli.ts`
+
+### Outros testes do motor
+
+```bash
+npm run solver:test      # smoke test E2E (bridge TS → Python → resultado)
+npm run solver:build     # compila binário Python (PyInstaller)
 ```
 
 ---
@@ -423,6 +442,8 @@ npm run test:ia:live     # Smoke test IA com API real
 npm run ia:chat          # CLI interativo para testar IA
 
 # Motor
+npm run solver:cli -- <setor_id> [inicio] [fim]  # CLI dev completo (rich output)
+npm run solver:cli -- list                       # lista setores
 npm run solver:test      # smoke test motor Python no DB real
 npm run solver:build     # compila binário Python (PyInstaller)
 

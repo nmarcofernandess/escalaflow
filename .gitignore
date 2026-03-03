@@ -78,6 +78,10 @@ logs/security/
 # Gemini / AI agent
 .gemini/
 
+# Temporários de dev
+tmp/
+agora.md
+
 # Seed local (dados de dev, chaves API — nunca versionar)
 src/main/db/seed-local.ts
 .devtools

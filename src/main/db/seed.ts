@@ -268,6 +268,7 @@ async function seedRegrasDefinicao(): Promise<void> {
     ['S_CONSISTENCIA', 'Consistencia de horarios entre dias', 'Penaliza variacoes bruscas de horario do mesmo colaborador ao longo da semana.', 'SOFT', 'ON', true, null, 105],
     ['S_SPREAD', 'Equilibrio de carga entre a equipe', 'Distribui horas de trabalho de forma equilibrada entre os colaboradores.', 'SOFT', 'ON', true, null, 106],
     ['S_AP1_EXCESS', 'Penalidade por jornada acima de 8h', 'Penaliza jornadas que ultrapassam 8 horas mesmo dentro do limite legal de 10h.', 'SOFT', 'ON', true, null, 107],
+    ['S_CYCLE_CONSISTENCY', 'Consistencia entre ciclos', 'Penaliza quando dias correspondentes em ciclos diferentes tem horarios divergentes. Faz a escala repetir padroes.', 'SOFT', 'ON', true, null, 108],
 
     // -- ANTIPATTERN --
     ['AP1', 'Clopening — fechar e abrir no dia seguinte', 'Colaborador fecha o estabelecimento e abre no dia seguinte (intervalo critico).', 'ANTIPATTERN', 'ON', true, null, 201],

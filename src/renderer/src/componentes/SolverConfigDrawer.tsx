@@ -25,7 +25,7 @@ import { regrasService } from '@/servicos/regras'
 import type { RuleDefinition, RuleStatus, RuleConfig } from '@shared/index'
 
 export interface SolverSessionConfig {
-  solveMode: 'rapido' | 'otimizado'
+  solveMode: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
   maxTimeSeconds: number
   rulesOverride: RuleConfig
 }
@@ -197,7 +197,7 @@ export function SolverConfigDrawer({
               </p>
               <RadioGroup
                 value={solveMode}
-                onValueChange={(v) => setSolveMode(v as 'rapido' | 'otimizado')}
+                onValueChange={(v) => setSolveMode(v as SolverSessionConfig['solveMode'])}
                 className="space-y-2"
               >
                 <div className="flex items-start gap-3 rounded-md border p-3">
@@ -207,26 +207,48 @@ export function SolverConfigDrawer({
                       Rapido
                     </Label>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Primeira solucao valida (~1-5s)
+                      Primeira solucao valida (~45s)
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 rounded-md border p-3">
+                  <RadioGroupItem value="balanceado" id="mode-balanceado" className="mt-0.5" />
+                  <div>
+                    <Label htmlFor="mode-balanceado" className="font-medium cursor-pointer">
+                      Balanceado
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Equilibrio velocidade/qualidade (~3min)
                     </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 rounded-md border p-3">
                   <RadioGroupItem value="otimizado" id="mode-otimizado" className="mt-0.5" />
-                  <div className="flex-1">
+                  <div>
                     <Label htmlFor="mode-otimizado" className="font-medium cursor-pointer">
                       Otimizado
                     </Label>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Busca melhor solucao dentro do tempo limite
+                      Alta qualidade (~10min)
                     </p>
-                    {solveMode === 'otimizado' && (
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 rounded-md border p-3">
+                  <RadioGroupItem value="maximo" id="mode-maximo" className="mt-0.5" />
+                  <div className="flex-1">
+                    <Label htmlFor="mode-maximo" className="font-medium cursor-pointer">
+                      Maximo
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Otimizacao maxima (~30min)
+                    </p>
+                    {solveMode === 'maximo' && (
                       <div className="flex items-center gap-2 mt-2">
                         <Label className="text-xs">Limite (s):</Label>
                         <Input
                           type="number"
-                          min={5}
-                          max={300}
+                          min={60}
+                          max={3600}
                           value={maxTime}
                           onChange={(e) => setMaxTime(Number(e.target.value))}
                           className="h-7 w-20 text-xs"

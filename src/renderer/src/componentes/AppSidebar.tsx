@@ -9,6 +9,7 @@ import {
   Settings,
   FileText,
   BrainCircuit,
+  Database,
   ChevronsUpDown,
   Sun,
   Moon,
@@ -55,6 +56,7 @@ const mainNav = [
   { label: 'Escalas', to: '/escalas', icon: CalendarDays },
   { label: 'Colaboradores', to: '/colaboradores', icon: Users },
   { label: 'Assistente IA', to: '/ia', icon: BrainCircuit },
+  { label: 'Memoria', to: '/memoria', icon: Database },
 ]
 
 const configNav = [

@@ -29,7 +29,7 @@ const require = createRequire(import.meta.url)
 
 type RegimeEscalaInput = '5X2' | '6X1'
 
-export type SolveMode = 'rapido' | 'otimizado'
+export type SolveMode = 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
 
 export interface BuildSolverInputOptions {
   regimesOverride?: Array<{ colaborador_id: number; regime_escala: RegimeEscalaInput }>
@@ -510,7 +510,7 @@ export async function buildSolverInput(
       : undefined,
     config: {
       solve_mode: options.solveMode ?? 'rapido',
-      max_time_seconds: options.maxTimeSeconds ?? 90,
+      ...(options.maxTimeSeconds != null ? { max_time_seconds: options.maxTimeSeconds } : {}),
       num_workers: 8,
       nivel_rigor: options.nivelRigor ?? 'ALTO',  // backward compat quando rules ausente
       rules: await buildRulesConfig(options.rulesOverride),
@@ -629,7 +629,7 @@ export function computeSolverScenarioHash(input: SolverInput): string {
 
 export function runSolver(
   input: SolverInput,
-  timeoutMs = 300_000,
+  timeoutMs = 3_660_000, // 61 min — matches Python HARD_TIME_CAP (3600s) + margin
   onLog?: (line: string) => void,
 ): Promise<SolverOutput> {
   return new Promise((resolve, reject) => {
@@ -703,7 +703,7 @@ export function runSolver(
       settled = true
       clearTimeout(timer)
 
-      if (stderrBuf.trim()) {
+      if (stderrBuf.trim() && !onLog) {
         console.error('[SOLVER stderr]', stderrBuf.trim())
       }
 

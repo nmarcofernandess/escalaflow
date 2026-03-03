@@ -283,7 +283,7 @@ export function SetorDetalhe() {
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
   const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
-  const [solveModeGeracao, setSolveModeGeracao] = useState<'rapido' | 'otimizado'>('rapido')
+  const [solveModeGeracao, setSolveModeGeracao] = useState<'rapido' | 'balanceado' | 'otimizado' | 'maximo'>('rapido')
   const [maxTimeGeracao, setMaxTimeGeracao] = useState(90)
   const [exportOpen, setExportOpen] = useState(false)
   const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
@@ -721,7 +721,7 @@ export function SetorDetalhe() {
         data_inicio: dataInicio,
         data_fim: dataFim,
         solveMode: solveModeGeracao,
-        maxTimeSeconds: solveModeGeracao === 'otimizado' ? maxTimeSeconds : undefined,
+        maxTimeSeconds: (solveModeGeracao === 'otimizado' || solveModeGeracao === 'maximo') ? maxTimeSeconds : undefined,
       })
       setEscalaCompleta(result)
       toast.success('Escala gerada')
@@ -1507,18 +1507,20 @@ export function SetorDetalhe() {
                             <Label className="text-xs">Estrategia</Label>
                             <Select
                               value={solveModeGeracao}
-                              onValueChange={(v) => setSolveModeGeracao(v as 'rapido' | 'otimizado')}
+                              onValueChange={(v) => setSolveModeGeracao(v as 'rapido' | 'balanceado' | 'otimizado' | 'maximo')}
                             >
                               <SelectTrigger>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="rapido">Rapido</SelectItem>
+                                <SelectItem value="balanceado">Balanceado</SelectItem>
                                 <SelectItem value="otimizado">Otimizado</SelectItem>
+                                <SelectItem value="maximo">Maximo</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
-                          {solveModeGeracao === 'otimizado' && (
+                          {(solveModeGeracao === 'otimizado' || solveModeGeracao === 'maximo') && (
                             <div className="space-y-1">
                               <Label className="text-xs">Tempo maximo (segundos)</Label>
                               <Input

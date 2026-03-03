@@ -420,6 +420,7 @@ export interface Violacao {
 
 export interface Indicadores {
   cobertura_percent: number
+  cobertura_efetiva_percent: number
   violacoes_hard: number
   violacoes_soft: number
   equilibrio: number
@@ -616,7 +617,7 @@ export interface SolverInput {
   config: {
     max_time_seconds?: number
     num_workers: number
-    solve_mode?: 'rapido' | 'otimizado'
+    solve_mode?: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
     nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'  // backward compat
     rules?: RuleConfig                           // v6: granular, substitui nivel_rigor quando presente
   }
@@ -662,6 +663,20 @@ export interface DiagnosticoSolver {
   }
   /** True when Pass 3 stripped hard time windows and folga_fixa — review carefully */
   modo_emergencia?: boolean
+  /** Optimality gap (0 = proven optimal, >0 = solver stopped before proving) */
+  gap_percent?: number
+  /** Raw objective value (debug) */
+  objective_value?: number
+  /** Cycle length in weeks (N / gcd(N, D_sunday)) */
+  cycle_length_weeks?: number
+  /** Phase 1 (Folga Pattern) result status */
+  phase1_status?: 'OK' | 'SKIPPED' | 'INFEASIBLE'
+  /** Phase 1 solve time in milliseconds */
+  phase1_solve_time_ms?: number
+  /** Phase 1 cycle length in days */
+  phase1_cycle_days?: number
+  /** Phase 1 shift band distribution */
+  phase1_bands_pinned?: { off: number; manha: number; tarde: number; integral: number }
 }
 
 export interface SolverOutput {

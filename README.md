@@ -9,7 +9,7 @@ App desktop offline para geração automática de escalas de trabalho em superme
 - Geração automática de escala otimizada por período (motor Python OR-Tools CP-SAT)
 - 20 regras CLT/CCT aplicadas automaticamente (HARD bloqueantes + SOFT alertas + antipatterns)
 - 35 regras configuráveis por empresa (Engine de Regras com override granular)
-- Assistente IA integrado (Gemini/OpenRouter) com 33 tools — Chat RH contextual ao sistema
+- Assistente IA integrado (Gemini/OpenRouter) com 34 tools — Chat RH contextual ao sistema
 - Knowledge Layer com RAG: embeddings locais (ONNX), knowledge graph, memórias persistentes
 - Grid 15 minutos com simulação iterativa (click alterna TRABALHO/FOLGA, recalcula em tempo real)
 - Regras individuais por colaborador (janela horária, ciclo domingo, folga fixa, exceções por data)
@@ -37,7 +37,7 @@ App desktop offline para geração automática de escalas de trabalho em superme
 | Database | PGlite (Postgres 17 WASM) + pgvector | 0.3 |
 | Embeddings | @huggingface/transformers (multilingual-e5-small) | local ONNX |
 | Motor | Python OR-Tools CP-SAT | via bridge TS → stdin/stdout JSON |
-| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 33 tools |
+| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 34 tools |
 | Frontend | React | 19 |
 | Estilo | Tailwind CSS + shadcn/ui | 3 / 24 components |
 | Estado | Zustand | 5 |
@@ -90,9 +90,18 @@ npm run test:ia:eval     # Roda evals das tools IA
 npm run test:ia:live     # Smoke test IA com API real
 npm run ia:chat          # CLI interativo para testar IA
 
-# Motor
-npm run solver:test      # smoke test motor Python no DB real
-npm run solver:build     # compila binário Python (PyInstaller)
+# Motor — CLI dev (principal ferramenta de debug)
+npm run solver:cli -- list                           # lista setores
+npm run solver:cli -- 2                              # roda setor 2 (1 semana)
+npm run solver:cli -- 2 2026-03-02 2026-03-08        # periodo especifico
+npm run solver:cli -- 1 2026-03-02 2026-04-26        # 8 semanas
+npm run solver:cli -- 2 --mode otimizado             # solver com mais tempo
+npm run solver:cli -- 2 --dump                       # salva input JSON em tmp/
+npm run solver:cli -- 2 --json                       # output JSON raw (pipe)
+
+# Motor — outros
+npm run solver:test      # smoke test E2E (bridge TS → Python)
+npm run solver:build     # compila binario Python (PyInstaller)
 
 # Banco
 npm run db:reset         # deleta e recria banco
@@ -102,6 +111,48 @@ npm run dist:mac         # gera .dmg (macOS)
 npm run dist:win         # gera .exe installer (Windows)
 npm run dist:linux       # gera .AppImage (Linux)
 ```
+
+---
+
+## Solver CLI — Ferramenta de Dev
+
+O `solver:cli` roda o motor OR-Tools direto do terminal, sem precisar abrir o app Electron. Usa o banco real em `out/data/escalaflow-pg` (criado na primeira execucao do app).
+
+**Pra que serve:**
+- Testar escalas rapidamente durante desenvolvimento
+- Debugar problemas de cobertura, violacoes e infeasibility
+- Comparar resultados entre modos (rapido vs otimizado)
+- Exportar input JSON pra analise manual (`--dump`)
+
+**O que mostra no output:**
+1. **Status** — OPTIMAL / FEASIBLE / INFEASIBLE com tempo, pass usado, capacidade vs demanda
+2. **Indicadores** — cobertura %, pontuacao, equilibrio, violacoes HARD/SOFT
+3. **Escala por colaborador** — tabela formatada com dia da semana, horarios, FOLGA, total semanal e delta vs contrato (com cores)
+4. **Cobertura de demanda** — por dia, mostrando faixas com falta de pessoal agregadas
+5. **Horas por semana** — breakdown semanal por colaborador (se periodo > 7 dias)
+
+**Exemplo:**
+```
+  ── ESCALA POR COLABORADOR ─────────────────
+               │ SEG 02      │ TER 03      │ ... │ DOM 08      │ TOTAL
+  ─────────────┼─────────────┼─────────────┼─────┼─────────────┼──────
+  Alex         │ 08:00-19:30 │ 08:00-19:30 │ ... │ 07:00-12:00 │ 42h45 (-75min)
+  Mateus       │  FOLGA      │ 10:00-19:30 │ ... │ 07:00-12:00 │ 42h45 (-75min)
+
+  ── COBERTURA DE DEMANDA ───────────────────
+  ✓ SEG 02 — 100% coberto (50 slots)
+  ✗ SAB 07 — 62% coberto (19 slots com falta)
+    12:00-14:00: precisa 2, tem 0 (falta 2)
+    14:00-18:00: precisa 3, tem 0 (falta 3)
+```
+
+**Flags:**
+
+| Flag | Descricao |
+|------|-----------|
+| `--mode rapido\|otimizado` | Tempo do solver (default: rapido) |
+| `--dump` | Salva input JSON em `tmp/solver-input-setor-N.json` |
+| `--json` | Output JSON raw (usar com `npm run --silent` + `2>/dev/null` pra pipe limpo) |
 
 ---
 
@@ -238,7 +289,7 @@ escalaflow/
 │   │   ├── index.ts             # bootstrap, BrowserWindow, auto-updater
 │   │   ├── tipc.ts              # 90+ IPC handlers type-safe (@egoist/tipc)
 │   │   ├── db/                  # PGlite: schema, migrations, seed, conexão
-│   │   ├── ia/                  # Chat RH: system-prompt, 33 tools, discovery, cliente, session-processor
+│   │   ├── ia/                  # Chat RH: system-prompt, 34 tools, discovery, cliente, session-processor
 │   │   ├── knowledge/           # RAG: embeddings (ONNX), ingest, search, graph
 │   │   └── motor/               # solver-bridge.ts (→ Python) + validador.ts
 │   │
@@ -252,6 +303,9 @@ escalaflow/
 │   └── escalaflow-solver.spec   # PyInstaller spec
 │
 ├── solver-bin/                  # Binário compilado (PyInstaller)
+├── scripts/
+│   ├── solver-cli.ts            # CLI dev do motor (npm run solver:cli)
+│   └── ...                      # db-reset, knowledge-seed, etc
 ├── tests/                       # Unit (vitest), evals IA, E2E (Playwright)
 ├── docs/                        # RFCs, guias, arquitetura
 ├── specs/                       # Specs por feature

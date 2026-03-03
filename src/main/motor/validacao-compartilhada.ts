@@ -2257,6 +2257,32 @@ export function calcularIndicadoresV3(params: CalcIndicadoresParams): Indicadore
     ? Math.round((slotsCobertos / slotsTotal) * 100)
     : 100
 
+  // cobertura_efetiva — ignora gaps de 1 pessoa em faixas de transição
+  const TRANSICAO_FAIXAS = [
+    [7 * 60, 7 * 60 + 30],   // café abertura
+    [11 * 60, 12 * 60],      // stagger almoço
+    [19 * 60, 19 * 60 + 30],  // café fechamento
+  ]
+  let slotsEfetivoCobertos = 0
+  for (const slot of grid) {
+    if (slot.dia_fechado || slot.feriado_proibido) continue
+    const slotInicioMin = timeToMin(slot.hora_inicio)
+    const slotFimMin = timeToMin(slot.hora_fim)
+    const executado = countExecutadoNoSlot({
+      data: slot.data, slotInicioMin, slotFimMin, colaboradores, resultado,
+    })
+    if (executado >= slot.target_planejado) {
+      slotsEfetivoCobertos++
+    } else {
+      const deficit = slot.target_planejado - executado
+      const inTransicao = TRANSICAO_FAIXAS.some(([from, to]) => slotInicioMin >= from && slotInicioMin < to)
+      if (inTransicao && deficit === 1) slotsEfetivoCobertos++
+    }
+  }
+  const cobertura_efetiva_percent = slotsTotal > 0
+    ? Math.round((slotsEfetivoCobertos / slotsTotal) * 100)
+    : 100
+
   // equilibrio — 0-100 baseado no desvio padrão do % de meta atingida por colab
   // Baixo desvio = alto equilíbrio. Calculamos o DP do % atingido por colaborador.
   const percentuaisMeta: number[] = []
@@ -2292,6 +2318,7 @@ export function calcularIndicadoresV3(params: CalcIndicadoresParams): Indicadore
 
   return {
     cobertura_percent,
+    cobertura_efetiva_percent,
     violacoes_hard,
     violacoes_soft,
     equilibrio,

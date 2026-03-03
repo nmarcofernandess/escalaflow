@@ -16,7 +16,7 @@ export const escalasService = {
       data_inicio: string
       data_fim: string
       regimes_override?: Array<{ colaborador_id: number; regime_escala: RegimeEscala }>
-      solveMode?: 'rapido' | 'otimizado'
+      solveMode?: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
       maxTimeSeconds?: number
       rulesOverride?: RuleConfig
     },

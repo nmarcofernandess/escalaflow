@@ -20,18 +20,24 @@ from typing import Any, Dict, List, Tuple
 
 from ortools.sat.python import cp_model
 
+from math import gcd
+
 from constraints import (
     BlockStarts,
     DaySlotDemand,
     SlotGrid,
+    StartVars,
     WorksDay,
     add_ap1_jornada_excessiva,
     add_colaborador_soft_preferences,
     add_colaborador_time_window_hard,
     add_consistencia_horario_soft,
+    add_cycle_alignment_hard,
+    add_cycle_consistency_soft,
     add_demand_soft,
     add_dias_trabalho,
     add_dias_trabalho_soft_penalty,
+    add_domingo_ciclo_hard,
     add_domingo_ciclo_soft,
     add_folga_fixa_5x2,
     add_folga_variavel_condicional,
@@ -42,6 +48,8 @@ from constraints import (
     add_h5_excecoes,
     add_human_blocks,
     add_human_blocks_soft_penalty,
+    add_band_demand_coverage,
+    add_min_headcount_per_day,
     add_h10_meta_semanal,
     add_h10_meta_semanal_elastic,
     add_h11_aprendiz_domingo,
@@ -51,6 +59,7 @@ from constraints import (
     add_h15_estagiario_jornada,
     add_h16_estagiario_hora_extra,
     add_h17_h18_feriado_proibido,
+    make_start_vars,
     add_min_diario,
     add_min_diario_soft_penalty,
     add_surplus_soft,
@@ -63,15 +72,71 @@ WEIGHTS = {
     "override_deficit": 40000,
     "demand_deficit": 10000,
     "surplus": 5000,
-    "domingo_ciclo": 3000,
+    "domingo_ciclo": 5000,
+    "consistencia": 3000,
+    "cycle_consistency": 2000,
     "time_window_pref": 2000,
-    "compensacao": 1500,
-    "consistencia": 1000,
     "spread": 800,
     "ap1_excess": 250,
 }
 
+MODE_PROFILES = {
+    "rapido":     {"budget": 45,   "gap": 0.05},
+    "balanceado": {"budget": 180,  "gap": 0.02},
+    "otimizado":  {"budget": 600,  "gap": 0.005},
+    "maximo":     {"budget": 1800, "gap": 0.001},
+}
+
+# Minimum viable coverage threshold (%). If a FEASIBLE solution has coverage
+# below this, the solver keeps running with extended budget until it reaches
+# the threshold or hits HARD_TIME_CAP_SECONDS.
+MIN_COVERAGE_THRESHOLD = 90.0
+HARD_TIME_CAP_SECONDS = 3600  # 1 hour absolute maximum
+
 DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+
+
+def compute_cycle_length_weeks(colabs: List[dict], demand_by_slot: DaySlotDemand, days: List[str]) -> int:
+    """Compute cycle length in weeks: N / gcd(N, D).
+
+    N = number of CLT workers (non-ESTAGIARIO/APRENDIZ)
+    D = max sunday demand (peak headcount target on any sunday slot)
+    """
+    N = sum(1 for c in colabs
+            if c.get("tipo_trabalhador", "CLT") not in ("ESTAGIARIO", "APRENDIZ"))
+    if N <= 0:
+        return 1
+
+    sun_indices = [d for d, day in enumerate(days)
+                   if date.fromisoformat(day).weekday() == 6]
+    if not sun_indices:
+        return 1
+
+    D_demand = 0
+    for (d, s), target in demand_by_slot.items():
+        if d in sun_indices:
+            D_demand = max(D_demand, target)
+    if D_demand <= 0:
+        return 1
+
+    D_demand = min(D_demand, N)
+    return N // gcd(N, D_demand)
+
+
+def _compute_cycle_weeks_fast(colabs: List[dict], demand_list: List[dict]) -> int:
+    """Lightweight cycle computation for diagnostico (no demand_by_slot needed)."""
+    N = sum(1 for c in colabs
+            if c.get("tipo_trabalhador", "CLT") not in ("ESTAGIARIO", "APRENDIZ"))
+    if N <= 0:
+        return 1
+    D = max(
+        (int(d.get("min_pessoas", 0)) for d in demand_list if d.get("dia_semana") == "DOM"),
+        default=0,
+    )
+    if D <= 0:
+        return 1
+    D = min(D, N)
+    return N // gcd(N, D)
 DaySlotOverride = Dict[Tuple[int, int], bool]
 
 
@@ -213,7 +278,299 @@ def apply_warm_start_hints(
     return hints_applied
 
 
-def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
+def _compute_peak_demand_per_day(
+    demand_list: List[dict],
+    days: List[str],
+    D: int,
+    demanda_excecao_data: List[dict] | None = None,
+) -> List[int]:
+    """For each day d, returns the peak min_pessoas across any demand band.
+
+    Used by Phase 1 to set minimum headcount constraints.
+    """
+    peak = [0] * D
+    # Build excecao lookup for date-specific overrides
+    excecao_by_date: dict[str, int] = {}
+    if demanda_excecao_data:
+        for exc in demanda_excecao_data:
+            dt = exc.get("data", "")
+            mp = int(exc.get("min_pessoas", 0))
+            excecao_by_date[dt] = max(excecao_by_date.get(dt, 0), mp)
+
+    for d_idx, day_str in enumerate(days):
+        # Check date-specific excecao first
+        if day_str in excecao_by_date:
+            peak[d_idx] = max(peak[d_idx], excecao_by_date[day_str])
+
+        label = day_label(day_str)
+        for dem in demand_list:
+            dia = dem.get("dia_semana")
+            if dia is not None and dia != label:
+                continue
+            mp = int(dem.get("min_pessoas", 0))
+            peak[d_idx] = max(peak[d_idx], mp)
+
+    return peak
+
+
+def _compute_half_demand(
+    demand_list: List[dict],
+    days: List[str],
+    D: int,
+    S: int,
+    base_h: int,
+    grid_min: int,
+    demanda_excecao_data: List[dict] | None = None,
+) -> Tuple[List[int], List[int]]:
+    """For each day d, returns (morning_peak, afternoon_peak).
+
+    morning_peak = max demand in first half of slots (0..S//2)
+    afternoon_peak = max demand in second half (S//2..S)
+    """
+    mid = S // 2
+    morning = [0] * D
+    afternoon = [0] * D
+    demand_by_slot, _ = parse_demand(
+        demand_list, days, base_hour=base_h, grid_min=grid_min,
+        demanda_excecao_data=demanda_excecao_data,
+    )
+    for (d, s), target in demand_by_slot.items():
+        if s < mid:
+            morning[d] = max(morning[d], target)
+        else:
+            afternoon[d] = max(afternoon[d], target)
+    return morning, afternoon
+
+
+def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
+    """Phase 1: Shift-band model deciding OFF/MANHA/TARDE/INTEGRAL per (c,d).
+
+    Guarantees folga constraints AND demand coverage per half-day.
+    Pattern values: 0=OFF, 1=MANHA, 2=TARDE, 3=INTEGRAL.
+
+    Returns dict with 'pattern', 'status', 'time_ms', 'cycle_days' on success, or None.
+    """
+    BAND_OFF = 0
+    BAND_MANHA = 1
+    BAND_TARDE = 2
+    BAND_INTEGRAL = 3
+
+    colabs = data["colaboradores"]
+    days = build_days(data["data_inicio"], data["data_fim"])
+    C = len(colabs)
+    D = len(days)
+
+    if C == 0 or D == 0:
+        return None
+
+    # Compute grid info for half-demand
+    empresa = data["empresa"]
+    grid_min = int(empresa.get("grid_minutos", 30))
+    base_h, _ = map(int, empresa["hora_abertura"].split(":"))
+    end_h, end_m = map(int, empresa["hora_fechamento"].split(":"))
+    S = ((end_h * 60 + end_m) - base_h * 60) // grid_min
+
+    model = cp_model.CpModel()
+
+    # 3 BoolVars per (c,d): mutually exclusive shift bands
+    is_manha: Dict[Tuple[int, int], cp_model.IntVar] = {}
+    is_tarde: Dict[Tuple[int, int], cp_model.IntVar] = {}
+    is_integral: Dict[Tuple[int, int], cp_model.IntVar] = {}
+    works_day: Dict[Tuple[int, int], cp_model.IntVar] = {}
+
+    for c in range(C):
+        for d in range(D):
+            is_manha[c, d] = model.new_bool_var(f"p1_m_{c}_{d}")
+            is_tarde[c, d] = model.new_bool_var(f"p1_t_{c}_{d}")
+            is_integral[c, d] = model.new_bool_var(f"p1_i_{c}_{d}")
+
+            # At most one band active (none = OFF/folga)
+            model.add(is_manha[c, d] + is_tarde[c, d] + is_integral[c, d] <= 1)
+
+            # Derive works_day for reuse by existing constraints
+            works_day[c, d] = model.new_bool_var(f"p1_wd_{c}_{d}")
+            model.add(works_day[c, d] == is_manha[c, d] + is_tarde[c, d] + is_integral[c, d])
+
+    # Compute blocked days
+    blocked_days, sunday_indices, _, _ = _compute_blocked_days(data, colabs, days, C, D)
+
+    # Pin blocked days to OFF
+    for c in range(C):
+        for d in blocked_days.get(c, set()):
+            model.add(works_day[c, d] == 0)
+
+    # Weekly chunks for dias_trabalho
+    week_chunks = build_week_chunks(days)
+
+    # HARD: dias de trabalho por semana
+    add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days)
+
+    # HARD: max 6 consecutivos
+    add_h1_max_dias_consecutivos(model, works_day, C, D)
+
+    # HARD: folga fixa 5x2
+    add_folga_fixa_5x2(model, works_day, colabs, days, C, D)
+
+    # HARD: folga variavel condicional
+    add_folga_variavel_condicional(model, works_day, colabs, days, C, D)
+
+    # HARD: headcount minimo por dia (from peak demand)
+    peak_demand = _compute_peak_demand_per_day(
+        data.get("demanda", []), days, D,
+        demanda_excecao_data=data.get("demanda_excecao_data"),
+    )
+    add_min_headcount_per_day(model, works_day, C, D, peak_demand, blocked_days)
+
+    # HARD: domingo ciclo
+    add_domingo_ciclo_hard(model, works_day, colabs, C, sunday_indices, blocked_days)
+
+    # HARD: band demand coverage (morning/afternoon halves)
+    morning_demand, afternoon_demand = _compute_half_demand(
+        data.get("demanda", []), days, D, S, base_h, grid_min,
+        demanda_excecao_data=data.get("demanda_excecao_data"),
+    )
+    add_band_demand_coverage(
+        model, is_manha, is_tarde, is_integral, C, D,
+        morning_demand, afternoon_demand, blocked_days,
+    )
+
+    # Compute cycle info for diagnostics
+    demand_by_slot, _ = parse_demand(
+        data["demanda"], days=days, base_hour=base_h, grid_min=grid_min,
+        demanda_excecao_data=data.get("demanda_excecao_data"),
+    )
+    cycle_weeks = compute_cycle_length_weeks(colabs, demand_by_slot, days)
+    cycle_days = cycle_weeks * 7
+
+    # Objective: minimize spread (primary) + penalize all-integral (secondary)
+    work_totals = []
+    for c in range(C):
+        total = model.new_int_var(0, D, f"p1_total_{c}")
+        model.add(total == sum(works_day[c, d] for d in range(D)))
+        work_totals.append(total)
+
+    max_total = model.new_int_var(0, D, "p1_max_total")
+    min_total = model.new_int_var(0, D, "p1_min_total")
+    model.add_max_equality(max_total, work_totals)
+    model.add_min_equality(min_total, work_totals)
+    spread = model.new_int_var(0, D, "p1_spread")
+    model.add(spread == max_total - min_total)
+
+    # SOFT: penalize INTEGRAL assignments — fewer integral = more diversity
+    # This makes the solver prefer MANHA/TARDE bands without causing infeasibility.
+    # Weight 1000 on spread ensures balance is always the primary objective.
+    total_integral = sum(
+        is_integral[c, d] for c in range(C) for d in range(D)
+        if d not in blocked_days.get(c, set())
+    )
+    model.minimize(spread * 1000 + total_integral)
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = budget_s
+    solver.parameters.num_workers = 8
+    solver.parameters.log_search_progress = False
+    solver.parameters.log_to_stdout = False
+
+    t0 = time.time()
+    status = solver.solve(model)
+    solve_ms = (time.time() - t0) * 1000
+
+    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        pattern: Dict[Tuple[int, int], int] = {}
+        for c in range(C):
+            for d in range(D):
+                if solver.value(is_manha[c, d]):
+                    pattern[(c, d)] = BAND_MANHA
+                elif solver.value(is_tarde[c, d]):
+                    pattern[(c, d)] = BAND_TARDE
+                elif solver.value(is_integral[c, d]):
+                    pattern[(c, d)] = BAND_INTEGRAL
+                else:
+                    pattern[(c, d)] = BAND_OFF
+        return {
+            "pattern": pattern,
+            "status": "OK",
+            "time_ms": round(solve_ms, 1),
+            "cycle_days": cycle_days,
+        }
+
+    log(f"Phase 1 INFEASIBLE in {solve_ms:.0f}ms — falling back to emergent folga")
+    return None
+
+
+def _compute_blocked_days(
+    data: dict,
+    colabs: List[dict],
+    days: List[str],
+    C: int,
+    D: int,
+) -> Tuple[Dict[int, set], List[int], List[int], List[int]]:
+    """Compute blocked days per collaborator + calendar indices.
+
+    Returns:
+        blocked_days: {c: set of day indices where person c cannot work}
+        sunday_indices: list of day indices that are Sundays
+        holiday_all_indices: list of day indices that are any holiday
+        holiday_prohibited_indices: list of day indices that are CCT-prohibited holidays
+    """
+    sunday_indices = [d for d in range(D) if day_label(days[d]) == "DOM"]
+
+    feriados = data.get("feriados", [])
+    holiday_all_indices: list[int] = []
+    holiday_prohibited_indices: list[int] = []
+    for fer in feriados:
+        for d, day in enumerate(days):
+            if day == fer["data"]:
+                holiday_all_indices.append(d)
+                if fer.get("proibido_trabalhar", False):
+                    holiday_prohibited_indices.append(d)
+
+    excecoes = data.get("excecoes", [])
+
+    blocked_days: dict[int, set] = {c: set() for c in range(C)}
+
+    # H17/H18: Prohibited holidays block everyone
+    for d in holiday_prohibited_indices:
+        for c in range(C):
+            blocked_days[c].add(d)
+
+    # H5: Exceptions (ferias, atestado)
+    colab_id_to_c = {colabs[c]["id"]: c for c in range(C)}
+    for exc in excecoes:
+        c = colab_id_to_c.get(exc.get("colaborador_id"))
+        if c is not None:
+            exc_start = exc.get("data_inicio", "")
+            exc_end = exc.get("data_fim", "")
+            for d, day in enumerate(days):
+                if exc_start <= day <= exc_end:
+                    blocked_days[c].add(d)
+
+    # H11: Apprentice never Sunday
+    for c in range(C):
+        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
+            for d in sunday_indices:
+                blocked_days[c].add(d)
+
+    # H12: Apprentice never holiday (any holiday, not just prohibited)
+    for c in range(C):
+        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
+            for d in holiday_all_indices:
+                blocked_days[c].add(d)
+
+    # Estagiario/Aprendiz — blocked from sundays
+    for c in range(C):
+        if colabs[c].get("tipo_trabalhador") in ("ESTAGIARIO", "APRENDIZ"):
+            for d in sunday_indices:
+                blocked_days[c].add(d)
+
+    return blocked_days, sunday_indices, holiday_all_indices, holiday_prohibited_indices
+
+
+def build_model(
+    data: dict,
+    relaxations: List[str] | None = None,
+    pinned_folga: Dict[Tuple[int, int], int] | None = None,
+) -> Tuple[
     cp_model.CpModel,
     SlotGrid,
     WorksDay,
@@ -281,6 +638,11 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
         grid_min=grid_min,
         demanda_excecao_data=data.get("demanda_excecao_data"),
     )
+
+    cycle_weeks = compute_cycle_length_weeks(colabs, demand_by_slot, days)
+    cycle_days = cycle_weeks * 7
+    log(f"Cycle: {cycle_weeks} weeks = {cycle_days} days (D={D})")
+
     min_daily_slots = 240 // grid_min
 
     work: SlotGrid = {}
@@ -362,56 +724,9 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
     # ---------------------------------------------------------------
     # Compute indices for Sundays, holidays, and blocked days per person
     # ---------------------------------------------------------------
-    sunday_indices = [d for d in range(D) if day_label(days[d]) == "DOM"]
-
-    feriados = data.get("feriados", [])
-    holiday_all_indices: list[int] = []
-    holiday_prohibited_indices: list[int] = []
-    for fer in feriados:
-        for d, day in enumerate(days):
-            if day == fer["data"]:
-                holiday_all_indices.append(d)
-                if fer.get("proibido_trabalhar", False):
-                    holiday_prohibited_indices.append(d)
-
+    blocked_days, sunday_indices, holiday_all_indices, holiday_prohibited_indices = \
+        _compute_blocked_days(data, colabs, days, C, D)
     excecoes = data.get("excecoes", [])
-
-    # blocked_days[c] = set of day indices where person c cannot work
-    blocked_days: dict[int, set] = {c: set() for c in range(C)}
-
-    # H17/H18: Prohibited holidays block everyone
-    for d in holiday_prohibited_indices:
-        for c in range(C):
-            blocked_days[c].add(d)
-
-    # H5: Exceptions (ferias, atestado)
-    colab_id_to_c = {colabs[c]["id"]: c for c in range(C)}
-    for exc in excecoes:
-        c = colab_id_to_c.get(exc.get("colaborador_id"))
-        if c is not None:
-            exc_start = exc.get("data_inicio", "")
-            exc_end = exc.get("data_fim", "")
-            for d, day in enumerate(days):
-                if exc_start <= day <= exc_end:
-                    blocked_days[c].add(d)
-
-    # H11: Apprentice never Sunday
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            for d in sunday_indices:
-                blocked_days[c].add(d)
-
-    # H12: Apprentice never holiday (any holiday, not just prohibited)
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            for d in holiday_all_indices:
-                blocked_days[c].add(d)
-
-    # Estagiario/Aprendiz — blocked from sundays
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") in ("ESTAGIARIO", "APRENDIZ"):
-            for d in sunday_indices:
-                blocked_days[c].add(d)
 
     # Apply all blocking constraints (force work slots to 0)
     for c in range(C):
@@ -419,11 +734,67 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
             for s in range(S):
                 model.add(work[c, d, s] == 0)
 
+    # Phase 1 pinned bands: constrain slots based on shift band assignment
+    BAND_OFF = 0
+    BAND_MANHA = 1
+    BAND_TARDE = 2
+    BAND_INTEGRAL = 3
+
+    if pinned_folga:
+        # MANHA: can work slots 0..4S/5 (blocked from last 20% of day)
+        # For Açougue (S=50): cutoff=40 → 17:00, window 07:00-17:00 (600 min)
+        manha_cutoff = S * 4 // 5
+        # TARDE: can work slots S/5..S (blocked from first 20% of day)
+        # For Açougue (S=50): cutoff=10 → 09:30, window 09:30-19:30 (600 min)
+        tarde_cutoff = S // 5
+
+        pinned_off = pinned_manha = pinned_tarde = pinned_integral = 0
+        for (c, d), band in pinned_folga.items():
+            if d in blocked_days.get(c, set()):
+                continue
+            if band == BAND_OFF:
+                for s in range(S):
+                    model.add(work[c, d, s] == 0)
+                pinned_off += 1
+            elif band == BAND_MANHA:
+                for s in range(manha_cutoff, S):
+                    model.add(work[c, d, s] == 0)
+                pinned_manha += 1
+            elif band == BAND_TARDE:
+                for s in range(0, tarde_cutoff):
+                    model.add(work[c, d, s] == 0)
+                pinned_tarde += 1
+            elif band == BAND_INTEGRAL:
+                pinned_integral += 1  # no slot restriction
+
+        total_pinned = pinned_off + pinned_manha + pinned_tarde + pinned_integral
+        if total_pinned > 0:
+            log(f"Phase 1 bands: {pinned_off} OFF, {pinned_manha} MANHA, {pinned_tarde} TARDE, {pinned_integral} INTEGRAL")
+
     # ---------------------------------------------------------------
     # Build helper variables
     # ---------------------------------------------------------------
     works_day = make_works_day(model, work, C, D, S)
     block_starts = make_block_starts(model, work, C, D, S)
+
+    # ---------------------------------------------------------------
+    # HARD: Minimum headcount per Sunday (from demand peak)
+    # Ensures enough people work each Sunday to meet demand.
+    # Only applies to non-emergency passes.
+    # ---------------------------------------------------------------
+    if "ALL_PRODUCT_RULES" not in relax:
+        for d in sunday_indices:
+            # Find peak demand for this day across all slots
+            peak = 0
+            for s in range(S):
+                target = demand_by_slot.get((d, s), 0)
+                if target > peak:
+                    peak = target
+            if peak > 0:
+                # Count available (non-blocked) collaborators for this Sunday
+                available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+                if len(available_c) >= peak:
+                    model.add(sum(works_day[c, d] for c in available_c) >= peak)
 
     nivel_rigor = config.get("nivel_rigor", "ALTO")
     rules = config.get("rules", {})
@@ -606,7 +977,13 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
     turno_pref_penalties = add_colaborador_soft_preferences(
         model, work, works_day, regras_dia, colabs, days, C, D, S, base_h, grid_min
     ) if rule_is('S_TURNO_PREF', 'ON') != 'OFF' else []
-    consistencia_penalties = add_consistencia_horario_soft(model, work, works_day, C, D, S, grid_min) if rule_is('S_CONSISTENCIA', 'ON') != 'OFF' else []
+    # Shared start_vars — used by consistencia + cycle_consistency
+    start_vars = make_start_vars(model, work, works_day, C, D, S)
+
+    consistencia_penalties = add_consistencia_horario_soft(model, start_vars, works_day, C, D, S, grid_min) if rule_is('S_CONSISTENCIA', 'ON') != 'OFF' else []
+    cycle_penalties = add_cycle_consistency_soft(
+        model, start_vars, works_day, C, D, S, cycle_days
+    ) if rule_is('S_CYCLE_CONSISTENCY', 'ON') != 'OFF' and cycle_days < D else []
 
     max_total_minutes = D * S * grid_min
     max_weekly = model.new_int_var(0, max_total_minutes, "max_weekly")
@@ -630,6 +1007,8 @@ def build_model(data: dict, relaxations: List[str] | None = None) -> Tuple[
         objective_terms.append(WEIGHTS["time_window_pref"] * sum(turno_pref_penalties))
     if consistencia_penalties:
         objective_terms.append(WEIGHTS["consistencia"] * sum(consistencia_penalties))
+    if cycle_penalties:
+        objective_terms.append(WEIGHTS["cycle_consistency"] * sum(cycle_penalties))
     if ap1_excess:
         objective_terms.append(WEIGHTS["ap1_excess"] * sum(ap1_excess))
     objective_terms.append(WEIGHTS["spread"] * spread)
@@ -886,8 +1265,40 @@ def extract_solution(
     surplus_penalty = min(10, total_sur * 0.2)
     pontuacao = round(max(0, 100 - deficit_penalty - spread_penalty - ap1_penalty - surplus_penalty), 0)
 
+    # --- Cobertura efetiva (ignora gaps de 1 pessoa em transições) ---
+    TRANSICAO_FAIXAS = [
+        (7, 0, 7, 30),    # café abertura  07:00-07:30
+        (11, 0, 12, 0),   # stagger almoço 11:00-12:00
+        (19, 0, 19, 30),  # café fechamento 19:00-19:30
+    ]
+    deficit_efetivo = 0
+    for (d_idx, s_idx), target in demand_by_slot.items():
+        if target <= 0:
+            continue
+        slot_def = solver.value(deficit[(d_idx, s_idx)]) if (d_idx, s_idx) in deficit else 0
+        if slot_def <= 0:
+            continue
+        # Check if slot is in a transition window AND deficit == 1
+        slot_min = base_h * 60 + s_idx * grid_min
+        slot_h, slot_m = slot_min // 60, slot_min % 60
+        in_transicao = False
+        for (fh, fm, th, tm) in TRANSICAO_FAIXAS:
+            if fh * 60 + fm <= slot_h * 60 + slot_m < th * 60 + tm:
+                in_transicao = True
+                break
+        if in_transicao and slot_def == 1:
+            continue  # tolerar gap de 1 em transição
+        deficit_efetivo += slot_def
+
+    cobertura_efetiva = (
+        round((total_demand_slots - deficit_efetivo) / total_demand_slots * 100, 1)
+        if total_demand_slots > 0
+        else 100.0
+    )
+
     indicadores = {
         "cobertura_percent": cobertura,
+        "cobertura_efetiva_percent": cobertura_efetiva,
         "deficit_total": total_def,
         "surplus_total": total_sur,
         "equilibrio": equilibrio,
@@ -919,6 +1330,14 @@ def extract_solution(
                 "override": bool(override_by_slot.get((d, s), False)),
             })
 
+    # Gap% — how far from optimal bound
+    gap_percent = 0.0
+    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        obj = solver.objective_value
+        bound = solver.best_objective_bound
+        if obj != 0:
+            gap_percent = abs(obj - bound) / abs(obj) * 100
+
     # Diagnostico para o path feliz
     regras_ativas = [k for k, v in rules.items() if v in ("HARD", "SOFT", "ON")]
     regras_off = [k for k, v in rules.items() if v == "OFF"]
@@ -929,6 +1348,8 @@ def extract_solution(
         "regras_off": regras_off,
         "num_colaboradores": len(colabs),
         "num_dias": len(days),
+        "gap_percent": round(gap_percent, 2),
+        "objective_value": round(solver.objective_value, 0) if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None,
     }
 
     return {
@@ -1017,6 +1438,7 @@ def _solve_pass(
     max_time: float,
     gap_limit: float,
     num_workers: int,
+    pinned_folga: Dict[Tuple[int, int], int] | None = None,
 ) -> dict:
     """Execute a single solve pass with optional constraint relaxations."""
     config = data.get("config", {})
@@ -1041,7 +1463,7 @@ def _solve_pass(
         ap1_excess,
         base_h,
         grid_min,
-    ) = build_model(data, relaxations=relaxations)
+    ) = build_model(data, relaxations=relaxations, pinned_folga=pinned_folga)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max_time
@@ -1084,6 +1506,16 @@ def _solve_pass(
     return result
 
 
+def _get_coverage(result: dict) -> float:
+    """Extract cobertura_percent from a solver result, defaulting to 0."""
+    return result.get("indicadores", {}).get("cobertura_percent", 0.0)
+
+
+def _coverage_is_viable(result: dict) -> bool:
+    """Check if the result's coverage meets the minimum viable threshold."""
+    return _get_coverage(result) >= MIN_COVERAGE_THRESHOLD
+
+
 def solve(data: dict) -> dict:
     """Main solve function with multi-pass graceful degradation.
 
@@ -1091,7 +1523,13 @@ def solve(data: dict) -> dict:
     Pass 2: Relax H10→elastic, DIAS_TRABALHO→SOFT, MIN_DIARIO→SOFT, H6→SOFT.
     Pass 3: Emergency — strip to CLT-only (H2+H4+H5), all product rules SOFT.
 
-    Returns the result from the first pass that succeeds.
+    Minimum-coverage continuation: if a pass returns FEASIBLE but coverage
+    is below MIN_COVERAGE_THRESHOLD, the solver retries with progressively
+    more time (doubling each attempt) until coverage is reached or the
+    HARD_TIME_CAP_SECONDS (1 hour) is hit. This applies to ALL modes,
+    including 'rapido'.
+
+    Returns the result from the first pass that succeeds with viable coverage.
     """
     colabs = data.get("colaboradores", [])
     if not colabs:
@@ -1108,25 +1546,26 @@ def solve(data: dict) -> dict:
         }
 
     config = data.get("config", {})
-    solve_mode = config.get("solve_mode", "rapido")  # "rapido" | "otimizado"
+    solve_mode = config.get("solve_mode", "rapido")
     num_workers = config.get("num_workers", 8)
 
-    if solve_mode == "otimizado":
-        total_budget = config.get("max_time_seconds", 120)
-        gap_limit = 0.0
-    else:
-        total_budget = config.get("max_time_seconds", 30)
-        gap_limit = 0.05
+    profile = MODE_PROFILES.get(solve_mode, MODE_PROFILES["rapido"])
+    total_budget = config.get("max_time_seconds", profile["budget"])
+    gap_limit = profile["gap"]
 
     # Divide time budget across passes (Pass 1 gets more, Pass 2/3 are fallback)
     pass1_time = max(10, total_budget * 0.5)
     pass2_time = max(10, total_budget * 0.3)
     pass3_time = max(10, total_budget * 0.2)
 
+    # Track total elapsed time for the hard cap
+    t_global_start = time.time()
+
     log(
         f"Solving [{solve_mode}]: {len(colabs)} colabs, "
         f"{data['data_inicio']} - {data['data_fim']} "
-        f"(budget: {pass1_time:.0f}s/{pass2_time:.0f}s/{pass3_time:.0f}s)"
+        f"(budget: {pass1_time:.0f}s/{pass2_time:.0f}s/{pass3_time:.0f}s, "
+        f"min_coverage: {MIN_COVERAGE_THRESHOLD}%, hard_cap: {HARD_TIME_CAP_SECONDS}s)"
     )
 
     # Pre-analysis: capacity vs demand
@@ -1137,48 +1576,183 @@ def solve(data: dict) -> dict:
         f"capacity={capacidade_diag['max_slots_disponiveis']} slots"
     )
 
-    # ---- Pass 1: Normal (original behavior) ----
-    result = _solve_pass(data, pass_num=1, relaxations=[], max_time=pass1_time, gap_limit=gap_limit, num_workers=num_workers)
+    # If demand is mathematically impossible to cover, skip continuation logic
+    math_possible = capacidade_diag.get("cobertura_matematicamente_possivel", True)
 
-    if result.get("sucesso"):
+    cycle_weeks = _compute_cycle_weeks_fast(colabs, data.get("demanda", []))
+
+    # --- Helper: run a pass with minimum-coverage continuation ---
+    def _run_with_continuation(
+        pass_num: int,
+        relaxations: list,
+        initial_time: float,
+        pass_gap: float,
+        pinned_folga: Dict[Tuple[int, int], int] | None = None,
+    ) -> dict:
+        """Run a solver pass. If FEASIBLE but below MIN_COVERAGE_THRESHOLD,
+        retry with doubled time budget until coverage is met or hard cap is hit."""
+        current_time = initial_time
+        best_result = None
+        attempt = 0
+
+        while True:
+            attempt += 1
+            elapsed_total = time.time() - t_global_start
+            remaining = HARD_TIME_CAP_SECONDS - elapsed_total
+
+            if remaining <= 5:
+                log(f"Pass {pass_num}: hard cap atingido ({elapsed_total:.0f}s total)")
+                break
+
+            # Clamp to remaining time
+            run_time = min(current_time, remaining)
+
+            if attempt > 1:
+                log(
+                    f"Pass {pass_num} RETRY #{attempt}: cobertura anterior "
+                    f"{_get_coverage(best_result):.1f}% < {MIN_COVERAGE_THRESHOLD}% — "
+                    f"estendendo para {run_time:.0f}s (elapsed: {elapsed_total:.0f}s)"
+                )
+
+            result = _solve_pass(
+                data,
+                pass_num=pass_num,
+                relaxations=relaxations,
+                max_time=run_time,
+                gap_limit=pass_gap,
+                num_workers=num_workers,
+                pinned_folga=pinned_folga,
+            )
+
+            if not result.get("sucesso"):
+                # INFEASIBLE — no point retrying this pass
+                return best_result if best_result else result
+
+            # Keep the best feasible result (highest coverage)
+            if best_result is None or _get_coverage(result) > _get_coverage(best_result):
+                best_result = result
+
+            # Check if coverage is good enough
+            if _coverage_is_viable(best_result):
+                log(
+                    f"Pass {pass_num}: cobertura {_get_coverage(best_result):.1f}% >= "
+                    f"{MIN_COVERAGE_THRESHOLD}% — OK"
+                )
+                return best_result
+
+            # Coverage below threshold and demand IS mathematically possible
+            if not math_possible:
+                log(
+                    f"Pass {pass_num}: cobertura {_get_coverage(best_result):.1f}% baixa, "
+                    f"mas demanda matematicamente impossivel — aceitando"
+                )
+                return best_result
+
+            # Double the budget for next attempt, relax gap progressively
+            current_time = current_time * 2
+            pass_gap = max(pass_gap * 0.5, 0.001)  # tighten gap each retry
+
+        return best_result if best_result else {"sucesso": False, "status": "TIMEOUT"}
+
+    # ---- Phase 1: Folga Pattern (lightweight model) ----
+    phase1_budget = min(15, total_budget * 0.15)  # max 15s, 15% of budget
+    log(f"Phase 1 (Folga Pattern): budget {phase1_budget:.0f}s")
+
+    phase1_result = solve_folga_pattern(data, budget_s=phase1_budget)
+
+    pinned_folga = None
+    phase1_diag: dict = {}
+    if phase1_result and phase1_result["status"] == "OK":
+        pinned_folga = phase1_result["pattern"]
+        # Count band distribution
+        band_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+        for v in pinned_folga.values():
+            band_counts[v] = band_counts.get(v, 0) + 1
+        phase1_diag = {
+            "phase1_status": "OK",
+            "phase1_solve_time_ms": phase1_result["time_ms"],
+            "phase1_cycle_days": phase1_result.get("cycle_days", 0),
+            "phase1_bands_pinned": {
+                "off": band_counts[0], "manha": band_counts[1],
+                "tarde": band_counts[2], "integral": band_counts[3],
+            },
+        }
+        log(
+            f"Phase 1 OK: solved in {phase1_result['time_ms']:.0f}ms "
+            f"(cycle {phase1_result.get('cycle_days', '?')} days) — "
+            f"bands: {band_counts[0]} OFF, {band_counts[1]} M, {band_counts[2]} T, {band_counts[3]} I"
+        )
+    else:
+        phase1_diag = {"phase1_status": "INFEASIBLE" if phase1_result is None else "SKIPPED"}
+        log("Phase 1 SKIP: falling back to emergent folga")
+
+    # ---- Pass 1: Normal (with Phase 1 folga pinned) ----
+    result = _run_with_continuation(
+        pass_num=1, relaxations=[], initial_time=pass1_time, pass_gap=gap_limit,
+        pinned_folga=pinned_folga,
+    )
+
+    if result and result.get("sucesso"):
         diag = result.get("diagnostico", {})
         diag["pass_usado"] = 1
         diag["regras_relaxadas"] = []
         diag["capacidade_vs_demanda"] = capacidade_diag
+        diag["cycle_length_weeks"] = cycle_weeks
+        diag.update(phase1_diag)
+        diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
         result["diagnostico"] = diag
         return result
 
-    # ---- Pass 2: Relax product rules to SOFT ----
-    log("Pass 1 INFEASIBLE — tentando Pass 2 (relaxamento de regras product)")
+    # ---- Pass 2: Relax product rules to SOFT (no Phase 1 pin — let it emerge) ----
+    elapsed = time.time() - t_global_start
+    if elapsed < HARD_TIME_CAP_SECONDS - 5:
+        log("Pass 1 INFEASIBLE — tentando Pass 2 (relaxamento de regras product, sem Phase 1 pin)")
 
-    pass2_relaxations = ["H10_ELASTIC", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
-    result = _solve_pass(data, pass_num=2, relaxations=pass2_relaxations, max_time=pass2_time, gap_limit=gap_limit, num_workers=num_workers)
+        pass2_relaxations = ["H10_ELASTIC", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
+        result = _run_with_continuation(
+            pass_num=2, relaxations=pass2_relaxations, initial_time=pass2_time, pass_gap=gap_limit,
+            pinned_folga=None,  # drop Phase 1 pin in degradation
+        )
 
-    if result.get("sucesso"):
-        diag = result.get("diagnostico", {})
-        diag["pass_usado"] = 2
-        diag["regras_relaxadas"] = ["H10", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
-        diag["capacidade_vs_demanda"] = capacidade_diag
-        result["diagnostico"] = diag
-        return result
+        if result and result.get("sucesso"):
+            diag = result.get("diagnostico", {})
+            diag["pass_usado"] = 2
+            diag["regras_relaxadas"] = ["H10", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
+            diag["capacidade_vs_demanda"] = capacidade_diag
+            diag["cycle_length_weeks"] = cycle_weeks
+            diag.update(phase1_diag)
+            diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
+            result["diagnostico"] = diag
+            return result
 
-    # ---- Pass 3: Emergency — CLT skeleton only ----
-    log("Pass 2 INFEASIBLE — tentando Pass 3 (esqueleto CLT puro)")
+    # ---- Pass 3: Emergency — CLT skeleton only (no Phase 1 pin) ----
+    elapsed = time.time() - t_global_start
+    if elapsed < HARD_TIME_CAP_SECONDS - 5:
+        log("Pass 2 INFEASIBLE — tentando Pass 3 (esqueleto CLT puro)")
 
-    pass3_relaxations = ["ALL_PRODUCT_RULES"]
-    result = _solve_pass(data, pass_num=3, relaxations=pass3_relaxations, max_time=pass3_time, gap_limit=gap_limit, num_workers=num_workers)
+        pass3_relaxations = ["ALL_PRODUCT_RULES"]
+        result = _run_with_continuation(
+            pass_num=3, relaxations=pass3_relaxations, initial_time=pass3_time, pass_gap=gap_limit,
+            pinned_folga=None,
+        )
+    else:
+        result = result if result else {"sucesso": False, "status": "TIMEOUT"}
 
-    diag = result.get("diagnostico", {})
+    diag = result.get("diagnostico", {}) if result else {}
     diag["pass_usado"] = 3
     diag["regras_relaxadas"] = ["H1", "H6", "H10", "DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
     diag["capacidade_vs_demanda"] = capacidade_diag
+    diag["cycle_length_weeks"] = cycle_weeks
+    diag.update(phase1_diag)
     diag["modo_emergencia"] = True
-    result["diagnostico"] = diag
+    diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
+    if result:
+        result["diagnostico"] = diag
 
-    if not result.get("sucesso"):
+    if not result or not result.get("sucesso"):
         # All 3 passes failed — truly impossible (e.g., 0 available colabs)
         log("TODAS as 3 passes falharam — cenario genuinamente impossivel")
-        if "erro" not in result:
+        if result and "erro" not in result:
             result["erro"] = {
                 "tipo": "CONSTRAINT",
                 "regra": "SOLVER",
@@ -1188,6 +1762,22 @@ def solve(data: dict) -> dict:
                     "Verifique excecoes (ferias/atestados) que podem estar bloqueando todos",
                     "Tente um periodo menor",
                 ],
+            }
+        elif not result:
+            result = {
+                "sucesso": False,
+                "status": "TIMEOUT",
+                "solve_time_ms": round((time.time() - t_global_start) * 1000, 1),
+                "diagnostico": diag,
+                "erro": {
+                    "tipo": "TIMEOUT",
+                    "regra": "HARD_CAP",
+                    "mensagem": f"Solver atingiu o limite de {HARD_TIME_CAP_SECONDS}s sem alcancar cobertura minima",
+                    "sugestoes": [
+                        "A demanda pode estar acima da capacidade disponivel",
+                        "Verifique se ha colaboradores suficientes no setor",
+                    ],
+                },
             }
 
     return result

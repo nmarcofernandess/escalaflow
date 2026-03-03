@@ -29,6 +29,7 @@ SlotGrid = Dict[Tuple[int, int, int], cp_model.IntVar]     # (c, d, s) -> BoolVa
 WorksDay = Dict[Tuple[int, int], cp_model.IntVar]          # (c, d)    -> BoolVar
 BlockStarts = Dict[Tuple[int, int, int], cp_model.IntVar]  # (c, d, s) -> BoolVar
 DaySlotDemand = Dict[Tuple[int, int], int]                  # (d, s)    -> target
+StartVars = Dict[Tuple[int, int], cp_model.IntVar]          # (c, d)   -> first slot worked
 
 
 def _resolve_regime_days(colab: dict) -> int:
@@ -460,13 +461,10 @@ def add_dias_trabalho(
 
             target = max(1, _prorata_weekly(regime_days, len(chunk)))
             target = min(target, available)
-            # Use range [target-1, target] instead of hard ==.
-            # H10 (meta semanal) controls actual hours — this gives flexibility
-            # for multi-week periods where H1 (max 6 consecutive) can conflict
-            # with forced exact work days per week.
-            lo = max(1, target - 1)
-            model.add(sum(works_day[c, d] for d in chunk) >= lo)
-            model.add(sum(works_day[c, d] for d in chunk) <= target)
+            # Exact work days per chunk (e.g. 5 for 5x2, 6 for 6x1).
+            # H1 (max 6 consecutive) runs globally and prevents cross-chunk
+            # violations. If exact causes INFEASIBLE, Pass 2 relaxes to SOFT.
+            model.add(sum(works_day[c, d] for d in chunk) == target)
 
 
 def add_min_diario(
@@ -789,11 +787,13 @@ def add_domingo_ciclo_soft(
     """v4: Ciclo domingo soft (substitui H3 hard).
 
     Por colaborador, ler domingo_ciclo_trabalho (N) e domingo_ciclo_folga (M).
-    Janela deslizante de N+M domingos: penalizar se trabalha mais que N.
+    Janela deslizante de N+M domingos: penalizar excesso E deficit.
+
+    Periodos curtos (< window domingos): pro-rata do expected.
     """
     penalties: List[cp_model.IntVar] = []
 
-    if len(sunday_indices) < 2:
+    if not sunday_indices:
         return penalties
 
     for c in range(C):
@@ -801,14 +801,36 @@ def add_domingo_ciclo_soft(
         M = int(colabs[c].get("domingo_ciclo_folga", 1))
         window = N + M
 
-        if window <= 0 or window > len(sunday_indices):
+        if window <= 0:
             continue
 
-        for i in range(len(sunday_indices) - window + 1):
-            suns = sunday_indices[i : i + window]
-            worked = sum(works_day[c, d] for d in suns)
-            excess = model.new_int_var(0, window, f"dom_cyc_{c}_{i}")
-            model.add(excess >= worked - N)
+        num_suns = len(sunday_indices)
+
+        if num_suns >= window:
+            # Janela deslizante normal (multi-week)
+            for i in range(num_suns - window + 1):
+                suns = sunday_indices[i : i + window]
+                worked = sum(works_day[c, d] for d in suns)
+                # Penalizar EXCESSO (trabalhou mais que N)
+                excess = model.new_int_var(0, window, f"dom_cyc_exc_{c}_{i}")
+                model.add(excess >= worked - N)
+                penalties.append(excess)
+                # Penalizar DEFICIT (trabalhou menos que N)
+                deficit = model.new_int_var(0, window, f"dom_cyc_def_{c}_{i}")
+                model.add(deficit >= N - worked)
+                penalties.append(deficit)
+        else:
+            # Periodo curto (< window domingos): pro-rata
+            # Ex: 1 domingo, N=2, M=1 → expected = round(2*1/3) = 1
+            expected = max(1, round(N * num_suns / window))
+            worked = sum(works_day[c, d] for d in sunday_indices)
+            # Penalizar se trabalha menos que expected
+            deficit = model.new_int_var(0, num_suns, f"dom_short_def_{c}")
+            model.add(deficit >= expected - worked)
+            penalties.append(deficit)
+            # Penalizar se trabalha mais que expected
+            excess = model.new_int_var(0, num_suns, f"dom_short_exc_{c}")
+            model.add(excess >= worked - expected)
             penalties.append(excess)
 
     return penalties
@@ -863,9 +885,27 @@ def add_colaborador_soft_preferences(
     return penalties
 
 
-def add_consistencia_horario_soft(
+def make_start_vars(
     model: cp_model.CpModel,
     work: SlotGrid,
+    works_day: WorksDay,
+    C: int, D: int, S: int,
+) -> StartVars:
+    """First slot worked per (person, day). Value = S if not working that day."""
+    sv: StartVars = {}
+    for c in range(C):
+        for d in range(D):
+            v = model.new_int_var(0, S, f"start_{c}_{d}")
+            for s in range(S):
+                model.add(v <= s).only_enforce_if(work[c, d, s])
+            model.add(v == S).only_enforce_if(works_day[c, d].negated())
+            sv[c, d] = v
+    return sv
+
+
+def add_consistencia_horario_soft(
+    model: cp_model.CpModel,
+    start_vars: StartVars,
     works_day: WorksDay,
     C: int, D: int, S: int,
     grid_min: int = 15,
@@ -879,29 +919,59 @@ def add_consistencia_horario_soft(
     max_diff = 4  # 1h de tolerancia
 
     for c in range(C):
-        start_vars: List[cp_model.IntVar] = []
-        for d in range(D):
-            sv = model.new_int_var(0, S, f"start_{c}_{d}")
-            # start = first slot worked (or S if not working)
-            for s in range(S):
-                model.add(sv <= s).only_enforce_if(work[c, d, s])
-            model.add(sv == S).only_enforce_if(works_day[c, d].negated())
-            start_vars.append(sv)
-
         for d in range(D - 1):
-            # Only penalize if both days are work days
             both_work = model.new_bool_var(f"bw_{c}_{d}")
             model.add_bool_and([works_day[c, d], works_day[c, d + 1]]).only_enforce_if(both_work)
             model.add_bool_or([works_day[c, d].negated(), works_day[c, d + 1].negated()]).only_enforce_if(both_work.negated())
 
             diff = model.new_int_var(0, S, f"sdiff_{c}_{d}")
-            model.add(diff >= start_vars[d] - start_vars[d + 1]).only_enforce_if(both_work)
-            model.add(diff >= start_vars[d + 1] - start_vars[d]).only_enforce_if(both_work)
+            model.add(diff >= start_vars[c, d] - start_vars[c, d + 1]).only_enforce_if(both_work)
+            model.add(diff >= start_vars[c, d + 1] - start_vars[c, d]).only_enforce_if(both_work)
             model.add(diff == 0).only_enforce_if(both_work.negated())
 
             excess = model.new_int_var(0, S, f"sxs_{c}_{d}")
             model.add(excess >= diff - max_diff)
             penalties.append(excess)
+
+    return penalties
+
+
+def add_cycle_consistency_soft(
+    model: cp_model.CpModel,
+    start_vars: StartVars,
+    works_day: WorksDay,
+    C: int, D: int, S: int,
+    cycle_length_days: int,
+) -> List[cp_model.IntVar]:
+    """Penaliza divergencia de horario entre dias correspondentes em ciclos diferentes.
+
+    Ciclo 5 semanas (35 dias) num periodo de 84 dias:
+    - Dia 0 = Dia 35 = Dia 70
+    - Dia 1 = Dia 36 = Dia 71
+
+    SOFT: se um dos dois dias e folga/excecao, penalty = 0 automaticamente.
+    """
+    if cycle_length_days <= 0 or cycle_length_days >= D:
+        return []
+
+    penalties: List[cp_model.IntVar] = []
+
+    for c in range(C):
+        for d in range(D):
+            d2 = d + cycle_length_days
+            if d2 >= D:
+                break
+
+            both_work = model.new_bool_var(f"cyc_bw_{c}_{d}")
+            model.add_bool_and([works_day[c, d], works_day[c, d2]]).only_enforce_if(both_work)
+            model.add_bool_or([works_day[c, d].negated(), works_day[c, d2].negated()]).only_enforce_if(both_work.negated())
+
+            diff = model.new_int_var(0, S, f"cyc_diff_{c}_{d}")
+            model.add(diff >= start_vars[c, d] - start_vars[c, d2]).only_enforce_if(both_work)
+            model.add(diff >= start_vars[c, d2] - start_vars[c, d]).only_enforce_if(both_work)
+            model.add(diff == 0).only_enforce_if(both_work.negated())
+
+            penalties.append(diff)
 
     return penalties
 
@@ -979,6 +1049,142 @@ def add_folga_variavel_condicional(
             if var_idx < D:
                 # XOR: trabalha_dom + trabalha_var == 1
                 model.add(works_day[c, d] + works_day[c, var_idx] == 1)
+
+
+# ===================================================================
+# PHASE 1 — FOLGA PATTERN HARD CONSTRAINTS
+# ===================================================================
+
+
+def add_min_headcount_per_day(
+    model: cp_model.CpModel,
+    works_day: WorksDay,
+    C: int, D: int,
+    min_headcount_by_day: List[int],
+    blocked_days: Dict[int, set],
+) -> None:
+    """Phase 1: Minimum headcount per day from peak demand.
+
+    For each day d: sum(works_day[c,d] for c available) >= min_headcount_by_day[d].
+    Skips days where all collaborators are blocked.
+    """
+    for d in range(D):
+        target = min_headcount_by_day[d]
+        if target <= 0:
+            continue
+        available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+        if not available_c:
+            continue
+        # Cap target at available headcount (can't require more than available)
+        effective_target = min(target, len(available_c))
+        model.add(sum(works_day[c, d] for c in available_c) >= effective_target)
+
+
+def add_band_demand_coverage(
+    model: cp_model.CpModel,
+    is_manha: WorksDay,
+    is_tarde: WorksDay,
+    is_integral: WorksDay,
+    C: int, D: int,
+    morning_demand: List[int],
+    afternoon_demand: List[int],
+    blocked_days: Dict[int, set],
+) -> None:
+    """Phase 1: Ensure shift bands cover both halves of the demand curve.
+
+    morning_cover = sum(is_manha + is_integral) for available colabs
+    afternoon_cover = sum(is_tarde + is_integral) for available colabs
+
+    Also forces band diversity: on days with enough headroom (workers >= max_demand + 1),
+    at least 1 worker must be MANHA-only and 1 must be TARDE-only.
+    This prevents all-INTEGRAL assignments that give Phase 2 zero guidance.
+    """
+    for d in range(D):
+        available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+        if not available_c:
+            continue
+
+        m_target = morning_demand[d]
+        if m_target > 0:
+            effective = min(m_target, len(available_c))
+            model.add(
+                sum(is_manha[c, d] + is_integral[c, d] for c in available_c) >= effective
+            )
+
+        a_target = afternoon_demand[d]
+        if a_target > 0:
+            effective = min(a_target, len(available_c))
+            model.add(
+                sum(is_tarde[c, d] + is_integral[c, d] for c in available_c) >= effective
+            )
+
+
+
+def add_domingo_ciclo_hard(
+    model: cp_model.CpModel,
+    works_day: WorksDay,
+    colabs: List[dict],
+    C: int,
+    sunday_indices: List[int],
+    blocked_days: Dict[int, set],
+) -> None:
+    """Phase 1: Hard domingo ciclo — same logic as add_domingo_ciclo_soft but HARD.
+
+    For each collaborator with N trabalho / M folga cycle:
+    Sliding window of N+M sundays: exactly N worked.
+    Skips sundays where the collaborator is blocked.
+    """
+    if not sunday_indices:
+        return
+
+    for c in range(C):
+        N = int(colabs[c].get("domingo_ciclo_trabalho", 2))
+        M = int(colabs[c].get("domingo_ciclo_folga", 1))
+        window = N + M
+        if window <= 0:
+            continue
+
+        # Filter to non-blocked sundays for this collaborator
+        available_suns = [d for d in sunday_indices if d not in blocked_days.get(c, set())]
+        num_suns = len(available_suns)
+
+        if num_suns < window:
+            # Short period: pro-rata (same as soft version)
+            if num_suns > 0:
+                expected = max(1, round(N * num_suns / window))
+                expected = min(expected, num_suns)
+                model.add(sum(works_day[c, d] for d in available_suns) == expected)
+            continue
+
+        # Sliding window: exactly N worked per window
+        for i in range(num_suns - window + 1):
+            suns = available_suns[i : i + window]
+            model.add(sum(works_day[c, d] for d in suns) == N)
+
+
+def add_cycle_alignment_hard(
+    model: cp_model.CpModel,
+    works_day: WorksDay,
+    C: int, D: int,
+    cycle_days: int,
+    blocked_days: Dict[int, set],
+) -> None:
+    """Phase 1: Force folga pattern to repeat every cycle_days.
+
+    works_day[c, d] == works_day[c, d + cycle_days] for all d where both are within period.
+    Skips pairs where either day is blocked (forced off anyway).
+    """
+    if cycle_days <= 0 or cycle_days >= D:
+        return
+
+    for c in range(C):
+        blocked = blocked_days.get(c, set())
+        for d in range(D - cycle_days):
+            d2 = d + cycle_days
+            # Skip if either day is blocked
+            if d in blocked or d2 in blocked:
+                continue
+            model.add(works_day[c, d] == works_day[c, d2])
 
 
 def add_surplus_soft(

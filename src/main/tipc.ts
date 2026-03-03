@@ -1277,7 +1277,7 @@ const escalasGerar = t.procedure
     data_inicio: string
     data_fim: string
     regimes_override?: SimulacaoRegimeOverride[]
-    solve_mode?: 'rapido' | 'otimizado'
+    solve_mode?: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
     max_time_seconds?: number
     rules_override?: Record<string, string>
   }>()
