@@ -52,9 +52,10 @@ export type LocalModelId = keyof typeof LOCAL_MODELS
 
 function getModelDir(): string {
   try {
-    const electron = _require('electron') as { app?: { isPackaged?: boolean; getPath?: (name: string) => string } }
+    const electron = _require('electron') as { app?: { getPath?: (name: string) => string } }
     const app = electron.app
-    if (app?.isPackaged && app.getPath) {
+    if (app?.getPath) {
+      // userData: ~/Library/Application Support/EscalaFlow (Mac) — sobrevive a clean/dev/rebuild
       return path.join(app.getPath('userData'), 'models')
     }
   } catch { /* fallback */ }
