@@ -2191,7 +2191,7 @@ const escalasGerarPorCicloRotativo = t.procedure
 // IA CONFIGURAÇÃO
 // =============================================================================
 
-type IaProviderKey = 'gemini' | 'openrouter'
+type IaProviderKey = 'gemini' | 'openrouter' | 'local'
 
 type IaProviderConfig = {
   token?: string
@@ -2231,7 +2231,7 @@ function normalizeIaConfigRow(raw: any) {
   }
 }
 
-type IaModelCatalogProvider = 'gemini' | 'openrouter'
+type IaModelCatalogProvider = 'gemini' | 'openrouter' | 'local'
 
 type IaModelCatalogItem = {
   id: string
@@ -2346,7 +2346,18 @@ async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProvi
   }
 
   let result: IaModelCatalogResult
-  if (provider === 'gemini') {
+  if (provider === 'local') {
+    result = {
+      provider: 'local',
+      source: 'static' as const,
+      models: [
+        { id: 'qwen3.5-9b', label: 'Qwen 3.5 9B (Recomendado)', provider: 'local' as const, source: 'static' as const, description: 'Melhor qualidade de respostas e tool calling. 8GB+ RAM.', supports_tools: true },
+        { id: 'qwen3.5-4b', label: 'Qwen 3.5 4B (Leve)', provider: 'local' as const, source: 'static' as const, description: 'Mais rápido e leve. 4GB+ RAM.', supports_tools: true },
+      ],
+      fetched_at: new Date().toISOString(),
+      cached: false,
+    }
+  } else if (provider === 'gemini') {
     result = staticGeminiCatalog()
   } else {
     result = await fetchOpenRouterCatalog()
@@ -2383,6 +2394,16 @@ const iaConfiguracaoTestar = t.procedure
   .input<{ provider: string; api_key: string; modelo: string; provider_configs_json?: string }>()
   .action(async ({ input }) => {
     try {
+      if (input.provider === 'local') {
+        const { getLocalStatus } = await import('./ia/local-llm')
+        const status = getLocalStatus()
+        const algumBaixado = Object.values(status.modelos).some(m => m.baixado)
+        if (!algumBaixado) {
+          throw new Error('Nenhum modelo local baixado. Baixe um modelo em Configurações > IA Local.')
+        }
+        return { sucesso: true, mensagem: `Modelo local disponível. GPU: ${status.gpu_detectada || 'cpu'}` }
+      }
+
       if (input.provider === 'openrouter') {
         const providerConfigs = parseIaProviderConfigs(input.provider_configs_json)
         const providerCfg = providerConfigs.openrouter
@@ -2408,6 +2429,68 @@ const iaModelosCatalogo = t.procedure
   .input<{ provider: IaModelCatalogProvider; provider_config?: IaProviderConfig; force_refresh?: boolean }>()
   .action(async ({ input }) => {
     return await getIaModelCatalog(input.provider, input.provider_config, Boolean(input.force_refresh))
+  })
+
+// ---------------------------------------------------------------------------
+// IA LOCAL — download, lifecycle, status
+// ---------------------------------------------------------------------------
+
+const iaLocalStatus = t.procedure
+  .action(async () => {
+    const { getLocalStatus } = await import('./ia/local-llm')
+    return getLocalStatus()
+  })
+
+const iaLocalModels = t.procedure
+  .action(async () => {
+    const { LOCAL_MODELS, getLocalStatus } = await import('./ia/local-llm')
+    const status = getLocalStatus()
+    return Object.entries(LOCAL_MODELS).map(([id, m]) => ({
+      id,
+      label: m.label,
+      filename: m.filename,
+      size_bytes: m.size_bytes,
+      ram_minima_gb: m.ram_minima_gb,
+      descricao: m.descricao,
+      baixado: status.modelos[id]?.baixado ?? false,
+    }))
+  })
+
+const iaLocalDownload = t.procedure
+  .input<{ model_id: string }>()
+  .action(async ({ input }) => {
+    const { downloadModel } = await import('./ia/local-llm')
+    const modelId = input.model_id as import('./ia/local-llm').LocalModelId
+    await downloadModel(modelId, (downloaded, total) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) {
+        win.webContents.send('ia:local:download-progress', { model_id: modelId, downloaded, total })
+      }
+    })
+    return { sucesso: true }
+  })
+
+const iaLocalCancelDownload = t.procedure
+  .action(async () => {
+    const { cancelDownload } = await import('./ia/local-llm')
+    cancelDownload()
+    return { sucesso: true }
+  })
+
+const iaLocalDeleteModel = t.procedure
+  .input<{ model_id: string }>()
+  .action(async ({ input }) => {
+    const { unloadModel, deleteModel } = await import('./ia/local-llm')
+    await unloadModel()
+    deleteModel(input.model_id as import('./ia/local-llm').LocalModelId)
+    return { sucesso: true }
+  })
+
+const iaLocalUnload = t.procedure
+  .action(async () => {
+    const { unloadModel } = await import('./ia/local-llm')
+    await unloadModel()
+    return { sucesso: true }
   })
 
 const iaChatLerArquivo = t.procedure
@@ -3560,6 +3643,13 @@ export const router = {
   'regras.resetarEmpresa': regrasResetarEmpresa,
   'regras.resetarRegra': regrasResetarRegra,
   // IA
+  // IA Local
+  'ia.local.status': iaLocalStatus,
+  'ia.local.models': iaLocalModels,
+  'ia.local.download': iaLocalDownload,
+  'ia.local.cancelDownload': iaLocalCancelDownload,
+  'ia.local.deleteModel': iaLocalDeleteModel,
+  'ia.local.unload': iaLocalUnload,
   'ia.configuracao.obter': iaConfiguracaoObter,
   'ia.configuracao.salvar': iaConfiguracaoSalvar,
   'ia.configuracao.testar': iaConfiguracaoTestar,

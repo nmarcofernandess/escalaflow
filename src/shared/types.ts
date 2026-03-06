@@ -737,7 +737,7 @@ export interface IaMensagem {
 
 export interface IaConfiguracao {
   id: number
-  provider: 'gemini' | 'openrouter'
+  provider: 'gemini' | 'openrouter' | 'local'
   api_key: string
   modelo: string
   // JSON string with provider-specific settings (auth mode, token/login state, local CLI paths, etc).
@@ -834,7 +834,24 @@ export interface KnowledgeRelation {
   valid_to: string | null
 }
 
-export type IaProviderId = 'gemini' | 'openrouter'
+export type IaProviderId = 'gemini' | 'openrouter' | 'local'
+
+export interface IaLocalStatus {
+  modelos: Record<string, {
+    baixado: boolean
+    tamanho_bytes: number
+    tamanho_atual_bytes?: number
+  }>
+  modelo_ativo?: string
+  modelo_carregado: boolean
+  download_em_andamento?: string
+  download_progresso?: number
+  download_bytes_total?: number
+  download_bytes_feitos?: number
+  ram_modelo_mb?: number
+  gpu_detectada?: string
+  tokens_por_segundo?: number
+}
 
 export interface IaModelCatalogItem {
   id: string

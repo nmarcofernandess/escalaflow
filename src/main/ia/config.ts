@@ -2,9 +2,10 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { IaConfiguracao } from '../../shared/types'
 
-export const PROVIDER_DEFAULTS: Record<'gemini' | 'openrouter', string> = {
+export const PROVIDER_DEFAULTS: Record<'gemini' | 'openrouter' | 'local', string> = {
     gemini: 'gemini-3-flash-preview',
     openrouter: 'anthropic/claude-sonnet-4',
+    local: 'qwen3.5-9b',
 }
 
 /**
@@ -18,7 +19,7 @@ export const PROVIDER_DEFAULTS: Record<'gemini' | 'openrouter', string> = {
  * Validação extra para OpenRouter: exige formato 'namespace/model'.
  * Se o modelo não tiver '/', veio de outro provider e é descartado.
  */
-export function resolveModel(config: IaConfiguracao, providerLabel: 'gemini' | 'openrouter'): string {
+export function resolveModel(config: IaConfiguracao, providerLabel: 'gemini' | 'openrouter' | 'local'): string {
     // 1. Tenta ler do provider_configs_json[provider].modelo
     if (config.provider_configs_json) {
         try {
@@ -42,8 +43,9 @@ export function resolveModel(config: IaConfiguracao, providerLabel: 'gemini' | '
     return PROVIDER_DEFAULTS[providerLabel]
 }
 
-export function isValidModelForProvider(modelo: string, provider: 'gemini' | 'openrouter'): boolean {
+export function isValidModelForProvider(modelo: string, provider: 'gemini' | 'openrouter' | 'local'): boolean {
     if (!modelo) return false
+    if (provider === 'local') return true
     if (provider === 'openrouter') {
         // OpenRouter exige 'namespace/model' (ex: 'anthropic/claude-sonnet-4', 'google/gemini-2.5-flash')
         return modelo.includes('/')
@@ -67,6 +69,11 @@ export function buildModelFactory(config: IaConfiguracao): {
     const provider = config.provider
     const modelo = resolveModel(config, provider)
 
+    if (provider === 'local') {
+        // Local usa path próprio via local-llm.ts — não precisa de model factory
+        return null
+    }
+
     if (provider === 'gemini') {
         const google = createGoogleGenerativeAI({ apiKey })
         return { createModel: (m) => google(m), modelo }
@@ -81,6 +88,8 @@ export function buildModelFactory(config: IaConfiguracao): {
 }
 
 export function resolveProviderApiKey(config: IaConfiguracao): string | undefined {
+    if (config.provider === 'local') return 'local-no-key'
+
     // provider_configs_json tem prioridade — é onde a UI multi-provider salva tokens
     if (config.provider_configs_json) {
         try {

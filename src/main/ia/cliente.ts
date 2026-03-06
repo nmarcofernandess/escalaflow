@@ -626,6 +626,11 @@ export async function iaEnviarMensagemStream(
 
     const apiKey = resolveProviderApiKey(config)
 
+    if (config.provider === 'local') {
+        const { localLlmChat } = await import('./local-llm')
+        return localLlmChat(mensagem, historico, streamId, contexto, conversa_id, anexos)
+    }
+
     if (config.provider === 'gemini') {
         if (!apiKey) throw new Error('API Key do Gemini não configurada.')
         const google = createGoogleGenerativeAI({ apiKey })
@@ -656,6 +661,11 @@ export async function iaEnviarMensagem(
 
     const apiKey = resolveProviderApiKey(config)
 
+    if (config.provider === 'local') {
+        const { localLlmChat } = await import('./local-llm')
+        return localLlmChat(mensagem, historico, 'non-stream', contexto, conversa_id, anexos)
+    }
+
     if (config.provider === 'gemini') {
         if (!apiKey) {
             throw new Error('API Key do Gemini não configurada.')
@@ -670,7 +680,7 @@ export async function iaEnviarMensagem(
         return _callOpenRouter({ ...config, api_key: apiKey }, mensagem, historico, contexto, conversa_id, anexos)
     }
 
-    throw new Error(`Provider "${config.provider}" não suportado. Providers disponíveis: Gemini e OpenRouter.`)
+    throw new Error(`Provider "${config.provider}" não suportado. Providers disponíveis: Gemini, OpenRouter e Local.`)
 }
 
 // =============================================================================

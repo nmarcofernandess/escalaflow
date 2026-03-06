@@ -89,7 +89,7 @@ export function useIaModelConfig(): IaModelConfig {
     if (!fullConfig) return
     const providerConfigs = fullConfig.provider_configs ?? {}
     const modeloPorProvider = providerConfigs[p]?.modelo?.trim()
-    const defaults: Record<IaProviderId, string> = { gemini: 'gemini-2.5-flash', openrouter: 'anthropic/claude-sonnet-4' }
+    const defaults: Record<IaProviderId, string> = { gemini: 'gemini-2.5-flash', openrouter: 'anthropic/claude-sonnet-4', local: 'qwen3.5-9b' }
     const newModelo = modeloPorProvider || defaults[p]
 
     // Update provider_configs_json with new provider's modelo

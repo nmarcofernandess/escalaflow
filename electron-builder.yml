@@ -21,6 +21,7 @@ extraResources:
       - '**/*.json'
 asarUnpack:
   - '**/*.node'
+  - 'node_modules/node-llama-cpp/**/*'
 mac:
   icon: icon.icns
   category: public.app-category.business

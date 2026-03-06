@@ -774,7 +774,7 @@ async function enrichConsultarRows(entidade: string, rows: Array<Record<string, 
 
 // ==================== VALIDAÇÃO RUNTIME (Zod) ====================
 
-const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
+export const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   buscar_colaborador: BuscarColaboradorSchema,
   consultar: ConsultarSchema,
   criar: CriarSchema,

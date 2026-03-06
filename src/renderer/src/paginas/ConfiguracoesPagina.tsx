@@ -29,6 +29,10 @@ import {
   ShieldCheck,
   Brain,
   ChevronRight,
+  Cpu,
+  Trash2,
+  Wifi,
+  WifiOff,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -61,6 +65,8 @@ import { useApiData } from '@/hooks/useApiData'
 import { useColorTheme } from '@/hooks/useColorTheme'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { servicoIaLocal } from '@/servicos/iaLocal'
+import { Progress } from '@/components/ui/progress'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 
@@ -76,6 +82,7 @@ type IaProviderConfigForm = {
 const IA_PROVIDER_LABELS: Record<IaProviderId, string> = {
   gemini: 'Google Gemini',
   openrouter: 'OpenRouter (Gateway)',
+  local: 'IA Local (Offline)',
 }
 
 const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: string }>> = {
@@ -91,9 +98,13 @@ const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: str
     { value: 'openai/gpt-4o-mini', label: 'OpenAI GPT-4o Mini (OpenRouter)' },
     { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash (Free, OpenRouter)' },
   ],
+  local: [
+    { value: 'qwen3.5-9b', label: 'Qwen 3.5 9B (Recomendado)' },
+    { value: 'qwen3.5-4b', label: 'Qwen 3.5 4B (Leve)' },
+  ],
 }
 
-const IA_PROVIDER_DOCS: Record<IaProviderId, string> = {
+const IA_PROVIDER_DOCS: Partial<Record<IaProviderId, string>> = {
   gemini: 'https://aistudio.google.com/apikey',
   openrouter: 'https://openrouter.ai/keys',
 }
@@ -108,6 +119,11 @@ function getDefaultProviderConfigs() {
     openrouter: {
       token: '',
       modelo: IA_PROVIDER_MODELS.openrouter[0].value,
+      favoritos: [] as string[],
+    },
+    local: {
+      token: '',
+      modelo: IA_PROVIDER_MODELS.local[0].value,
       favoritos: [] as string[],
     },
   }
@@ -129,6 +145,10 @@ function normalizeProviderConfigs(input: any, iaConfig?: any) {
     openrouter: {
       ...defaults.openrouter,
       ...(incoming.openrouter || {}),
+    },
+    local: {
+      ...defaults.local,
+      ...(incoming.local || {}),
     },
   }
 }
@@ -221,10 +241,72 @@ export function ConfiguracoesPagina() {
     }
   }
 
+  // IA Local — download state
+  type LocalModelInfo = { id: string; label: string; filename: string; size_bytes: number; ram_minima_gb: number; descricao: string; baixado: boolean }
+  const [localModels, setLocalModels] = useState<LocalModelInfo[]>([])
+  const [localDownloading, setLocalDownloading] = useState<string | null>(null)
+  const [localProgress, setLocalProgress] = useState<{ downloaded: number; total: number } | null>(null)
+  const [localGpu, setLocalGpu] = useState<string>('...')
+
+  const refreshLocalModels = async () => {
+    try {
+      const models = await servicoIaLocal.models()
+      setLocalModels(models)
+      const status = await servicoIaLocal.status()
+      setLocalGpu(status.gpu_detectada || 'cpu')
+    } catch { /* não fatal */ }
+  }
+
+  useEffect(() => {
+    refreshLocalModels()
+    const handler = (_e: any, data: { model_id: string; downloaded: number; total: number }) => {
+      setLocalDownloading(data.model_id)
+      setLocalProgress({ downloaded: data.downloaded, total: data.total })
+    }
+    window.electron.ipcRenderer.on('ia:local:download-progress', handler)
+    return () => { window.electron.ipcRenderer.removeAllListeners('ia:local:download-progress') }
+  }, [])
+
+  const handleLocalDownload = async (modelId: string) => {
+    setLocalDownloading(modelId)
+    setLocalProgress({ downloaded: 0, total: 1 })
+    try {
+      await servicoIaLocal.download(modelId)
+      toast.success('Modelo baixado com sucesso!')
+      await refreshLocalModels()
+    } catch (err: any) {
+      if (!err.message?.includes('cancelado')) {
+        toast.error(err.message || 'Erro ao baixar modelo')
+      }
+    } finally {
+      setLocalDownloading(null)
+      setLocalProgress(null)
+    }
+  }
+
+  const handleLocalCancel = async () => {
+    try {
+      await servicoIaLocal.cancelDownload()
+      toast.info('Download cancelado')
+    } catch { /* ok */ }
+    setLocalDownloading(null)
+    setLocalProgress(null)
+  }
+
+  const handleLocalDelete = async (modelId: string) => {
+    try {
+      await servicoIaLocal.deleteModel(modelId)
+      toast.success('Modelo removido')
+      await refreshLocalModels()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao remover modelo')
+    }
+  }
+
   const iaForm = useForm({
     resolver: zodResolver(
       z.object({
-        provider: z.enum(['gemini', 'openrouter']),
+        provider: z.enum(['gemini', 'openrouter', 'local']),
         api_key: z.string().optional(),
         modelo: z.string(),
         provider_configs: z.object({
@@ -787,6 +869,12 @@ export function ConfiguracoesPagina() {
                               <SelectContent>
                                 <SelectItem value="gemini">Google Gemini</SelectItem>
                                 <SelectItem value="openrouter">OpenRouter</SelectItem>
+                                <SelectItem value="local" disabled={!localModels.some(m => m.baixado)}>
+                                  <span className="flex items-center gap-1.5">
+                                    <WifiOff className="size-3" />
+                                    IA Local (Offline)
+                                  </span>
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -831,10 +919,17 @@ export function ConfiguracoesPagina() {
                       />
                     </div>
 
-                    {/* API Key */}
+                    {/* API Key — esconder pra provider local */}
+                    {iaProvider === 'local' ? (
+                      <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                        <WifiOff className="size-4 shrink-0" />
+                        <span>Roda no seu computador, sem internet. Configure o modelo abaixo em &quot;IA Local&quot;.</span>
+                      </div>
+                    ) : (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label>{tokenFieldLabel}</Label>
+                        {IA_PROVIDER_DOCS[iaProvider] && (
                         <a
                           href={IA_PROVIDER_DOCS[iaProvider]}
                           target="_blank"
@@ -844,6 +939,7 @@ export function ConfiguracoesPagina() {
                           Obter chave
                           <ExternalLink className="size-3" />
                         </a>
+                        )}
                       </div>
                       <div className="relative">
                         <Input
@@ -875,6 +971,7 @@ export function ConfiguracoesPagina() {
                         </Button>
                       </div>
                     </div>
+                    )}
 
                     {/* Picker de modelos OpenRouter */}
                     {iaProvider === 'openrouter' && remoteCatalog?.models?.length ? (
@@ -916,6 +1013,95 @@ export function ConfiguracoesPagina() {
                     </div>
                   </form>
                 </Form>
+              </CardContent>
+            </Card>
+
+            {/* IA Local — Download e gerenciamento de modelos */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Cpu className="size-4" />
+                  IA Local (Offline)
+                </CardTitle>
+                <CardDescription>
+                  Baixe um modelo de IA para rodar direto no seu computador, sem internet.
+                  {localGpu && localGpu !== '...' && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
+                      GPU: {localGpu}
+                    </span>
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {localModels.map((model) => {
+                  const isDownloading = localDownloading === model.id
+                  const progressPct = isDownloading && localProgress
+                    ? Math.round((localProgress.downloaded / localProgress.total) * 100)
+                    : 0
+                  const sizeLabel = (model.size_bytes / 1e9).toFixed(1) + ' GB'
+
+                  return (
+                    <div key={model.id} className="rounded-lg border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">{model.label}</p>
+                            {model.baixado && (
+                              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                Pronto
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {model.descricao} — {sizeLabel} · {model.ram_minima_gb}GB+ RAM
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-1.5">
+                          {model.baixado ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 text-destructive hover:text-destructive"
+                              onClick={() => handleLocalDelete(model.id)}
+                            >
+                              <Trash2 className="mr-1 size-3.5" />
+                              Remover
+                            </Button>
+                          ) : isDownloading ? (
+                            <Button size="sm" variant="outline" className="h-8" onClick={handleLocalCancel}>
+                              Cancelar
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8"
+                              onClick={() => handleLocalDownload(model.id)}
+                              disabled={!!localDownloading}
+                            >
+                              <Download className="mr-1 size-3.5" />
+                              Baixar ({sizeLabel})
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      {isDownloading && localProgress && (
+                        <div className="mt-2 space-y-1">
+                          <Progress value={progressPct} className="h-1.5" />
+                          <p className="text-xs text-muted-foreground">
+                            {progressPct}% — {(localProgress.downloaded / 1e9).toFixed(1)} / {(localProgress.total / 1e9).toFixed(1)} GB
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                {localModels.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Carregando modelos disponíveis...</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Recomendado: Apple Silicon ou GPU dedicada para melhor performance.
+                </p>
               </CardContent>
             </Card>
 

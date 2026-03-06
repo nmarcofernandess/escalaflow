@@ -2,7 +2,7 @@
 
 > **Proposito:** Mapeamento completo do sistema para reescrita do system prompt, gap analysis de tools, e evolucao da IA.
 >
-> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-02-24 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
+> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-03-06 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
 
 ---
 
@@ -20,8 +20,8 @@
 | IPC | @egoist/tipc (~116 handlers) |
 | Database | PGlite (Postgres 17 WASM, pgvector, FTS portugues, pg_trgm) |
 | Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) — multi-pass graceful degradation |
-| Frontend | React 19 + Vite + Tailwind + shadcn/ui + Zustand |
-| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) — 34 tools |
+| Frontend | React 19 + Vite + Tailwind + shadcn/ui + Zustand + recharts |
+| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local via node-llama-cpp (Qwen 3.5) — 34 tools |
 | Knowledge | RAG local: embeddings ONNX (multilingual-e5-small) + pgvector + Knowledge Graph |
 
 ### Fluxo macro
@@ -30,7 +30,7 @@
 Usuario (React) → IPC (tipc.ts) → Main Process (Node.js)
                                     ├── Database (PGlite — Postgres WASM)
                                     ├── Motor Python (solver-bridge.ts → spawn solver)
-                                    └── IA (cliente.ts → Gemini API)
+                                    └── IA (cliente.ts → Gemini/OpenRouter/Local)
 ```
 
 ---
@@ -52,7 +52,7 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 | Entidade | Tabela | Campos criticos | Notas |
 |----------|--------|-----------------|-------|
 | **Empresa** | `empresa` | `nome`, `corte_semanal`, `tolerancia_semanal_min`, `min_intervalo_almoco_min`, `usa_cct_intervalo_reduzido`, `grid_minutos` | **Singleton** (1 registro). Config global do supermercado. `corte_semanal` define quando a semana "vira" (SEG_DOM, TER_SEG, etc). `grid_minutos=15` e fonte unica do grid. |
-| **TipoContrato** | `tipos_contrato` | `nome`, `horas_semanais`, `regime_escala`, `dias_trabalho`, `trabalha_domingo`, `max_minutos_dia` | 5 templates imutaveis (seed). Define as restricoes legais de cada tipo de trabalhador. |
+| **TipoContrato** | `tipos_contrato` | `nome`, `horas_semanais`, `regime_escala`, `dias_trabalho`, `max_minutos_dia` | 4 templates imutaveis (seed): CLT 44h, CLT 36h, Estagiario, Intermitente. Define as restricoes legais de cada tipo de trabalhador. `trabalha_domingo` foi removido — domingo e gerenciado por ciclo rotativo e regras por colaborador. |
 | **Setor** | `setores` | `nome`, `icone`, `hora_abertura`, `hora_fechamento`, `ativo` | Departamento do supermercado (Acougue, Padaria, Caixa...). `hora_abertura/fechamento` sao defaults — podem ser overridden por `setor_horario_semana`. Soft delete via `ativo`. |
 | **Colaborador** | `colaboradores` | `setor_id`, `tipo_contrato_id`, `nome`, `sexo`, `horas_semanais`, `rank`, `prefere_turno`, `evitar_dia_semana`, `tipo_trabalhador`, `funcao_id`, `ativo` | FK setor + contrato. `tipo_trabalhador` (CLT/ESTAGIARIO/APRENDIZ) determina restricoes especiais. `rank` define senioridade (0=junior). `funcao_id` liga ao posto de trabalho. Soft delete. |
 | **Funcao** | `funcoes` | `setor_id`, `apelido`, `tipo_contrato_id`, `cor_hex`, `ativo`, `ordem` | Posto de trabalho dentro do setor (Caixa 1, Repositor...). Tem `cor_hex` pra identificacao visual no grid. FK tipo_contrato define qual contrato esse posto exige. |
@@ -157,17 +157,18 @@ ativo=1 (normal) ──[desativar]──→ ativo=0 (invisivel no sidebar, motor
 
 ### 2.4 Contratos CLT — Templates e Restricoes
 
-| ID | Nome | Horas/sem | Regime | Dias | Max/dia | Domingo | Compensacao 9h45 | Restricoes especiais |
-|----|------|-----------|--------|------|---------|---------|------------------|---------------------|
-| 1 | CLT 44h | 44 | 5X2 | 5 | 585min | Sim | Sim | Nenhuma |
-| 2 | CLT 36h | 36 | 5X2 | 5 | 585min | Sim | Sim | Nenhuma |
-| 3 | Estagiario Manha | 20 | 5X2 | 5 | 240min | **NUNCA** | Nao | Max 4h/dia, 20h/sem, nunca hora extra |
-| 4 | Estagiario Tarde | 30 | 5X2 | 5 | 360min | **NUNCA** | Nao | Max 6h/dia, 30h/sem, nunca hora extra |
-| 5 | Estagiario Noite-Estudo | 30 | 5X2 | 5 | 360min | **NUNCA** | Nao | Max 6h/dia, 30h/sem, nunca hora extra |
+| ID | Nome | Horas/sem | Regime | Dias | Max/dia | Compensacao 9h45 | Restricoes especiais |
+|----|------|-----------|--------|------|---------|------------------|---------------------|
+| 1 | CLT 44h | 44 | 5X2 | 5 | 585min | Sim | Nenhuma |
+| 2 | CLT 36h | 36 | 5X2 | 5 | 585min | Sim | Nenhuma |
+| 3 | Estagiario | 20-30 | 5X2 | 5 | 360min | Nao | Max 6h/dia, nunca hora extra, nunca domingo (H11) |
+| 4 | Intermitente | 0+ | 5X2 | 5 | 585min | Nao | horas_semanais.min(0) — convocado sob demanda |
 
-**Nota sobre compensacao:** CLT 44h/36h em regime 5X2 podem fazer ate 9h45/dia para compensar o sabado sem trabalho. Estagiarios NUNCA fazem compensacao.
+**Nota sobre compensacao:** CLT 44h/36h em regime 5X2 podem fazer ate 9h45/dia para compensar o sabado sem trabalho. Estagiarios e Intermitentes NUNCA fazem compensacao.
 
-**Nota sobre Aprendiz:** Existe como `tipo_trabalhador` mas nao tem contrato seed dedicado. Restricoes: NUNCA domingo, NUNCA feriado, NUNCA noturno (22h-5h), NUNCA hora extra.
+**Nota sobre Aprendiz:** Existe como `tipo_trabalhador` (APRENDIZ) mas nao tem contrato seed dedicado. Restricoes: NUNCA domingo, NUNCA feriado, NUNCA noturno (22h-5h), NUNCA hora extra.
+
+**Nota sobre domingo:** `trabalha_domingo` foi removido dos contratos. Domingo e gerenciado por `colaborador_regra_horario.domingo_ciclo_trabalho/folga` (ciclo rotativo) e regras SOFT (H3 rodizio). Estagiarios/Aprendizes nunca trabalham domingo via constraints HARD (H11).
 
 ### 2.5 Perfis de Horario (Seed)
 
@@ -423,7 +424,7 @@ Onde:
 | H15 | `add_h15_estagiario_jornada` | `constraints.py:572` | Estagiario: max 360min/dia, max 1800min/sem (Lei 11.788 Art. 10). | Nao (sempre HARD) |
 | H16 | `add_h16_estagiario_hora_extra` | `constraints.py:596` | Estagiario: weekly_minutes <= target (zero tolerancia upper). | Nao (sempre HARD) |
 | H17/H18 | `add_h17_h18_feriado_proibido` | `constraints.py:615` | 25/12 e 01/01: works_day[c,d] = 0 para todos (CCT). | Nao (sempre HARD) |
-| H19 | `add_h19_folga_comp_domingo` | `constraints.py:632` | **NOOP** — redundante com H1 (pass no corpo). | N/A (noop) |
+| H19 | `add_h19_folga_comp_domingo` | `constraints.py:632` | **NOOP no solver** — redundante com H1. **Validador TS:** checa folga compensatoria apos domingo trabalhado (Lei 605/1949). Fix v1.4: boundary guard — se domingo e o ultimo dia do periodo, pula check (folga pode estar fora do periodo gerado). | N/A (noop no solver, ativo no validador) |
 | DIAS_TRABALHO | `add_dias_trabalho` | `constraints.py:323` | 5X2 → 5 dias/sem, 6X1 → 6. Range [target-1, target] por chunk. | Sim (HARD/SOFT/OFF) |
 | MIN_DIARIO | `add_min_diario` | `constraints.py:359` | Jornada minima 4h (16 slots) por dia de trabalho. | Sim (HARD/SOFT/OFF) |
 | janela colab | `add_colaborador_time_window_hard` | `constraints.py:657` | Janela de horario individual: force inicio/fim. Folga fixa e domingo_forcar_folga. | Sempre HARD |
@@ -594,7 +595,7 @@ interface SolverOutput {
     violacoes_soft: number
   }
   decisoes?: DecisaoMotor[]           // explicabilidade: POR QUE cada decisao
-  comparacao_demanda?: SlotComparacao[] // planejado vs executado vs delta
+  comparacao_demanda?: SlotComparacao[] // planejado vs executado vs delta (ver peso abaixo)
   erro?: {                            // so quando sucesso=false
     tipo: 'PREFLIGHT' | 'CONSTRAINT'
     regra: string
@@ -603,6 +604,20 @@ interface SolverOutput {
   }
 }
 ```
+
+#### Peso do SolverOutput (referencia: 3 meses, ~13 colabs)
+
+| Campo | Peso aprox. | Notas |
+|-------|-------------|-------|
+| `comparacao_demanda` | **67%** (~556KB) | 4212 slots × 15min. Persistido no banco (`escala_comparacao_demanda`) para charts e export CSV. |
+| `alocacoes` | 21% (~177KB) | 1 linha por (colab, dia). Persistido em `alocacoes`. |
+| `decisoes` | 11% (~93KB) | Explicabilidade. Persistido em `escala_decisoes`. |
+| `indicadores` | <1% (~200B) | KPIs agregados. |
+| `diagnostico` | <1% (~1KB) | Status do solver, regras, ciclo. |
+
+**CLI:** `npm run solver:cli -- <id> --json` exclui `comparacao_demanda` por default (~22KB vs ~800KB). Use `--json-full` para output completo. `--summary` retorna ~1KB com indicadores, ciclo e horas por colaborador.
+
+**Frontend:** `comparacao_demanda` alimenta o `CoberturaChart` (area chart stacked com navegacao por periodo).
 
 ### 3.7 Warm-Start Hints
 
@@ -1369,6 +1384,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
 > - `src/main/ia/system-prompt.ts` (~370 linhas) — prompt com 8 secoes (reescrito, inclui degradacao graciosa)
 > - `src/main/ia/discovery.ts` (~300 linhas) — auto-contexto por pagina + alertas proativos + memorias
 > - `src/main/ia/config.ts` — buildModelFactory (reutilizavel por knowledge graph, session-processor)
+> - `src/main/ia/local-llm.ts` (~450 linhas) — IA Local: download GGUF, lifecycle modelo, chat com tool calling via node-llama-cpp
 > - `src/main/ia/session-processor.ts` — sanitize transcripts, indexacao, compaction de sessoes longas
 > - `src/main/knowledge/` — embeddings.ts, ingest.ts, search.ts, graph.ts (RAG + Knowledge Graph)
 
@@ -1453,16 +1469,65 @@ Alguns modelos (Gemini em particular) executam tools mas nao geram texto ao fina
 
 ### 6.2 Providers suportados
 
-| Provider | Factory | Modelo default | Pacote |
-|----------|---------|----------------|--------|
-| `gemini` | `createGoogleGenerativeAI({ apiKey })` | `gemini-3-flash-preview` | `@ai-sdk/google` |
-| `openrouter` | `createOpenRouter({ apiKey })` | `anthropic/claude-sonnet-4` | `@openrouter/ai-sdk-provider` |
+| Provider | Factory | Modelo default | Pacote | Requer internet? |
+|----------|---------|----------------|--------|------------------|
+| `gemini` | `createGoogleGenerativeAI({ apiKey })` | `gemini-3-flash-preview` | `@ai-sdk/google` | Sim |
+| `openrouter` | `createOpenRouter({ apiKey })` | `anthropic/claude-sonnet-4` | `@openrouter/ai-sdk-provider` | Sim |
+| `local` | `node-llama-cpp` (in-process) | `qwen3.5-9b` | `node-llama-cpp` | **Nao** |
 
 **Resolucao de API key (prioridade):**
 1. `config.provider_configs_json[provider].token` — UI multi-provider salva aqui
 2. `config.api_key` — fallback legado
+3. Provider `local`: retorna `'local-no-key'` (pula validacao)
 
-Ambos os providers usam a mesma logica — a unica diferenca e a factory do model.
+Gemini e OpenRouter usam Vercel AI SDK (`streamText`). Provider Local usa path proprio via `local-llm.ts`.
+
+### 6.2.1 IA Local — Provider Offline (node-llama-cpp)
+
+**Arquivo:** `src/main/ia/local-llm.ts` (~450 linhas)
+
+**Modelos curados:**
+
+| Modelo | ID | Tamanho | RAM min | Uso |
+|--------|----|---------|---------|-----|
+| Qwen 3.5 9B Q4_K_M | `qwen3.5-9b` | ~5.7 GB | 8GB+ | Padrao — melhor tool calling |
+| Qwen 3.5 4B Q4_K_M | `qwen3.5-4b` | ~2.8 GB | 4GB+ | Leve — maquinas com pouca RAM |
+
+**Download:**
+- GGUF baixado do HuggingFace com progresso via `fetch` + `Range` header (resume)
+- `.part` temporario → rename ao completar
+- Cancelamento via `AbortController`
+- Progresso broadcast via `BrowserWindow.webContents.send('ia:local:download-progress')`
+- Pode ter ambos modelos baixados; usuario escolhe qual usar
+
+**Lifecycle (singleton lazy):**
+- `ensureModelLoaded()`: `getLlama()` → `loadModel({modelPath})` → `createContext()`
+- GPU auto-detect (Metal no Mac, Vulkan, CUDA, ou CPU fallback)
+- Idle timer: descarrega modelo apos 5 min sem uso
+- Cleanup no `app.on('before-quit')`
+
+**Chat com tool calling:**
+- `localLlmChat()` cria `LlamaChatSession` com system prompt trimado (`LOCAL_SYSTEM_PROMPT`, ~90 linhas)
+- 34 tools convertidas via `defineChatSessionFunction` + `zodToJsonSchema`
+- Reutiliza `executeTool()` existente — mesmos handlers que cloud providers
+- Emite mesmos `IaStreamEvent` via `broadcastToRenderer('ia:stream')` — UI identica
+- `onTextChunk` para streaming em tempo real
+- Tok/s calculado e exibido no final da resposta
+- Context guard: historico trimado a 20 mensagens para caber no context window
+- Degradacao graceful: se OOM ao carregar, emite erro claro e sugere modelo menor
+
+**IPC handlers (6 novos):**
+
+| Handler | Input | O que faz |
+|---------|-------|-----------|
+| `ia.local.status` | — | `getLocalStatus()` (ambos modelos, GPU, tok/s) |
+| `ia.local.models` | — | Lista modelos com status de download |
+| `ia.local.download` | `{model_id}` | Download com broadcast de progresso |
+| `ia.local.cancelDownload` | — | Cancela download ativo |
+| `ia.local.deleteModel` | `{model_id}` | Unload + delete arquivo |
+| `ia.local.unload` | — | Descarrega modelo da memoria |
+
+**UI:** Card "IA Local" em Configuracoes Avancadas com download/progresso/remover para cada modelo, GPU info, badge de status.
 
 ### 6.3 Historico de mensagens
 
@@ -1986,6 +2051,7 @@ html (height: 100%)
 | ExportarEscala | ExportarEscala.tsx (26KB) | Gerador de HTML/PDF de escala |
 | ExportModal | ExportModal.tsx (13KB) | Modal de preview e export |
 | ViolacoesAgrupadas | ViolacoesAgrupadas.tsx (6KB) | Lista agrupada de violacoes |
+| CoberturaChart | CoberturaChart.tsx (7KB) | Area chart stacked (Necessario vs Coberto) com navegacao Semana/Mes/Tudo + paginacao `< >`. Usa recharts + shadcn chart. Presente em SetorDetalhe, EscalaPagina e EscalasHub. |
 
 #### Componentes de demanda
 | Componente | Arquivo | Proposito |
@@ -2162,7 +2228,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 - Validacao Zod runtime em TODAS as tools com `correction` em 100% dos toolError
 - Seguranca: whitelists por operacao (18 tabelas leitura, 7 criacao, 5 atualizacao, 4 delecao), campos validados, limit de rows
 - Auto-contexto por pagina com alertas proativos (violacoes, hash desatualizado, excecoes expirando)
-- Multi-provider (Gemini + OpenRouter) com mesma logica
+- Multi-provider (Gemini + OpenRouter + Local) com mesma logica. Provider Local roda modelo GGUF in-process via node-llama-cpp sem internet.
 - Persistencia de conversas com PGlite + auto-titulo
 - Evals com SAVEPOINT/ROLLBACK protegendo o banco de dados
 - System prompt de 8 secoes com workflows prontos e schema completo
@@ -2188,9 +2254,9 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | 5 | **Motor Python, nao TypeScript** | OR-Tools CP-SAT e ordens de magnitude mais eficiente que backtracking JS. Motor TS legado (`gerador.ts`) deletado. Trade-off: bridge via child_process stdin/stdout JSON adiciona ~200ms de overhead, mas solver roda em < 30s vs minutos no TS. | Sim. Insubstituivel. |
 | 6 | **snake_case ponta a ponta** | DB columns = IPC keys = TS interfaces = React props. Zero adaptadores. Reduz bugs de mapeamento em sistema com 80+ handlers. Convencao incomum em TS mas necessaria para produto com time de 1 pessoa. | Sim. Consistencia > convencao do ecossistema. |
 | 7 | **Compensacao 9h45** | CLT 44h = 7h20/dia em 6 dias. Mas supermercados usam jornada 8h48 (5 dias) ou 9h45 (5 dias com sabado alternado). `max_minutos_dia` vem do contrato, nao de calculo fixo. So CLT 44h e 36h — nunca estagiario/aprendiz. | Sim. Reflete pratica real. |
-| 8 | **H19 (folga comp domingo) como NOOP** | Matematicamente redundante quando H1 esta ativa: max 6 dias consecutivos ja garante 1 folga em qualquer janela de 7 dias. Emitir causava conflitos INFEASIBLE com dias_trabalho + H10. Interface preservada para compatibilidade. (`constraints.py:643-650`) | Sim. Manter NOOP. |
+| 8 | **H19 (folga comp domingo) — NOOP no solver, ativo no validador** | No solver: matematicamente redundante com H1 (max 6 dias consecutivos). Emitir causava INFEASIBLE com dias_trabalho + H10. No validador TS: checa Lei 605/1949 (folga compensatoria 7 dias apos domingo trabalhado). Fix v1.4: boundary guard — se nao ha dias apos o domingo no periodo, pula (folga pode estar fora do periodo gerado). (`validacao-compartilhada.ts`) | Sim. NOOP no solver, check no validador com boundary guard. |
 | 9 | **Surplus penalty (peso 5.000)** | Sem surplus, solver empilha colabs em slots ja cobertos (surplus=3) enquanto outros ficam com deficit=2. Deficit sozinho nao distingue ONDE colocar capacidade. Surplus torna excesso CARO, forcando redistribuicao. Math: mover 1 pessoa de surplus pra deficit economiza 15.000 (10k+5k). (`constraints.py:877-912`) | Sim. Sem isso, escalas ficam desequilibradas. |
-| 10 | **Vercel AI SDK (nao SDK nativo do Gemini/OpenRouter)** | Abstrai providers (Gemini + OpenRouter) com mesma interface. `generateText()` com `stopWhen: stepCountIs(10)` resolve multi-turn tool calling. Trade-off: depende de lib terceira, mas evita reimplementar loop de tools. | Sim. Flexibilidade de trocar provider sem mudar logica. |
+| 10 | **Vercel AI SDK (cloud) + node-llama-cpp (local)** | Cloud: Vercel AI SDK abstrai Gemini + OpenRouter. Local: node-llama-cpp roda GGUF in-process com `defineChatSessionFunction` para tool calling. Ambos emitem mesmos `IaStreamEvent` — UI identica. Trade-off local: modelo 9B precisa 8GB+ RAM, tool calling menos preciso que cloud. | Sim. 3 providers com mesma experiencia de chat. |
 | 11 | **Auto-contexto (discovery) a cada mensagem** | Injeta setores, colabs, escalas no system prompt sem tool call. Custo: ~200-500 tokens extras. Beneficio: IA responde perguntas simples sem chamar get_context. Discovery condicional por pagina reduz tamanho. | Sim, mas pode cachear com TTL de 30s. |
 | 12 | **Historico COM tool calls** | `buildChatMessages()` envia role user/assistant/tool. Mensagens assistant incluem `tool-call` parts, seguidas de mensagem `tool` com `tool-result` parts (truncados a ~400 chars). Motivo: preserva contexto de descobertas entre turnos — IA sabe o que ja consultou/criou. Trade-off: mais tokens no historico, mas IA nao "esquece" o que fez. | Sim. Melhoria implementada sobre decisao original. Avaliar compressao se conversas ficarem longas. |
 

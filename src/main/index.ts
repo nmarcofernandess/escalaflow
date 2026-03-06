@@ -122,6 +122,7 @@ async function bootstrap(): Promise<void> {
   })
 
   app.on('before-quit', () => {
+    void import('./ia/local-llm').then(m => m.unloadModel()).catch(() => {})
     void closeDb().catch(() => {})
   })
 }
