@@ -23,7 +23,6 @@ import {
   Database,
   BookOpen,
   MessageSquare,
-  Cpu,
   Trash2,
   Wifi,
   WifiOff,
@@ -925,36 +924,95 @@ export function ConfiguracoesPagina() {
                   />
                 </div>
 
-                {/* API Key — esconder pra provider local */}
+                {/* API Key (cloud) ou Model cards (local) */}
                 {iaProvider === 'local' ? (
-                  installedLocalSet.size > 0 ? (
-                    <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <WifiOff className="size-4 shrink-0" />
                       <span>Roda no seu computador, sem internet.</span>
+                      {localGpu && localGpu !== '...' && (
+                        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
+                          GPU: {localGpu}
+                        </span>
+                      )}
                     </div>
-                  ) : (
-                    <div className="flex flex-col gap-3 rounded-md border border-dashed border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/30">
-                      <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-300">
-                        <AlertCircle className="size-4 shrink-0" />
-                        Nenhum modelo instalado
-                      </div>
-                      <p className="text-xs text-amber-700 dark:text-amber-400">
-                        Para usar a IA offline, baixe um modelo na seção abaixo.
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="w-fit"
-                        onClick={() => {
-                          document.getElementById('ia-local-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                        }}
-                      >
-                        <Download className="mr-1.5 size-3.5" />
-                        Instalar modelo
-                      </Button>
-                    </div>
-                  )
+                    {localModels.map((model) => {
+                      const isDownloading = localDownloading === model.id
+                      const progressPct = isDownloading && localProgress
+                        ? Math.round((localProgress.downloaded / localProgress.total) * 100)
+                        : 0
+                      const sizeLabel = (model.size_bytes / 1e9).toFixed(1) + ' GB'
+                      const isRecommended = model.id === 'qwen3.5-9b'
+
+                      return (
+                        <div key={model.id} className={cn('rounded-lg border p-3', model.baixado && 'border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20')}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <p className="text-sm font-medium">{model.label}</p>
+                                {isRecommended && !model.baixado && (
+                                  <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                    Recomendado
+                                  </span>
+                                )}
+                                {model.baixado && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                    <CheckCircle2 className="size-3" />
+                                    Instalado
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {sizeLabel} · {model.ram_minima_gb}GB+ RAM
+                                {isRecommended ? ' · Melhor qualidade' : ' · Mais leve e rapido'}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 gap-1.5">
+                              {model.baixado ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 text-destructive hover:text-destructive"
+                                  onClick={() => handleLocalDelete(model.id)}
+                                >
+                                  <Trash2 className="mr-1 size-3.5" />
+                                  Remover
+                                </Button>
+                              ) : isDownloading ? (
+                                <Button type="button" size="sm" variant="outline" className="h-8" onClick={handleLocalCancel}>
+                                  Cancelar
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8"
+                                  onClick={() => handleLocalDownload(model.id)}
+                                  disabled={!!localDownloading}
+                                >
+                                  <Download className="mr-1 size-3.5" />
+                                  Baixar ({sizeLabel})
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          {isDownloading && localProgress && (
+                            <div className="mt-2 space-y-1">
+                              <Progress value={progressPct} className="h-1.5" />
+                              <p className="text-xs text-muted-foreground">
+                                {progressPct}% — {(localProgress.downloaded / 1e9).toFixed(1)} / {(localProgress.total / 1e9).toFixed(1)} GB
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <p className="text-xs text-muted-foreground">
+                      Recomendado: Apple Silicon ou GPU dedicada para melhor performance.
+                    </p>
+                  </div>
                 ) : (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -1046,103 +1104,6 @@ export function ConfiguracoesPagina() {
           </CardContent>
         </Card>
 
-        {/* IA Local — Download e gerenciamento de modelos */}
-        <Card id="ia-local-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Cpu className="size-4" />
-              IA Local (Offline)
-            </CardTitle>
-            <CardDescription>
-              Baixe um modelo de IA para rodar direto no seu computador, sem internet.
-              {localGpu && localGpu !== '...' && (
-                <span className="ml-2 inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
-                  GPU: {localGpu}
-                </span>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {localModels.map((model) => {
-              const isDownloading = localDownloading === model.id
-              const progressPct = isDownloading && localProgress
-                ? Math.round((localProgress.downloaded / localProgress.total) * 100)
-                : 0
-              const sizeLabel = (model.size_bytes / 1e9).toFixed(1) + ' GB'
-              const isRecommended = model.id === 'qwen3.5-9b'
-              const cleanLabel = model.label.replace(/\s*\(Recomendado\)/i, '').replace(/\s*\(Leve\)/i, '')
-
-              return (
-                <div key={model.id} className={cn('rounded-lg border p-3', model.baixado && 'border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20')}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <p className="text-sm font-medium">{cleanLabel}</p>
-                        {isRecommended && !model.baixado && (
-                          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                            Recomendado
-                          </span>
-                        )}
-                        {model.baixado && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                            <CheckCircle2 className="size-3" />
-                            Instalado
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {sizeLabel} · {model.ram_minima_gb}GB+ RAM
-                        {isRecommended ? ' · Melhor qualidade' : ' · Mais leve e rapido'}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 gap-1.5">
-                      {model.baixado ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 text-destructive hover:text-destructive"
-                          onClick={() => handleLocalDelete(model.id)}
-                        >
-                          <Trash2 className="mr-1 size-3.5" />
-                          Remover
-                        </Button>
-                      ) : isDownloading ? (
-                        <Button size="sm" variant="outline" className="h-8" onClick={handleLocalCancel}>
-                          Cancelar
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8"
-                          onClick={() => handleLocalDownload(model.id)}
-                          disabled={!!localDownloading}
-                        >
-                          <Download className="mr-1 size-3.5" />
-                          Baixar ({sizeLabel})
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  {isDownloading && localProgress && (
-                    <div className="mt-2 space-y-1">
-                      <Progress value={progressPct} className="h-1.5" />
-                      <p className="text-xs text-muted-foreground">
-                        {progressPct}% — {(localProgress.downloaded / 1e9).toFixed(1)} / {(localProgress.total / 1e9).toFixed(1)} GB
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-            {localModels.length === 0 && (
-              <p className="text-sm text-muted-foreground">Carregando modelos disponíveis...</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Recomendado: Apple Silicon ou GPU dedicada para melhor performance.
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
       <DirtyGuardDialog blocker={blocker} />
