@@ -12,11 +12,13 @@
 │                                                     │
 │  Marco faz release no GitHub                        │
 │        ↓                                            │
-│  GitHub hospeda os arquivos (.dmg, .zip, .yml)      │
+│  GitHub hospeda os arquivos (.dmg, .exe, .yml)      │
 │        ↓                                            │
 │  App abre no computador do usuário                  │
 │        ↓                                            │
 │  App checa GitHub (após 5 segundos)                 │
+│        ↓                                            │
+│  Lê latest-mac.yml / latest.yml do release          │
 │        ↓                                            │
 │  "Tem versão nova?" ──────── Não → fica quieto      │
 │        ↓ Sim                                        │
@@ -40,29 +42,31 @@ O usuário **não precisa fazer nada** — o sistema faz o download sozinho. Só
 |------|------|-----------|
 | `electron-updater` | `package.json` (dep) | Biblioteca que gerencia o fluxo de update |
 | `setupAutoUpdater()` | `src/main/index.ts` | Lógica do main process: checa, baixa, instala |
-| Card "Atualizações" | `EmpresaConfig.tsx` | UI que mostra status e botão de instalar |
+| Card "Atualizações" | `ConfiguracoesPagina.tsx` | UI que mostra status e botão de instalar |
 | `publish` no builder | `electron-builder.yml` | Diz pra onde publicar (GitHub: nmarcofernandess/escalaflow) |
-| `latest-mac.yml` | GitHub Release | Arquivo que o app lê pra saber qual é a versão mais recente |
-| `latest.yml` | GitHub Release | Idem para Windows |
+| **`latest-mac.yml`** | GitHub Release | **CRITICO** — arquivo que o app lê pra saber a versão mais recente (Mac) |
+| **`latest.yml`** | GitHub Release | **CRITICO** — idem para Windows |
+
+### O que quebra sem os YAMLs
+
+Sem `latest-mac.yml` / `latest.yml` no release, o `electron-updater`:
+- Retorna erro ao verificar atualizações
+- Nunca detecta versão nova
+- Mostra "Erro ao verificar atualizações" na UI
+
+**Esses arquivos são gerados automaticamente pelo `electron-builder`** durante o build. Se fizer upload manual dos assets (.dmg/.exe), precisa gerar e subir os YAMLs também.
 
 ---
 
-## Como fazer um release (passo a passo)
+## Ritual de Release
 
-### Pré-requisito: primeira vez
+### Passo 1 — Bump version no `package.json`
 
-Certifique que você tem:
-- `gh` CLI autenticado (`gh auth status`)
-- `solver-bin/` compilado e atualizado (`npm run solver:build` se mudou o Python)
+```bash
+# Verificar versão atual
+grep '"version"' package.json
 
----
-
-### Passo 1 — Suba a versão no `package.json`
-
-```json
-{
-  "version": "1.1.0"
-}
+# Editar para a nova versão
 ```
 
 Regra de versionamento:
@@ -70,55 +74,129 @@ Regra de versionamento:
 - `1.0.0 → 1.1.0` — feature nova
 - `1.0.0 → 2.0.0` — breaking change / redesign grande
 
----
-
-### Passo 2 — Commit e tag
+### Passo 2 — Commit, tag e push
 
 ```bash
 git add package.json
-git commit -m "chore: bump v1.1.0"
-git tag v1.1.0
+git commit -m "chore: bump vX.Y.Z"
+git tag vX.Y.Z
 git push && git push --tags
 ```
 
-A tag `v1.1.0` é o gatilho. O GitHub Release precisa ter exatamente o mesmo nome da tag.
+**A versão no package.json DEVE ser identica a tag** (sem o `v` prefix).
 
----
+### Passo 3 — Build e upload
 
-### Passo 3 — Build e upload para o Mac
+**Opção A: CI automático (recomendado)**
+
+O push da tag dispara `.github/workflows/release.yml` que builda Mac + Windows em paralelo e faz upload como draft.
+
+```bash
+# Acompanhar o CI
+gh run watch --repo nmarcofernandess/escalaflow
+```
+
+**Opção B: Local (Mac only)**
 
 ```bash
 GH_TOKEN=$(gh auth token) npm run release:mac
 ```
 
-Esse comando faz tudo de uma vez:
-1. Compila o código (`electron-vite build`)
-2. Empacota o app (`electron-builder --mac`)
-3. Gera os arquivos em `dist/`:
-   - `EscalaFlow-1.1.0-arm64.dmg` — instalador drag-and-drop
-   - `EscalaFlow-1.1.0-arm64.zip` — alternativo
-   - `latest-mac.yml` — **crítico** para o auto-updater saber da nova versão
-4. Faz upload direto no GitHub Release
+### Passo 4 — Verificação OBRIGATORIA antes de publicar
 
-> Leva ~3-5 minutos. Não feche o terminal.
+Antes de clicar "Publish release", verificar:
+
+```bash
+# Listar assets do release
+gh release view vX.Y.Z --repo nmarcofernandess/escalaflow --json assets --jq '.assets[].name'
+```
+
+**Checklist de assets:**
+
+| Asset | Mac | Windows | Obrigatorio |
+|-------|-----|---------|-------------|
+| `EscalaFlow-X.Y.Z-arm64.dmg` | Sim | -- | Sim (Mac) |
+| `EscalaFlow-Setup-X.Y.Z.exe` | -- | Sim | Sim (Win) |
+| **`latest-mac.yml`** | Sim | -- | **SIM — auto-updater Mac** |
+| **`latest.yml`** | -- | Sim | **SIM — auto-updater Win** |
+| `*.blockmap` | Sim | Sim | Opcional (delta updates) |
+
+**Se `latest-mac.yml` ou `latest.yml` estiver faltando, o auto-update NÃO FUNCIONA.**
+
+### Passo 5 — Publicar
+
+```bash
+# Via CLI
+gh release edit vX.Y.Z --repo nmarcofernandess/escalaflow --draft=false
+
+# Ou via browser
+# https://github.com/nmarcofernandess/escalaflow/releases
+```
+
+### Passo 6 — Validar
+
+```bash
+# Confirmar que é o "Latest"
+gh release list --repo nmarcofernandess/escalaflow --limit 3
+
+# Baixar e verificar o YAML
+gh release download vX.Y.Z --repo nmarcofernandess/escalaflow --pattern 'latest-mac.yml' --output -
+```
 
 ---
 
-### Passo 4 — Revise e publique o release
+## Recuperação: YAML faltando em release já publicado
 
-O release é criado como **draft** automaticamente (seguro). Acesse:
+Se publicou um release sem os YAMLs (como aconteceu com v1.2.0):
 
+```bash
+# 1. Baixar os assets
+mkdir /tmp/fix-release && cd /tmp/fix-release
+gh release download vX.Y.Z --repo nmarcofernandess/escalaflow
+
+# 2. Calcular SHA512
+SHA=$(shasum -a 512 EscalaFlow-X.Y.Z-arm64.dmg | awk '{print $1}' | xxd -r -p | base64)
+SIZE=$(stat -f%z EscalaFlow-X.Y.Z-arm64.dmg)  # macOS
+# SIZE=$(stat --printf="%s" arquivo)            # Linux
+
+# 3. Criar latest-mac.yml
+cat > latest-mac.yml << YAML
+version: X.Y.Z
+files:
+  - url: EscalaFlow-X.Y.Z-arm64.dmg
+    sha512: $SHA
+    size: $SIZE
+path: EscalaFlow-X.Y.Z-arm64.dmg
+sha512: $SHA
+releaseDate: '2026-01-01T00:00:00.000Z'
+YAML
+
+# 4. Upload
+gh release upload vX.Y.Z latest-mac.yml --repo nmarcofernandess/escalaflow --clobber
+
+# 5. Limpar
+rm -rf /tmp/fix-release
 ```
-https://github.com/nmarcofernandess/escalaflow/releases
-```
 
-Verifique:
-- [ ] Versão correta no título
-- [ ] Assets: `.dmg`, `.zip`, `latest-mac.yml`, `latest.yml`
-- [ ] Escreva um changelog (o que mudou)
-- [ ] Clique em **"Publish release"**
+---
 
-A partir desse momento, qualquer app aberto vai detectar a nova versão em até 5 segundos.
+## CI/CD (GitHub Actions)
+
+O workflow `.github/workflows/release.yml` builda Mac + Windows automaticamente ao pushar uma tag `v*`.
+
+**Trigger:** `git push --tags` com tag `v*`
+**Output:** Draft release com todos os assets (DMG, EXE, YAMLs, blockmaps)
+
+### Se o CI falhar
+
+Problemas comuns:
+- **rollup-win32-x64-msvc**: `npm ci` no Windows as vezes falha com deps nativas. Fix: adicionar `npm install @rollup/rollup-win32-x64-msvc` como step separado
+- **solver build**: Python/PyInstaller precisa estar configurado corretamente no runner
+- **timeout**: build leva ~10-15min, timeout padrão do Actions é 6h (OK)
+
+Se o CI falhar, o release fica como draft incompleto. Opcoes:
+1. Corrigir o CI e re-triggerar com nova tag
+2. Build local e upload manual (nao esquecer os YAMLs!)
 
 ---
 
@@ -126,50 +204,36 @@ A partir desse momento, qualquer app aberto vai detectar a nova versão em até 
 
 ```
 dist/
-├── EscalaFlow-1.1.0-arm64.dmg         ← Instalador Mac (envia pro usuário)
-├── EscalaFlow-1.1.0-arm64.dmg.blockmap ← Metadado para download delta
-├── EscalaFlow-1.1.0-arm64.zip         ← Alternativo zip
-├── EscalaFlow-1.1.0-arm64.zip.blockmap
-├── latest-mac.yml                     ← Auto-updater lê esse arquivo
-└── latest.yml                         ← Auto-updater Windows lê esse
+├── EscalaFlow-X.Y.Z-arm64.dmg         <- Instalador Mac
+├── EscalaFlow-X.Y.Z-arm64.dmg.blockmap
+├── EscalaFlow-Setup-X.Y.Z.exe         <- Instalador Windows
+├── EscalaFlow-Setup-X.Y.Z.exe.blockmap
+├── latest-mac.yml                      <- AUTO-UPDATER MAC (obrigatorio)
+└── latest.yml                          <- AUTO-UPDATER WIN (obrigatorio)
 ```
-
-**O `latest-mac.yml` é a chave de tudo.** Ele contém:
-```yaml
-version: 1.1.0
-files:
-  - url: EscalaFlow-1.1.0-arm64.dmg
-    sha512: abc123...
-    size: 120000000
-path: EscalaFlow-1.1.0-arm64.dmg
-sha512: abc123...
-releaseDate: '2026-02-21T00:00:00.000Z'
-```
-
-Quando o app instalado checa o GitHub, ele baixa esse `.yml`, compara a versão com a instalada, e decide se baixa ou não.
 
 ---
 
 ## Primeiro acesso (instalação do zero)
 
-Para quem ainda não tem o app instalado, envie o link direto do `.dmg`:
+Para quem ainda não tem o app instalado, envie o link direto:
 
 ```
-https://github.com/nmarcofernandess/escalaflow/releases/latest/download/EscalaFlow-X.X.X-arm64.dmg
+https://github.com/nmarcofernandess/escalaflow/releases/latest/download/EscalaFlow-X.Y.Z-arm64.dmg
 ```
 
-**Aviso do macOS** — Como o app não tem assinatura Apple Developer (certificado caro), o macOS vai reclamar na primeira abertura:
+**Aviso do macOS** — Como o app não tem assinatura Apple Developer:
 
 ```
 "EscalaFlow" não pode ser aberto porque é de um desenvolvedor não identificado.
 ```
 
 **Solução para o usuário:**
-1. Clica com botão direito no `.dmg` → "Abrir"
-2. Aparece o aviso → clica em "Abrir" novamente
+1. Clica com botão direito no `.dmg` > "Abrir"
+2. Aparece o aviso > clica em "Abrir" novamente
 3. Pronto. Só na primeira vez.
 
-**Alternativa via Terminal** (mais técnico):
+**Alternativa via Terminal:**
 ```bash
 xattr -d com.apple.quarantine /Applications/EscalaFlow.app
 ```
@@ -178,7 +242,7 @@ xattr -d com.apple.quarantine /Applications/EscalaFlow.app
 
 ## Distribuição sem internet (offline total)
 
-Se o usuário não tiver internet, simplesmente copie o `.dmg` num pendrive e instale manualmente. O app funciona 100% offline depois de instalado — o auto-update simplesmente não vai funcionar, mas tudo mais sim.
+Copie o `.dmg` num pendrive e instale manualmente. O app funciona 100% offline — o auto-update simplesmente não vai funcionar, mas tudo mais sim.
 
 ---
 
@@ -186,67 +250,41 @@ Se o usuário não tiver internet, simplesmente copie o `.dmg` num pendrive e in
 
 ```bash
 # Conferir versão atual
-cat package.json | grep '"version"'
+grep '"version"' package.json
 
-# Build Mac + upload GitHub (COMANDO PRINCIPAL)
+# Build Mac + upload GitHub
 GH_TOKEN=$(gh auth token) npm run release:mac
 
 # Ver releases publicados
 gh release list --repo nmarcofernandess/escalaflow
 
-# Verificar assets de um release específico
-gh release view v1.0.0 --repo nmarcofernandess/escalaflow
+# Verificar assets de um release
+gh release view vX.Y.Z --repo nmarcofernandess/escalaflow --json assets --jq '.assets[].name'
 
-# Upload manual de arquivo para um release existente
-gh release upload v1.1.0 dist/arquivo.dmg --repo nmarcofernandess/escalaflow
+# Upload manual de arquivo para release existente
+gh release upload vX.Y.Z dist/arquivo.dmg --repo nmarcofernandess/escalaflow --clobber
 
-# Deletar um release (se errou algo)
-gh release delete v1.1.0 --repo nmarcofernandess/escalaflow
+# Publicar draft
+gh release edit vX.Y.Z --repo nmarcofernandess/escalaflow --draft=false
 
-# Deletar a tag correspondente (git)
-git tag -d v1.1.0
-git push origin :refs/tags/v1.1.0
+# Deletar release (se errou)
+gh release delete vX.Y.Z --repo nmarcofernandess/escalaflow
+
+# Deletar tag
+git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z
+
+# Acompanhar CI
+gh run watch --repo nmarcofernandess/escalaflow
 ```
 
 ---
 
 ## Pendências futuras
 
-### Workflow CI/CD (Windows automático)
-
-O arquivo `.github/workflows/release.yml` foi implementado mas ainda não está no repositório porque o token de autenticação atual não tem o scope `workflow`.
-
-**Para ativar:**
-1. Vá em github.com/settings/tokens
-2. Edite o token atual e marque o checkbox `workflow`
-3. Crie o arquivo `.github/workflows/release.yml` com o conteúdo abaixo e faça push:
-
-```yaml
-name: Release
-on:
-  push:
-    tags:
-      - 'v*'
-
-permissions:
-  contents: write
-
-jobs:
-  release-win:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm install
-      - env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist:win -- --publish always
-```
-
-Quando isso estiver ativo, ao fazer `git push --tags`, o Windows é buildado automaticamente no CI e o Mac você continua fazendo localmente (porque precisa do `solver-bin/` compilado).
-
 ### Assinatura Apple Developer
 
 Pagar USD 99/ano no Apple Developer Program e configurar `CSC_LINK` + `CSC_KEY_PASSWORD` no ambiente. Depois o macOS abre sem aviso nenhum. Não é urgente para uso familiar.
+
+### Code signing Windows
+
+Certificado EV para Windows remove o aviso do SmartScreen. Custo variável. Também não urgente.

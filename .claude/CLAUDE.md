@@ -354,13 +354,19 @@ git tag v1.2.1 && git push --tags
 GitHub Actions dispara (.github/workflows/release.yml)
      ↓
 2 runners em paralelo:
-  - macOS: Python → PyInstaller → solver nativo → electron-builder → DMG
-  - Windows: Python → PyInstaller → solver.exe nativo → electron-builder → NSIS .exe
+  - macOS: Python → PyInstaller → solver nativo → electron-builder → DMG + latest-mac.yml
+  - Windows: Python → PyInstaller → solver.exe nativo → electron-builder → NSIS .exe + latest.yml
      ↓
 Draft Release criado com artefatos Mac + Windows
      ↓
+Dev VERIFICA que latest-mac.yml e latest.yml estão nos assets
+     ↓
 Dev publica o draft em github.com/nmarcofernandess/escalaflow/releases
 ```
+
+### Regra de ouro do auto-updater
+
+**O release DEVE conter `latest-mac.yml` e/ou `latest.yml`.** Sem esses arquivos, o `electron-updater` dá erro e o auto-update não funciona. Eles são gerados automaticamente pelo `electron-builder` — mas se fizer upload manual dos assets, precisa gerar e subir os YAMLs também.
 
 ### Quando roda
 
@@ -372,21 +378,28 @@ Dev publica o draft em github.com/nmarcofernandess/escalaflow/releases
 ### Ritual de release
 
 ```bash
-# 1. Bump version em package.json
+# 1. Bump version em package.json (DEVE bater com a tag)
 # 2. Commit, tag e push
 git add package.json && git commit -m "chore: bump v1.2.1"
 git tag v1.2.1 && git push && git push --tags
 
-# 3. Esperar ~15 min (GitHub Actions build Mac + Windows)
-# 4. Publicar o draft em github.com/nmarcofernandess/escalaflow/releases
+# 3. Esperar CI (~15 min) OU build local:
+GH_TOKEN=$(gh auth token) npm run release:mac
+
+# 4. VERIFICAR assets ANTES de publicar:
+gh release view v1.2.1 --repo nmarcofernandess/escalaflow --json assets --jq '.assets[].name'
+#    DEVE conter: *.dmg, latest-mac.yml (Mac) e/ou *.exe, latest.yml (Win)
+
+# 5. Publicar o draft
+gh release edit v1.2.1 --repo nmarcofernandess/escalaflow --draft=false
 ```
 
 ### Build local (sem CI)
 
 ```bash
-npm run dist:mac         # gera .dmg localmente
+npm run dist:mac         # gera .dmg localmente (sem upload)
 npm run dist:win         # gera .exe localmente (solver precisa ser nativo do OS)
-npm run release:mac      # build + upload direto (sem CI)
+npm run release:mac      # build + upload direto pro GitHub (gera YAMLs automaticamente)
 ```
 
 ### Auto-Update
@@ -401,8 +414,9 @@ O app verifica atualizações automaticamente ao iniciar (5s de delay).
 |---------|-----------|
 | `electron-builder.yml` → `publish` | Aponta para GitHub: nmarcofernandess/escalaflow |
 | `src/main/index.ts` → `setupAutoUpdater()` | Eventos do autoUpdater + ipcMain handlers |
-| `EmpresaConfig.tsx` → card "Atualizações" | UI com barra de progresso e botão de instalar |
-| `dist/latest-mac.yml` | Arquivo que o app baixa pra saber a versão mais recente |
+| `ConfiguracoesPagina.tsx` → card "Atualizações" | UI com barra de progresso e botão de instalar |
+| `latest-mac.yml` (no GitHub Release) | **CRITICO** — electron-updater lê pra detectar versão nova (Mac) |
+| `latest.yml` (no GitHub Release) | **CRITICO** — idem para Windows |
 
 ### IPC channels do updater
 
