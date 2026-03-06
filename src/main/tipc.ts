@@ -2351,8 +2351,8 @@ async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProvi
       provider: 'local',
       source: 'static' as const,
       models: [
-        { id: 'qwen3.5-9b', label: 'Qwen 3.5 9B (Recomendado)', provider: 'local' as const, source: 'static' as const, description: 'Melhor qualidade de respostas e tool calling. 8GB+ RAM.', supports_tools: true },
-        { id: 'qwen3.5-4b', label: 'Qwen 3.5 4B (Leve)', provider: 'local' as const, source: 'static' as const, description: 'Mais rápido e leve. 4GB+ RAM.', supports_tools: true },
+        { id: 'qwen3.5-9b', label: 'Qwen 3.5 9B', provider: 'local' as const, source: 'static' as const, description: 'Melhor qualidade de respostas e tool calling. 8GB+ RAM.', supports_tools: true },
+        { id: 'qwen3.5-4b', label: 'Qwen 3.5 4B', provider: 'local' as const, source: 'static' as const, description: 'Mais rápido e leve. 4GB+ RAM.', supports_tools: true },
       ],
       fetched_at: new Date().toISOString(),
       cached: false,

@@ -27,7 +27,7 @@ function emitStream(event: IaStreamEvent): void {
 
 export const LOCAL_MODELS = {
   'qwen3.5-9b': {
-    label: 'Qwen 3.5 9B (Recomendado)',
+    label: 'Qwen 3.5 9B',
     filename: 'Qwen3.5-9B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf',
     size_bytes: 5_680_000_000,
@@ -35,7 +35,7 @@ export const LOCAL_MODELS = {
     descricao: 'Melhor qualidade de respostas e tool calling. Recomendado para 8GB+ RAM.',
   },
   'qwen3.5-4b': {
-    label: 'Qwen 3.5 4B (Leve)',
+    label: 'Qwen 3.5 4B',
     filename: 'Qwen3.5-4B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
     size_bytes: 2_800_000_000,

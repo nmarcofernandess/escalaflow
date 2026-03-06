@@ -63,6 +63,7 @@ import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useApiData } from '@/hooks/useApiData'
 import { useColorTheme } from '@/hooks/useColorTheme'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { servicoIaLocal } from '@/servicos/iaLocal'
@@ -99,8 +100,8 @@ const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: str
     { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash (Free, OpenRouter)' },
   ],
   local: [
-    { value: 'qwen3.5-9b', label: 'Qwen 3.5 9B (Recomendado)' },
-    { value: 'qwen3.5-4b', label: 'Qwen 3.5 4B (Leve)' },
+    { value: 'qwen3.5-9b', label: 'Qwen 3.5 9B' },
+    { value: 'qwen3.5-4b', label: 'Qwen 3.5 4B' },
   ],
 }
 
@@ -161,10 +162,9 @@ export function ConfiguracoesPagina() {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [updateError, setUpdateError] = useState<string | null>(null)
-  const [appVersion, setAppVersion] = useState<string>('...')
+  const appVersion = useAppVersion()
 
   useEffect(() => {
-    window.electron.ipcRenderer.invoke('app:version').then((v: string) => setAppVersion(v)).catch(() => { })
     window.electron.ipcRenderer.on('update:checking', () => setUpdateStatus('checking'))
     window.electron.ipcRenderer.on('update:available', (info: { version: string }) => {
       setUpdateStatus('available')
@@ -374,7 +374,13 @@ export function ConfiguracoesPagina() {
   const selectedProviderConfig = (providerConfigs?.[iaProvider] || {}) as IaProviderConfigForm
   const remoteCatalog = modelCatalogByProvider[iaProvider]
   const openrouterFavoritos = providerConfigs?.openrouter?.favoritos ?? []
+  const installedLocalSet = new Set(localModels.filter(m => m.baixado).map(m => m.id))
   const currentModelOptions = (() => {
+    // Local: só mostra modelos instalados
+    if (iaProvider === 'local') {
+      const installed = IA_PROVIDER_MODELS.local.filter(m => installedLocalSet.has(m.value))
+      return installed
+    }
     if (!remoteCatalog?.models?.length) return IA_PROVIDER_MODELS[iaProvider]
     // OpenRouter com favoritos → dropdown mostra apenas favoritos
     if (iaProvider === 'openrouter' && openrouterFavoritos.length > 0) {
@@ -620,7 +626,9 @@ export function ConfiguracoesPagina() {
             </CardTitle>
             <CardDescription>
               Versao atual:{' '}
-              <span className="font-mono font-medium text-foreground">v{appVersion}</span>
+              <span className="font-mono font-medium text-foreground">
+                {appVersion != null ? `v${appVersion}` : 'Carregando...'}
+              </span>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -869,7 +877,7 @@ export function ConfiguracoesPagina() {
                               <SelectContent>
                                 <SelectItem value="gemini">Google Gemini</SelectItem>
                                 <SelectItem value="openrouter">OpenRouter</SelectItem>
-                                <SelectItem value="local" disabled={!localModels.some(m => m.baixado)}>
+                                <SelectItem value="local">
                                   <span className="flex items-center gap-1.5">
                                     <WifiOff className="size-3" />
                                     IA Local (Offline)
@@ -888,6 +896,11 @@ export function ConfiguracoesPagina() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Modelo{iaProvider === 'openrouter' && openrouterFavoritos.length > 0 ? ` (${openrouterFavoritos.length} favoritos)` : ''}</FormLabel>
+                            {iaProvider === 'local' && currentModelOptions.length === 0 ? (
+                              <div className="flex h-9 items-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">
+                                Nenhum modelo instalado
+                              </div>
+                            ) : (
                             <Select
                               value={field.value}
                               onValueChange={(next) => {
@@ -913,6 +926,7 @@ export function ConfiguracoesPagina() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            )}
                             <FormMessage />
                           </FormItem>
                         )}
@@ -921,10 +935,34 @@ export function ConfiguracoesPagina() {
 
                     {/* API Key — esconder pra provider local */}
                     {iaProvider === 'local' ? (
-                      <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                        <WifiOff className="size-4 shrink-0" />
-                        <span>Roda no seu computador, sem internet. Configure o modelo abaixo em &quot;IA Local&quot;.</span>
-                      </div>
+                      installedLocalSet.size > 0 ? (
+                        <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                          <WifiOff className="size-4 shrink-0" />
+                          <span>Roda no seu computador, sem internet.</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3 rounded-md border border-dashed border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/30">
+                          <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+                            <AlertCircle className="size-4 shrink-0" />
+                            Nenhum modelo instalado
+                          </div>
+                          <p className="text-xs text-amber-700 dark:text-amber-400">
+                            Para usar a IA offline, baixe um modelo na seção abaixo.
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="w-fit"
+                            onClick={() => {
+                              document.getElementById('ia-local-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                            }}
+                          >
+                            <Download className="mr-1.5 size-3.5" />
+                            Instalar modelo
+                          </Button>
+                        </div>
+                      )
                     ) : (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -1017,7 +1055,7 @@ export function ConfiguracoesPagina() {
             </Card>
 
             {/* IA Local — Download e gerenciamento de modelos */}
-            <Card>
+            <Card id="ia-local-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Cpu className="size-4" />
@@ -1039,21 +1077,30 @@ export function ConfiguracoesPagina() {
                     ? Math.round((localProgress.downloaded / localProgress.total) * 100)
                     : 0
                   const sizeLabel = (model.size_bytes / 1e9).toFixed(1) + ' GB'
+                  const isRecommended = model.id === 'qwen3.5-9b'
+                  const cleanLabel = model.label.replace(/\s*\(Recomendado\)/i, '').replace(/\s*\(Leve\)/i, '')
 
                   return (
-                    <div key={model.id} className="rounded-lg border p-3">
+                    <div key={model.id} className={cn('rounded-lg border p-3', model.baixado && 'border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20')}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium">{model.label}</p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-sm font-medium">{cleanLabel}</p>
+                            {isRecommended && !model.baixado && (
+                              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                Recomendado
+                              </span>
+                            )}
                             {model.baixado && (
-                              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                Pronto
+                              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                <CheckCircle2 className="size-3" />
+                                Instalado
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {model.descricao} — {sizeLabel} · {model.ram_minima_gb}GB+ RAM
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {sizeLabel} · {model.ram_minima_gb}GB+ RAM
+                            {isRecommended ? ' · Melhor qualidade' : ' · Mais leve e rapido'}
                           </p>
                         </div>
                         <div className="flex shrink-0 gap-1.5">

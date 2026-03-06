@@ -19,7 +19,17 @@ let mainWindow: import('electron').BrowserWindow | null = null
 const require = createRequire(import.meta.url)
 
 function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('electron').App): void {
-  // Não roda auto-update em dev
+  // Handlers de versão e update: sempre registrados (para a UI mostrar a versão em dev também)
+  ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('update:check', () => {
+    if (process.env.ELECTRON_RENDERER_URL) return
+    return autoUpdater.checkForUpdates()
+  })
+  ipcMain.handle('update:install', () => {
+    autoUpdater.quitAndInstall()
+  })
+
+  // Em dev não configura auto-update (só os handlers acima)
   if (process.env.ELECTRON_RENDERER_URL) return
 
   autoUpdater.autoDownload = true
@@ -46,27 +56,25 @@ function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('elec
 
   // Checa ao iniciar (5s de delay pra janela estar pronta)
   setTimeout(() => autoUpdater.checkForUpdates(), 5000)
-
-  ipcMain.handle('update:check', () => {
-    if (process.env.ELECTRON_RENDERER_URL) return
-    return autoUpdater.checkForUpdates()
-  })
-  ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall()
-  })
-  ipcMain.handle('app:version', () => app.getVersion())
 }
 
 function createWindow(
+  app: import('electron').App,
   BrowserWindow: typeof import('electron').BrowserWindow,
   shell: typeof import('electron').shell,
 ): void {
+  // Ícone: dev usa resources/ na raiz; prod usa extraResources. Formato nativo por plataforma.
+  const resourcesDir = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'resources')
+  const iconExt = process.platform === 'win32' ? 'ico' : process.platform === 'darwin' ? 'icns' : 'png'
+  const iconPath = path.join(resourcesDir, `icon.${iconExt}`)
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
     show: false,
+    icon: iconPath,
     webPreferences: {
       contextIsolation: true,
       sandbox: false,
@@ -99,18 +107,34 @@ async function bootstrap(): Promise<void> {
   await seedData()
   await seedLocalData()
 
-  const { app, BrowserWindow, shell, ipcMain } = electron
+  const { app, BrowserWindow, shell, ipcMain, Menu } = electron
 
   app.whenReady().then(async () => {
+    // Menu de aplicação: no macOS, o primeiro item define o nome na barra de menu (evita "Electron" em dev)
+    const appName = app.name === 'Electron' ? 'EscalaFlow' : (app.name ?? 'EscalaFlow')
+    const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: appName,
+        submenu: [
+          { role: 'about' as const },
+          { type: 'separator' as const },
+          { role: 'quit' as const },
+        ],
+      },
+      { label: 'Editar', submenu: [{ role: 'undo' as const }, { role: 'redo' as const }, { type: 'separator' as const }, { role: 'cut' as const }, { role: 'copy' as const }, { role: 'paste' as const }] },
+      { label: 'Janela', submenu: [{ role: 'minimize' as const }, { role: 'zoom' as const }, { role: 'close' as const }] },
+    ]
+    Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+
     const { registerIpcMain } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/main')
     const { router } = await import('./tipc')
     registerIpcMain(router)
-    createWindow(BrowserWindow, shell)
+    createWindow(app, BrowserWindow, shell)
     setupAutoUpdater(ipcMain, app)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow(BrowserWindow, shell)
+        createWindow(app, BrowserWindow, shell)
       }
     })
   })
