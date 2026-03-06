@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS empresa (
     cnpj TEXT NOT NULL DEFAULT '',
     telefone TEXT NOT NULL DEFAULT '',
     corte_semanal TEXT NOT NULL DEFAULT 'SEG_DOM' CHECK (corte_semanal IN ('SEG_DOM', 'TER_SEG', 'QUA_TER', 'QUI_QUA', 'SEX_QUI', 'SAB_SEX', 'DOM_SAB')),
-    tolerancia_semanal_min INTEGER NOT NULL DEFAULT 30
+    tolerancia_semanal_min INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS tipos_contrato (
@@ -246,7 +246,7 @@ CREATE TABLE IF NOT EXISTS configuracao_ia (
   id INTEGER PRIMARY KEY DEFAULT 1,
   provider TEXT NOT NULL DEFAULT 'gemini',
   api_key TEXT NOT NULL DEFAULT '',
-  modelo TEXT NOT NULL DEFAULT 'gemini-3-flash-preview',
+  modelo TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
   provider_configs_json TEXT NOT NULL DEFAULT '{}',
   ativo BOOLEAN NOT NULL DEFAULT FALSE,
   criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -754,6 +754,9 @@ async function migrateSchema(): Promise<void> {
      SET protegido_sistema = TRUE
      WHERE nome IN ('CLT 44h', 'CLT 36h', 'Estagiario', 'Intermitente')`,
   )
+
+  // --- v21: tolerancia_semanal_min default 30 → 0 ---
+  await execute(`UPDATE empresa SET tolerancia_semanal_min = 0 WHERE tolerancia_semanal_min = 30`)
 }
 
 // ============================================================================

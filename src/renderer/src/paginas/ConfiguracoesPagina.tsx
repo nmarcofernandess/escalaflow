@@ -79,11 +79,8 @@ const IA_PROVIDER_LABELS: Record<IaProviderId, string> = {
 
 const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: string }>> = {
   gemini: [
-    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (Mais Novo)' },
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Estável)' },
-    { value: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking Exp' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
     { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
   ],
   openrouter: [
     { value: 'anthropic/claude-sonnet-4', label: 'Anthropic Claude Sonnet 4 (OpenRouter)' },
@@ -410,11 +407,14 @@ export function ConfiguracoesPagina() {
   }, [iaProvider, providerConfigs?.gemini?.token, iaForm])
 
   useEffect(() => {
-    // Auto-carrega OpenRouter porque é público e dá metadados ricos (free/tools) úteis para escolha.
+    // Auto-carrega catálogo dinâmico para OpenRouter e Gemini
     if (iaProvider === 'openrouter' && !modelCatalogByProvider.openrouter && modelCatalogBusyProvider !== 'openrouter') {
       onCarregarCatalogoModelos('openrouter', false, true)
     }
-  }, [iaProvider, modelCatalogByProvider.openrouter, modelCatalogBusyProvider])
+    if (iaProvider === 'gemini' && !modelCatalogByProvider.gemini && modelCatalogBusyProvider !== 'gemini') {
+      onCarregarCatalogoModelos('gemini', false, true)
+    }
+  }, [iaProvider, modelCatalogByProvider.openrouter, modelCatalogByProvider.gemini, modelCatalogBusyProvider])
 
   const buildIaConfigPayload = (rawValues?: any) => {
     const values = rawValues || iaForm.getValues()
