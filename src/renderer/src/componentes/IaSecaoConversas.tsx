@@ -65,7 +65,7 @@ export function IaSecaoConversas({ titulo, conversas, acaoBulk, collapsible, onA
               )}
             </span>
           )}
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {titulo}
           </span>
           <Badge variant="secondary" className="text-[9px] h-4 px-1.5">

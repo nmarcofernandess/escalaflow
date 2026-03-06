@@ -2,6 +2,7 @@ import { queryOne, queryAll, execute, insertReturningId, transaction } from '../
 import { minutesBetween as minutesBetweenUtil } from '../date-utils'
 import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride } from '../preflight-capacity'
 import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenarioHash } from '../motor/solver-bridge'
+import { textoResumoCobertura, textoResumoViolacoesHard, textoResumoViolacoesSoft } from '../../shared/resumo-user'
 import { coreAlerts } from './discovery'
 import { validarEscalaV3 } from '../motor/validador'
 import { searchKnowledge, exploreRelations } from '../knowledge/search'
@@ -1204,6 +1205,20 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               ...(escala.status === 'RASCUNHO' ? ['consultar'] : []),
             ]
 
+            const ind = indicadores as { cobertura_percent?: number; cobertura_efetiva_percent?: number; pontuacao?: number }
+            const coberturaResumo = textoResumoCobertura(
+              ind.cobertura_percent ?? 0,
+              ind.cobertura_efetiva_percent ?? ind.cobertura_percent ?? 0,
+            )
+            const resumo_user = {
+              cobertura: coberturaResumo.principal,
+              ...(coberturaResumo.secundaria ? { cobertura_secundaria: coberturaResumo.secundaria } : {}),
+              problemas_oficializar: textoResumoViolacoesHard(hard),
+              avisos: textoResumoViolacoesSoft(soft),
+              qualidade: ind.pontuacao ?? 0,
+              pode_oficializar: podeOficializar,
+            }
+
             const payload: Record<string, any> = {
               escala: {
                 id: escala.id,
@@ -1214,6 +1229,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 data_fim: escala.data_fim,
               },
               indicadores,
+              resumo_user,
               diagnostico: {
                 violacoes_hard: hard,
                 violacoes_soft: soft,
@@ -1842,6 +1858,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                       sucesso: false,
                       solver_status: solverResult.status,
                       diagnostico: solverResult.diagnostico,
+                      resumo_user: {
+                        mensagem: 'Não foi possível gerar a escala com as restrições atuais. Rode o preflight e revise demanda, equipe e regras.',
+                      },
                     },
                     meta: {
                       tool_kind: 'action',
@@ -1897,6 +1916,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 dias_periodo: new Set(alocacoes.map(a => a.data)).size,
             }
 
+            const ind = solverResult.indicadores
+            const coberturaResumo = textoResumoCobertura(ind.cobertura_percent, ind.cobertura_efetiva_percent ?? ind.cobertura_percent)
+            const resumo_user = {
+                cobertura: coberturaResumo.principal,
+                ...(coberturaResumo.secundaria ? { cobertura_secundaria: coberturaResumo.secundaria } : {}),
+                problemas_oficializar: textoResumoViolacoesHard(ind.violacoes_hard),
+                avisos: textoResumoViolacoesSoft(ind.violacoes_soft),
+                qualidade: ind.pontuacao,
+            }
+
             return toolOk(
               {
                 sucesso: true,
@@ -1909,6 +1938,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 pontuacao: solverResult.indicadores.pontuacao,
                 diagnostico: solverResult.diagnostico,
                 revisao,
+                resumo_user,
               },
               {
                 summary: `Escala ${escalaId} gerada para setor ${setor_id} (${data_inicio} até ${data_fim}). Solver: ${solverResult.status}.`,
@@ -1928,7 +1958,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               e.message,
               {
                 correction: 'Verifique os parâmetros da geração e a disponibilidade do solver.',
-                details: { sucesso: false },
+                details: {
+                  sucesso: false,
+                  resumo_user: {
+                    mensagem: 'Não foi possível gerar a escala. Verifique os parâmetros e tente novamente.',
+                  },
+                },
                 meta: { tool_kind: 'action', action: 'generate-schedule', setor_id, data_inicio, data_fim }
               }
             )

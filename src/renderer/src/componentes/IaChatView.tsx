@@ -366,7 +366,7 @@ export function IaChatView() {
                 {m.papel === 'usuario' && m.anexos && m.anexos.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1 justify-end">
                     {m.anexos.map(a => (
-                      <Badge key={a.id} variant="secondary" className="text-[10px] gap-1">
+                      <Badge key={a.id} variant="secondary" className="text-xs gap-1">
                         {a.tipo === 'image' ? <ImageIcon className="size-2.5" /> : <FileText className="size-2.5" />}
                         {a.nome}
                       </Badge>

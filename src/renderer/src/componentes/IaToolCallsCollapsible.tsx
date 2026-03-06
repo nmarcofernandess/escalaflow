@@ -129,7 +129,7 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
                     ) : (
                       <Badge
                         variant="outline"
-                        className="gap-1 h-5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
+                        className="gap-1 h-5 bg-success/10 text-success border-success/20"
                       >
                         <CheckCircle className="size-3" />
                         OK
@@ -140,8 +140,8 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
                   {/* Args (sempre visível se existir) */}
                   {hasArgsProp && (
                     <div className="pl-6 min-w-0 max-w-full">
-                      <div className="text-[10px] text-muted-foreground font-medium mb-1">Argumentos:</div>
-                      <pre className="w-full min-w-0 max-w-full whitespace-pre p-2 bg-muted/50 rounded text-[10px] overflow-x-auto">
+                      <div className="text-xs text-muted-foreground font-medium mb-1">Argumentos:</div>
+                      <pre className="w-full min-w-0 max-w-full whitespace-pre p-2 bg-muted/50 rounded text-xs overflow-x-auto">
                         {formatJson(argsValue)}
                       </pre>
                     </div>
@@ -163,7 +163,7 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
 
                       {outputExpanded && (
                         <pre
-                          className={`mt-2 w-full min-w-0 max-w-full whitespace-pre p-2 rounded text-[10px] overflow-x-auto max-h-[400px] overflow-y-auto ${
+                          className={`mt-2 w-full min-w-0 max-w-full whitespace-pre p-2 rounded text-xs overflow-x-auto max-h-[400px] overflow-y-auto ${
                             hasError ? 'bg-destructive/10 text-destructive' : 'bg-muted/50'
                           }`}
                         >
@@ -173,7 +173,7 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
                     </div>
                   ) : (
                     <div className="pl-6 min-w-0 max-w-full">
-                      <div className="text-[10px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         Output não persistido
                       </div>
                     </div>

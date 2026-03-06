@@ -25,7 +25,7 @@ export function IndicatorCard({ icon: Icon, value, label, colorClass }: Indicato
         )}
         <div>
           <p className="text-lg font-bold text-foreground">{value}</p>
-          <p className="text-[10px] text-muted-foreground">{label}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
         </div>
       </CardContent>
     </Card>

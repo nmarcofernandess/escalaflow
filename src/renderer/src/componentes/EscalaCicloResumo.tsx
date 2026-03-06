@@ -47,6 +47,7 @@ interface EscalaCicloResumoProps {
   funcoes: Funcao[]
   regrasPadrao?: RegraHorarioColaborador[]
   onFolgaChange?: (colaboradorId: number, field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana', value: DiaSemana | null) => void
+  mostrarTodasSemanas?: boolean
   className?: string
 }
 
@@ -60,9 +61,9 @@ const ESTADO_CLASSES: Record<SimboloEscala, {
   descricao: string
 }> = {
   T: {
-    cell: 'bg-emerald-50 text-emerald-700 font-medium dark:bg-emerald-950 dark:text-emerald-300',
+    cell: 'bg-success/10 text-success font-medium',
     label: 'T',
-    swatch: 'bg-emerald-200 dark:bg-emerald-700',
+    swatch: 'bg-success/30',
     descricao: 'Trabalho',
   },
   F: {
@@ -72,9 +73,9 @@ const ESTADO_CLASSES: Record<SimboloEscala, {
     descricao: 'Folga fixa',
   },
   V: {
-    cell: 'bg-amber-100 text-amber-800 font-semibold dark:bg-amber-900 dark:text-amber-200',
+    cell: 'bg-warning/10 text-warning font-semibold',
     label: 'V',
-    swatch: 'bg-amber-200 dark:bg-amber-700',
+    swatch: 'bg-warning/30',
     descricao: 'Folga variavel',
   },
   I: {
@@ -115,16 +116,22 @@ function FolgaSelect({
   const inf = inferredFolgas.get(colabId)
   const current = field === 'folga_fixa_dia_semana' ? inf?.fixa : inf?.variavel
 
+  if (!onFolgaChange) {
+    return (
+      <span className={cn('text-xs', current ? 'text-foreground' : 'text-muted-foreground')}>
+        {current ? DIAS_CURTOS[current] : '-'}
+      </span>
+    )
+  }
+
   return (
     <Select
       value={current ?? '__none__'}
       onValueChange={(val) => {
-        if (!onFolgaChange) return
         onFolgaChange(colabId, field, val === '__none__' ? null : (val as DiaSemana))
       }}
-      disabled={!onFolgaChange}
     >
-      <SelectTrigger className="h-7 w-[70px] px-2 text-[11px]">
+      <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -189,6 +196,7 @@ export function EscalaCicloResumo({
   funcoes,
   regrasPadrao = [],
   onFolgaChange,
+  mostrarTodasSemanas = false,
   className,
 }: EscalaCicloResumoProps) {
   const alocMap = useMemo(() => {
@@ -388,9 +396,81 @@ export function EscalaCicloResumo({
     )
   }
 
+  const weeksToRender = mostrarTodasSemanas
+    ? weeks.slice(0, Math.max(1, periodoCiclo))
+    : [week]
+
+  function renderWeekTable(weekData: WeekMap, weekLabel?: string) {
+    return (
+      <div key={weekLabel} className="space-y-1">
+        {weekLabel && (
+          <h3 className="text-xs font-semibold text-muted-foreground">{weekLabel}</h3>
+        )}
+        <div className="rounded-md border print-colors">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="w-[120px]">Posto</TableHead>
+                <TableHead className="w-[180px]">Titular</TableHead>
+                <TableHead className="w-[86px] text-center">Variavel</TableHead>
+                <TableHead className="w-[70px] text-center">Fixo</TableHead>
+                {DIAS_ORDEM.map((dia) => (
+                  <TableHead key={dia} className="w-[54px] text-center">{dia}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(({ posto, titular }) => (
+                <TableRow key={posto.id} className="hover:bg-muted/20">
+                  <TableCell className="font-medium">{posto.apelido}</TableCell>
+                  <TableCell className={cn('text-sm', !titular && 'italic text-muted-foreground')}>
+                    {titular?.nome ?? '(sem titular)'}
+                  </TableCell>
+                  <TableCell className="p-1 text-center">
+                    <FolgaSelect
+                      colabId={titular?.id ?? null}
+                      field="folga_variavel_dia_semana"
+                      inferredFolgas={inferredFolgas}
+                      onFolgaChange={mostrarTodasSemanas ? undefined : onFolgaChange}
+                    />
+                  </TableCell>
+                  <TableCell className="p-1 text-center">
+                    <FolgaSelect
+                      colabId={titular?.id ?? null}
+                      field="folga_fixa_dia_semana"
+                      inferredFolgas={inferredFolgas}
+                      onFolgaChange={mostrarTodasSemanas ? undefined : onFolgaChange}
+                    />
+                  </TableCell>
+                  {DIAS_ORDEM.map((dia) => {
+                    const simbolo = resolveSymbol(titular, dia, weekData[dia])
+                    const estado = ESTADO_CLASSES[simbolo]
+                    return (
+                      <TableCell
+                        key={`${posto.id}-${dia}`}
+                        className={cn(
+                          'text-center text-sm select-none',
+                          estado.cell,
+                        )}
+                        title={estado.descricao}
+                        aria-label={estado.descricao}
+                      >
+                        {estado.label}
+                      </TableCell>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={cn('space-y-3', className)}>
-      {periodoCiclo > 0 && (
+      {!mostrarTodasSemanas && periodoCiclo > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2">
           <div className="flex flex-wrap items-center gap-1.5">
             {Array.from({ length: periodoCiclo }, (_, idx) => idx).map((idx) => (
@@ -407,14 +487,8 @@ export function EscalaCicloResumo({
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline" className="text-[10px]">
-              semana ativa: S{selectedWeek + 1}
-            </Badge>
-            <Badge variant="outline" className="text-[10px]">
-              ciclo base: {periodoCiclo} semana{periodoCiclo > 1 ? 's' : ''}
-            </Badge>
             {pendentesFolgaConfig > 0 && (
-              <Badge variant="outline" className="border-amber-200 text-[10px] text-amber-700">
+              <Badge variant="outline" className="border-warning/20 text-xs text-warning">
                 {pendentesFolgaConfig} pendente(s) F/V
               </Badge>
             )}
@@ -422,64 +496,10 @@ export function EscalaCicloResumo({
         </div>
       )}
 
-      <div className="rounded-md border print-colors">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30">
-              <TableHead className="w-[120px]">Posto</TableHead>
-              <TableHead className="w-[180px]">Titular</TableHead>
-              <TableHead className="w-[86px] text-center">Variavel</TableHead>
-              <TableHead className="w-[70px] text-center">Fixo</TableHead>
-              {DIAS_ORDEM.map((dia) => (
-                <TableHead key={dia} className="w-[54px] text-center">{dia}</TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map(({ posto, titular, regra }) => (
-              <TableRow key={posto.id} className="hover:bg-muted/20">
-                <TableCell className="font-medium">{posto.apelido}</TableCell>
-                <TableCell className={cn('text-sm', !titular && 'italic text-muted-foreground')}>
-                  {titular?.nome ?? '(sem titular)'}
-                </TableCell>
-                <TableCell className="p-1 text-center">
-                  <FolgaSelect
-                    colabId={titular?.id ?? null}
-                    field="folga_variavel_dia_semana"
-                    inferredFolgas={inferredFolgas}
-                    onFolgaChange={onFolgaChange}
-                  />
-                </TableCell>
-                <TableCell className="p-1 text-center">
-                  <FolgaSelect
-                    colabId={titular?.id ?? null}
-                    field="folga_fixa_dia_semana"
-                    inferredFolgas={inferredFolgas}
-                    onFolgaChange={onFolgaChange}
-                  />
-                </TableCell>
-                {DIAS_ORDEM.map((dia) => {
-                  const simbolo = resolveSymbol(titular, dia, week[dia])
-                  const estado = ESTADO_CLASSES[simbolo]
-                  return (
-                    <TableCell
-                      key={`${posto.id}-${dia}`}
-                      className={cn(
-                        'text-center text-sm select-none',
-                        estado.cell,
-                      )}
-                      title={estado.descricao}
-                      aria-label={estado.descricao}
-                    >
-                      {estado.label}
-                    </TableCell>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      {mostrarTodasSemanas
+        ? weeksToRender.map((w, idx) => renderWeekTable(w, `Semana ${idx + 1}`))
+        : renderWeekTable(week)
+      }
 
       <div className="flex items-center gap-4 pt-1 text-xs text-muted-foreground">
         {LEGENDA_ORDEM.map((simbolo) => {

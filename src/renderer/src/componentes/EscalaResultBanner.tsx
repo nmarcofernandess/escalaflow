@@ -77,19 +77,19 @@ function resolveTier(diagnostico?: DiagnosticoSolver, indicadores?: Indicadores)
 
 const TIER_STYLES: Record<Tier, { border: string; bg: string; icon: string }> = {
   verde: {
-    border: 'border-emerald-500/40',
-    bg: 'bg-emerald-50 dark:bg-emerald-950/20',
-    icon: 'text-emerald-600 dark:text-emerald-400',
+    border: 'border-success/40',
+    bg: 'bg-success/5',
+    icon: 'text-success',
   },
   amber: {
-    border: 'border-amber-500/40',
-    bg: 'bg-amber-50 dark:bg-amber-950/20',
-    icon: 'text-amber-600 dark:text-amber-400',
+    border: 'border-warning/40',
+    bg: 'bg-warning/5',
+    icon: 'text-warning',
   },
   vermelho: {
-    border: 'border-red-500/40',
-    bg: 'bg-red-50 dark:bg-red-950/20',
-    icon: 'text-red-600 dark:text-red-400',
+    border: 'border-destructive/40',
+    bg: 'bg-destructive/5',
+    icon: 'text-destructive',
   },
 }
 

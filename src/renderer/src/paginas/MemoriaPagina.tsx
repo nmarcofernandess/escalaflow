@@ -333,7 +333,7 @@ export function MemoriaPagina() {
               <Network className="mr-1.5 size-3.5" />
               Relacoes
               {graphStats && graphStats.entities_count > 0 && (
-                <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px]">
+                <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-xs">
                   {graphStats.entities_count}
                 </Badge>
               )}
@@ -411,7 +411,7 @@ export function MemoriaPagina() {
                       </Button>
                     </div>
                     {contagem.total >= contagem.limite && (
-                      <p className="text-xs text-amber-500">
+                      <p className="text-xs text-warning">
                         Limite de {contagem.limite} memorias atingido. Remova uma para adicionar outra.
                       </p>
                     )}
@@ -448,7 +448,7 @@ export function MemoriaPagina() {
             <Card className="bg-muted/30">
               <CardContent className="pt-4">
                 <div className="flex gap-3">
-                  <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                  <Lightbulb className="mt-0.5 size-4 shrink-0 text-warning" />
                   <div className="space-y-1 text-sm text-muted-foreground">
                     <p><strong>Memorias do RH</strong> sao fatos que voce ensina a IA. Ela lembra em TODA conversa.</p>
                     <p><strong>Memorias Automaticas</strong> sao extraidas das conversas quando voce troca de chat.</p>
@@ -689,7 +689,7 @@ export function MemoriaPagina() {
                                   <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                     <span className="font-medium text-foreground">{r.from_nome}</span>
                                     <span className="text-muted-foreground">→</span>
-                                    <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                                    <Badge variant="outline" className="px-1.5 py-0 text-xs">
                                       {r.tipo_relacao}
                                     </Badge>
                                     <span className="text-muted-foreground">→</span>
@@ -714,7 +714,7 @@ export function MemoriaPagina() {
                 {filtroGraph === 'usuario' && graphStats && graphStats.entities_count === 0 && (
                   <div className="rounded-lg bg-muted/30 px-4 py-3">
                     <div className="flex gap-3">
-                      <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                      <Lightbulb className="mt-0.5 size-4 shrink-0 text-warning" />
                       <div className="space-y-1 text-xs text-muted-foreground">
                         <p>A analise faz <strong>1 chamada de IA por chunk</strong> dos documentos ativos. Pode levar alguns minutos e consumir creditos da API.</p>
                         <p>A IA usa o grafo automaticamente ao responder no chat (tool <code>explorar_relacoes</code>).</p>

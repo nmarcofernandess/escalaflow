@@ -220,7 +220,7 @@ export function DemandaBar({
                     {horaInicio} - {horaFim}
                   </span>
                   {isResizing && (
-                    <span className="shrink-0 text-[10px] opacity-80">
+                    <span className="shrink-0 text-xs opacity-80">
                       ({formatarMinutos(duration)})
                     </span>
                   )}
@@ -229,7 +229,7 @@ export function DemandaBar({
                 {/* Right side: badge + icon */}
                 <div className="flex shrink-0 items-center gap-2 mr-3">
                   <div className={cn(
-                    'flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold',
+                    'flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-bold',
                     colors.badge,
                   )}>
                     <Users className="size-2.5" />
@@ -312,7 +312,7 @@ export function DemandaBar({
                 onBlur={(e) => handleTimeChange('fim', e.target.value)}
               />
             </div>
-            <p className="text-[10px] text-muted-foreground text-center">
+            <p className="text-xs text-muted-foreground text-center">
               Duracao: {formatarMinutos(duration)}
             </p>
           </div>

@@ -17,6 +17,7 @@
 |---------|---------|-------------|
 | `MAPA_TOOLS_FINAL.md` | **Mapa das 30 tools** — categorias, whitelists, cobertura, gaps | Referencia primaria de "quais tools existem e o que cobrem" |
 | `TOOL_CALLING_PLAYBOOK.md` | **Guia reproduzivel** — patterns, stack, discovery, testes, prompts | Replicar a estrategia em outro projeto ou onboarding |
+| `RESUMO_ABA_USUARIO_VS_IA.md` | **Aba Resumo (Ver tudo)** — o que o usuario ve vs dados internos; mapeamento para a IA usar o mesmo vocabulario | Fallback multi-turn, respostas sobre escala, tools que retornam indicadores |
 | `STATUS_EXECUCAO_FASES.md` | **Tracker de fases** — o que foi feito, pendencias, proximos passos | Saber estado de implementacao e o que falta |
 | `AUDIT-IA-TOOLS-v33.md` | **Auditoria v2** — 7 burrices, TOSCOs, GAPs (com status RESOLVIDO) | Revisao de qualidade e divida tecnica |
 

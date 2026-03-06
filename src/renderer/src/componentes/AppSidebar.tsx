@@ -107,7 +107,7 @@ export function AppSidebar() {
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
               EscalaFlow
             </span>
-            <span className="text-[10px] text-sidebar-foreground/50">
+            <span className="text-xs text-sidebar-foreground/50">
               v2.0
             </span>
           </div>
@@ -281,7 +281,7 @@ export function AppSidebar() {
                     <Info className="size-4" />
                     <span>Sobre</span>
                   </div>
-                  <span className="pl-6 text-[10px] text-muted-foreground">
+                  <span className="pl-6 text-xs text-muted-foreground">
                     EscalaFlow v2.0 — Desktop
                   </span>
                 </DropdownMenuItem>

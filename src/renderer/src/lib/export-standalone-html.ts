@@ -1,6 +1,7 @@
 interface BuildStandaloneHtmlOptions {
   title?: string
   extraCss?: string
+  forceLight?: boolean
 }
 
 function collectDocumentCss(): string {
@@ -25,11 +26,17 @@ export function buildStandaloneHtml(
   options: BuildStandaloneHtmlOptions = {},
 ): string {
   const appCss = collectDocumentCss()
-  const htmlClass = document.documentElement.className || ''
-  const colorTheme = document.documentElement.getAttribute('data-color-theme')
-  const htmlThemeAttr = colorTheme ? ` data-color-theme="${colorTheme}"` : ''
+  let htmlClass = document.documentElement.className || ''
+  let colorTheme = document.documentElement.getAttribute('data-color-theme')
   const title = options.title ?? 'EscalaFlow - Exportacao'
   const extraCss = options.extraCss ?? ''
+
+  if (options.forceLight) {
+    htmlClass = htmlClass.replace(/\bdark\b/g, '').trim()
+    if (colorTheme === 'dark') colorTheme = null
+  }
+
+  const htmlThemeAttr = colorTheme ? ` data-color-theme="${colorTheme}"` : ''
 
   return `<!DOCTYPE html>
 <html lang="pt-BR" class="${htmlClass}"${htmlThemeAttr}>

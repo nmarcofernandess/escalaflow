@@ -231,28 +231,28 @@ function EscalaContentOptions({
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div>
             <p className="text-sm font-medium">Ciclo</p>
-            <p className="text-[11px] text-muted-foreground">Tabela semanal da escala.</p>
+            <p className="text-xs text-muted-foreground">Tabela semanal da escala.</p>
           </div>
           <Switch checked={value.ciclo} onCheckedChange={(checked) => toggle('ciclo', checked)} disabled={disabled} />
         </div>
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div>
             <p className="text-sm font-medium">Timeline</p>
-            <p className="text-[11px] text-muted-foreground">Visao por faixa horaria e cobertura.</p>
+            <p className="text-xs text-muted-foreground">Visao por faixa horaria e cobertura.</p>
           </div>
           <Switch checked={value.timeline} onCheckedChange={(checked) => toggle('timeline', checked)} disabled={disabled} />
         </div>
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div>
             <p className="text-sm font-medium">Por funcionario</p>
-            <p className="text-[11px] text-muted-foreground">Inclui todos os funcionarios do setor.</p>
+            <p className="text-xs text-muted-foreground">Inclui todos os funcionarios do setor.</p>
           </div>
           <Switch checked={value.funcionarios} onCheckedChange={(checked) => toggle('funcionarios', checked)} disabled={disabled} />
         </div>
         <div className="flex items-center justify-between px-3 py-2">
           <div>
             <p className="text-sm font-medium">Avisos</p>
-            <p className="text-[11px] text-muted-foreground">Inclui blocos de violacoes.</p>
+            <p className="text-xs text-muted-foreground">Inclui blocos de violacoes.</p>
           </div>
           <Switch checked={value.avisos} onCheckedChange={(checked) => toggle('avisos', checked)} disabled={disabled} />
         </div>

@@ -58,4 +58,11 @@ export const escalasService = {
 
   deletar: (id: number) =>
     client['escalas.deletar']({ id }) as Promise<void>,
+
+  cancelar: () =>
+    client['escalas.cancelar']() as Promise<{ cancelled: boolean }>,
+
+  onSolverLog: (cb: (line: string) => void): (() => void) => {
+    return window.electron.ipcRenderer.on('solver-log', cb) as unknown as () => void
+  },
 }

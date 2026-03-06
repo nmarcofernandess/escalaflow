@@ -16,10 +16,10 @@ export function IaContextBadge({ tokens, limit }: Props) {
   const color = !limit
     ? 'text-muted-foreground'
     : pct > 80
-      ? 'text-red-500'
+      ? 'text-destructive'
       : pct > 60
-        ? 'text-yellow-500'
-        : 'text-green-500'
+        ? 'text-warning'
+        : 'text-success'
 
   const circumference = 2 * Math.PI * 7
   const dashOffset = limit ? circumference * (1 - Math.min(pct / 100, 1)) : circumference

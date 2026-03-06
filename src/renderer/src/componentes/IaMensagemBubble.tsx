@@ -45,7 +45,7 @@ export function IaMensagemBubble({ msg, onEdit, onRegenerate, showActions = true
           {msg.conteudo}
         </div>
       ) : isTool ? (
-        <div className="px-3 py-2 rounded-2xl rounded-bl-sm max-w-[88%] leading-relaxed bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 text-xs font-mono whitespace-pre-wrap break-words">
+        <div className="px-3 py-2 rounded-2xl rounded-bl-sm max-w-[88%] leading-relaxed bg-warning/10 text-warning border border-warning/20 text-xs font-mono whitespace-pre-wrap break-words">
           {msg.conteudo}
         </div>
       ) : (
@@ -75,7 +75,7 @@ export function IaMensagemBubble({ msg, onEdit, onRegenerate, showActions = true
             className="size-6 rounded-md flex items-center justify-center hover:bg-muted-foreground/10 transition-colors"
             title="Copiar"
           >
-            {copied ? <Check className="size-3.5 text-green-500" /> : <Copy className="size-3.5 text-muted-foreground/50" />}
+            {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5 text-muted-foreground/50" />}
           </button>
 
           {isUser && onEdit && (

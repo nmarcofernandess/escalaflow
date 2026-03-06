@@ -125,7 +125,7 @@ function RegraCategoriaCard({
                     </p>
                   )}
                   {r.aviso_dependencia && mudou && (
-                    <p className="text-xs text-amber-500 mt-1 flex items-center gap-1">
+                    <p className="text-xs text-warning mt-1 flex items-center gap-1">
                       <AlertTriangle className="size-3 shrink-0" />
                       {r.aviso_dependencia}
                     </p>

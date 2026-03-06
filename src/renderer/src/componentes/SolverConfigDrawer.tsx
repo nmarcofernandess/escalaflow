@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import {
   Select,
@@ -26,7 +25,7 @@ import type { RuleDefinition, RuleStatus, RuleConfig } from '@shared/index'
 
 export interface SolverSessionConfig {
   solveMode: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
-  maxTimeSeconds: number
+  maxTimeSeconds?: number
   rulesOverride: RuleConfig
 }
 
@@ -50,16 +49,14 @@ export function SolverConfigDrawer({
 
   const [localOverride, setLocalOverride] = useState<RuleConfig>(config.rulesOverride)
   const [solveMode, setSolveMode] = useState(config.solveMode)
-  const [maxTime, setMaxTime] = useState(config.maxTimeSeconds)
 
   useEffect(() => {
     setLocalOverride(config.rulesOverride)
     setSolveMode(config.solveMode)
-    setMaxTime(config.maxTimeSeconds)
   }, [config])
 
   const handleSave = () => {
-    onConfigChange({ solveMode, maxTimeSeconds: maxTime, rulesOverride: localOverride })
+    onConfigChange({ solveMode, rulesOverride: localOverride })
     onOpenChange(false)
   }
 
@@ -149,7 +146,7 @@ export function SolverConfigDrawer({
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-medium truncate">{r.nome}</span>
                     {mudou && (
-                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                      <Badge variant="secondary" className="text-xs px-1 py-0">
                         •
                       </Badge>
                     )}
@@ -242,19 +239,6 @@ export function SolverConfigDrawer({
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Otimizacao maxima (~30min)
                     </p>
-                    {solveMode === 'maximo' && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <Label className="text-xs">Limite (s):</Label>
-                        <Input
-                          type="number"
-                          min={60}
-                          max={3600}
-                          value={maxTime}
-                          onChange={(e) => setMaxTime(Number(e.target.value))}
-                          className="h-7 w-20 text-xs"
-                        />
-                      </div>
-                    )}
                   </div>
                 </div>
               </RadioGroup>

@@ -130,13 +130,13 @@ export function FeriadosPagina() {
                           {formatarDataFeriado(f.data)}
                         </span>
                         <span className="text-sm font-medium">{f.nome}</span>
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline" className="text-xs">
                           {TIPO_FERIADO_LABEL[f.tipo] ?? f.tipo}
                         </Badge>
                         {isLocked && (
                           <div className="flex items-center gap-1 text-destructive">
                             <Lock className="size-3" />
-                            <span className="text-[10px]">CCT proibe</span>
+                            <span className="text-xs">CCT proibe</span>
                           </div>
                         )}
                       </div>

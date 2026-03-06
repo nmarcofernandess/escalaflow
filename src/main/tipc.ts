@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import os from 'node:os'
 import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
 import { validarEscalaV3 } from './motor/validador'
-import { buildSolverInput, computeSolverScenarioHash, runSolver, persistirSolverResult } from './motor/solver-bridge'
+import { buildSolverInput, computeSolverScenarioHash, runSolver, persistirSolverResult, cancelSolver } from './motor/solver-bridge'
 import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
 import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
@@ -1346,6 +1346,12 @@ const escalasGerar = t.procedure
     }
   })
 
+const escalasCancelar = t.procedure
+  .action(async () => {
+    const cancelled = cancelSolver()
+    return { cancelled }
+  })
+
 // =============================================================================
 // DASHBOARD (1 handler)
 // =============================================================================
@@ -2154,12 +2160,15 @@ const escalasGerarPorCicloRotativo = t.procedure
       const end = new Date(input.data_fim)
       const T = modelo.semanas_no_ciclo
       let current = new Date(start)
-      let semanaOffset = 0
+      // Semana 1 = primeira semana do periodo (que contem data_inicio). Incrementar ao
+      // passar o domingo (fim da semana), nao na segunda, senao o primeiro dia usava
+      // semanaIdx = T-1 e a primeira semana do calendario misturava duas semanas do ciclo
+      // (ex.: seg da semana T-1 + ter-dom da semana 0), gerando 7 dias seguidos falsos.
+      let semanaOffset = 1
       while (current <= end) {
         const diaSemanaNum = current.getDay()
         const diaSemanaStr = numeroDiaSemana[diaSemanaNum]
         const dataStr = current.toISOString().slice(0, 10)
-        if (diaSemanaNum === 1) semanaOffset++ // incrementa na segunda-feira
         const semanaIdx = ((semanaOffset - 1) % T + T) % T
         const itensHoje = itens.filter(i => i.dia_semana === diaSemanaStr && i.semana_idx === semanaIdx)
         for (const item of itensHoje) {
@@ -2168,6 +2177,7 @@ const escalasGerarPorCicloRotativo = t.procedure
             VALUES (?, ?, ?, ?)
           `, escalaId, item.colaborador_id, dataStr, item.trabalha ? 'TRABALHO' : 'FOLGA')
         }
+        if (diaSemanaNum === 0) semanaOffset++ // proxima semana apos domingo
         current.setDate(current.getDate() + 1)
       }
     })
@@ -3532,6 +3542,7 @@ export const router = {
   'escalas.ajustar': escalasAjustar,
   'escalas.deletar': escalasDeletar,
   'escalas.gerar': escalasGerar,
+  'escalas.cancelar': escalasCancelar,
   'escalas.detectarCicloRotativo': escalasDetectarCicloRotativo,
   'escalas.salvarCicloRotativo': escalasSalvarCicloRotativo,
   'escalas.listarCiclosRotativos': escalasListarCiclosRotativos,

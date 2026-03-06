@@ -5,7 +5,7 @@
  * Python = função pura. TS = orquestrador (DB, persistência, IPC).
  */
 
-import { spawn, execFileSync } from 'node:child_process'
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -624,6 +624,21 @@ export function computeSolverScenarioHash(input: SolverInput): string {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Active solver child process (for cancellation)
+// ---------------------------------------------------------------------------
+
+let activeSolverChild: ChildProcess | null = null
+
+export function cancelSolver(): boolean {
+  if (activeSolverChild) {
+    activeSolverChild.kill('SIGTERM')
+    activeSolverChild = null
+    return true
+  }
+  return false
+}
+
 // Run solver (with optional stderr streaming callback)
 // ---------------------------------------------------------------------------
 
@@ -650,13 +665,20 @@ export function runSolver(
       return
     }
 
+    activeSolverChild = child
+
     let stdout = ''
     let stderrBuf = ''
     let settled = false
 
+    const settle = () => {
+      settled = true
+      activeSolverChild = null
+    }
+
     const timer = setTimeout(() => {
       if (!settled) {
-        settled = true
+        settle()
         child.kill('SIGKILL')
         reject(new Error(
           `Solver excedeu timeout de ${Math.round(timeoutMs / 1000)}s. ` +
@@ -685,7 +707,7 @@ export function runSolver(
 
     child.on('error', (err) => {
       if (!settled) {
-        settled = true
+        settle()
         clearTimeout(timer)
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
           reject(new Error(
@@ -700,7 +722,7 @@ export function runSolver(
 
     child.on('close', (code) => {
       if (settled) return
-      settled = true
+      settle()
       clearTimeout(timer)
 
       if (stderrBuf.trim() && !onLog) {

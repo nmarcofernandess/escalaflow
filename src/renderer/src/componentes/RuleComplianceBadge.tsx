@@ -62,10 +62,10 @@ export function RuleComplianceBadge({ diagnostico }: RuleComplianceBadgeProps) {
               key={cat.label}
               variant="outline"
               className={cn(
-                'text-[10px] font-semibold tabular-nums gap-1 px-1.5 py-0',
+                'text-xs font-semibold tabular-nums gap-1 px-1.5 py-0',
                 full
-                  ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300'
-                  : 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300',
+                  ? 'border-success/30 bg-success/10 text-success'
+                  : 'border-warning/30 bg-warning/10 text-warning',
               )}
             >
               {cat.label} {cat.ativas}/{cat.total}

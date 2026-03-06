@@ -6,16 +6,10 @@ import { PageHeader } from '@/componentes/PageHeader'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
+import { StatusBadge } from '@/componentes/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { formatarData } from '@/lib/formatadores'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
@@ -197,21 +191,6 @@ export function EscalasHub() {
     setExpandedSetores(next)
   }
 
-  function handleSelecionarEscala(setorId: number, escalaIdRaw: string) {
-    const escalaId = Number(escalaIdRaw)
-    setItems((prev) =>
-      prev.map((item) =>
-        item.setor.id === setorId
-          ? { ...item, selectedEscalaId: escalaId }
-          : item,
-      ),
-    )
-
-    if (expandedSetores.has(setorId)) {
-      void ensureEscalaDetalheLoaded(setorId, escalaId)
-    }
-  }
-
   function handleAbrirExport(setorId: number, escalaId: number) {
     setExportTarget({ setorId, escalaId })
     setConteudoExport({
@@ -290,6 +269,7 @@ export function EscalasHub() {
       colaboradores,
       funcoes,
       horariosSemana,
+      regrasPadrao,
       regrasMap,
     }
   }, [colaboradoresBySetor, escalaDetalheByEscalaId, exportTarget, funcoesBySetor, horariosBySetor, items, regrasBySetor])
@@ -321,6 +301,7 @@ export function EscalasHub() {
           tiposContrato={tiposContrato}
           funcoes={exportContext.funcoes}
           horariosSemana={exportContext.horariosSemana}
+          regrasPadrao={exportContext.regrasPadrao}
           modo={modo}
           incluirAvisos={conteudo.avisos}
           incluirCiclo={conteudo.ciclo}
@@ -500,6 +481,7 @@ export function EscalasHub() {
             tiposContrato={tiposContrato}
             funcoes={exportContext.funcoes}
             horariosSemana={exportContext.horariosSemana}
+            regrasPadrao={exportContext.regrasPadrao}
             modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
             incluirAvisos={conteudoExport.avisos}
             incluirCiclo={conteudoExport.ciclo}
@@ -590,11 +572,9 @@ export function EscalasHub() {
                               <p className="text-xs text-muted-foreground">
                                 {formatarData(selectedEscala.data_inicio)} — {formatarData(selectedEscala.data_fim)}
                               </p>
-                              <Badge variant="outline" className="text-[10px] py-0">
-                                {selectedEscala.status}
-                              </Badge>
+                              <StatusBadge status={selectedEscala.status as 'OFICIAL' | 'RASCUNHO'} />
                               {detalhe && detalhe.violacoes.length > 0 && (
-                                <Badge variant="outline" className="border-amber-200 text-[10px] py-0 text-amber-700">
+                                <Badge variant="outline" className="border-warning/20 text-xs py-0 text-warning">
                                   {detalhe.violacoes.length} aviso(s)
                                 </Badge>
                               )}
@@ -606,24 +586,6 @@ export function EscalasHub() {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
-                        {escalas.length > 0 ? (
-                          <Select
-                            value={selectedEscalaId != null ? String(selectedEscalaId) : undefined}
-                            onValueChange={(value) => handleSelecionarEscala(setor.id, value)}
-                          >
-                            <SelectTrigger className="h-8 w-[270px]">
-                              <SelectValue placeholder="Selecionar escala" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {escalas.map((escala) => (
-                                <SelectItem key={escala.id} value={String(escala.id)}>
-                                  {escala.status} • {formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : null}
-
                         {selectedEscala ? (
                           <>
                             <Button

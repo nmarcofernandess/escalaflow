@@ -98,7 +98,7 @@ export function IaModelCatalogPicker({
               <Filter className="mr-1.5 size-3.5" />
               Filtros
               {hasFilters && (
-                <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5 text-[10px] font-semibold">
+                <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5 text-xs font-semibold">
                   {filterCount}
                 </Badge>
               )}
@@ -188,9 +188,9 @@ export function IaModelCatalogPicker({
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1.5">
-                      {model.is_free && <Badge variant="outline" className="text-[10px]">Free</Badge>}
-                      {model.supports_tools && <Badge variant="outline" className="text-[10px]">Tools</Badge>}
-                      {model.is_agentic && <Badge variant="outline" className="text-[10px]">Agent</Badge>}
+                      {model.is_free && <Badge variant="outline" className="text-xs">Free</Badge>}
+                      {model.supports_tools && <Badge variant="outline" className="text-xs">Tools</Badge>}
+                      {model.is_agentic && <Badge variant="outline" className="text-xs">Agent</Badge>}
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">
@@ -207,7 +207,7 @@ export function IaModelCatalogPicker({
       </ScrollArea>
 
       {/* Footer count */}
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {filteredModels.length} de {models.length} modelos
       </p>
     </div>

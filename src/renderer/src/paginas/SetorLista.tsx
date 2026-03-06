@@ -214,8 +214,8 @@ export function SetorLista() {
         </div>
 
         {showArchived && (
-          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30 p-3">
-            <p className="text-sm text-amber-800 dark:text-amber-300">
+          <div className="rounded-lg border border-warning/20 bg-warning/5 p-3">
+            <p className="text-sm text-warning">
               Exibindo setores arquivados. Clique em &quot;Restaurar&quot; para reativar.
             </p>
           </div>
@@ -262,18 +262,18 @@ export function SetorLista() {
                     </div>
                     {/* Meta: Colaboradores + Escala */}
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="text-xs">
                         <Users className="mr-1 size-3" />
                         {colabCount} colaborador{colabCount !== 1 ? 'es' : ''}
                       </Badge>
                       {escala ? (
-                        <Badge variant="outline" className="text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400">
+                        <Badge variant="outline" className="text-xs border-success/20 bg-success/10 text-success">
                           <Calendar className="mr-1 size-3" />
                           {formatDate(escala.data_inicio)} - {formatDate(escala.data_fim)}
                           {escala.status === 'RASCUNHO' && ' (rascunho)'}
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                        <Badge variant="outline" className="text-xs text-muted-foreground">
                           <CalendarOff className="mr-1 size-3" />
                           Sem escala
                         </Badge>
@@ -343,7 +343,7 @@ export function SetorLista() {
                     </TableCell>
                     <TableCell>
                       {escala ? (
-                        <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 text-[10px]">
+                        <Badge variant="outline" className="border-success/20 bg-success/10 text-success text-xs">
                           <Calendar className="mr-1 size-3" />
                           {formatDate(escala.data_inicio)} - {formatDate(escala.data_fim)}
                           {escala.status === 'RASCUNHO' && ' (rascunho)'}

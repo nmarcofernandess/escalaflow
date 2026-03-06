@@ -18,7 +18,7 @@ export function ExportPreview({
   return (
     <div
       className={cn(
-        'relative h-[500px] overflow-auto rounded-lg border bg-muted/50',
+        'relative max-h-[500px] overflow-auto rounded-lg border bg-muted/50',
         className,
       )}
     >
@@ -29,13 +29,13 @@ export function ExportPreview({
         </div>
       )}
 
-      {/* Scaled preview content */}
+      {/* Scaled preview content — forced light for export fidelity */}
       <div
         data-export-preview
+        className="light bg-white text-foreground"
         style={{
-          transform: `scale(${scale})`,
-          transformOrigin: 'top left',
-          width: `${100 / scale}%`,
+          zoom: scale,
+          colorScheme: 'light',
         }}
       >
         {children}

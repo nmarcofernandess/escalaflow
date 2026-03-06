@@ -15,5 +15,6 @@ export function captureExportHTML(selector: string = '[data-export-preview]'): s
 
   return buildStandaloneHtml(container.innerHTML, {
     title: 'EscalaFlow - Exportacao',
+    forceLight: true,
   })
 }

@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
 from ortools.sat.python import cp_model
@@ -494,7 +494,7 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
             "cycle_days": cycle_days,
         }
 
-    log(f"Phase 1 INFEASIBLE in {solve_ms:.0f}ms — falling back to emergent folga")
+    log(f"Padrao de folgas inviavel ({solve_ms/1000:.1f}s) — usando distribuicao automatica")
     return None
 
 
@@ -641,7 +641,7 @@ def build_model(
 
     cycle_weeks = compute_cycle_length_weeks(colabs, demand_by_slot, days)
     cycle_days = cycle_weeks * 7
-    log(f"Cycle: {cycle_weeks} weeks = {cycle_days} days (D={D})")
+    log(f"Ciclo detectado: {cycle_weeks} semanas ({cycle_days} dias)")
 
     min_daily_slots = 240 // grid_min
 
@@ -719,7 +719,7 @@ def build_model(
         grid_min=grid_min,
     )
     if hints_applied > 0:
-        log(f"Applied warm-start hints: {hints_applied}")
+        log(f"Reutilizando {hints_applied} alocacoes da escala anterior como ponto de partida")
 
     # ---------------------------------------------------------------
     # Compute indices for Sundays, holidays, and blocked days per person
@@ -769,7 +769,7 @@ def build_model(
 
         total_pinned = pinned_off + pinned_manha + pinned_tarde + pinned_integral
         if total_pinned > 0:
-            log(f"Phase 1 bands: {pinned_off} OFF, {pinned_manha} MANHA, {pinned_tarde} TARDE, {pinned_integral} INTEGRAL")
+            log(f"Turnos fixados: {pinned_manha} manha, {pinned_tarde} tarde, {pinned_integral} integral, {pinned_off} folga")
 
     # ---------------------------------------------------------------
     # Build helper variables
@@ -1443,7 +1443,12 @@ def _solve_pass(
     """Execute a single solve pass with optional constraint relaxations."""
     config = data.get("config", {})
 
-    log(f"--- Pass {pass_num} (relaxations: {relaxations or 'none'}, max {max_time}s) ---")
+    if pass_num == 1:
+        log(f"Passo 1: resolvendo com todas as regras CLT (max {max_time:.0f}s)...")
+    elif pass_num == 2:
+        log(f"Passo 2: relaxando meta de horas e dias de trabalho (max {max_time:.0f}s)...")
+    else:
+        log(f"Passo 3: modo emergencia — apenas regras CLT obrigatorias (max {max_time:.0f}s)...")
 
     (
         model,
@@ -1498,10 +1503,16 @@ def _solve_pass(
         rules=config.get("rules", {}),
     )
 
-    log(
-        f"Pass {pass_num}: {result.get('status', 'UNKNOWN')} in {solve_time_ms:.0f}ms | "
-        f"cobertura={result.get('indicadores', {}).get('cobertura_percent', '?')}%"
-    )
+    status_label = result.get('status', 'UNKNOWN')
+    cob = result.get('indicadores', {}).get('cobertura_percent', '?')
+    t_s = solve_time_ms / 1000
+    if status_label == 'INFEASIBLE':
+        log(f"Passo {pass_num}: impossivel encontrar solucao em {t_s:.1f}s")
+    elif status_label in ('OPTIMAL', 'FEASIBLE'):
+        qual = 'otima' if status_label == 'OPTIMAL' else 'viavel'
+        log(f"Passo {pass_num}: solucao {qual} em {t_s:.1f}s — cobertura {cob}%")
+    else:
+        log(f"Passo {pass_num}: {status_label} em {t_s:.1f}s — cobertura {cob}%")
 
     return result
 
@@ -1561,20 +1572,13 @@ def solve(data: dict) -> dict:
     # Track total elapsed time for the hard cap
     t_global_start = time.time()
 
-    log(
-        f"Solving [{solve_mode}]: {len(colabs)} colabs, "
-        f"{data['data_inicio']} - {data['data_fim']} "
-        f"(budget: {pass1_time:.0f}s/{pass2_time:.0f}s/{pass3_time:.0f}s, "
-        f"min_coverage: {MIN_COVERAGE_THRESHOLD}%, hard_cap: {HARD_TIME_CAP_SECONDS}s)"
-    )
+    n_dias = (datetime.strptime(data['data_fim'], "%Y-%m-%d") - datetime.strptime(data['data_inicio'], "%Y-%m-%d")).days + 1
+    log(f"Montando modelo: {len(colabs)} colaboradores, {n_dias} dias, modo {solve_mode}")
 
     # Pre-analysis: capacity vs demand
     capacidade_diag = _analyze_capacity(data)
-    log(
-        f"Capacity analysis: ratio={capacidade_diag['ratio_cobertura_max']}, "
-        f"demand={capacidade_diag['total_slots_demanda']} slots, "
-        f"capacity={capacidade_diag['max_slots_disponiveis']} slots"
-    )
+    ratio_pct = round(capacidade_diag['ratio_cobertura_max'] * 100)
+    log(f"Capacidade estimada: {ratio_pct}% da demanda pode ser coberta")
 
     # If demand is mathematically impossible to cover, skip continuation logic
     math_possible = capacidade_diag.get("cobertura_matematicamente_possivel", True)
@@ -1601,18 +1605,14 @@ def solve(data: dict) -> dict:
             remaining = HARD_TIME_CAP_SECONDS - elapsed_total
 
             if remaining <= 5:
-                log(f"Pass {pass_num}: hard cap atingido ({elapsed_total:.0f}s total)")
+                log(f"Tempo limite atingido ({elapsed_total:.0f}s) — usando melhor resultado ate agora")
                 break
 
             # Clamp to remaining time
             run_time = min(current_time, remaining)
 
             if attempt > 1:
-                log(
-                    f"Pass {pass_num} RETRY #{attempt}: cobertura anterior "
-                    f"{_get_coverage(best_result):.1f}% < {MIN_COVERAGE_THRESHOLD}% — "
-                    f"estendendo para {run_time:.0f}s (elapsed: {elapsed_total:.0f}s)"
-                )
+                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}%, tentando melhorar...")
 
             result = _solve_pass(
                 data,
@@ -1634,18 +1634,12 @@ def solve(data: dict) -> dict:
 
             # Check if coverage is good enough
             if _coverage_is_viable(best_result):
-                log(
-                    f"Pass {pass_num}: cobertura {_get_coverage(best_result):.1f}% >= "
-                    f"{MIN_COVERAGE_THRESHOLD}% — OK"
-                )
+                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}% atingida")
                 return best_result
 
             # Coverage below threshold and demand IS mathematically possible
             if not math_possible:
-                log(
-                    f"Pass {pass_num}: cobertura {_get_coverage(best_result):.1f}% baixa, "
-                    f"mas demanda matematicamente impossivel — aceitando"
-                )
+                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}% (demanda excede capacidade maxima — aceitando melhor resultado)")
                 return best_result
 
             # Double the budget for next attempt, relax gap progressively
@@ -1656,7 +1650,7 @@ def solve(data: dict) -> dict:
 
     # ---- Phase 1: Folga Pattern (lightweight model) ----
     phase1_budget = min(15, total_budget * 0.15)  # max 15s, 15% of budget
-    log(f"Phase 1 (Folga Pattern): budget {phase1_budget:.0f}s")
+    log("Calculando padrao de folgas...")
 
     phase1_result = solve_folga_pattern(data, budget_s=phase1_budget)
 
@@ -1677,14 +1671,12 @@ def solve(data: dict) -> dict:
                 "tarde": band_counts[2], "integral": band_counts[3],
             },
         }
-        log(
-            f"Phase 1 OK: solved in {phase1_result['time_ms']:.0f}ms "
-            f"(cycle {phase1_result.get('cycle_days', '?')} days) — "
-            f"bands: {band_counts[0]} OFF, {band_counts[1]} M, {band_counts[2]} T, {band_counts[3]} I"
-        )
+        cycle_d = phase1_result.get('cycle_days', 0)
+        cycle_w = cycle_d // 7 if cycle_d else '?'
+        log(f"Padrao de folgas definido em {phase1_result['time_ms']/1000:.1f}s — ciclo de {cycle_w} semanas")
     else:
         phase1_diag = {"phase1_status": "INFEASIBLE" if phase1_result is None else "SKIPPED"}
-        log("Phase 1 SKIP: falling back to emergent folga")
+        log("Padrao de folgas nao encontrado — usando distribuicao automatica")
 
     # ---- Pass 1: Normal (with Phase 1 folga pinned) ----
     result = _run_with_continuation(
@@ -1706,7 +1698,7 @@ def solve(data: dict) -> dict:
     # ---- Pass 2: Relax product rules to SOFT (no Phase 1 pin — let it emerge) ----
     elapsed = time.time() - t_global_start
     if elapsed < HARD_TIME_CAP_SECONDS - 5:
-        log("Pass 1 INFEASIBLE — tentando Pass 2 (relaxamento de regras product, sem Phase 1 pin)")
+        log("Passo 1 impossivel com todas as regras — relaxando meta de horas para tentar...")
 
         pass2_relaxations = ["H10_ELASTIC", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
         result = _run_with_continuation(
@@ -1728,7 +1720,7 @@ def solve(data: dict) -> dict:
     # ---- Pass 3: Emergency — CLT skeleton only (no Phase 1 pin) ----
     elapsed = time.time() - t_global_start
     if elapsed < HARD_TIME_CAP_SECONDS - 5:
-        log("Pass 2 INFEASIBLE — tentando Pass 3 (esqueleto CLT puro)")
+        log("Passo 2 impossivel — modo emergencia (apenas regras CLT obrigatorias)")
 
         pass3_relaxations = ["ALL_PRODUCT_RULES"]
         result = _run_with_continuation(
@@ -1751,7 +1743,7 @@ def solve(data: dict) -> dict:
 
     if not result or not result.get("sucesso"):
         # All 3 passes failed — truly impossible (e.g., 0 available colabs)
-        log("TODAS as 3 passes falharam — cenario genuinamente impossivel")
+        log("Impossivel gerar escala mesmo com regras relaxadas")
         if result and "erro" not in result:
             result["erro"] = {
                 "tipo": "CONSTRAINT",

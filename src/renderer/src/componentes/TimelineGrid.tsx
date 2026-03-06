@@ -301,7 +301,7 @@ export function TimelineGrid({
           <div className="sticky left-0 z-20 bg-muted/50 border-b border-r px-4 py-2.5 flex items-end">
             <span className="text-xs font-semibold text-foreground">
               Colaborador
-              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                 ({sortedColaboradores.length})
               </span>
             </span>
@@ -310,7 +310,7 @@ export function TimelineGrid({
           {timeLabels.map((label, i) => (
             <div
               key={label}
-              className="border-b border-l bg-muted/50 px-1 py-2.5 text-center text-[11px] font-medium text-muted-foreground"
+              className="border-b border-l bg-muted/50 px-1 py-2.5 text-center text-xs font-medium text-muted-foreground"
               style={{ gridColumn: `${i * 4 + 2} / ${i * 4 + 6}` }}
             >
               {label}
@@ -362,7 +362,7 @@ export function TimelineGrid({
                 >
                   <div
                     className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+                      'flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
                       colab.sexo === 'F' ? CORES_GENERO.F : CORES_GENERO.M
                     )}
                   >
@@ -372,7 +372,7 @@ export function TimelineGrid({
                     <div className="text-xs font-medium leading-tight text-foreground truncate">
                       {colab.nome.split(' ').slice(0, 2).join(' ')}
                     </div>
-                    <div className="text-[10px] text-muted-foreground truncate">
+                    <div className="text-xs text-muted-foreground truncate">
                       {contrato?.nome ?? 'Contrato'}
                     </div>
                   </div>
@@ -430,7 +430,7 @@ export function TimelineGrid({
                                 <TooltipTrigger asChild>
                                   <div
                                     className={cn(
-                                      'flex items-center justify-center rounded-md mx-0.5 my-2 text-[11px] font-medium cursor-default shadow-sm',
+                                      'flex items-center justify-center rounded-md mx-0.5 my-2 text-xs font-medium cursor-default shadow-sm',
                                       colors.bar,
                                       colors.text,
                                       colors.border,
@@ -476,7 +476,7 @@ export function TimelineGrid({
                               <TooltipTrigger asChild>
                                 <div
                                   className={cn(
-                                    'flex items-center justify-center rounded mx-0.5 my-2 text-[9px] font-semibold border border-dashed border-amber-300/80 text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40',
+                                    'flex items-center justify-center rounded mx-0.5 my-2 text-xs font-semibold border border-dashed border-warning/30 text-warning bg-warning/10',
                                     !readOnly &&
                                       alloc.status !== 'INDISPONIVEL' &&
                                       'cursor-pointer hover:opacity-90 transition-all',
@@ -543,7 +543,7 @@ export function TimelineGrid({
                     className="flex items-center justify-center my-2"
                     style={{ gridRow, gridColumn: `2 / ${totalSlots + 2}` }}
                   >
-                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    <Badge variant="outline" className="text-xs text-muted-foreground">
                       {(() => {
                         const regra = regrasMap?.get(colab.id)
                         const dow = DIAS_MAP[new Date(currentDate + 'T00:00:00').getDay()]
@@ -559,7 +559,7 @@ export function TimelineGrid({
                 {isIndisponivel && (
                   <div
                     key={`indisponivel-${colab.id}`}
-                    className="flex items-center justify-center my-2 rounded bg-amber-50/50 dark:bg-amber-950/20"
+                    className="flex items-center justify-center my-2 rounded bg-warning/5"
                     style={{
                       gridRow,
                       gridColumn: `2 / ${totalSlots + 2}`,
@@ -569,7 +569,7 @@ export function TimelineGrid({
                   >
                     <Badge
                       variant="outline"
-                      className="text-[10px] text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
+                      className="text-xs text-warning border-warning/30"
                     >
                       AUS.
                     </Badge>
@@ -589,7 +589,7 @@ export function TimelineGrid({
                   gridColumn: 1,
                 }}
               >
-                <span className="text-[11px] font-semibold text-foreground">Cobertura</span>
+                <span className="text-xs font-semibold text-foreground">Cobertura</span>
               </div>
 
               {coverageData.map((cov, slotIndex) => {
@@ -598,10 +598,10 @@ export function TimelineGrid({
                   <div
                     key={`cov-${slotIndex}`}
                     className={cn(
-                      'flex items-center justify-center text-[10px] font-semibold border-t-2 px-0.5',
+                      'flex items-center justify-center text-xs font-semibold border-t-2 px-0.5',
                       ok
-                        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20'
-                        : 'text-amber-600 dark:text-amber-400 bg-amber-50/30 dark:bg-amber-950/20'
+                        ? 'text-success bg-success/5'
+                        : 'text-warning bg-warning/5'
                     )}
                     style={{
                       gridRow: sortedColaboradores.length + 2,
@@ -618,7 +618,7 @@ export function TimelineGrid({
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border bg-muted/20 px-4 py-2.5 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
         {contractTypes.map((nome) => {
           const colors = CORES_CONTRATO[nome] || CORES_CONTRATO.DEFAULT
           return (
@@ -637,7 +637,7 @@ export function TimelineGrid({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-5 rounded border border-dashed border-amber-300/80 bg-amber-50/80 dark:bg-amber-950/40" />
+          <div className="h-3 w-5 rounded border border-dashed border-warning/30 bg-warning/10" />
           ALM
         </div>
 
@@ -648,7 +648,7 @@ export function TimelineGrid({
 
         <div className="flex items-center gap-1.5">
           <div
-            className="h-3 w-5 rounded border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20"
+            className="h-3 w-5 rounded border border-warning/30 bg-warning/5"
             style={{
               backgroundImage:
                 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(251,191,36,0.15) 2px, rgba(251,191,36,0.15) 4px)',

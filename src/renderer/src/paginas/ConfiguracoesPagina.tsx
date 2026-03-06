@@ -556,7 +556,7 @@ export function ConfiguracoesPagina() {
                   </span>
                 )}
                 {updateStatus === 'up-to-date' && (
-                  <span className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <span className="flex items-center gap-2 text-sm text-success">
                     <CheckCircle2 className="size-4" />
                     Voce esta na versao mais recente.
                   </span>
@@ -582,7 +582,7 @@ export function ConfiguracoesPagina() {
                   </div>
                 )}
                 {updateStatus === 'ready' && (
-                  <span className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <span className="flex items-center gap-2 text-sm text-success">
                     <CheckCircle2 className="size-4" />
                     Atualizacao pronta! Reinicie para instalar.
                   </span>

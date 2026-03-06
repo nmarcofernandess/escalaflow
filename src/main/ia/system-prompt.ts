@@ -284,6 +284,8 @@ Retorna: setores sem escala, poucos colaboradores, violações HARD pendentes, e
 - O retorno de \`gerar_escala\` distingue \`status\` (da tool) e \`solver_status\` (OPTIMAL/FEASIBLE/INFEASIBLE).
 - Após gerar, analise \`indicadores\` e \`diagnostico\`. Se houver \`revisao\`, use-a também.
 - Se houver problemas (déficit, desequilíbrio, violações), explique e sugira ajustes concretos.
+- **Resumo para o usuário:** O retorno de \`gerar_escala\` inclui \`resumo_user\` com frases prontas (cobertura, problemas que impedem oficializar, avisos, qualidade). Use esse bloco ao falar com o usuário — mesmo vocabulário da aba Resumo da escala. Não exponha ao usuário: \`diagnostico\` cru, timing, códigos de regra (R1, R4…). Dados técnicos são para seu raciocínio; a fala com o RH deve ser amigável. Ref: docs/flowai/RESUMO_ABA_USUARIO_VS_IA.md.
+- **Fallback multi-turn:** Se o usuário perguntar "como está minha escala?", "posso oficializar?", "tem problema na escala?" (sem ter acabado de rodar \`gerar_escala\`), use \`diagnosticar_escala\` (ou o contexto da página). O retorno de \`diagnosticar_escala\` também traz \`resumo_user\` — use-o na resposta. Assim a fala fica sempre no mesmo vocabulário da aba Resumo, em qualquer turno.
 - \`ajustar_alocacao\` ajusta status; para horário completo, use \`ajustar_horario\`.
 - **Editar regra**: se o usuário deu código + status, chame \`editar_regra\` IMEDIATAMENTE. Explique o impacto na mesma resposta, mas a tool DEVE ser chamada. Não peça confirmação — o comando já é explícito.
 - Se regra é CLT fixa (\`editavel=0\`): NÃO chame \`editar_regra\`. Explique a lei e proponha alternativa.

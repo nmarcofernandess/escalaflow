@@ -5,7 +5,9 @@
 
 ### Por que a escala nao consegue cobrir 100% da demanda?
 
-Com um numero limitado de colaboradores e todas as restricoes da CLT (folgas obrigatorias, interjornada 11h, max 6 dias consecutivos), atingir 100% de cobertura e matematicamente impossivel na maioria dos casos. Profissionais experientes de RH atingem cerca de 85% de cobertura manualmente. O motor busca o mesmo nivel ou melhor.
+**O que significa "100%" aqui:** e a cobertura da **demanda do setor** (quantas pessoas a loja pediu por faixa de horario em cada dia), nao a necessidade individual do funcionario. Quando a escala respeita horas, folgas e leis para cada um, para o funcionario "bateu" — mas o percentual exibido mede se todos os **slots de demanda** foram preenchidos.
+
+Com um numero limitado de colaboradores e todas as restricoes da CLT (folgas obrigatorias, interjornada 11h, max 6 dias consecutivos), atingir 100% de cobertura **da demanda** e matematicamente impossivel na maioria dos casos. Profissionais experientes de RH atingem cerca de 85% de cobertura manualmente. O motor busca o mesmo nivel ou melhor.
 
 O deficit de cobertura e tratado como SOFT constraint — o motor maximiza a cobertura sem tornar a geracao impossivel. Se fosse HARD, a maioria das escalas daria INFEASIBLE.
 
@@ -32,7 +34,16 @@ Sim, o periodo e flexivel. O mais comum e gerar por mes (ex: 01/03 a 31/03), mas
 
 O rules_override permite relaxar temporariamente uma regra para uma unica geracao. Exemplo: `{"H1":"SOFT"}` transforma a regra de max 6 dias consecutivos de HARD para SOFT so naquela geracao. A configuracao permanente da empresa nao e alterada. Util para cenarios excepcionais onde a regra padrao impede uma solucao viavel.
 
-## Colaboradores
+### Por que aparecem "trabalhou domingo sem folga nos 7 dias" e "Abaixo da meta semanal"?
+
+**Se a escala for gerada pelo SOLVER** (botão "Gerar escala" / `gerar_escala`): o motor usa vários passes e pode relaxar H1/H10 para evitar INFEASIBLE; a escala resultante é então validada e as violações aparecem. Ver parágrafo abaixo sobre passes.
+
+**Se a escala for gerada PELO CICLO** (template repetido no calendário): o calendário **não ignora** o ciclo — ele repete fielmente o que está em `escala_ciclo_itens`. Acontece o seguinte:
+
+1. **Folga compensatória (Lei 605):** Se o **próprio template do ciclo** tiver uma semana em que alguém trabalha domingo e nos 7 dias seguintes (seg–dom) também trabalha, ao repetir esse template a violação aparece. Ou seja: o ciclo está sendo aplicado; o **conteúdo** do ciclo é que pode estar ilegal. A origem do ciclo (exportado de uma escala solver que tinha regras relaxadas, ou montado na UI) precisa garantir que nunca haja "domingo trabalhado + 7 dias seguidos trabalhados".
+2. **Abaixo da meta semanal:** Na geração por ciclo o sistema só grava **status** (TRABALHO/FOLGA) por dia — **não grava** `hora_inicio`, `hora_fim` nem `minutos_trabalho`. O validador lê as alocações e, sem horários, usa 0 min por dia de trabalho → "abaixo da meta". Ou seja: o calendário está integrado com o ciclo para **quem trabalha em qual dia**, mas **não está integrado com os horários** (turnos); para meta semanal bater, seria preciso preencher horários após gerar por ciclo (ex.: a partir do perfil/regra de cada um) ou o ciclo já carregar essa informação.
+
+**Resumo para escala pelo solver:** os passes relaxam H1/meta semanal; o validador depois aponta as violações. Preferir modo Otimizado e nível ALTO; evitar rules_override; aumentar equipe ou reduzir demanda se o Pass 1 não conseguir solução.
 
 ### Qual a diferenca entre CLT, Estagiario e Aprendiz?
 

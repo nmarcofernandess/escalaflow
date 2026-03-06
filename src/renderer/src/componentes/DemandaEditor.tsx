@@ -86,7 +86,7 @@ function TimelineAxis({ timeLabels, totalMinutes, displayOpenMin }: TimelineAxis
         {timeLabels.map((label, i) => (
           <div
             key={label}
-            className="text-center text-[10px] font-medium text-muted-foreground py-1.5"
+            className="text-center text-xs font-medium text-muted-foreground py-1.5"
             style={{
               width: `${(60 / totalMinutes) * 100}%`,
               marginLeft: i === 0 ? `${((toMinutes(label) - displayOpenMin) / totalMinutes) * 100}%` : undefined,
@@ -809,7 +809,7 @@ export function DemandaEditor({
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2 mr-3">
-            <div className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold bg-muted/60 text-muted-foreground">
+            <div className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-bold bg-muted/60 text-muted-foreground">
               <Clock className="size-2.5" />
               {dem.min_pessoas}
             </div>
@@ -887,7 +887,7 @@ export function DemandaEditor({
         </TableCell>
         <TableCell>
           {dem.dia_semana ? (
-            <Badge variant="outline" className="text-[10px]">{DIAS_LABELS_FULL[dem.dia_semana]}</Badge>
+            <Badge variant="outline" className="text-xs">{DIAS_LABELS_FULL[dem.dia_semana]}</Badge>
           ) : (
             <span className="text-xs text-muted-foreground">Padrao</span>
           )}
@@ -1090,7 +1090,7 @@ export function DemandaEditor({
                   {opHoraAbertura} – {opHoraFechamento}
                 </span>
                 {isResizingOp && (
-                  <span className="shrink-0 text-[10px] opacity-70">({formatarMinutos(opEndMin - opStartMin)})</span>
+                  <span className="shrink-0 text-xs opacity-70">({formatarMinutos(opEndMin - opStartMin)})</span>
                 )}
               </div>
               <div className="flex shrink-0 items-center mr-3">
@@ -1192,7 +1192,7 @@ export function DemandaEditor({
               )
             })}
           </div>
-          <div className="flex items-center justify-between px-3 py-1 text-[10px] text-muted-foreground">
+          <div className="flex items-center justify-between px-3 py-1 text-xs text-muted-foreground">
             <span>Cobertura acumulada por faixa</span>
             <Badge variant="outline" className="text-[9px] h-4">
               {currentConfig.segmentosCobertura.length} faixa{currentConfig.segmentosCobertura.length !== 1 ? 's' : ''}
@@ -1208,14 +1208,14 @@ export function DemandaEditor({
     const isPadraoTab = activeTab === 'padrao'
     return (
       <div className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2">
-        <span className="text-[11px] text-muted-foreground shrink-0">Horário de trabalho</span>
+        <span className="text-xs text-muted-foreground shrink-0">Horário de trabalho</span>
         <span className="text-muted-foreground/40">·</span>
         <div className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
           <Clock className="size-3.5 text-muted-foreground" />
           {currentConfig.hora_abertura} – {currentConfig.hora_fechamento}
         </div>
         {!isPadraoTab && currentConfig.usa_padrao && (
-          <span className="text-[11px] text-muted-foreground">· herdando padrao</span>
+          <span className="text-xs text-muted-foreground">· herdando padrao</span>
         )}
         <div className="ml-auto">
           {renderOperacionalPopover()}

@@ -327,7 +327,7 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
                 <div className="mt-2 max-h-60 overflow-y-auto rounded-md border bg-muted/50 p-3">
                   <p className="whitespace-pre-wrap text-xs text-muted-foreground">{conteudo}</p>
                   {charCount > MAX_PREVIEW_CHARS && (
-                    <p className="mt-2 text-xs text-amber-500">
+                    <p className="mt-2 text-xs text-warning">
                       Preview truncado em {MAX_PREVIEW_CHARS.toLocaleString()} caracteres. O texto completo será salvo.
                     </p>
                   )}

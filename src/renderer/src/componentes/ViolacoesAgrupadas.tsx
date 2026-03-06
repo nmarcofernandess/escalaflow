@@ -90,10 +90,6 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
                   ))}
                 </div>
 
-                {/* Dica de acao */}
-                <p className="text-xs text-muted-foreground italic border-t pt-2">
-                  Clique em um dia de trabalho desse colaborador para trocar por folga
-                </p>
               </CardContent>
             </Card>
           ))}
@@ -103,7 +99,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
       {/* SOFT Violations */}
       {comSoft.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-warning flex items-center gap-2">
             <AlertTriangle className="size-4" />
             Alertas (SOFT)
           </h3>
@@ -116,7 +112,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
                 {/* Avatar + Nome */}
                 <div className="flex items-center gap-2">
                   <Avatar className="size-8">
-                    <AvatarFallback className="bg-amber-100 dark:bg-amber-950/30 text-xs font-bold text-amber-700 dark:text-amber-300">
+                    <AvatarFallback className="bg-warning/10 text-xs font-bold text-warning">
                       {iniciais(grupo.colaborador_nome)}
                     </AvatarFallback>
                   </Avatar>
@@ -127,7 +123,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
                 <div className="space-y-1">
                   {grupo.soft.map((v, i) => (
                     <div key={i} className="flex items-start gap-2 text-xs">
-                      <AlertTriangle className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <AlertTriangle className="mt-0.5 size-3 shrink-0 text-warning" />
                       <p className="text-muted-foreground">
                         {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
                         {v.data && ` (${formatarData(v.data)})`}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -28,6 +28,8 @@ import {
   Pencil,
   UserMinus,
   Briefcase,
+  Square,
+  Terminal,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -79,6 +81,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/componentes/PageHeader'
 import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
@@ -98,7 +101,7 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { funcoesService } from '@/servicos/funcoes'
 import { excecoesService } from '@/servicos/excecoes'
 import { useApiData } from '@/hooks/useApiData'
-import { formatarData, mapError } from '@/lib/formatadores'
+import { formatarData, formatarDataHora, mapError } from '@/lib/formatadores'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
@@ -106,8 +109,9 @@ import { getPresetLabel, resolvePresetRange, type EscalaPeriodoPreset } from '@/
 import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
 import { exportarService } from '@/servicos/exportar'
-import type {
-  DiaSemana,
+import {
+  DIAS_SEMANA,
+  type DiaSemana,
   Empresa,
   Setor,
   Demanda,
@@ -275,6 +279,9 @@ export function SetorDetalhe() {
   const [escalaTab, setEscalaTab] = useState<'simulacao' | 'oficial' | 'historico'>('simulacao')
   const [periodoPreset, setPeriodoPreset] = useState<EscalaPeriodoPreset>('3_MESES')
   const [gerando, setGerando] = useState(false)
+  const [solverLogs, setSolverLogs] = useState<string[]>([])
+  const [solverElapsed, setSolverElapsed] = useState(0)
+  const solverScrollRef = useRef<HTMLDivElement>(null)
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [oficialCompleta, setOficialCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [historicoCompleta, setHistoricoCompleta] = useState<EscalaCompletaV3 | null>(null)
@@ -284,7 +291,6 @@ export function SetorDetalhe() {
   const [descartando, setDescartando] = useState(false)
   const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
   const [solveModeGeracao, setSolveModeGeracao] = useState<'rapido' | 'balanceado' | 'otimizado' | 'maximo'>('rapido')
-  const [maxTimeGeracao, setMaxTimeGeracao] = useState(90)
   const [exportOpen, setExportOpen] = useState(false)
   const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
     ciclo: true,
@@ -305,6 +311,32 @@ export function SetorDetalhe() {
     min_pessoas: 1,
     override: false,
   })
+
+  // ─── Solver logs listener ───────────────────────────────────────────
+  useEffect(() => {
+    if (!gerando) return
+    const dispose = escalasService.onSolverLog((line: string) => {
+      setSolverLogs((prev) => [...prev, line])
+    })
+    return () => { dispose() }
+  }, [gerando])
+
+  // Auto-scroll solver logs
+  useEffect(() => {
+    if (solverLogs.length === 0) return
+    const viewport = solverScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    if (viewport) {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+    }
+  }, [solverLogs])
+
+  // Timer while solver is running
+  useEffect(() => {
+    if (!gerando) return
+    setSolverElapsed(0)
+    const interval = setInterval(() => setSolverElapsed((s) => s + 1), 1000)
+    return () => clearInterval(interval)
+  }, [gerando])
 
   // ─── Computed maps ───────────────────────────────────────────────────
   const funcaoMap = useMemo(() => {
@@ -700,8 +732,6 @@ export function SetorDetalhe() {
       return
     }
 
-    const maxTimeSeconds = Math.max(30, Math.min(300, Math.round(maxTimeGeracao || 90)))
-
     // Preflight silencioso
     try {
       const preflight = await escalasService.preflight(setorId, { data_inicio: dataInicio, data_fim: dataFim })
@@ -715,18 +745,21 @@ export function SetorDetalhe() {
       return
     }
 
+    setSolverLogs([])
     setGerando(true)
     try {
       const result = await escalasService.gerar(setorId, {
         data_inicio: dataInicio,
         data_fim: dataFim,
         solveMode: solveModeGeracao,
-        maxTimeSeconds: (solveModeGeracao === 'otimizado' || solveModeGeracao === 'maximo') ? maxTimeSeconds : undefined,
       })
       setEscalaCompleta(result)
       toast.success('Escala gerada')
     } catch (err) {
-      toast.error(mapError(err) || 'Nao foi possivel gerar a escala.')
+      const msg = mapError(err) || 'Nao foi possivel gerar a escala.'
+      if (!msg.includes('cancelado') && !msg.includes('SIGTERM') && !msg.includes('killed')) {
+        toast.error(msg)
+      }
     } finally {
       setGerando(false)
     }
@@ -765,22 +798,6 @@ export function SetorDetalhe() {
       setDescartando(false)
     }
   }
-
-  const handleFolgaChange = useCallback(async (
-    colaboradorId: number,
-    field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana',
-    value: DiaSemana | null,
-  ) => {
-    try {
-      await colaboradoresService.salvarRegraHorario({
-        colaborador_id: colaboradorId,
-        [field]: value,
-      })
-      await reloadRegrasPadrao()
-    } catch (err) {
-      toast.error(mapError(err) || 'Erro ao salvar folga')
-    }
-  }, [reloadRegrasPadrao])
 
   const resolveExportColaboradores = useCallback(() => {
     if (orderedColabs.length > 0) return orderedColabs
@@ -828,6 +845,7 @@ export function SetorDetalhe() {
           tiposContrato={tiposContrato ?? []}
           funcoes={funcoes ?? []}
           horariosSemana={horariosSemana ?? []}
+          regrasPadrao={regrasPadrao ?? []}
           modo={modo}
           incluirAvisos={conteudo.avisos}
           incluirCiclo={conteudo.ciclo}
@@ -991,6 +1009,7 @@ export function SetorDetalhe() {
             tiposContrato={tiposContrato ?? []}
             funcoes={funcoes ?? []}
             horariosSemana={horariosSemana ?? []}
+            regrasPadrao={regrasPadrao ?? []}
             modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
             incluirAvisos={conteudoExport.avisos}
             incluirCiclo={conteudoExport.ciclo}
@@ -1263,7 +1282,7 @@ export function SetorDetalhe() {
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         Postos
-                        <span className="ml-2 text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">(arraste ⠿ para reordenar)</span>
+                        <span className="ml-2 text-xs font-normal normal-case tracking-normal text-muted-foreground/70">(arraste ⠿ para reordenar)</span>
                       </p>
                       <DndContext
                         sensors={postoSortSensors}
@@ -1308,14 +1327,64 @@ export function SetorDetalhe() {
                                     )}
                                   </TableCell>
                                   <TableCell className="text-center">
-                                    <Badge variant="outline" className={cn('text-[10px]', !regra?.folga_variavel_dia_semana && 'text-muted-foreground')}>
-                                      {regra?.folga_variavel_dia_semana ?? '-'}
-                                    </Badge>
+                                    {ocupante ? (
+                                      <Select
+                                        value={regra?.folga_variavel_dia_semana ?? '__none__'}
+                                        onValueChange={async (val) => {
+                                          try {
+                                            await colaboradoresService.salvarRegraHorario({
+                                              colaborador_id: ocupante.id,
+                                              folga_variavel_dia_semana: val === '__none__' ? null : (val as DiaSemana),
+                                            })
+                                            await reloadRegrasPadrao()
+                                          } catch (err) {
+                                            toast.error(mapError(err) || 'Erro ao salvar folga')
+                                          }
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                          {DIAS_SEMANA.filter((d) => d !== 'DOM').map((dia) => (
+                                            <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">-</span>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-center">
-                                    <Badge variant="outline" className={cn('text-[10px]', !regra?.folga_fixa_dia_semana && 'text-muted-foreground')}>
-                                      {regra?.folga_fixa_dia_semana ?? '-'}
-                                    </Badge>
+                                    {ocupante ? (
+                                      <Select
+                                        value={regra?.folga_fixa_dia_semana ?? '__none__'}
+                                        onValueChange={async (val) => {
+                                          try {
+                                            await colaboradoresService.salvarRegraHorario({
+                                              colaborador_id: ocupante.id,
+                                              folga_fixa_dia_semana: val === '__none__' ? null : (val as DiaSemana),
+                                            })
+                                            await reloadRegrasPadrao()
+                                          } catch (err) {
+                                            toast.error(mapError(err) || 'Erro ao salvar folga')
+                                          }
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                          {DIAS_SEMANA.map((dia) => (
+                                            <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">-</span>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-xs text-muted-foreground">{contratoNome}</TableCell>
                                   <TableCell className="text-xs text-muted-foreground">
@@ -1325,9 +1394,9 @@ export function SetorDetalhe() {
                                     {ocupante ? (
                                       <Badge variant="outline" className={cn(
                                         'text-xs',
-                                        status === 'Ativo' && 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400',
-                                        status === 'Ferias' && 'border-amber-500/40 text-amber-600 dark:text-amber-400',
-                                        status === 'Atestado' && 'border-red-500/40 text-red-600 dark:text-red-400',
+                                        status === 'Ativo' && 'border-success/40 text-success',
+                                        status === 'Ferias' && 'border-warning/40 text-warning',
+                                        status === 'Atestado' && 'border-destructive/40 text-destructive',
                                         status === 'Bloqueio' && 'border-muted-foreground/40 text-muted-foreground',
                                       )}>
                                         {status}
@@ -1385,17 +1454,17 @@ export function SetorDetalhe() {
                                                 >
                                                   <div className="min-w-0">
                                                     <p className="truncate text-xs font-medium text-foreground">{candidato.nome}</p>
-                                                    <p className="truncate text-[11px] text-muted-foreground">
+                                                    <p className="truncate text-xs text-muted-foreground">
                                                       {getDescricaoBuscaColaborador(candidato)}
                                                     </p>
                                                   </div>
                                                   {candidato.funcao_id != null ? (
-                                                    <Badge variant="outline" className="text-[10px]">
+                                                    <Badge variant="outline" className="text-xs">
                                                       <Briefcase className="mr-1 size-3" />
                                                       {funcaoMap.get(candidato.funcao_id) ?? 'Posto'}
                                                     </Badge>
                                                   ) : (
-                                                    <Badge variant="secondary" className="text-[10px]">
+                                                    <Badge variant="secondary" className="text-xs">
                                                       <Users className="mr-1 size-3" />
                                                       Reserva
                                                     </Badge>
@@ -1520,18 +1589,6 @@ export function SetorDetalhe() {
                               </SelectContent>
                             </Select>
                           </div>
-                          {(solveModeGeracao === 'otimizado' || solveModeGeracao === 'maximo') && (
-                            <div className="space-y-1">
-                              <Label className="text-xs">Tempo maximo (segundos)</Label>
-                              <Input
-                                type="number"
-                                min={30}
-                                max={300}
-                                value={maxTimeGeracao}
-                                onChange={(e) => setMaxTimeGeracao(parseInt(e.target.value || '90', 10))}
-                              />
-                            </div>
-                          )}
                         </PopoverContent>
                       </Popover>
 
@@ -1557,9 +1614,16 @@ export function SetorDetalhe() {
                         </>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Janela calculada: {formatarData(periodoGeracao.data_inicio)} — {formatarData(periodoGeracao.data_fim)}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>
+                        Janela calculada: {formatarData(periodoGeracao.data_inicio)} — {formatarData(periodoGeracao.data_fim)}
+                      </span>
+                      {escalaCompleta?.escala?.criada_em && (
+                        <Badge variant="secondary" className="font-normal text-muted-foreground">
+                          Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
 
                   {escalaCompleta ? (
@@ -1569,7 +1633,7 @@ export function SetorDetalhe() {
                           <p className="text-sm font-semibold">Ciclo Rotativo</p>
                           <StatusBadge status="RASCUNHO" />
                           <Badge variant="outline" className={cn(
-                            escalaCompleta.violacoes.length > 0 ? 'border-amber-200 text-amber-700' : 'border-emerald-200 text-emerald-700',
+                            escalaCompleta.violacoes.length > 0 ? 'border-warning/20 text-warning' : 'border-success/20 text-success',
                           )}>
                             {escalaCompleta.violacoes.length > 0 ? `${escalaCompleta.violacoes.length} aviso(s)` : 'Sem avisos relevantes'}
                           </Badge>
@@ -1593,7 +1657,6 @@ export function SetorDetalhe() {
                         colaboradores={orderedColabs}
                         funcoes={postosOrdenados}
                         regrasPadrao={regrasPadrao ?? []}
-                        onFolgaChange={handleFolgaChange}
                       />
                     </div>
                   ) : (
@@ -1647,7 +1710,6 @@ export function SetorDetalhe() {
                         colaboradores={orderedColabs}
                         funcoes={postosOrdenados}
                         regrasPadrao={regrasPadrao ?? []}
-                        onFolgaChange={handleFolgaChange}
                       />
                     </div>
                   ) : null}
@@ -1678,7 +1740,7 @@ export function SetorDetalhe() {
                           >
                             <div className="text-left">
                               <p className="text-xs font-medium">{formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)}</p>
-                              <p className="text-[10px] uppercase text-muted-foreground">{escala.status}</p>
+                              <p className="text-xs uppercase text-muted-foreground">{escala.status}</p>
                             </div>
                           </Button>
                         ))}
@@ -1716,7 +1778,6 @@ export function SetorDetalhe() {
                             colaboradores={orderedColabs}
                             funcoes={postosOrdenados}
                             regrasPadrao={regrasPadrao ?? []}
-                            onFolgaChange={handleFolgaChange}
                           />
                         </div>
                       ) : null}
@@ -1730,18 +1791,52 @@ export function SetorDetalhe() {
 
         {/* Excecoes de Demanda por Data — oculto (IA configura via tool) */}
 
-        {/* Loading overlay durante geracao */}
+        {/* Solver progress overlay */}
         {gerando && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm animate-in fade-in-0 duration-200">
-            <Card className="w-full max-w-sm border-2 shadow-lg">
-              <CardContent className="flex flex-col items-center justify-center gap-4 py-10">
-                <Loader2 className="size-10 animate-spin text-primary" />
-                <p className="text-center text-sm font-medium text-foreground">
-                  Gerando escala para {setor?.nome ?? 'setor'}...
-                </p>
-                <p className="text-center text-xs text-muted-foreground">
-                  O motor esta calculando. Aguarde.
-                </p>
+            <Card className="w-full max-w-md border-2 shadow-lg">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="size-4 text-primary" />
+                    <CardTitle className="text-sm">Motor — {setor?.nome ?? 'setor'}</CardTitle>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {Math.floor(solverElapsed / 60).toString().padStart(2, '0')}:{(solverElapsed % 60).toString().padStart(2, '0')}
+                    </span>
+                    <Loader2 className="size-3.5 animate-spin text-primary" />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 pt-0">
+                <ScrollArea ref={solverScrollRef} className="h-48 rounded-md border bg-zinc-950 p-3">
+                  <div className="flex flex-col gap-0.5 font-mono text-xs">
+                    {solverLogs.length === 0 ? (
+                      <span className="text-zinc-500">Iniciando motor...</span>
+                    ) : (
+                      solverLogs.map((line, i) => (
+                        <span key={i} className="text-emerald-400 leading-relaxed">
+                          <span className="text-zinc-600 select-none">{'>'} </span>
+                          {line}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="w-full gap-1.5"
+                  onClick={async () => {
+                    await escalasService.cancelar()
+                    toast('Geracao cancelada')
+                    setGerando(false)
+                  }}
+                >
+                  <Square className="size-3" />
+                  Cancelar
+                </Button>
               </CardContent>
             </Card>
           </div>

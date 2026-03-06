@@ -96,19 +96,19 @@ function SituacaoBadge({ tipo }: { tipo: string }) {
   switch (tipo) {
     case 'FERIAS':
       return (
-        <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400">
+        <Badge variant="outline" className="gap-1 border-success/20 bg-success/10 text-success">
           <Palmtree className="size-3" /> Ferias
         </Badge>
       )
     case 'ATESTADO':
       return (
-        <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+        <Badge variant="outline" className="gap-1 border-destructive/20 bg-destructive/10 text-destructive">
           <Stethoscope className="size-3" /> Atestado
         </Badge>
       )
     case 'BLOQUEIO':
       return (
-        <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+        <Badge variant="outline" className="gap-1 border-warning/20 bg-warning/10 text-warning">
           <Ban className="size-3" /> Bloqueado
         </Badge>
       )
@@ -354,7 +354,7 @@ export function ColaboradorLista() {
                 <Filter className="mr-1.5 size-3.5" />
                 Filtros
                 {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5 text-[10px] font-semibold">
+                  <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5 text-xs font-semibold">
                     {activeFilterCount}
                   </Badge>
                 )}
@@ -448,8 +448,8 @@ export function ColaboradorLista() {
         </div>
 
         {showArchived && (
-          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30 p-3">
-            <p className="text-sm text-amber-800 dark:text-amber-300">
+          <div className="rounded-lg border border-warning/20 bg-warning/5 p-3">
+            <p className="text-sm text-warning">
               Exibindo colaboradores arquivados. Clique em &quot;Restaurar&quot; para reativar.
             </p>
           </div>
@@ -497,7 +497,7 @@ export function ColaboradorLista() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="whitespace-nowrap text-[10px]">
+                        <Badge variant="outline" className="whitespace-nowrap text-xs">
                           {contratoMap.get(colab.tipo_contrato_id) ?? '—'}
                         </Badge>
                       </TableCell>
@@ -560,19 +560,19 @@ export function ColaboradorLista() {
                           <h3 className="truncate text-sm font-semibold text-foreground">{colab.nome}</h3>
                           <p className="text-xs text-muted-foreground">{colab.sexo === 'M' ? 'Masculino' : 'Feminino'} · {colab.prefere_turno ? (colab.prefere_turno === 'MANHA' ? 'Manha' : 'Tarde') : 'Sem pref.'}</p>
                         </div>
-                        <Badge className="shrink-0 whitespace-nowrap text-[10px]">
+                        <Badge className="shrink-0 whitespace-nowrap text-xs">
                           {setor?.nome ?? '—'}
                         </Badge>
                       </div>
                       {/* Meta: Contrato + Situacao */}
                       <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="whitespace-nowrap text-[10px]">
+                        <Badge variant="outline" className="whitespace-nowrap text-xs">
                           {contratoMap.get(colab.tipo_contrato_id) ?? '—'}
                         </Badge>
                         {excTipo ? (
                           <SituacaoBadge tipo={excTipo} />
                         ) : (
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground">Disponivel</Badge>
+                          <Badge variant="outline" className="text-xs text-muted-foreground">Disponivel</Badge>
                         )}
                       </div>
                       {/* Footer: Acao */}

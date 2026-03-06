@@ -18,7 +18,7 @@ function getStatusClasses(status: string, dayOfWeek: number): string {
     return CORES_ALOCACAO.TRABALHO_DOMINGO + ' hover:bg-sky-200 dark:hover:bg-sky-900/40'
   }
   if (status === 'TRABALHO') {
-    return CORES_ALOCACAO.TRABALHO + ' hover:bg-emerald-100 dark:hover:bg-emerald-900/40'
+    return CORES_ALOCACAO.TRABALHO + ' hover:bg-success/20'
   }
   if (status === 'FOLGA') {
     return CORES_ALOCACAO.FOLGA + ' hover:bg-muted'
@@ -224,7 +224,7 @@ export function EscalaGrid({
                     )}
                   >
                     <div>{DIAS_SEMANA_CURTO[dow]}</div>
-                    <div className="text-[10px] font-normal text-muted-foreground">
+                    <div className="text-xs font-normal text-muted-foreground">
                       {String(date.getDate()).padStart(2, '0')}/
                       {String(date.getMonth() + 1).padStart(2, '0')}
                     </div>
@@ -252,7 +252,7 @@ export function EscalaGrid({
                     <div className="flex items-center gap-2">
                       <div
                         className={cn(
-                          'flex size-7 items-center justify-center rounded-full text-[10px] font-semibold',
+                          'flex size-7 items-center justify-center rounded-full text-xs font-semibold',
                           colab.sexo === 'F'
                             ? CORES_GENERO.F
                             : CORES_GENERO.M,
@@ -270,7 +270,7 @@ export function EscalaGrid({
                           )}
                           {colab.nome.split(' ').slice(0, 2).join(' ')}
                         </div>
-                        <div className="text-[10px] text-muted-foreground">
+                        <div className="text-xs text-muted-foreground">
                           {colab.funcao_id != null && funcaoMap.get(colab.funcao_id)
                             ? funcaoMap.get(colab.funcao_id!)!.apelido
                             : contratoMap.get(colab.tipo_contrato_id) ?? `Contrato #${colab.tipo_contrato_id}`}
@@ -293,7 +293,7 @@ export function EscalaGrid({
                           <TooltipTrigger asChild>
                             <button
                               className={cn(
-                                'flex w-full flex-col items-center justify-center rounded-md border px-1 py-1.5 text-[10px] transition-all',
+                                'flex w-full flex-col items-center justify-center rounded-md border px-1 py-1.5 text-xs transition-all',
                                 getStatusClasses(status, dow),
                                 !readOnly && status !== 'INDISPONIVEL' && 'cursor-pointer',
                                 (readOnly || status === 'INDISPONIVEL') && 'cursor-default',
@@ -320,7 +320,7 @@ export function EscalaGrid({
                                   </span>
                                 </>
                               ) : status === 'FOLGA' ? (
-                                <span className={cn('text-[10px] font-medium', (() => {
+                                <span className={cn('text-xs font-medium', (() => {
                                   const regra = regrasMap?.get(colab.id)
                                   return regra?.folga_variavel_dia_semana === DIAS_SEMANA_CURTO[dow] ? 'opacity-60' : ''
                                 })())}>
@@ -333,7 +333,7 @@ export function EscalaGrid({
                                   })()}
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-medium">
+                                <span className="text-xs font-medium">
                                   AUS.
                                 </span>
                               )}
@@ -370,13 +370,13 @@ export function EscalaGrid({
                       className={cn(
                         'text-xs font-semibold',
                         hoursOk
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-amber-600 dark:text-amber-400',
+                          ? 'text-success'
+                          : 'text-warning',
                       )}
                     >
                       {weeklyHours}h
                     </span>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       /{meta}h
                     </span>
                   </td>
@@ -402,8 +402,8 @@ export function EscalaGrid({
                         className={cn(
                           'text-xs font-semibold',
                           ok
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-amber-600 dark:text-amber-400',
+                            ? 'text-success'
+                            : 'text-warning',
                         )}
                       >
                         {cov.atual}/{cov.necessario}
@@ -419,9 +419,9 @@ export function EscalaGrid({
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 text-[10px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <div className="size-3 rounded border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30" />
+          <div className="size-3 rounded border border-success/20 bg-success/10" />
           TRABALHO
         </div>
         <div className="flex items-center gap-1.5">
@@ -445,14 +445,14 @@ export function EscalaGrid({
           </>
         )}
         <div className="flex items-center gap-1.5">
-          <div className="size-3 rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30" />
+          <div className="size-3 rounded border border-warning/20 bg-warning/10" />
           INDISPONIVEL
         </div>
       </div>
 
       {/* Legenda de funcoes/postos */}
       {funcoes && funcoes.filter(f => f.ativo && f.cor_hex).length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span className="font-medium text-foreground/70">Postos:</span>
           {funcoes.filter(f => f.ativo && f.cor_hex).map(f => (
             <div key={f.id} className="flex items-center gap-1">

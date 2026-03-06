@@ -54,7 +54,7 @@ export function ResumoFolgas({ colaboradores, alocacoes, regrasMap }: ResumoFolg
           const nome = c.nome.split(' ').slice(0, 2).join(' ')
           const domTrab = domingosTrabalhados.get(c.id) ?? 0
           return (
-            <span key={c.id} className="text-[11px] text-muted-foreground whitespace-nowrap">
+            <span key={c.id} className="text-xs text-muted-foreground whitespace-nowrap">
               {nome}
               {r.folga_fixa_dia_semana && (
                 <span className="ml-1 font-semibold text-foreground">[F] {r.folga_fixa_dia_semana}</span>

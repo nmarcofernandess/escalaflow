@@ -3,14 +3,14 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
 export function PontuacaoBadge({ pontuacao }: { pontuacao: number }) {
-  let color = 'border-emerald-200 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300'
+  let color = 'border-success/20 bg-success/10 text-success'
   let icon = <CheckCircle2 className="size-3.5" />
 
   if (pontuacao < 70) {
-    color = 'border-red-200 dark:border-red-800 bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-300'
+    color = 'border-destructive/20 bg-destructive/10 text-destructive'
     icon = <XCircle className="size-3.5" />
   } else if (pontuacao < 85) {
-    color = 'border-amber-200 dark:border-amber-800 bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300'
+    color = 'border-warning/20 bg-warning/10 text-warning'
     icon = <AlertTriangle className="size-3.5" />
   }
 

@@ -12,7 +12,7 @@ export function MetricItem({ icon: Icon, value, label }: MetricItemProps) {
       <Icon className="size-3.5 text-muted-foreground" />
       <div>
         <p className="text-xs font-medium text-foreground">{value}</p>
-        <p className="text-[10px] text-muted-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
       </div>
     </div>
   )

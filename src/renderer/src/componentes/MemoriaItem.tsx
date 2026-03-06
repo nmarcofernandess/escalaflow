@@ -118,7 +118,7 @@ export function MemoriaItem({ memoria, onSalvar, onRemover }: MemoriaItemProps) 
           <div className="flex items-center gap-1.5">
             <p className="text-sm">{memoria.conteudo}</p>
             {memoria.origem === 'auto' && (
-              <Badge variant="outline" className="shrink-0 gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground">
+              <Badge variant="outline" className="shrink-0 gap-0.5 px-1.5 py-0 text-xs text-muted-foreground">
                 <Sparkles className="size-2.5" />
                 Auto
               </Badge>

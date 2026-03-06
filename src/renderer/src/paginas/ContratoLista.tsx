@@ -335,7 +335,7 @@ export function ContratoLista() {
                       <div className="flex items-center gap-2">
                         <span>{tc.nome}</span>
                         {tc.protegido_sistema && (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                          <span className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
                             <Lock className="size-3" />
                             Sistema
                           </span>
@@ -402,7 +402,7 @@ export function ContratoLista() {
                         <div className="space-y-1">
                           <h3 className="text-sm font-semibold text-foreground">{tc.nome}</h3>
                           {tc.protegido_sistema && (
-                            <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                            <span className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
                               <Lock className="size-3" />
                               Contrato de sistema
                             </span>

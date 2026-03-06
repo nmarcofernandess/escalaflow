@@ -34,7 +34,7 @@ export function IaAnexoPreviewStrip({ anexos, onRemover }: Props) {
             </div>
           )}
           <div className="flex flex-col min-w-0 max-w-[100px]">
-            <span className="text-[10px] font-medium truncate">{a.nome}</span>
+            <span className="text-xs font-medium truncate">{a.nome}</span>
             <span className="text-[9px] text-muted-foreground">{formatSize(a.tamanho_bytes)}</span>
           </div>
           <button

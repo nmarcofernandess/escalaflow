@@ -327,7 +327,7 @@ export function DemandaTimelineSingleLane({
                   >
                     <p className="font-medium">{s.hora_inicio}-{s.hora_fim}</p>
                     <p>{s.min_pessoas} pessoas</p>
-                    {s.override && <Badge variant="secondary" className="mt-1 text-[10px]">override</Badge>}
+                    {s.override && <Badge variant="secondary" className="mt-1 text-xs">override</Badge>}
                   </button>
                 )
               })}

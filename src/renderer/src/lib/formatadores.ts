@@ -8,6 +8,24 @@ export function formatarData(iso: string): string {
 }
 
 /**
+ * Formata ISO datetime para "dd/mm/yyyy às HH:mm"
+ * Ex: "2026-03-06T18:44:53.000Z" -> "06/03/2026 às 15:44"
+ */
+export function formatarDataHora(iso: string): string {
+  try {
+    const d = new Date(iso)
+    const dia = d.getDate().toString().padStart(2, '0')
+    const mes = (d.getMonth() + 1).toString().padStart(2, '0')
+    const ano = d.getFullYear()
+    const h = d.getHours().toString().padStart(2, '0')
+    const min = d.getMinutes().toString().padStart(2, '0')
+    return `${dia}/${mes}/${ano} às ${h}:${min}`
+  } catch {
+    return iso
+  }
+}
+
+/**
  * Formata minutos totais para "Xh00" ou "XhMM"
  * Ex: 450 -> "7h30", 480 -> "8h00"
  */
@@ -131,3 +149,10 @@ export function minutesToTime(min: number): string {
   const m = min % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
+
+// ─── Textos da aba Resumo (user-friendly) — re-exportados de @shared para uso na UI ───
+export {
+  textoResumoCobertura,
+  textoResumoViolacoesHard,
+  textoResumoViolacoesSoft,
+} from '@shared/index'

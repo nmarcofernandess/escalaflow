@@ -117,7 +117,7 @@ export function Dashboard() {
                           </Badge>
                         )}
                         {setor.escala_desatualizada && (
-                          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                          <Badge variant="outline" className="border-warning/20 bg-warning/10 text-warning">
                             <RefreshCw className="mr-1 size-3" /> Desatualizada
                           </Badge>
                         )}
@@ -146,7 +146,7 @@ export function Dashboard() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <AlertTriangle className="size-4 text-amber-500" />
+                  <AlertTriangle className="size-4 text-warning" />
                   Alertas
                 </CardTitle>
               </CardHeader>
@@ -159,11 +159,11 @@ export function Dashboard() {
                   dados.alertas.map((alerta, i) => {
                     const isHard = alerta.tipo === 'VIOLACAO_HARD'
                     const borderCls = isHard
-                      ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/30'
-                      : 'border-amber-100 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30'
-                    const iconCls = isHard ? 'text-red-500' : 'text-amber-500'
-                    const titleCls = isHard ? 'text-red-800 dark:text-red-300' : 'text-amber-800 dark:text-amber-300'
-                    const textCls = isHard ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'
+                      ? 'border-destructive/20 bg-destructive/5'
+                      : 'border-warning/20 bg-warning/5'
+                    const iconCls = isHard ? 'text-destructive' : 'text-warning'
+                    const titleCls = isHard ? 'text-destructive' : 'text-warning'
+                    const textCls = isHard ? 'text-destructive' : 'text-warning'
                     return (
                       <div
                         key={i}

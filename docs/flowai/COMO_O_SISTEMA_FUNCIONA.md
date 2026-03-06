@@ -66,7 +66,7 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 | **EmpresaHorarioSemana** | `empresa_horario_semana` | `dia_semana`, `ativo`, `hora_abertura`, `hora_fechamento` | Horario de funcionamento da empresa por dia da semana. Fallback global quando setor nao tem horario proprio. UNIQUE(dia_semana). Seed: SEG-SEX 08-22, SAB 08-20, DOM 08-14. |
 | **SetorHorarioSemana** | `setor_horario_semana` | `setor_id`, `dia_semana`, `ativo`, `usa_padrao`, `hora_abertura`, `hora_fechamento` | Override do horario da empresa para um setor especifico. `usa_padrao=1` herda da empresa. UNIQUE(setor_id, dia_semana). |
 | **PerfilHorarioContrato** | `contrato_perfis_horario` | `tipo_contrato_id`, `nome`, `inicio`, `fim`, `preferencia_turno_soft` | Horario de entrada/saida por tipo de contrato. Seed: 3 perfis de estagiario (Manha 08-12, Tarde 13:30-20, Noite-Estudo 08-14). CLT nao tem perfil (usa janela do setor). |
-| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id` (UNIQUE), `perfil_horario_id`, `inicio`, `fim`, `domingo_ciclo_trabalho/folga`, `folga_fixa_dia_semana` | Regra individual 1:1. Override dos campos do perfil. Ciclo domingo default: 2 trabalho / 1 folga. Folga fixa = dia da semana que SEMPRE folga. |
+| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id` (UNIQUE), `perfil_horario_id`, `inicio`, `fim`, `domingo_ciclo_trabalho/folga`, `folga_fixa_dia_semana`, `folga_variavel_dia_semana` | Regra individual 1:1. Override dos campos do perfil. Ciclo domingo default: 2 trabalho / 1 folga. Folga fixa = dia que SEMPRE folga. Folga variavel = segundo dia de folga (SEG-SAB). **Fonte de verdade: regra do colaborador.** Editavel na aba Equipe do setor (save imediato). Na vista de escala e somente leitura. Ao oficializar, colaboradores sem F/V definido tem esses valores inferidos a partir da escala e gravados automaticamente. |
 | **ExcecaoDataColaborador** | `colaborador_regra_horario_excecao_data` | `colaborador_id`, `data`, `inicio`, `fim`, `domingo_forcar_folga` | Override pontual por data. Ex: "dia 15/03, Cleunice so pode 08-12". Maior precedencia na hierarquia. UNIQUE(colaborador_id, data). |
 | **DemandaExcecaoData** | `demandas_excecao_data` | `setor_id`, `data`, `hora_inicio`, `hora_fim`, `min_pessoas`, `override` | Override de demanda por data especifica (Black Friday, vespera de feriado). Substitui a demanda semanal padrao naquele dia. |
 
@@ -682,6 +682,7 @@ Campos incluidos no hash: setor_id, datas, empresa, colaboradores (ordenados por
 
 **Para oficializar:**
 - Tool `oficializar_escala` valida `violacoes_hard = 0` antes de permitir
+- Pos-oficializacao: infere e grava folga fixa/variavel em colaboradores que nao tinham F/V definido (baseado nos padroes da escala gerada). Gerar e salvar rascunho NAO alteram o colaborador.
 
 **Gaps:**
 - IA nao consegue ver detalhes de constraints especificas (ex: quais slots tem deficit)
@@ -948,7 +949,8 @@ nivel 4: sem regra                               (janela do setor/empresa inteir
 | `preferencia_turno_soft` | TEXT | MANHA, TARDE ou null |
 | `domingo_ciclo_trabalho` | INT | Domingos consecutivos de TRABALHO no ciclo (default 2) |
 | `domingo_ciclo_folga` | INT | Domingos consecutivos de FOLGA no ciclo (default 1) |
-| `folga_fixa_dia_semana` | TEXT | Dia que SEMPRE folga (SEG, TER... ou null) |
+| `folga_fixa_dia_semana` | TEXT | Dia que SEMPRE folga (SEG, TER... DOM, ou null) |
+| `folga_variavel_dia_semana` | TEXT | Segundo dia de folga semanal (SEG-SAB, sem DOM, ou null). Condicional ao domingo — só se aplica em semanas sem folga dominical. |
 
 #### Tabela `colaborador_regra_horario_excecao_data` (N por colab)
 
@@ -1219,7 +1221,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `escalas.listarPorSetor` | `{setor_id}` | `Escala[]` | Todas as escalas do setor |
 | `escalas.preflight` | `{setor_id, data_inicio, data_fim, regimes_override?}` | `EscalaPreflightResult` | Blockers + warnings ANTES de gerar |
 | `escalas.gerar` | `{setor_id, data_inicio, data_fim, solve_mode?, max_time_seconds?, rules_override?}` | `EscalaCompletaV3` | Fluxo completo: preflight → buildInput → runSolver → persist |
-| `escalas.oficializar` | `{escala_id}` | `EscalaCompletaV3` | Valida violacoes_hard=0, UPDATE status→OFICIAL, arquiva anteriores |
+| `escalas.oficializar` | `{escala_id}` | `EscalaCompletaV3` | Valida violacoes_hard=0, UPDATE status→OFICIAL, arquiva anteriores. **Pos-oficializacao:** infere folga fixa/variavel para colaboradores sem F/V definido e grava na regra do colaborador. |
 | `escalas.ajustar` | `{escala_id, ajustes[]}` | `EscalaCompletaV3` | UPDATE alocacoes + revalida via validarEscalaV3() |
 | `escalas.deletar` | `{escala_id}` | void | DELETE (CASCADE em alocacoes, decisoes, comparacao) |
 | `escalas.detectarCicloRotativo` | `{escala_id}` | `{detectado, ciclo?}` | Analisa padrao ciclico na escala |

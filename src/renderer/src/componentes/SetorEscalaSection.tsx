@@ -183,7 +183,7 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
           <p className="text-sm font-semibold text-foreground truncate">{setor.nome}</p>
           <p className="text-xs text-muted-foreground">
             {formatarData(escalaResumo.data_inicio)} - {formatarData(escalaResumo.data_fim)}
-            <Badge variant="outline" className="ml-2 text-[10px] py-0">
+            <Badge variant="outline" className="ml-2 text-xs py-0">
               {escalaResumo.status}
             </Badge>
           </p>
@@ -193,7 +193,7 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
             <PontuacaoBadge pontuacao={escalaResumo.pontuacao} />
           )}
           {loaded && avisosCount > 0 && (
-            <Badge variant="outline" className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 text-[10px]">
+            <Badge variant="outline" className="border-warning/20 bg-warning/10 text-warning text-xs">
               <AlertTriangle className="mr-0.5 size-3" />
               {avisosCount}
             </Badge>
@@ -453,14 +453,14 @@ function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataI
               <TableCell className="py-2">
                 <div>
                   <p className="text-xs font-medium">{colab.nome}</p>
-                  <p className="text-[10px] text-muted-foreground">{contratoNome}</p>
+                  <p className="text-xs text-muted-foreground">{contratoNome}</p>
                 </div>
               </TableCell>
               <TableCell className="text-xs text-right py-2">{formatarMinutos(real)}</TableCell>
               <TableCell className="text-xs text-right py-2">{formatarMinutos(meta)}</TableCell>
               <TableCell className={cn(
                 'text-xs text-right py-2 font-medium',
-                delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : delta >= -TOLERANCIA_DEFAULT ? 'text-amber-600 dark:text-amber-400' : 'text-destructive',
+                delta >= 0 ? 'text-success' : delta >= -TOLERANCIA_DEFAULT ? 'text-warning' : 'text-destructive',
               )}>
                 {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}
                 {delta < 0 && ' ↓'}
@@ -470,22 +470,22 @@ function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataI
                   <div className="space-y-0.5">
                     {colabV.map((v, i) => (
                       <p key={i} className={cn(
-                        'text-[11px] leading-tight',
-                        v.severidade === 'HARD' ? 'text-destructive font-medium' : 'text-amber-600 dark:text-amber-400',
+                        'text-xs leading-tight',
+                        v.severidade === 'HARD' ? 'text-destructive font-medium' : 'text-warning',
                       )}>
                         {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
                       </p>
                     ))}
                     {!ok && (
-                      <p className="text-[11px] leading-tight text-amber-600 dark:text-amber-400">
+                      <p className="text-xs leading-tight text-warning">
                         Abaixo da meta
                       </p>
                     )}
                   </div>
                 ) : !ok ? (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">Abaixo da meta</p>
+                  <p className="text-xs text-warning">Abaixo da meta</p>
                 ) : (
-                  <span className="text-[11px] text-muted-foreground">—</span>
+                  <span className="text-xs text-muted-foreground">—</span>
                 )}
               </TableCell>
             </TableRow>

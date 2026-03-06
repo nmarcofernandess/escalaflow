@@ -4,6 +4,10 @@ import {
   CalendarDays,
   Loader2,
   Download,
+  XCircle,
+  AlertTriangle,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,8 +25,10 @@ import { PageHeader } from '@/componentes/PageHeader'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
 import { ResumoFolgas } from '@/componentes/ResumoFolgas'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
+import { EscalaTimelineDiaria } from '@/componentes/EscalaTimelineDiaria'
+import { EscalaViewToggle, useEscalaViewMode } from '@/componentes/EscalaViewToggle'
+import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
-import { ViolacoesAgrupadas } from '@/componentes/ViolacoesAgrupadas'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EmptyState } from '@/componentes/EmptyState'
 import { formatarData } from '@/lib/formatadores'
@@ -73,6 +79,17 @@ function ResumoTable({
   dataInicio: string
   dataFim: string
 }) {
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+
+  function toggleExpand(id: number) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   const rows = useMemo(() => {
     const start = new Date(dataInicio + 'T00:00:00')
     const end = new Date(dataFim + 'T00:00:00')
@@ -103,7 +120,9 @@ function ResumoTable({
       const delta = real - metaTotal
       const ok = delta >= -TOLERANCIA_DEFAULT
       const colabViolacoes = violacoesPorColab.get(colab.id) ?? []
-      return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-', violacoes: colabViolacoes }
+      const hard = colabViolacoes.filter((v) => v.severidade === 'HARD')
+      const soft = colabViolacoes.filter((v) => v.severidade !== 'HARD')
+      return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-', hard, soft }
     })
   }, [colaboradores, alocacoes, violacoes, tiposContrato, dataInicio, dataFim])
 
@@ -112,6 +131,7 @@ function ResumoTable({
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-6 text-xs" />
             <TableHead className="text-xs">Colaborador</TableHead>
             <TableHead className="text-xs text-right">Real</TableHead>
             <TableHead className="text-xs text-right">Meta</TableHead>
@@ -120,48 +140,98 @@ function ResumoTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ colab, real, meta, delta, ok, contratoNome, violacoes: colabV }) => (
-            <TableRow key={colab.id}>
-              <TableCell className="py-2">
-                <div>
-                  <p className="text-xs font-medium">{colab.nome}</p>
-                  <p className="text-[10px] text-muted-foreground">{contratoNome}</p>
-                </div>
-              </TableCell>
-              <TableCell className="text-xs text-right py-2">{formatarMinutos(real)}</TableCell>
-              <TableCell className="text-xs text-right py-2">{formatarMinutos(meta)}</TableCell>
-              <TableCell className={cn(
-                'text-xs text-right py-2 font-medium',
-                delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : delta >= -TOLERANCIA_DEFAULT ? 'text-amber-600 dark:text-amber-400' : 'text-destructive',
-              )}>
-                {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}
-                {delta < 0 && ' ↓'}
-              </TableCell>
-              <TableCell className="py-2">
-                {colabV.length > 0 ? (
-                  <div className="space-y-0.5">
-                    {colabV.map((v, i) => (
-                      <p key={i} className={cn(
-                        'text-[11px] leading-tight',
-                        v.severidade === 'HARD' ? 'text-destructive font-medium' : 'text-amber-600 dark:text-amber-400',
-                      )}>
-                        {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
-                      </p>
-                    ))}
-                    {!ok && (
-                      <p className="text-[11px] leading-tight text-amber-600 dark:text-amber-400">
-                        Abaixo da meta
-                      </p>
+          {rows.map(({ colab, real, meta, delta, ok, contratoNome, hard, soft }) => {
+            const hasAvisos = hard.length > 0 || soft.length > 0 || !ok
+            const isExpanded = expandedIds.has(colab.id)
+            return (
+              <>
+                <TableRow
+                  key={colab.id}
+                  className={cn(hasAvisos && 'cursor-pointer hover:bg-muted/50')}
+                  onClick={hasAvisos ? () => toggleExpand(colab.id) : undefined}
+                >
+                  <TableCell className="w-6 py-2 px-2">
+                    {hasAvisos && (
+                      isExpanded
+                        ? <ChevronDown className="size-3.5 text-muted-foreground" />
+                        : <ChevronRight className="size-3.5 text-muted-foreground" />
                     )}
-                  </div>
-                ) : !ok ? (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">Abaixo da meta</p>
-                ) : (
-                  <span className="text-[11px] text-muted-foreground">—</span>
+                  </TableCell>
+                  <TableCell className="py-2">
+                    <div>
+                      <p className="text-xs font-medium">{colab.nome}</p>
+                      <p className="text-xs text-muted-foreground">{contratoNome}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-right py-2">{formatarMinutos(real)}</TableCell>
+                  <TableCell className="text-xs text-right py-2">{formatarMinutos(meta)}</TableCell>
+                  <TableCell className={cn(
+                    'text-xs text-right py-2 font-medium',
+                    delta >= 0 ? 'text-success' : delta >= -TOLERANCIA_DEFAULT ? 'text-warning' : 'text-destructive',
+                  )}>
+                    {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}
+                    {delta < 0 && ' \u2193'}
+                  </TableCell>
+                  <TableCell className="py-2">
+                    {!hasAvisos ? (
+                      <span className="text-xs text-muted-foreground">{'\u2014'}</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {hard.length > 0 && (
+                          <span className="flex items-center gap-0.5 text-xs font-medium text-destructive">
+                            <XCircle className="size-3" />
+                            {hard.length}
+                          </span>
+                        )}
+                        {(soft.length > 0 || !ok) && (
+                          <span className="flex items-center gap-0.5 text-xs font-medium text-warning">
+                            <AlertTriangle className="size-3" />
+                            {soft.length + (!ok ? 1 : 0)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+                {isExpanded && (
+                  <TableRow key={`${colab.id}-detail`} className="bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={6} className="py-3 px-4">
+                      <div className="space-y-2">
+                        {hard.map((v, i) => (
+                          <div key={`h-${i}`} className="flex items-start gap-2 text-xs">
+                            <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+                            <div>
+                              <p className="font-medium text-destructive">
+                                {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
+                              </p>
+                              {v.data && (
+                                <p className="text-muted-foreground">Dia: {formatarData(v.data)}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {soft.map((v, i) => (
+                          <div key={`s-${i}`} className="flex items-start gap-2 text-xs">
+                            <AlertTriangle className="mt-0.5 size-3 shrink-0 text-warning" />
+                            <p className="text-muted-foreground">
+                              {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
+                              {v.data && ` (${formatarData(v.data)})`}
+                            </p>
+                          </div>
+                        ))}
+                        {!ok && (
+                          <div className="flex items-start gap-2 text-xs">
+                            <AlertTriangle className="mt-0.5 size-3 shrink-0 text-warning" />
+                            <p className="text-muted-foreground">Abaixo da meta semanal</p>
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </TableCell>
-            </TableRow>
-          ))}
+              </>
+            )
+          })}
         </TableBody>
       </Table>
     </div>
@@ -213,6 +283,7 @@ export function EscalaPagina() {
     return map
   }, [regrasPadrao])
 
+  const [timelineViewMode, setTimelineViewMode] = useEscalaViewMode()
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [loading, setLoading] = useState(true)
   const [exportOpen, setExportOpen] = useState(false)
@@ -304,7 +375,7 @@ export function EscalaPagina() {
 
   // Export handlers
   function hasConteudoSetorial(conteudo: EscalaExportContent) {
-    return conteudo.ciclo || conteudo.timeline
+    return conteudo.ciclo || conteudo.timeline || conteudo.avisos
   }
 
   function renderExportHTML(conteudo: EscalaExportContent) {
@@ -321,6 +392,7 @@ export function EscalaPagina() {
         tiposContrato={tiposContrato ?? []}
         funcoes={funcoes ?? []}
         horariosSemana={horariosSemana ?? []}
+        regrasPadrao={regrasPadrao ?? []}
         modo={modo}
         incluirAvisos={conteudo.avisos}
         incluirCiclo={conteudo.ciclo}
@@ -335,7 +407,7 @@ export function EscalaPagina() {
     if (!escalaCompleta || !setor || !colaboradores) return
     const payload = renderExportHTML(conteudo)
     if (!payload) {
-      toast.error('Selecione Ciclo e/ou Timeline para imprimir.')
+      toast.error('Selecione Ciclo, Timeline ou Avisos para imprimir.')
       return
     }
     const printWindow = window.open('', '_blank')
@@ -358,7 +430,7 @@ export function EscalaPagina() {
     if (!escalaCompleta || !setor || !colaboradores) return
     const payload = renderExportHTML(conteudo)
     if (!payload) {
-      toast.error('Selecione Ciclo e/ou Timeline para exportar HTML setorial.')
+      toast.error('Selecione Ciclo, Timeline ou Avisos para exportar HTML.')
       return
     }
     const modo: 'ciclo' | 'detalhado' = conteudo.timeline ? 'detalhado' : 'ciclo'
@@ -451,7 +523,7 @@ export function EscalaPagina() {
     const incluirFuncionarios = conteudoExport.funcionarios
 
     if (!incluirSetorial && !incluirFuncionarios) {
-      toast.error('Ative Ciclo, Timeline ou Por funcionario para exportar HTML.')
+      toast.error('Ative Ciclo, Timeline, Avisos ou Por funcionario para exportar HTML.')
       return
     }
 
@@ -474,7 +546,7 @@ export function EscalaPagina() {
       toast.error('Impressao por funcionario em lote nao esta disponivel. Use Baixar HTML.')
       return
     }
-    toast.error('Ative Ciclo e/ou Timeline para imprimir.')
+    toast.error('Ative Ciclo, Timeline ou Avisos para imprimir.')
   }
 
   async function handleExportCSVFromModal() {
@@ -497,6 +569,7 @@ export function EscalaPagina() {
             tiposContrato={tiposContrato ?? []}
             funcoes={funcoes ?? []}
             horariosSemana={horariosSemana ?? []}
+            regrasPadrao={regrasPadrao ?? []}
             modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
             incluirAvisos={conteudoExport.avisos}
             incluirCiclo={conteudoExport.ciclo}
@@ -506,7 +579,7 @@ export function EscalaPagina() {
           <div className="rounded-md border bg-background p-4">
             <p className="text-sm font-medium">Preview setorial desativada</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Ative <strong>Ciclo</strong> e/ou <strong>Timeline</strong> para visualizar aqui.
+              Ative <strong>Ciclo</strong>, <strong>Timeline</strong> ou <strong>Avisos</strong> para visualizar aqui.
             </p>
           </div>
         )}
@@ -603,15 +676,94 @@ export function EscalaPagina() {
             <Tabs defaultValue="escala" className="space-y-4">
               <TabsList>
                 <TabsTrigger value="escala">Escala</TabsTrigger>
-                <TabsTrigger value="avisos" className="gap-1.5">
-                  Avisos
+                <TabsTrigger value="apontamentos" className="gap-1.5">
+                  Apontamentos
                   {violacoesCount > 0 && (
-                    <Badge variant="secondary" className="ml-1 size-5 justify-center rounded-full p-0 text-[10px]">
+                    <Badge variant="secondary" className="ml-1 size-5 justify-center rounded-full p-0 text-xs">
                       {violacoesCount}
                     </Badge>
                   )}
                 </TabsTrigger>
               </TabsList>
+
+              <TabsContent value="apontamentos" className="space-y-4">
+                {(() => {
+                  const ind = escalaCompleta.indicadores
+                  const coberturaEfetiva = ind.cobertura_efetiva_percent ?? ind.cobertura_percent
+                  const temTolerancia = coberturaEfetiva > ind.cobertura_percent
+
+                  const coberturaColor = ind.cobertura_percent >= 95
+                    ? 'text-success'
+                    : ind.cobertura_percent >= 80
+                      ? 'text-warning'
+                      : 'text-destructive'
+
+                  const qualidadeColor = ind.pontuacao >= 85
+                    ? 'text-success'
+                    : ind.pontuacao >= 70
+                      ? 'text-warning'
+                      : 'text-destructive'
+
+                  return (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <Card className="p-4">
+                        <p className={cn('text-2xl font-bold tabular-nums', coberturaColor)}>
+                          {Math.round(ind.cobertura_percent)}%
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">Cobertura</p>
+                        {temTolerancia && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {Math.round(coberturaEfetiva)}% c/ tolerancia
+                          </p>
+                        )}
+                      </Card>
+                      <Card className="p-4">
+                        <p className={cn('text-2xl font-bold tabular-nums', qualidadeColor)}>
+                          {ind.pontuacao}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">Qualidade</p>
+                      </Card>
+                      <Card className="p-4">
+                        <p className={cn(
+                          'text-2xl font-bold tabular-nums',
+                          ind.violacoes_hard === 0 ? 'text-success' : 'text-destructive',
+                        )}>
+                          {ind.violacoes_hard}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">
+                          {ind.violacoes_hard === 1 ? 'Problema' : 'Problemas'}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {ind.violacoes_hard === 0 ? 'Pode oficializar' : 'Impede oficializar'}
+                        </p>
+                      </Card>
+                      <Card className="p-4">
+                        <p className={cn(
+                          'text-2xl font-bold tabular-nums',
+                          ind.violacoes_soft === 0 ? 'text-success' : 'text-warning',
+                        )}>
+                          {ind.violacoes_soft}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">Avisos</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Preferencias e metas
+                        </p>
+                      </Card>
+                    </div>
+                  )
+                })()}
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground mb-2">Por colaborador</h3>
+                  <ResumoTable
+                    colaboradores={colaboradores}
+                    alocacoes={escalaCompleta.alocacoes}
+                    violacoes={escalaCompleta.violacoes}
+                    tiposContrato={tiposContrato ?? []}
+                    dataInicio={escalaCompleta.escala.data_inicio}
+                    dataFim={escalaCompleta.escala.data_fim}
+                  />
+                </div>
+              </TabsContent>
 
               <TabsContent value="escala" className="space-y-4">
                 <Card>
@@ -621,34 +773,27 @@ export function EscalaPagina() {
                       <p className="text-xs text-muted-foreground">Escolha o que aparece em tela (igual ao export).</p>
                     </div>
                   </CardHeader>
-                  <CardContent className="grid gap-3 sm:grid-cols-2">
+                  <CardContent className="grid gap-3 sm:grid-cols-3">
                     <div className="flex items-start justify-between rounded-md border p-3">
                       <div>
                         <p className="text-sm font-medium">Ciclo</p>
-                        <p className="text-[11px] text-muted-foreground">Matriz por posto e semana.</p>
+                        <p className="text-xs text-muted-foreground">Matriz por posto e semana.</p>
                       </div>
                       <Switch checked={conteudoView.ciclo} onCheckedChange={(checked) => toggleConteudoView('ciclo', checked)} />
                     </div>
                     <div className="flex items-start justify-between rounded-md border p-3">
                       <div>
                         <p className="text-sm font-medium">Timeline</p>
-                        <p className="text-[11px] text-muted-foreground">Escala por datas e faixa horaria.</p>
+                        <p className="text-xs text-muted-foreground">Escala por datas e faixa horaria.</p>
                       </div>
                       <Switch checked={conteudoView.timeline} onCheckedChange={(checked) => toggleConteudoView('timeline', checked)} />
                     </div>
                     <div className="flex items-start justify-between rounded-md border p-3">
                       <div>
                         <p className="text-sm font-medium">Por funcionario</p>
-                        <p className="text-[11px] text-muted-foreground">Resumo por pessoa do setor.</p>
+                        <p className="text-xs text-muted-foreground">Resumo por pessoa do setor.</p>
                       </div>
                       <Switch checked={conteudoView.funcionarios} onCheckedChange={(checked) => toggleConteudoView('funcionarios', checked)} />
-                    </div>
-                    <div className="flex items-start justify-between rounded-md border p-3">
-                      <div>
-                        <p className="text-sm font-medium">Avisos</p>
-                        <p className="text-[11px] text-muted-foreground">Bloco de violacoes no mesmo fluxo.</p>
-                      </div>
-                      <Switch checked={conteudoView.avisos} onCheckedChange={(checked) => toggleConteudoView('avisos', checked)} />
                     </div>
                   </CardContent>
                 </Card>
@@ -665,7 +810,7 @@ export function EscalaPagina() {
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between gap-2">
                         <CardTitle className="text-base font-semibold">Ciclo Rotativo</CardTitle>
-                        <Badge variant="outline" className={violacoesCount > 0 ? 'border-amber-200 text-amber-700' : 'border-emerald-200 text-emerald-700'}>
+                        <Badge variant="outline" className={violacoesCount > 0 ? 'border-warning/20 text-warning' : 'border-success/20 text-success'}>
                           {violacoesCount > 0 ? `${violacoesCount} aviso(s)` : 'Sem avisos relevantes'}
                         </Badge>
                       </div>
@@ -685,27 +830,37 @@ export function EscalaPagina() {
                 {conteudoView.timeline && (
                   <Card>
                     <CardHeader className="pb-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <CardTitle className="text-base font-semibold">Escala em Datas</CardTitle>
-                        <Badge variant="outline">Preview completa (export)</Badge>
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-base font-semibold">Timeline Diaria</CardTitle>
+                        <EscalaViewToggle mode={timelineViewMode} onChange={setTimelineViewMode} />
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-3">
-                      <ExportarEscala
-                        escala={escalaCompleta.escala}
-                        alocacoes={escalaCompleta.alocacoes}
-                        colaboradores={colaboradores}
-                        setor={setor}
-                        violacoes={escalaCompleta.violacoes}
-                        tiposContrato={tiposContrato ?? []}
-                        funcoes={funcoes ?? []}
-                        horariosSemana={horariosSemana ?? []}
-                        modo="detalhado"
-                        incluirAvisos={conteudoView.avisos}
-                        incluirCiclo={false}
-                        incluirTimeline
-                        modoRender="view"
-                      />
+                    <CardContent>
+                      {timelineViewMode === 'grid' ? (
+                        <EscalaTimelineDiaria
+                          escala={escalaCompleta.escala}
+                          alocacoes={escalaCompleta.alocacoes}
+                          colaboradores={colaboradores}
+                          setor={setor}
+                          tiposContrato={tiposContrato ?? []}
+                          funcoes={funcoes ?? []}
+                          horariosSemana={horariosSemana ?? []}
+                        />
+                      ) : (
+                        <TimelineGrid
+                          colaboradores={colaboradores}
+                          alocacoes={escalaCompleta.alocacoes}
+                          setor={setor}
+                          dataSelecionada={escalaCompleta.escala.data_inicio}
+                          dataInicio={escalaCompleta.escala.data_inicio}
+                          dataFim={escalaCompleta.escala.data_fim}
+                          demandas={demandas ?? []}
+                          tiposContrato={tiposContrato ?? []}
+                          horariosSemana={horariosSemana ?? []}
+                          regrasMap={regrasMap}
+                          readOnly
+                        />
+                      )}
                     </CardContent>
                   </Card>
                 )}
@@ -752,46 +907,8 @@ export function EscalaPagina() {
                   </Card>
                 )}
 
-                {conteudoView.avisos && !conteudoView.timeline && (
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <CardTitle className="text-base font-semibold">Avisos</CardTitle>
-                        <Badge variant="outline">
-                          {violacoesCount} total
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {escalaCompleta.violacoes.length > 0 ? (
-                        <ViolacoesAgrupadas violacoes={escalaCompleta.violacoes} />
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Sem avisos para esta escala.</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
               </TabsContent>
 
-              <TabsContent value="avisos" className="space-y-4">
-                <ResumoTable
-                  colaboradores={colaboradores}
-                  alocacoes={escalaCompleta.alocacoes}
-                  violacoes={escalaCompleta.violacoes}
-                  tiposContrato={tiposContrato ?? []}
-                  dataInicio={escalaCompleta.escala.data_inicio}
-                  dataFim={escalaCompleta.escala.data_fim}
-                />
-                {escalaCompleta.violacoes.length > 0 ? (
-                  <ViolacoesAgrupadas violacoes={escalaCompleta.violacoes} />
-                ) : (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <p className="text-sm text-muted-foreground">Sem avisos para esta escala.</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </TabsContent>
             </Tabs>
           </>
         ) : (
