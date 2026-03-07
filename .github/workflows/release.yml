@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -51,6 +52,10 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Fix platform-specific rollup binding (Windows)
+        if: runner.os == 'Windows'
+        run: npm install @rollup/rollup-win32-x64-msvc --no-save
 
       - name: Build Electron app
         run: npm run build
