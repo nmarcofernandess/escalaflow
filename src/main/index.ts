@@ -122,7 +122,19 @@ async function bootstrap(): Promise<void> {
         ],
       },
       { label: 'Editar', submenu: [{ role: 'undo' as const }, { role: 'redo' as const }, { type: 'separator' as const }, { role: 'cut' as const }, { role: 'copy' as const }, { role: 'paste' as const }] },
-      { label: 'Janela', submenu: [{ role: 'minimize' as const }, { role: 'zoom' as const }, { role: 'close' as const }] },
+      {
+        label: 'Janela',
+        submenu: [
+          { role: 'minimize' as const },
+          { role: 'zoom' as const },
+          { type: 'separator' as const },
+          { role: 'zoomIn' as const },
+          { role: 'zoomOut' as const },
+          { role: 'resetZoom' as const },
+          { type: 'separator' as const },
+          { role: 'close' as const },
+        ],
+      },
     ]
     Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
 

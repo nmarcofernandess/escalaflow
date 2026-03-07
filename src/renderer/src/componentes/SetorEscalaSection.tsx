@@ -64,7 +64,7 @@ interface SetorEscalaSectionProps {
   onToggleSelection?: () => void
 }
 
-const TOLERANCIA_DEFAULT = 30
+const TOLERANCIA_POR_SEMANA = 15
 
 export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighlight, matchedColabs, onExportFunc, onExport, selectionMode, isSelected, onToggleSelection }: SetorEscalaSectionProps) {
   const [expanded, setExpanded] = useState(true)
@@ -324,7 +324,8 @@ function SectionTabs({
       const real = minutosReais.get(colab.id) ?? 0
       const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
       const delta = real - metaTotal
-      const belowTolerance = delta < -TOLERANCIA_DEFAULT
+      const toleranciaTotal = Math.ceil(semanas) * TOLERANCIA_POR_SEMANA
+      const belowTolerance = delta < -toleranciaTotal
       if (belowTolerance || colabsComViolacao.has(colab.id)) count++
     }
     return count
@@ -424,12 +425,14 @@ function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataI
       }
     }
 
+    const toleranciaTotal = Math.ceil(semanas) * TOLERANCIA_POR_SEMANA
+
     return colaboradores.map((colab) => {
       const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
       const real = minutosReais.get(colab.id) ?? 0
       const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
       const delta = real - metaTotal
-      const ok = delta >= -TOLERANCIA_DEFAULT
+      const ok = delta >= -toleranciaTotal
       const colabViolacoes = violacoesPorColab.get(colab.id) ?? []
       return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-', violacoes: colabViolacoes }
     })
@@ -460,7 +463,7 @@ function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataI
               <TableCell className="text-xs text-right py-2">{formatarMinutos(meta)}</TableCell>
               <TableCell className={cn(
                 'text-xs text-right py-2 font-medium',
-                delta >= 0 ? 'text-success' : delta >= -TOLERANCIA_DEFAULT ? 'text-warning' : 'text-destructive',
+                delta >= 0 ? 'text-success' : ok ? 'text-warning' : 'text-destructive',
               )}>
                 {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}
                 {delta < 0 && ' ↓'}

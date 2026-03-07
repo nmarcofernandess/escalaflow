@@ -3,8 +3,8 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { IaConfiguracao } from '../../shared/types'
 
 export const PROVIDER_DEFAULTS: Record<'gemini' | 'openrouter' | 'local', string> = {
-    gemini: 'gemini-2.5-flash',
-    openrouter: 'anthropic/claude-sonnet-4',
+    gemini: 'gemini-3-flash-preview',
+    openrouter: 'openrouter/free',
     local: 'qwen3.5-9b',
 }
 

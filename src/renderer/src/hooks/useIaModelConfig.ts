@@ -15,6 +15,12 @@ interface IaModelConfig {
   setModelo: (m: string) => Promise<void>
 }
 
+const DEFAULTS: Record<IaProviderId, string> = {
+  gemini: 'gemini-3-flash-preview',
+  openrouter: 'openrouter/free',
+  local: 'qwen3.5-9b',
+}
+
 const MULTIMODAL_PATTERNS = ['claude-3', 'claude-sonnet-4', 'claude-opus-4', 'gpt-4o', 'gpt-4-turbo', 'gemini']
 
 function checkMultimodal(provider: IaProviderId, modelo: string, catalogItem?: IaModelCatalogItem): boolean {
@@ -40,11 +46,9 @@ export function useIaModelConfig(): IaModelConfig {
 
       const p = (config.provider || 'gemini') as IaProviderId
       const providerConfigs = config.provider_configs ?? {}
-      const modeloPorProvider = providerConfigs[p]?.modelo?.trim()
-      const m = modeloPorProvider || config.modelo || ''
+      const modeloSalvo = providerConfigs[p]?.modelo?.trim() || config.modelo || ''
 
       setProviderState(p)
-      setModeloState(m)
       setFullConfig(config)
 
       // Fetch catalog
@@ -55,16 +59,29 @@ export function useIaModelConfig(): IaModelConfig {
 
       let options = catalog.models || []
 
-      // For OpenRouter: filter favorites if available
+      // OpenRouter: default (openrouter/free) sempre presente + favoritos
       if (p === 'openrouter') {
+        const defModel = options.find(o => o.id === DEFAULTS.openrouter)
         const favs = providerConfigs.openrouter?.favoritos as string[] | undefined
         if (favs && favs.length > 0) {
           const favSet = new Set(favs)
-          const favModels = options.filter(o => favSet.has(o.id))
-          if (favModels.length > 0) options = favModels
+          const favModels = options.filter(o => favSet.has(o.id) && o.id !== DEFAULTS.openrouter)
+          options = defModel ? [defModel, ...favModels] : favModels
+        } else {
+          options = defModel ? [defModel] : []
         }
       }
 
+      // Se modelo ativo não está nas opções → auto-switch pro primeiro disponível
+      let m = modeloSalvo
+      const modeloExisteNasOpcoes = options.some(o => o.id === m)
+      if (!modeloExisteNasOpcoes && options.length > 0) {
+        m = options[0].id
+      } else if (!modeloExisteNasOpcoes && options.length === 0) {
+        m = DEFAULTS[p]
+      }
+
+      setModeloState(m)
       setModelOptions(options)
 
       const item = options.find(o => o.id === m)
@@ -89,10 +106,8 @@ export function useIaModelConfig(): IaModelConfig {
     if (!fullConfig) return
     const providerConfigs = fullConfig.provider_configs ?? {}
     const modeloPorProvider = providerConfigs[p]?.modelo?.trim()
-    const defaults: Record<IaProviderId, string> = { gemini: 'gemini-2.5-flash', openrouter: 'anthropic/claude-sonnet-4', local: 'qwen3.5-9b' }
-    const newModelo = modeloPorProvider || defaults[p]
+    const newModelo = modeloPorProvider || DEFAULTS[p]
 
-    // Update provider_configs_json with new provider's modelo
     const updatedConfigs = { ...providerConfigs }
     if (!updatedConfigs[p]) updatedConfigs[p] = {}
     updatedConfigs[p].modelo = newModelo

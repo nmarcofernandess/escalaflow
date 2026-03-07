@@ -2271,8 +2271,8 @@ function parsePrice(raw: unknown): number {
 
 function staticGeminiCatalog(): IaModelCatalogResult {
   const models: IaModelCatalogItem[] = [
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash'] },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['pro'] },
+    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash'] },
+    { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite (Preview)', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash', 'lite'] },
   ]
   return {
     provider: 'gemini',
@@ -2281,64 +2281,6 @@ function staticGeminiCatalog(): IaModelCatalogResult {
     fetched_at: new Date().toISOString(),
     cached: false,
     message: 'Catálogo Gemini estático (fallback). Configure API key para ver todos os modelos.',
-  }
-}
-
-async function fetchGeminiCatalog(apiKey: string): Promise<IaModelCatalogResult> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status}`)
-  }
-  const data = await response.json() as { models?: any[] }
-
-  const models: IaModelCatalogItem[] = (data.models ?? [])
-    .filter((m) => {
-      const name = String(m.name ?? '')
-      const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : []
-      // Só modelos que suportam generateContent (chat/text) — ignora embedding, AQA, etc
-      return methods.includes('generateContent') && name.startsWith('models/')
-    })
-    .map((m) => {
-      const fullName = String(m.name ?? '')
-      const id = fullName.replace('models/', '')
-      const displayName = String(m.displayName ?? id)
-      const contextLength = Number.isFinite(Number(m.inputTokenLimit)) ? Number(m.inputTokenLimit) : undefined
-      const supportsTools = Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent')
-      const tags: string[] = []
-      if (id.includes('flash')) tags.push('flash')
-      if (id.includes('pro')) tags.push('pro')
-      if (id.includes('lite')) tags.push('lite')
-      if (id.includes('thinking') || id.includes('think')) tags.push('thinking')
-      if (id.includes('preview')) tags.push('preview')
-      if (id.includes('exp')) tags.push('exp')
-      return {
-        id,
-        label: displayName,
-        provider: 'gemini' as const,
-        source: 'api' as const,
-        description: typeof m.description === 'string' ? m.description.slice(0, 200) : undefined,
-        context_length: contextLength,
-        supports_tools: supportsTools,
-        is_agentic: supportsTools,
-        tags,
-      }
-    })
-    .sort((a, b) => {
-      // Mais recentes/maiores primeiro: pro > flash > lite, e versões maiores primeiro
-      const aScore = a.id.includes('pro') ? 3 : a.id.includes('flash-lite') || a.id.includes('lite') ? 1 : 2
-      const bScore = b.id.includes('pro') ? 3 : b.id.includes('flash-lite') || b.id.includes('lite') ? 1 : 2
-      if (aScore !== bScore) return bScore - aScore
-      return b.id.localeCompare(a.id)
-    })
-
-  return {
-    provider: 'gemini',
-    source: 'api',
-    models,
-    fetched_at: new Date().toISOString(),
-    cached: false,
-    message: `${models.length} modelos Gemini carregados da API do Google.`,
   }
 }
 
@@ -2413,17 +2355,8 @@ async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProvi
       cached: false,
     }
   } else if (provider === 'gemini') {
-    const apiKey = cfg?.token?.trim()
-    if (apiKey) {
-      try {
-        result = await fetchGeminiCatalog(apiKey)
-      } catch (err) {
-        console.warn('[IA] Gemini API catalog failed, using static fallback:', (err as Error).message)
-        result = staticGeminiCatalog()
-      }
-    } else {
-      result = staticGeminiCatalog()
-    }
+    // Lista curada — sem fetch dinâmico (evita Nano Banana, Robotics, TTS etc)
+    result = staticGeminiCatalog()
   } else {
     result = await fetchOpenRouterCatalog()
   }

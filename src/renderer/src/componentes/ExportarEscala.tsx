@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
 import { EscalaTimelineDiaria } from '@/componentes/EscalaTimelineDiaria'
+import { useAppVersion } from '@/hooks/useAppVersion'
 
 interface ExportarEscalaProps {
   escala: Escala
@@ -53,6 +54,7 @@ export function ExportarEscala({
   incluirCiclo,
   incluirTimeline,
 }: ExportarEscalaProps) {
+  const appVersion = useAppVersion()
   const modoDetalhado = modo === 'detalhado'
   const mostrarCiclo = incluirCiclo ?? true
   const mostrarTimeline = incluirTimeline ?? modoDetalhado
@@ -191,7 +193,7 @@ export function ExportarEscala({
             : 'T = Trabalho | F = Folga fixa | V = Folga variavel | I = Indisponivel'}
         </div>
         <div>
-          Gerada em {new Date().toLocaleDateString('pt-BR')} | <strong>EscalaFlow v2</strong>
+          Gerada em {new Date().toLocaleDateString('pt-BR')} | <strong>EscalaFlow{appVersion ? ` v${appVersion}` : ''}</strong>
         </div>
       </div>
 

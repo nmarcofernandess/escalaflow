@@ -89,6 +89,7 @@ import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { EmptyState } from '@/componentes/EmptyState'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { IconPicker } from '@/componentes/IconPicker'
@@ -101,6 +102,7 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { funcoesService } from '@/servicos/funcoes'
 import { excecoesService } from '@/servicos/excecoes'
 import { useApiData } from '@/hooks/useApiData'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { formatarData, formatarDataHora, mapError } from '@/lib/formatadores'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
@@ -808,6 +810,7 @@ export function SetorDetalhe() {
     return conteudo.ciclo || conteudo.timeline
   }, [])
 
+  const appVersion = useAppVersion()
   const buildHTMLFuncionario = useCallback((detalhe: EscalaCompletaV3, colabId: number, incluirAvisos: boolean) => {
     if (!setor || !tiposContrato) return null
     const baseColaboradores = resolveExportColaboradores()
@@ -824,9 +827,10 @@ export function SetorDetalhe() {
       alocacoes: detalhe.alocacoes.filter((a) => a.colaborador_id === colabId),
       violacoes: incluirAvisos ? detalhe.violacoes.filter((v) => v.colaborador_id === colabId) : [],
       regra: regra ? { folga_fixa_dia_semana: regra.folga_fixa_dia_semana ?? null, folga_variavel_dia_semana: regra.folga_variavel_dia_semana ?? null } : undefined,
+      version: appVersion ?? undefined,
     })
     return { html, colaboradorNome: colab.nome }
-  }, [regrasMap, resolveExportColaboradores, setor, tiposContrato])
+  }, [appVersion, regrasMap, resolveExportColaboradores, setor, tiposContrato])
 
   const renderExportSetorial = useCallback((detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
     if (!detalhe || !setor || !colaboradores) return
@@ -1658,6 +1662,13 @@ export function SetorDetalhe() {
                         funcoes={postosOrdenados}
                         regrasPadrao={regrasPadrao ?? []}
                       />
+                      {escalaCompleta.comparacao_demanda.length > 0 && (
+                        <CoberturaChart
+                          comparacao={escalaCompleta.comparacao_demanda}
+                          indicadores={escalaCompleta.indicadores}
+                          className="rounded-md border p-3"
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed px-4 py-5">
@@ -1711,6 +1722,13 @@ export function SetorDetalhe() {
                         funcoes={postosOrdenados}
                         regrasPadrao={regrasPadrao ?? []}
                       />
+                      {oficialCompleta.comparacao_demanda.length > 0 && (
+                        <CoberturaChart
+                          comparacao={oficialCompleta.comparacao_demanda}
+                          indicadores={oficialCompleta.indicadores}
+                          className="rounded-md border p-3"
+                        />
+                      )}
                     </div>
                   ) : null}
                 </TabsContent>
@@ -1794,49 +1812,51 @@ export function SetorDetalhe() {
         {/* Solver progress overlay */}
         {gerando && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm animate-in fade-in-0 duration-200">
-            <Card className="w-full max-w-md border-2 shadow-lg">
-              <CardHeader className="pb-3">
+            <Card className="w-full max-w-sm border shadow-lg">
+              <CardContent className="flex flex-col gap-4 pt-6">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Terminal className="size-4 text-primary" />
-                    <CardTitle className="text-sm">Motor — {setor?.nome ?? 'setor'}</CardTitle>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                      {Math.floor(solverElapsed / 60).toString().padStart(2, '0')}:{(solverElapsed % 60).toString().padStart(2, '0')}
-                    </span>
-                    <Loader2 className="size-3.5 animate-spin text-primary" />
-                  </div>
+                  <p className="text-sm font-medium">Gerando escala — {setor?.nome ?? 'setor'}</p>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {Math.floor(solverElapsed / 60).toString().padStart(2, '0')}:{(solverElapsed % 60).toString().padStart(2, '0')}
+                  </span>
                 </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3 pt-0">
-                <ScrollArea ref={solverScrollRef} className="h-48 rounded-md border bg-zinc-950 p-3">
-                  <div className="flex flex-col gap-0.5 font-mono text-xs">
+
+                <ScrollArea ref={solverScrollRef} className="h-36 rounded-md border bg-muted/50 px-3 py-2">
+                  <div className="flex flex-col gap-1">
                     {solverLogs.length === 0 ? (
-                      <span className="text-zinc-500">Iniciando motor...</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3 animate-spin" />
+                        Iniciando motor...
+                      </div>
                     ) : (
                       solverLogs.map((line, i) => (
-                        <span key={i} className="text-emerald-400 leading-relaxed">
-                          <span className="text-zinc-600 select-none">{'>'} </span>
+                        <p key={i} className={`text-xs leading-relaxed ${i === solverLogs.length - 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
                           {line}
-                        </span>
+                        </p>
                       ))
                     )}
                   </div>
                 </ScrollArea>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full gap-1.5"
-                  onClick={async () => {
-                    await escalasService.cancelar()
-                    toast('Geracao cancelada')
-                    setGerando(false)
-                  }}
-                >
-                  <Square className="size-3" />
-                  Cancelar
-                </Button>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin text-primary" />
+                    Calculando...
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={async () => {
+                      await escalasService.cancelar()
+                      toast('Geracao cancelada')
+                      setGerando(false)
+                    }}
+                  >
+                    <Square className="size-2.5" />
+                    Cancelar
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>

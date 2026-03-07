@@ -327,7 +327,7 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     feriados,
     excecoes: excecoes as any,
     lookback,
-    tolerancia_min: empresa.tolerancia_semanal_min ?? 30,
+    tolerancia_min: empresa.tolerancia_semanal_min ?? 0,
     empresa,
     corte_semanal: corteSemanal,
   }

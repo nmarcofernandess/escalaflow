@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Search, Star, Filter, X } from 'lucide-react'
+import { Search, Star, Filter, X, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import {
   TableCell,
 } from '@/components/ui/table'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { IaModelCatalogItem } from '@shared/types'
 
@@ -22,8 +23,10 @@ interface IaModelCatalogPickerProps {
   models: IaModelCatalogItem[]
   value: string
   favorites: string[]
+  defaultModelId?: string
   onChange: (modelId: string) => void
   onToggleFavorite: (modelId: string) => void
+  onBulkToggleFavorites: (modelIds: string[], add: boolean) => void
 }
 
 function formatContextLength(length: number): string {
@@ -45,8 +48,10 @@ export function IaModelCatalogPicker({
   models,
   value,
   favorites,
+  defaultModelId,
   onChange,
   onToggleFavorite,
+  onBulkToggleFavorites,
 }: IaModelCatalogPickerProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterToolCalling, setFilterToolCalling] = useState(false)
@@ -76,6 +81,16 @@ export function IaModelCatalogPicker({
     setFilterFree(false)
     setFilterAgentic(false)
     setFilterFavorites(false)
+  }
+
+  // ★ header: se todos os filtrados (exceto default) já são favoritos → desfavoritar, senão → favoritar
+  const toggleableFiltered = filteredModels.filter(m => m.id !== defaultModelId)
+  const allFilteredAreFavs = toggleableFiltered.length > 0 && toggleableFiltered.every(m => favSet.has(m.id))
+
+  const handleToggleAllFiltered = () => {
+    const ids = toggleableFiltered.map(m => m.id)
+    if (ids.length === 0) return
+    onBulkToggleFavorites(ids, !allFilteredAreFavs)
   }
 
   return (
@@ -136,17 +151,37 @@ export function IaModelCatalogPicker({
       </div>
 
       {/* Table */}
-      <ScrollArea className="max-h-[400px] rounded-md border">
-        <Table>
+      <ScrollArea className="h-[320px] rounded-md border">
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10 text-center">
-                <span className="text-xs">★</span>
+              <TableHead className="w-[40px] text-center">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={handleToggleAllFiltered}
+                      className="inline-flex items-center justify-center rounded transition-colors hover:text-foreground"
+                    >
+                      <Star
+                        className={cn(
+                          'size-4',
+                          allFilteredAreFavs && toggleableFiltered.length > 0
+                            ? 'fill-yellow-400 text-yellow-400'
+                            : 'text-muted-foreground/50'
+                        )}
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    {allFilteredAreFavs ? 'Desfavoritar todos filtrados' : 'Favoritar todos filtrados'}
+                  </TooltipContent>
+                </Tooltip>
               </TableHead>
-              <TableHead>Modelo</TableHead>
-              <TableHead className="w-[200px]">Tags</TableHead>
-              <TableHead className="w-[80px] text-right">Contexto</TableHead>
-              <TableHead className="w-[90px] pr-3 text-right">Preco</TableHead>
+              <TableHead className="w-[40%]">Modelo</TableHead>
+              <TableHead className="w-[25%]">Tags</TableHead>
+              <TableHead className="w-[12%] text-right">Contexto</TableHead>
+              <TableHead className="w-[12%] pr-3 text-right">Preco</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -157,50 +192,65 @@ export function IaModelCatalogPicker({
                 </TableCell>
               </TableRow>
             ) : (
-              filteredModels.map((model) => (
-                <TableRow
-                  key={model.id}
-                  data-state={value === model.id ? 'selected' : undefined}
-                  className="cursor-pointer"
-                  onClick={() => onChange(model.id)}
-                >
-                  <TableCell className="text-center">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onToggleFavorite(model.id)
-                      }}
-                      className="inline-flex items-center justify-center rounded transition-colors hover:text-foreground"
-                    >
-                      <Star
-                        className={cn(
-                          'size-4',
-                          favSet.has(model.id)
-                            ? 'fill-yellow-400 text-yellow-400'
-                            : 'text-muted-foreground/30'
-                        )}
-                      />
-                    </button>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm font-medium">{model.label}</span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1.5">
-                      {model.is_free && <Badge variant="outline" className="text-xs">Free</Badge>}
-                      {model.supports_tools && <Badge variant="outline" className="text-xs">Tools</Badge>}
-                      {model.is_agentic && <Badge variant="outline" className="text-xs">Agent</Badge>}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">
-                    {model.context_length ? formatContextLength(model.context_length) : '-'}
-                  </TableCell>
-                  <TableCell className="pr-3 text-right text-xs text-muted-foreground">
-                    {formatPrice(model)}
-                  </TableCell>
-                </TableRow>
-              ))
+              filteredModels.map((model) => {
+                const isDefault = model.id === defaultModelId
+                const isFav = favSet.has(model.id) || isDefault
+                return (
+                  <TableRow
+                    key={model.id}
+                    data-state={value === model.id ? 'selected' : undefined}
+                    className="cursor-pointer"
+                    onClick={() => onChange(model.id)}
+                  >
+                    <TableCell className="text-center">
+                      {isDefault ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center justify-center">
+                              <Lock className="size-3.5 text-muted-foreground/50" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">Modelo padrao (sempre disponivel)</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onToggleFavorite(model.id)
+                          }}
+                          className="inline-flex items-center justify-center rounded transition-colors hover:text-foreground"
+                        >
+                          <Star
+                            className={cn(
+                              'size-4',
+                              isFav
+                                ? 'fill-yellow-400 text-yellow-400'
+                                : 'text-muted-foreground/30'
+                            )}
+                          />
+                        </button>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm font-medium">{model.label}</span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1.5">
+                        {model.is_free && <Badge variant="outline" className="text-xs">Free</Badge>}
+                        {model.supports_tools && <Badge variant="outline" className="text-xs">Tools</Badge>}
+                        {model.is_agentic && <Badge variant="outline" className="text-xs">Agent</Badge>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {model.context_length ? formatContextLength(model.context_length) : '-'}
+                    </TableCell>
+                    <TableCell className="pr-3 text-right text-xs text-muted-foreground">
+                      {formatPrice(model)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>

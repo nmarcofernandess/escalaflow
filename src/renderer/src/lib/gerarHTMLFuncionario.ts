@@ -9,6 +9,8 @@ interface FuncionarioExportInput {
   alocacoes: Alocacao[]
   violacoes: Violacao[]
   regra?: { folga_fixa_dia_semana: string | null; folga_variavel_dia_semana: string | null }
+  /** Versão do app para o rodapé (ex: "1.4.0"). Se omitido, usa fallback. */
+  version?: string
 }
 
 const DIAS = ['Domingo', 'Segunda', 'Terca', 'Quarta', 'Quinta', 'Sexta', 'Sabado']
@@ -39,7 +41,7 @@ function escapeHtml(s: string): string {
  * Mobile-first, card-per-day, navegacao semanal, dark mode auto.
  */
 export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
-  const { nome, contrato, horasSemanais, setor, periodo, alocacoes, violacoes, regra } = input
+  const { nome, contrato, horasSemanais, setor, periodo, alocacoes, violacoes, regra, version } = input
 
   // Build date range
   const allDates: string[] = []
@@ -342,7 +344,7 @@ ${rotatividadeHtml}
 </div>
 
 <div class="footer">
-  EscalaFlow v3.1 | Gerado em ${new Date().toLocaleDateString('pt-BR')}
+  EscalaFlow${version ? ` v${version}` : ''} | Gerado em ${new Date().toLocaleDateString('pt-BR')}
 </div>
 
 <script>

@@ -174,7 +174,7 @@ export function RegrasPagina() {
     resolver: zodResolver(regrasSchema),
     defaultValues: {
       corte_semanal: 'SEG_DOM',
-      tolerancia_semanal_min: 30,
+      tolerancia_semanal_min: 0,
       usa_cct_intervalo_reduzido: true,
     },
   })

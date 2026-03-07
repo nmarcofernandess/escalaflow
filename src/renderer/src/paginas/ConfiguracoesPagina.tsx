@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -79,13 +80,11 @@ const IA_PROVIDER_LABELS: Record<IaProviderId, string> = {
 
 const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: string }>> = {
   gemini: [
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
+    { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite (Preview)' },
   ],
   openrouter: [
-    { value: 'anthropic/claude-sonnet-4', label: 'Anthropic Claude Sonnet 4 (OpenRouter)' },
-    { value: 'openai/gpt-4o-mini', label: 'OpenAI GPT-4o Mini (OpenRouter)' },
-    { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash (Free, OpenRouter)' },
+    { value: 'openrouter/free', label: 'Free Models Router' },
   ],
   local: [
     { value: 'qwen3.5-9b', label: 'Qwen 3.5 9B' },
@@ -369,13 +368,17 @@ export function ConfiguracoesPagina() {
       return IA_PROVIDER_MODELS.local
     }
     if (!remoteCatalog?.models?.length) return IA_PROVIDER_MODELS[iaProvider]
-    // OpenRouter com favoritos → dropdown mostra apenas favoritos
-    if (iaProvider === 'openrouter' && openrouterFavoritos.length > 0) {
-      const favSet = new Set(openrouterFavoritos)
-      const favModels = remoteCatalog.models
-        .filter((m) => favSet.has(m.id))
-        .map((m) => ({ value: m.id, label: m.label }))
-      return favModels.length > 0 ? favModels : IA_PROVIDER_MODELS[iaProvider]
+    // OpenRouter: default (openrouter/free) sempre presente + favoritos
+    if (iaProvider === 'openrouter') {
+      const defaultEntry = { value: 'openrouter/free', label: 'Free Models Router' }
+      if (openrouterFavoritos.length > 0) {
+        const favSet = new Set(openrouterFavoritos)
+        const favModels = remoteCatalog.models
+          .filter((m) => favSet.has(m.id) && m.id !== 'openrouter/free')
+          .map((m) => ({ value: m.id, label: m.label }))
+        return [defaultEntry, ...favModels]
+      }
+      return [defaultEntry]
     }
     return remoteCatalog.models.map((m) => ({ value: m.id, label: m.label }))
   })()
@@ -818,10 +821,17 @@ export function ConfiguracoesPagina() {
         {/* Assistente IA e IA Local — sempre visíveis */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <BrainCircuit className="size-4" />
-              Assistente IA
-            </CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BrainCircuit className="size-4" />
+                Assistente IA
+              </CardTitle>
+              {iaConfig?.ativo && (
+                <Badge variant="outline" className="border-green-500/50 text-green-600 dark:text-green-400">
+                  Ativa
+                </Badge>
+              )}
+            </div>
             <CardDescription>Configure o provedor e modelo de IA para o chat do RH</CardDescription>
           </CardHeader>
           <CardContent>
@@ -859,7 +869,7 @@ export function ConfiguracoesPagina() {
                           <SelectContent>
                             <SelectItem value="gemini">Google Gemini</SelectItem>
                             <SelectItem value="openrouter">OpenRouter</SelectItem>
-                            <SelectItem value="local">
+                            <SelectItem value="local" textValue="IA Local (Offline)">
                               <span className="flex items-center gap-1.5">
                                 <WifiOff className="size-3" />
                                 IA Local (Offline)
@@ -877,7 +887,7 @@ export function ConfiguracoesPagina() {
                     name="modelo"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Modelo{iaProvider === 'openrouter' && openrouterFavoritos.length > 0 ? ` (${openrouterFavoritos.length} favoritos)` : ''}</FormLabel>
+                        <FormLabel>Modelo</FormLabel>
                         <Select
                           value={field.value}
                           onValueChange={(next) => {
@@ -1069,6 +1079,7 @@ export function ConfiguracoesPagina() {
                       models={remoteCatalog.models}
                       value={currentModelValue}
                       favorites={openrouterFavoritos}
+                      defaultModelId="openrouter/free"
                       onChange={(modelId) => {
                         iaForm.setValue('modelo', modelId, { shouldDirty: true })
                         iaForm.setValue('provider_configs.openrouter.modelo' as any, modelId, { shouldDirty: true })
@@ -1079,6 +1090,16 @@ export function ConfiguracoesPagina() {
                           ? current.filter((id: string) => id !== modelId)
                           : [...current, modelId]
                         iaForm.setValue('provider_configs.openrouter.favoritos' as any, next, { shouldDirty: true })
+                      }}
+                      onBulkToggleFavorites={(ids, add) => {
+                        const current = iaForm.getValues('provider_configs.openrouter.favoritos' as any) as string[] ?? []
+                        const currentSet = new Set(current)
+                        if (add) {
+                          ids.forEach(id => currentSet.add(id))
+                        } else {
+                          ids.forEach(id => currentSet.delete(id))
+                        }
+                        iaForm.setValue('provider_configs.openrouter.favoritos' as any, [...currentSet], { shouldDirty: true })
                       }}
                     />
                   </div>

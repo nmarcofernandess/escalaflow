@@ -1111,8 +1111,11 @@ export function DemandaEditor({
           </div>
         </div>
 
-        {/* ── Divider between operational bar and demand bars ── */}
-        <div className="mx-4 border-t border-border/70" />
+        {/* ── Double divider (all-day separator pattern) ── */}
+        <div className="mx-4 space-y-px">
+          <div className="border-t border-border/60" />
+          <div className="border-t border-border/60" />
+        </div>
 
         {/* ── Demand bars ── */}
         <div className="relative space-y-1.5 px-2 pt-4 pb-2">
@@ -1186,15 +1189,15 @@ export function DemandaEditor({
                     style={{ height: `${h}%`, minHeight: count > 0 ? '4px' : 0 }}
                   />
                   {count > 0 && (
-                    <span className="absolute bottom-0.5 text-[8px] font-semibold text-primary/70">{count}</span>
+                    <span className="absolute bottom-0.5 text-[10px] font-semibold text-primary/70">{count}</span>
                   )}
                 </div>
               )
             })}
           </div>
-          <div className="flex items-center justify-between px-3 py-1 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between px-3 py-1.5 text-sm text-muted-foreground">
             <span>Cobertura acumulada por faixa</span>
-            <Badge variant="outline" className="text-[9px] h-4">
+            <Badge variant="outline" className="text-xs">
               {currentConfig.segmentosCobertura.length} faixa{currentConfig.segmentosCobertura.length !== 1 ? 's' : ''}
             </Badge>
           </div>

@@ -166,13 +166,9 @@ export function enrichPreflightWithCapacityChecks(
       }
     }
 
-    let capacidadeDiaria = maxJanelaDoColaborador
-    const metaDiariaMedia = horasSemanaisMinutos / c.dias_trabalho
-    if (metaDiariaMedia > 360) {
-      capacidadeDiaria -= input.empresa.min_intervalo_almoco_min
-    }
-
-    const capacidadeMaxSemanal = capacidadeDiaria * c.dias_trabalho
+    // max_minutos_dia já é tempo de trabalho efetivo (exclui almoço),
+    // então NÃO subtrair almoço aqui — o solver gerencia almoço separadamente.
+    const capacidadeMaxSemanal = maxJanelaDoColaborador * c.dias_trabalho
     if (capacidadeMaxSemanal < limiteInferiorSemanal) {
       blockers.push({
         codigo: 'CAPACIDADE_INDIVIDUAL_INSUFICIENTE',

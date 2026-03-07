@@ -381,16 +381,11 @@ export function ContratoLista() {
                 ))}
               </TableBody>
             </Table>
-            <CardContent className="border-t py-2">
-              <p className="text-xs text-muted-foreground">
-                {filtered.length} tipo{filtered.length !== 1 ? 's' : ''} de contrato
-              </p>
-            </CardContent>
           </Card>
         ) : (
           /* CARD VIEW */
           <>
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
               {filtered.map((tc) => (
                 <Card key={tc.id} className="transition-shadow hover:shadow-md">
                   <CardContent className="p-4">
@@ -449,9 +444,6 @@ export function ContratoLista() {
                 </Card>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">
-              {filtered.length} tipo{filtered.length !== 1 ? 's' : ''} de contrato
-            </p>
           </>
         )}
       </div>

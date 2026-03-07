@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Download, ExternalLink, Loader2 } from 'luci
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { StatusBadge } from '@/componentes/StatusBadge'
@@ -11,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatarData } from '@/lib/formatadores'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
@@ -94,6 +96,8 @@ export function EscalasHub() {
     funcionarios: false,
     avisos: false,
   })
+
+  const appVersion = useAppVersion()
 
   async function ensureSetorMetaLoaded(setorId: number) {
     const hasAllMeta =
@@ -337,6 +341,7 @@ export function EscalasHub() {
           folga_variavel_dia_semana: regra.folga_variavel_dia_semana ?? null,
         }
         : undefined,
+      version: appVersion ?? undefined,
     })
     return { html, colaboradorNome: colab.nome }
   }
@@ -627,13 +632,22 @@ export function EscalasHub() {
                           <Loader2 className="size-5 animate-spin text-muted-foreground" />
                         </div>
                       ) : detalhe ? (
-                        <EscalaCicloResumo
-                          escala={detalhe.escala}
-                          alocacoes={detalhe.alocacoes}
-                          colaboradores={colaboradores}
-                          funcoes={funcoes}
-                          regrasPadrao={regrasPadrao}
-                        />
+                        <>
+                          <EscalaCicloResumo
+                            escala={detalhe.escala}
+                            alocacoes={detalhe.alocacoes}
+                            colaboradores={colaboradores}
+                            funcoes={funcoes}
+                            regrasPadrao={regrasPadrao}
+                          />
+                          {detalhe.comparacao_demanda.length > 0 && (
+                            <CoberturaChart
+                              comparacao={detalhe.comparacao_demanda}
+                              indicadores={detalhe.indicadores}
+                              className="mt-3 rounded-md border p-3"
+                            />
+                          )}
+                        </>
                       ) : (
                         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                           Nao foi possivel carregar o ciclo desta escala.

@@ -33,6 +33,7 @@ export function IaModelPill({ provider, modelo, modeloLabel, modelOptions, onPro
               <SelectContent>
                 <SelectItem value="gemini">Gemini</SelectItem>
                 <SelectItem value="openrouter">OpenRouter</SelectItem>
+                <SelectItem value="local">IA Local (Offline)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -43,11 +44,17 @@ export function IaModelPill({ provider, modelo, modeloLabel, modelOptions, onPro
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {modelOptions.map(m => (
-                  <SelectItem key={m.id} value={m.id} className="text-xs">
-                    {m.label}
+                {modelOptions.length > 0 ? (
+                  modelOptions.map(m => (
+                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {m.label}
+                    </SelectItem>
+                  ))
+                ) : modelo ? (
+                  <SelectItem value={modelo} className="text-xs">
+                    {modeloLabel || modelo}
                   </SelectItem>
-                ))}
+                ) : null}
               </SelectContent>
             </Select>
           </div>

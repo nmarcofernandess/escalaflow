@@ -237,7 +237,7 @@ export function SetorLista() {
           />
         ) : viewMode === 'card' ? (
           /* CARD VIEW */
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             {filtered.map((setor) => {
               const colabCount = getColabCount(setor.id)
               const escala = escalaMap.get(setor.id)
@@ -370,11 +370,6 @@ export function SetorLista() {
                 })}
               </TableBody>
             </Table>
-            <CardContent className="border-t py-2">
-              <p className="text-xs text-muted-foreground">
-                {filtered.length} setor{filtered.length !== 1 ? 'es' : ''}
-              </p>
-            </CardContent>
           </Card>
         )}
       </div>

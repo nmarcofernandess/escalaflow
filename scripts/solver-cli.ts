@@ -3,13 +3,15 @@
  * solver-cli.ts — CLI dev para rodar e inspecionar o motor OR-Tools
  *
  * Uso:
- *   npm run solver:cli -- <setor_id> [data_inicio] [data_fim] [--mode rapido|otimizado] [--json] [--dump]
+ *   npm run solver:cli -- <setor_id> [data_inicio] [data_fim] [--mode rapido|otimizado] [--json] [--summary] [--dump]
  *
  * Exemplos:
  *   npm run solver:cli -- 2                          # Açougue, período padrão (1 semana)
  *   npm run solver:cli -- 2 2026-03-02 2026-03-08    # Açougue, 1 semana específica
  *   npm run solver:cli -- 1 2026-03-02 2026-04-26 --mode otimizado  # Caixa, 8 semanas
- *   npm run solver:cli -- 2 --json                   # Output JSON raw
+ *   npm run solver:cli -- 2 --json                   # JSON sem comparacao_demanda (~250KB)
+ *   npm run solver:cli -- 2 --json-full              # JSON completo (~800KB)
+ *   npm run solver:cli -- 2 --summary                # JSON compacto: indicadores + horas (~1KB)
  *   npm run solver:cli -- 2 --dump                   # Salva input JSON em tmp/
  *
  * Requer: app já ter sido rodado ao menos 1x (banco populado em out/data/escalaflow-pg)
@@ -79,6 +81,7 @@ if (!VALID_MODES.includes(rawMode as SolveModeArg)) {
 }
 const solveMode = rawMode as SolveModeArg
 const jsonOnly = flags.has('--json')
+const summaryOnly = flags.has('--summary')
 const dumpInput = flags.has('--dump')
 
 // ---------------------------------------------------------------------------
@@ -121,7 +124,9 @@ ${C.bold}Uso:${C.reset}
 
 ${C.bold}Flags:${C.reset}
   --mode rapido|balanceado|otimizado|maximo   Modo do solver (default: rapido)
-  --json                    Output JSON raw (para pipe/análise)
+  --json                    JSON sem comparacao_demanda (~250KB para 3 meses)
+  --json-full               JSON completo com comparacao_demanda (~800KB)
+  --summary                 JSON compacto: indicadores + horas/colab (~1KB)
   --dump                    Salva input JSON em tmp/
 
 ${C.bold}Exemplos:${C.reset}
@@ -136,9 +141,9 @@ ${C.bold}Listar setores:${C.reset}
     process.exit(0)
   }
 
-  // In JSON mode, redirect ALL console.log to stderr so stdout is clean JSON only
+  // In JSON/summary mode, redirect ALL console.log to stderr so stdout is clean JSON only
   const _origLog = console.log
-  if (jsonOnly) {
+  if (jsonOnly || summaryOnly) {
     console.log = (...args: any[]) => console.error(...args)
   }
 
@@ -208,7 +213,7 @@ ${C.bold}Listar setores:${C.reset}
   }
 
   // Run solver
-  if (!jsonOnly) {
+  if (!jsonOnly && !summaryOnly) {
     console.log(`\n  ${C.yellow}Resolvendo...${C.reset}\n`)
   }
 
@@ -218,7 +223,7 @@ ${C.bold}Listar setores:${C.reset}
     // Deduplicate: runSolver sends both live stderr AND buffered stderr. Track unique lines.
     if (!motorLines.includes(line)) {
       motorLines.push(line)
-      if (!jsonOnly) {
+      if (!jsonOnly && !summaryOnly) {
         console.log(`  ${C.dim}[motor] ${line}${C.reset}`)
       }
     }
@@ -227,7 +232,37 @@ ${C.bold}Listar setores:${C.reset}
 
   // JSON mode: dump and exit (use original stdout, not redirected)
   if (jsonOnly) {
-    _origLog(JSON.stringify(output, null, 2))
+    // --json omits comparacao_demanda (67% do peso ~556KB) — use --json-full if needed
+    const { comparacao_demanda: _cd, ...outputCompact } = output
+    _origLog(JSON.stringify(flags.has('--json-full') ? output : outputCompact, null, 2))
+    await closeDb()
+    return
+  }
+
+  // Summary mode: compact JSON with just KPIs + diagnostics (~1KB)
+  if (summaryOnly) {
+    const diag = output.diagnostico
+    const summary = {
+      status: output.status,
+      sucesso: output.sucesso,
+      solve_time_ms: Math.round(solveMs),
+      indicadores: output.indicadores,
+      ciclo: diag ? {
+        semanas: diag.cycle_length_weeks ?? null,
+        dias: diag.phase1_cycle_days ?? null,
+        bandas: diag.phase1_bands_pinned ?? null,
+      } : null,
+      diagnostico: diag ?? null,
+      horas_por_colaborador: (() => {
+        const map = new Map<string, number>()
+        for (const a of output.alocacoes) {
+          if (a.status !== 'TRABALHO') continue
+          map.set(a.colaborador, (map.get(a.colaborador) ?? 0) + a.minutos_trabalho)
+        }
+        return Object.fromEntries([...map.entries()].map(([nome, min]) => [nome, `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`]))
+      })(),
+    }
+    _origLog(JSON.stringify(summary, null, 2))
     await closeDb()
     return
   }

@@ -622,7 +622,7 @@ def build_model(
     else:
         S = ((end_h * 60 + end_m) - base_h * 60) // grid_min
 
-    tolerance = int(empresa.get("tolerancia_semanal_min", 30))
+    tolerance = int(empresa.get("tolerancia_semanal_min", 0))
     min_lunch_min = int(empresa.get("min_intervalo_almoco_min", 60))
     max_lunch_min = int(empresa.get("max_intervalo_almoco_min", 120))
     min_lunch_slots = min_lunch_min // grid_min

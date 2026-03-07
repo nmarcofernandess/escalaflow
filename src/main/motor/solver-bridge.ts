@@ -472,7 +472,7 @@ export async function buildSolverInput(
     data_inicio: dataInicio,
     data_fim: dataFim,
     empresa: {
-      tolerancia_semanal_min: emp?.tolerancia_semanal_min ?? 30,
+      tolerancia_semanal_min: emp?.tolerancia_semanal_min ?? 0,
       hora_abertura: setor.hora_abertura,
       hora_fechamento: setor.hora_fechamento,
       min_intervalo_almoco_min: emp?.min_intervalo_almoco_min ?? 60,

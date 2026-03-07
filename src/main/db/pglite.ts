@@ -52,6 +52,10 @@ export function getDb(): PGlite {
   return _db
 }
 
+export function isDbReady(): boolean {
+  return _db !== null
+}
+
 export async function closeDb(): Promise<void> {
   if (_db) {
     await _db.close()

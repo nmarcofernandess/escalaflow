@@ -246,7 +246,7 @@ CREATE TABLE IF NOT EXISTS configuracao_ia (
   id INTEGER PRIMARY KEY DEFAULT 1,
   provider TEXT NOT NULL DEFAULT 'gemini',
   api_key TEXT NOT NULL DEFAULT '',
-  modelo TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
+  modelo TEXT NOT NULL DEFAULT 'gemini-3-flash-preview',
   provider_configs_json TEXT NOT NULL DEFAULT '{}',
   ativo BOOLEAN NOT NULL DEFAULT FALSE,
   criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -19,6 +19,7 @@ import {
   Info,
   Palette,
 } from 'lucide-react'
+import logoIcon from '@/assets/logo.png'
 import {
   Sidebar,
   SidebarContent,
@@ -49,6 +50,7 @@ import { cn } from '@/lib/utils'
 import { empresaService } from '@/servicos/empresa'
 import { TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
 import { useTour } from './Tour'
+import { useAppVersion } from '@/hooks/useAppVersion'
 
 const mainNav = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard },
@@ -85,6 +87,7 @@ export function AppSidebar() {
   const { theme, setTheme } = useTheme()
   const { startTour } = useTour()
   const [empresaNome, setEmpresaNome] = useState('Empresa')
+  const appVersion = useAppVersion()
 
   useEffect(() => {
     empresaService.buscar().then((emp) => {
@@ -100,15 +103,15 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader id={TOUR_STEP_IDS.SIDEBAR_HEADER} className="p-4 group-data-[collapsible=icon]:p-2">
         <Link to="/" className="flex items-center gap-2">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <CalendarDays className="size-4 shrink-0" />
+          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary">
+            <img src={logoIcon} alt="EscalaFlow" className="size-8 object-contain" />
           </div>
           <div className="flex flex-col group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
               EscalaFlow
             </span>
             <span className="text-xs text-sidebar-foreground/50">
-              v2.0
+              {appVersion ? `v${appVersion}` : ''}
             </span>
           </div>
         </Link>
@@ -200,7 +203,7 @@ export function AppSidebar() {
                       {empresaNome}
                     </span>
                     <span className="truncate text-xs text-muted-foreground">
-                      EscalaFlow v2.0
+                      {appVersion ? `EscalaFlow v${appVersion}` : 'EscalaFlow'}
                     </span>
                   </div>
                   <ChevronsUpDown className="ml-auto size-4" />
@@ -282,7 +285,7 @@ export function AppSidebar() {
                     <span>Sobre</span>
                   </div>
                   <span className="pl-6 text-xs text-muted-foreground">
-                    EscalaFlow v2.0 — Desktop
+                    {appVersion ? `EscalaFlow v${appVersion} — Desktop` : 'EscalaFlow — Desktop'}
                   </span>
                 </DropdownMenuItem>
               </DropdownMenuContent>

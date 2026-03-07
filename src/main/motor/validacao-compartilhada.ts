@@ -1031,6 +1031,11 @@ export function checkH19(
 
     // Verificar se há folga nos próximos CLT.FOLGA_COMPENSATORIA_DOM_DIAS dias
     const diasSeguintes = dias.slice(i + 1, i + 1 + CLT.FOLGA_COMPENSATORIA_DOM_DIAS)
+
+    // Boundary: se não há dias suficientes após este domingo, o validador não tem
+    // visibilidade — a folga compensatória pode estar fora do período gerado.
+    if (diasSeguintes.length === 0) continue
+
     const temFolgaCompensatoria = diasSeguintes.some(d => {
       const celD = mapa.get(d)
       return celD?.status === 'FOLGA'

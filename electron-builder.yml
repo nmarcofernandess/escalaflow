@@ -6,6 +6,12 @@ directories:
 files:
   - 'out/**/*'
 extraResources:
+  - from: 'resources/icon.png'
+    to: 'icon.png'
+  - from: 'resources/icon.ico'
+    to: 'icon.ico'
+  - from: 'resources/icon.icns'
+    to: 'icon.icns'
   - from: 'solver-bin/'
     to: 'solver-bin/'
     filter:

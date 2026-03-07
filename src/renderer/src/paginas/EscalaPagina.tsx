@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   ChevronRight,
   ChevronDown,
+  Target,
+  Star,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,6 +25,7 @@ import {
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { ResumoFolgas } from '@/componentes/ResumoFolgas'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { EscalaTimelineDiaria } from '@/componentes/EscalaTimelineDiaria'
@@ -36,6 +39,7 @@ import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda } from '@/lib/gerarCSV'
 import { useApiData } from '@/hooks/useApiData'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { setoresService } from '@/servicos/setores'
 import { funcoesService } from '@/servicos/funcoes'
 import { colaboradoresService } from '@/servicos/colaboradores'
@@ -62,7 +66,8 @@ import {
 import { cn } from '@/lib/utils'
 import { formatarMinutos, REGRAS_TEXTO } from '@/lib/formatadores'
 
-const TOLERANCIA_DEFAULT = 30
+/** Margem por arredondamento de grid (15min/slot × semanas) */
+const TOLERANCIA_POR_SEMANA = 15
 
 function ResumoTable({
   colaboradores,
@@ -113,12 +118,14 @@ function ResumoTable({
       }
     }
 
+    const toleranciaTotal = Math.ceil(semanas) * TOLERANCIA_POR_SEMANA
+
     return colaboradores.map((colab) => {
       const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
       const real = minutosReais.get(colab.id) ?? 0
       const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
       const delta = real - metaTotal
-      const ok = delta >= -TOLERANCIA_DEFAULT
+      const ok = delta >= -toleranciaTotal
       const colabViolacoes = violacoesPorColab.get(colab.id) ?? []
       const hard = colabViolacoes.filter((v) => v.severidade === 'HARD')
       const soft = colabViolacoes.filter((v) => v.severidade !== 'HARD')
@@ -167,7 +174,7 @@ function ResumoTable({
                   <TableCell className="text-xs text-right py-2">{formatarMinutos(meta)}</TableCell>
                   <TableCell className={cn(
                     'text-xs text-right py-2 font-medium',
-                    delta >= 0 ? 'text-success' : delta >= -TOLERANCIA_DEFAULT ? 'text-warning' : 'text-destructive',
+                    delta >= 0 ? 'text-success' : ok ? 'text-warning' : 'text-destructive',
                   )}>
                     {delta >= 0 ? '+' : ''}{formatarMinutos(Math.abs(delta))}
                     {delta < 0 && ' \u2193'}
@@ -475,6 +482,8 @@ export function EscalaPagina() {
     }
   }
 
+  const appVersion = useAppVersion()
+
   function gerarHTMLFuncionarioById(colabId: number, incluirAvisos: boolean) {
     if (!escalaCompleta || !setor || !colaboradores || !tiposContrato) return null
     const colab = colaboradores.find((c) => c.id === colabId)
@@ -490,6 +499,7 @@ export function EscalaPagina() {
       alocacoes: escalaCompleta.alocacoes.filter((a) => a.colaborador_id === colabId),
       violacoes: incluirAvisos ? escalaCompleta.violacoes.filter((v) => v.colaborador_id === colabId) : [],
       regra: r ? { folga_fixa_dia_semana: r.folga_fixa_dia_semana ?? null, folga_variavel_dia_semana: r.folga_variavel_dia_semana ?? null } : undefined,
+      version: appVersion ?? undefined,
     })
     return { nome: colab.nome, html }
   }
@@ -704,50 +714,77 @@ export function EscalaPagina() {
                       ? 'text-warning'
                       : 'text-destructive'
 
+                  const hardColor = ind.violacoes_hard === 0 ? 'text-success' : 'text-destructive'
+                  const hardBg = ind.violacoes_hard === 0 ? 'bg-success/10' : 'bg-destructive/10'
+                  const softColor = ind.violacoes_soft === 0 ? 'text-success' : 'text-warning'
+                  const softBg = ind.violacoes_soft === 0 ? 'bg-success/10' : 'bg-warning/10'
+                  const cobBg = ind.cobertura_percent >= 95 ? 'bg-success/10' : ind.cobertura_percent >= 80 ? 'bg-warning/10' : 'bg-destructive/10'
+                  const qualBg = ind.pontuacao >= 85 ? 'bg-success/10' : ind.pontuacao >= 70 ? 'bg-warning/10' : 'bg-destructive/10'
+
                   return (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                      <Card className="p-4">
-                        <p className={cn('text-2xl font-bold tabular-nums', coberturaColor)}>
-                          {Math.round(ind.cobertura_percent)}%
-                        </p>
-                        <p className="mt-1 text-xs font-medium text-muted-foreground">Cobertura</p>
-                        {temTolerancia && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {Math.round(coberturaEfetiva)}% c/ tolerancia
-                          </p>
-                        )}
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                      <Card>
+                        <CardContent className="flex items-center gap-4 p-4">
+                          <div className={cn('flex size-10 items-center justify-center rounded-lg', cobBg)}>
+                            <Target className={cn('size-5', coberturaColor)} />
+                          </div>
+                          <div>
+                            <p className={cn('text-2xl font-bold tabular-nums', coberturaColor)}>
+                              {Math.round(ind.cobertura_percent)}%
+                            </p>
+                            <p className="text-xs text-muted-foreground">Cobertura</p>
+                            {temTolerancia && (
+                              <p className="text-xs text-muted-foreground">
+                                {Math.round(coberturaEfetiva)}% c/ tolerancia
+                              </p>
+                            )}
+                          </div>
+                        </CardContent>
                       </Card>
-                      <Card className="p-4">
-                        <p className={cn('text-2xl font-bold tabular-nums', qualidadeColor)}>
-                          {ind.pontuacao}
-                        </p>
-                        <p className="mt-1 text-xs font-medium text-muted-foreground">Qualidade</p>
+                      <Card>
+                        <CardContent className="flex items-center gap-4 p-4">
+                          <div className={cn('flex size-10 items-center justify-center rounded-lg', qualBg)}>
+                            <Star className={cn('size-5', qualidadeColor)} />
+                          </div>
+                          <div>
+                            <p className={cn('text-2xl font-bold tabular-nums', qualidadeColor)}>
+                              {ind.pontuacao}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Qualidade</p>
+                          </div>
+                        </CardContent>
                       </Card>
-                      <Card className="p-4">
-                        <p className={cn(
-                          'text-2xl font-bold tabular-nums',
-                          ind.violacoes_hard === 0 ? 'text-success' : 'text-destructive',
-                        )}>
-                          {ind.violacoes_hard}
-                        </p>
-                        <p className="mt-1 text-xs font-medium text-muted-foreground">
-                          {ind.violacoes_hard === 1 ? 'Problema' : 'Problemas'}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {ind.violacoes_hard === 0 ? 'Pode oficializar' : 'Impede oficializar'}
-                        </p>
+                      <Card>
+                        <CardContent className="flex items-center gap-4 p-4">
+                          <div className={cn('flex size-10 items-center justify-center rounded-lg', hardBg)}>
+                            <XCircle className={cn('size-5', hardColor)} />
+                          </div>
+                          <div>
+                            <p className={cn('text-2xl font-bold tabular-nums', hardColor)}>
+                              {ind.violacoes_hard}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {ind.violacoes_hard === 1 ? 'Problema' : 'Problemas'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {ind.violacoes_hard === 0 ? 'Pode oficializar' : 'Impede oficializar'}
+                            </p>
+                          </div>
+                        </CardContent>
                       </Card>
-                      <Card className="p-4">
-                        <p className={cn(
-                          'text-2xl font-bold tabular-nums',
-                          ind.violacoes_soft === 0 ? 'text-success' : 'text-warning',
-                        )}>
-                          {ind.violacoes_soft}
-                        </p>
-                        <p className="mt-1 text-xs font-medium text-muted-foreground">Avisos</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          Preferencias e metas
-                        </p>
+                      <Card>
+                        <CardContent className="flex items-center gap-4 p-4">
+                          <div className={cn('flex size-10 items-center justify-center rounded-lg', softBg)}>
+                            <AlertTriangle className={cn('size-5', softColor)} />
+                          </div>
+                          <div>
+                            <p className={cn('text-2xl font-bold tabular-nums', softColor)}>
+                              {ind.violacoes_soft}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Avisos</p>
+                            <p className="text-xs text-muted-foreground">Preferencias e metas</p>
+                          </div>
+                        </CardContent>
                       </Card>
                     </div>
                   )
@@ -822,6 +859,20 @@ export function EscalaPagina() {
                         colaboradores={colaboradores}
                         funcoes={funcoes ?? []}
                         regrasPadrao={regrasPadrao ?? []}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+
+                {escalaCompleta.comparacao_demanda.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-semibold">Cobertura de Demanda</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <CoberturaChart
+                        comparacao={escalaCompleta.comparacao_demanda}
+                        indicadores={escalaCompleta.indicadores}
                       />
                     </CardContent>
                   </Card>
