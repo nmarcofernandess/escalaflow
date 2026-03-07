@@ -6,7 +6,21 @@ import { Textarea } from '@/components/ui/textarea'
 import { IaModelPill } from './IaModelPill'
 import { IaContextBadge } from './IaContextBadge'
 import { IaAnexoPreviewStrip } from './IaAnexoPreviewStrip'
-import type { IaProviderId, IaModelCatalogItem, IaAnexo } from '@shared/index'
+import type { IaProviderId, IaAnexo } from '@shared/index'
+
+type ProviderOption = {
+  provider: IaProviderId
+  label: string
+  disabled: boolean
+  reason?: string
+}
+
+type ModelOption = {
+  id: string
+  label: string
+  disabled: boolean
+  reason?: string
+}
 
 const ACCEPTED_MIME_TYPES = new Set([
   'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp',
@@ -24,9 +38,11 @@ interface Props {
   conversaId: string | null
   // Modelo
   provider: IaProviderId
+  providerOptions: ProviderOption[]
   modelo: string
   modeloLabel: string
-  modelOptions: IaModelCatalogItem[]
+  modelOptions: ModelOption[]
+  modelSelectDisabled?: boolean
   onProviderChange: (p: IaProviderId) => Promise<void>
   onModeloChange: (m: string) => Promise<void>
   // Contexto
@@ -41,7 +57,7 @@ interface Props {
 export function IaChatInput({
   value, onChange, onEnviar, disabled,
   conversaId,
-  provider, modelo, modeloLabel, modelOptions, onProviderChange, onModeloChange,
+  provider, providerOptions, modelo, modeloLabel, modelOptions, modelSelectDisabled, onProviderChange, onModeloChange,
   tokensEstimados, contextLength,
   supportsMultimodal, anexos, onAnexosChange,
 }: Props) {
@@ -196,6 +212,7 @@ export function IaChatInput({
           placeholder="Escreva sua mensagem..."
           className="border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none min-h-[60px] text-sm"
           value={value}
+          disabled={disabled}
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}
           onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -228,9 +245,11 @@ export function IaChatInput({
 
           <IaModelPill
             provider={provider}
+            providerOptions={providerOptions}
             modelo={modelo}
             modeloLabel={modeloLabel}
             modelOptions={modelOptions}
+            modelSelectDisabled={modelSelectDisabled}
             onProviderChange={onProviderChange}
             onModeloChange={onModeloChange}
           />

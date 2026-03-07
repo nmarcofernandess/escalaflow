@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Search, Star, Filter, X, Lock } from 'lucide-react'
+import { Search, Star, Filter, X, Lock, FlaskConical, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -19,14 +19,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import type { IaModelCatalogItem } from '@shared/types'
 
+const TAG_BADGE_CLASSNAME = 'h-6 whitespace-nowrap px-2 text-[11px] font-medium'
+
 interface IaModelCatalogPickerProps {
   models: IaModelCatalogItem[]
   value: string
   favorites: string[]
   defaultModelId?: string
+  testedModelIds?: string[]
+  testingFreeModels?: boolean
   onChange: (modelId: string) => void
   onToggleFavorite: (modelId: string) => void
   onBulkToggleFavorites: (modelIds: string[], add: boolean) => void
+  onTestFreeModels?: () => void
 }
 
 function formatContextLength(length: number): string {
@@ -49,9 +54,12 @@ export function IaModelCatalogPicker({
   value,
   favorites,
   defaultModelId,
+  testedModelIds = [],
+  testingFreeModels = false,
   onChange,
   onToggleFavorite,
   onBulkToggleFavorites,
+  onTestFreeModels,
 }: IaModelCatalogPickerProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterToolCalling, setFilterToolCalling] = useState(false)
@@ -63,6 +71,7 @@ export function IaModelCatalogPicker({
   const filterCount = [filterToolCalling, filterFree, filterAgentic, filterFavorites].filter(Boolean).length
 
   const favSet = useMemo(() => new Set(favorites), [favorites])
+  const testedSet = useMemo(() => new Set(testedModelIds), [testedModelIds])
 
   const filteredModels = useMemo(() => {
     return models.filter((model) => {
@@ -148,11 +157,24 @@ export function IaModelCatalogPicker({
             Limpar
           </Button>
         )}
+
+        <div className="ml-auto flex items-center gap-2">
+          {onTestFreeModels ? (
+            <Button type="button" variant="outline" size="sm" onClick={onTestFreeModels} disabled={testingFreeModels}>
+              {testingFreeModels ? (
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              ) : (
+                <FlaskConical className="mr-1.5 size-3.5" />
+              )}
+              {testingFreeModels ? 'Testando gratuitos...' : 'Testar gratuitos'}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {/* Table */}
       <ScrollArea className="h-[320px] rounded-md border">
-        <Table className="table-fixed">
+        <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[40px] text-center">
@@ -178,8 +200,8 @@ export function IaModelCatalogPicker({
                   </TooltipContent>
                 </Tooltip>
               </TableHead>
-              <TableHead className="w-[40%]">Modelo</TableHead>
-              <TableHead className="w-[25%]">Tags</TableHead>
+              <TableHead className="w-[38%]">Modelo</TableHead>
+              <TableHead className="w-[27%]">Tags</TableHead>
               <TableHead className="w-[12%] text-right">Contexto</TableHead>
               <TableHead className="w-[12%] pr-3 text-right">Preco</TableHead>
             </TableRow>
@@ -233,13 +255,14 @@ export function IaModelCatalogPicker({
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className="text-sm font-medium">{model.label}</span>
+                      <div className="w-full truncate text-sm font-medium">{model.label}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1.5">
-                        {model.is_free && <Badge variant="outline" className="text-xs">Free</Badge>}
-                        {model.supports_tools && <Badge variant="outline" className="text-xs">Tools</Badge>}
-                        {model.is_agentic && <Badge variant="outline" className="text-xs">Agent</Badge>}
+                      <div className="flex gap-1">
+                        {testedSet.has(model.id) && <Badge variant="outline" className={TAG_BADGE_CLASSNAME}>Testado</Badge>}
+                        {model.is_free && <Badge variant="outline" className={TAG_BADGE_CLASSNAME}>Free</Badge>}
+                        {model.supports_tools && <Badge variant="outline" className={TAG_BADGE_CLASSNAME}>Tools</Badge>}
+                        {model.is_agentic && <Badge variant="outline" className={TAG_BADGE_CLASSNAME}>Agent</Badge>}
                       </div>
                     </TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground">

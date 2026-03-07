@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, Settings, Loader2, FileText, ImageIcon } from 'lucide-react'
+import { Bot, Settings, Loader2, FileText, ImageIcon, AlertCircle } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useIaStore } from '@/store/iaStore'
 import { useIaModelConfig } from '@/hooks/useIaModelConfig'
 import { IaMensagemBubble } from './IaMensagemBubble'
@@ -14,6 +15,7 @@ import { IaChatInput } from './IaChatInput'
 import { IaToolCallsCollapsible } from './IaToolCallsCollapsible'
 import { toolLabel, toolEstimatedSeconds } from '@/lib/tool-labels'
 import type { IaMensagem, IaAnexo, IaContexto, ToolCall, IaStreamEvent } from '@shared/index'
+import { toast } from 'sonner'
 
 // Token estimation constants
 const CHARS_PER_TOKEN = 4
@@ -91,7 +93,6 @@ export function IaChatView() {
     editarEReenviar,
   } = useIaStore()
   const [texto, setTexto] = useState('')
-  const [configurado, setConfigurado] = useState<boolean | null>(null)
   const [anexos, setAnexos] = useState<IaAnexo[]>([])
   const msgEndRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -116,35 +117,6 @@ export function IaChatView() {
       cancelarStream()
     }
   }, [carregando, stream_id_ativo, cancelarStream])
-
-  // Check if IA is configured
-  useEffect(() => {
-    window.electron.ipcRenderer.invoke('ia.configuracao.obter').then((config: any) => {
-      if (!config) { setConfigurado(false); return }
-      const temApiKey = !!config.api_key
-      const providerConfigs = config.provider_configs ?? {}
-      const temTokenEmAlgumProvider = Object.values(providerConfigs).some(
-        (pc: any) => pc?.token?.trim()
-      )
-      setConfigurado(temApiKey || temTokenEmAlgumProvider)
-    })
-  }, [conversa_ativa_id])
-
-  useEffect(() => {
-    const handler = () => {
-      window.electron.ipcRenderer.invoke('ia.configuracao.obter').then((config: any) => {
-        if (!config) { setConfigurado(false); return }
-        const temApiKey = !!config.api_key
-        const providerConfigs = config.provider_configs ?? {}
-        const temTokenEmAlgumProvider = Object.values(providerConfigs).some(
-          (pc: any) => pc?.token?.trim()
-        )
-        setConfigurado(temApiKey || temTokenEmAlgumProvider)
-      })
-    }
-    window.addEventListener('ia-config-changed', handler)
-    return () => window.removeEventListener('ia-config-changed', handler)
-  }, [])
 
   // Stream event listener
   const processarStreamEventStable = useCallback(
@@ -187,9 +159,28 @@ export function IaChatView() {
     }
   }, [mensagens, carregando, texto_parcial])
 
+  const inputDisabled = carregando || !conversa_ativa_id || modelConfig.isLoading || !modelConfig.canSendMessages
+  const activeProviderLabel = modelConfig.providerOptions.find((option) => option.provider === modelConfig.provider)?.label || 'Provider ativo'
+  const showAvailabilityCard = !modelConfig.isLoading && !modelConfig.canSendMessages && (!modelConfig.showUnconfiguredState || mensagens.length > 0)
+
+  const isProviderAvailabilityError = (message?: string) => {
+    const normalized = (message || '').toLowerCase()
+    return normalized.includes('não configurad')
+      || normalized.includes('nao configurad')
+      || normalized.includes('token do openrouter')
+      || normalized.includes('api key do gemini')
+      || normalized.includes('modelo local')
+      || normalized.includes('erro ao carregar modelo local')
+      || normalized.includes('available vram')
+      || normalized.includes('context size')
+      || normalized.includes('memória insuficiente')
+      || normalized.includes('memoria insuficiente')
+      || normalized.includes('provider cloud')
+  }
+
   const enviar = async (conteudoOverride?: string) => {
     const conteudo = conteudoOverride ?? texto
-    if ((!conteudo.trim() && anexos.length === 0) || carregando || !conversa_ativa_id) return
+    if ((!conteudo.trim() && anexos.length === 0) || inputDisabled) return
 
     const now = new Date().toISOString()
     const msg: IaMensagem = {
@@ -238,6 +229,11 @@ export function IaChatView() {
       await adicionarMensagem(mensagemAssistente)
       finalizarStream()
     } catch (err: any) {
+      if (isProviderAvailabilityError(err?.message)) {
+        toast.error(err.message)
+        cancelarStream()
+        return
+      }
       await adicionarMensagem({
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
@@ -250,13 +246,13 @@ export function IaChatView() {
 
   // Edit handlers
   const handleStartEdit = (msg: IaMensagem) => {
-    if (carregando) return
+    if (carregando || !modelConfig.canSendMessages) return
     setEditingMsgId(msg.id)
     setEditText(msg.conteudo)
   }
 
   const handleConfirmEdit = async () => {
-    if (!editingMsgId || !editText.trim() || carregando) return
+    if (!editingMsgId || !editText.trim() || carregando || !modelConfig.canSendMessages) return
     const novoConteudo = await editarEReenviar(editingMsgId, editText.trim())
     setEditingMsgId(null)
     setEditText('')
@@ -272,7 +268,7 @@ export function IaChatView() {
 
   // Regenerate: find last user msg up to (and including) this msg, re-send it
   const handleRegenerate = async (msg: IaMensagem) => {
-    if (carregando) return
+    if (carregando || !modelConfig.canSendMessages) return
     // For user msg: re-send that same msg. For assistant msg: find the user msg right before it.
     let userMsg: IaMensagem | undefined
     if (msg.papel === 'usuario') {
@@ -293,24 +289,6 @@ export function IaChatView() {
     }
   }
 
-  if (configurado === false) {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-6">
-        <Bot className="size-12 opacity-20 text-muted-foreground" />
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Assistente não configurado</p>
-          <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
-            Configure um provedor de IA (Gemini ou OpenRouter) para usar o assistente.
-          </p>
-        </div>
-        <Button size="sm" variant="outline" onClick={() => navigate('/configuracoes')}>
-          <Settings className="mr-1.5 size-3.5" />
-          Abrir configurações
-        </Button>
-      </div>
-    )
-  }
-
   const toolsEmAndamentoEntries = Object.entries(tools_em_andamento)
   const hasStreamingContent = texto_parcial.length > 0 || toolsEmAndamentoEntries.length > 0 || tool_calls_parciais.length > 0
 
@@ -318,7 +296,23 @@ export function IaChatView() {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
         <div className="flex min-w-0 max-w-full flex-col gap-4 p-4">
-          {mensagens.length === 0 && (
+          {mensagens.length === 0 && modelConfig.showUnconfiguredState && (
+            <div className="flex flex-col items-center justify-center text-center gap-4 text-muted-foreground py-16">
+              <Bot className="size-12 opacity-20" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Nenhuma IA disponível</p>
+                <p className="text-xs max-w-[260px] leading-relaxed">
+                  Configure Gemini/OpenRouter ou baixe um modelo local para liberar o assistente.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => navigate('/configuracoes')}>
+                <Settings className="mr-1.5 size-3.5" />
+                Abrir configurações
+              </Button>
+            </div>
+          )}
+
+          {mensagens.length === 0 && !modelConfig.showUnconfiguredState && (
             <div className="flex flex-col items-center justify-center text-center gap-3 text-muted-foreground py-16">
               <Bot className="size-12 opacity-20" />
               <div>
@@ -360,7 +354,7 @@ export function IaChatView() {
                     msg={m}
                     onEdit={m.papel === 'usuario' ? handleStartEdit : undefined}
                     onRegenerate={handleRegenerate}
-                    showActions={!carregando}
+                    showActions={!carregando && modelConfig.canSendMessages}
                   />
                 )}
                 {m.papel === 'usuario' && m.anexos && m.anexos.length > 0 && (
@@ -439,16 +433,38 @@ export function IaChatView() {
 
       <Separator />
 
+      {showAvailabilityCard && (
+        <div className="px-3 pt-3">
+          <Alert className="border-amber-200 bg-amber-50/60 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
+            <AlertCircle className="size-4" />
+            <AlertDescription className="flex items-center justify-between gap-3 text-xs leading-relaxed">
+              <span>
+                {modelConfig.showUnconfiguredState
+                  ? 'Nenhum provider está disponível no momento.'
+                  : `${activeProviderLabel} indisponível: ${modelConfig.activeProviderReason || 'configure o provider ou troque pelo seletor.'}`}
+              </span>
+              {modelConfig.showUnconfiguredState ? (
+                <Button size="sm" variant="outline" onClick={() => navigate('/configuracoes')}>
+                  Configurar
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
       <IaChatInput
         value={texto}
         onChange={setTexto}
         onEnviar={enviar}
-        disabled={carregando || !conversa_ativa_id}
+        disabled={inputDisabled}
         conversaId={conversa_ativa_id}
         provider={modelConfig.provider}
+        providerOptions={modelConfig.providerOptions}
         modelo={modelConfig.modelo}
         modeloLabel={modelConfig.modeloLabel}
         modelOptions={modelConfig.modelOptions}
+        modelSelectDisabled={modelConfig.modelSelectDisabled}
         onProviderChange={modelConfig.setProvider}
         onModeloChange={modelConfig.setModelo}
         tokensEstimados={tokensEstimados}

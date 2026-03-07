@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -187,6 +187,71 @@ const colabSchema = z.object({
 type ColabFormInput = z.input<typeof colabSchema>
 type ColabFormData = z.output<typeof colabSchema>
 
+type RegraDiaForm = {
+  enabled: boolean
+  id: number | null
+  tipo_restricao: TipoRestricao
+  horario: string
+}
+
+function getDefaultRegraForm() {
+  return {
+    perfil_horario_id: 'none',
+    tipo_restricao: 'nenhum' as TipoRestricao,
+    horario: '',
+    preferencia_turno_soft: 'none',
+    domingo_ciclo_trabalho: 2,
+    domingo_ciclo_folga: 1,
+    folga_fixa_dia_semana: 'none',
+    folga_variavel_dia_semana: 'none',
+  }
+}
+
+function getDefaultRegrasDiaForm(): Record<string, RegraDiaForm> {
+  return {
+    SEG: { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' },
+    TER: { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' },
+    QUA: { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' },
+    QUI: { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' },
+    SEX: { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' },
+    SAB: { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' },
+    DOM: { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' },
+  }
+}
+
+function buildRegraFormFromRegras(regras: RegraHorarioColaborador[]) {
+  const padrao = regras.find(r => r.dia_semana_regra === null)
+  if (!padrao) return getDefaultRegraForm()
+
+  const { tipo_restricao, horario } = inicioFimParaRestricao(padrao.inicio, padrao.fim)
+  return {
+    perfil_horario_id: padrao.perfil_horario_id != null ? String(padrao.perfil_horario_id) : 'none',
+    tipo_restricao,
+    horario,
+    preferencia_turno_soft: padrao.preferencia_turno_soft ?? 'none',
+    domingo_ciclo_trabalho: padrao.domingo_ciclo_trabalho,
+    domingo_ciclo_folga: padrao.domingo_ciclo_folga,
+    folga_fixa_dia_semana: padrao.folga_fixa_dia_semana ?? 'none',
+    folga_variavel_dia_semana: padrao.folga_variavel_dia_semana ?? 'none',
+  }
+}
+
+function buildRegrasDiaFormFromRegras(regras: RegraHorarioColaborador[]): Record<string, RegraDiaForm> {
+  const diaDefaults = getDefaultRegrasDiaForm()
+
+  for (const r of regras.filter(r => r.dia_semana_regra !== null)) {
+    const { tipo_restricao, horario } = inicioFimParaRestricao(r.inicio, r.fim)
+    diaDefaults[r.dia_semana_regra!] = {
+      enabled: true,
+      id: r.id,
+      tipo_restricao,
+      horario,
+    }
+  }
+
+  return diaDefaults
+}
+
 export function ColaboradorDetalhe() {
   const { id } = useParams<{ id: string }>()
   const colabId = parseInt(id!)
@@ -217,33 +282,21 @@ export function ColaboradorDetalhe() {
   const [regrasHorario, setRegrasHorario] = useState<RegraHorarioColaborador[]>([])
   const [perfisHorario, setPerfisHorario] = useState<PerfilHorarioContrato[]>([])
   const [regraSalvando, setRegraSalvando] = useState(false)
-  const [regraForm, setRegraForm] = useState({
-    perfil_horario_id: 'none' as string,
-    tipo_restricao: 'nenhum' as TipoRestricao,
-    horario: '',
-    preferencia_turno_soft: 'none' as string,
-    domingo_ciclo_trabalho: 2,
-    domingo_ciclo_folga: 1,
-    folga_fixa_dia_semana: 'none' as string,
-    folga_variavel_dia_semana: 'none' as string,
-  })
+  const [regraForm, setRegraForm] = useState(getDefaultRegraForm)
 
   // Seccao B: Regras por dia da semana
-  type RegraDiaForm = {
-    enabled: boolean
-    id: number | null
-    tipo_restricao: TipoRestricao
-    horario: string
-  }
-  const REGRA_DIA_DEFAULT: RegraDiaForm = { enabled: false, id: null, tipo_restricao: 'nenhum', horario: '' }
-  const [regrasDiaForm, setRegrasDiaForm] = useState<Record<string, RegraDiaForm>>({
-    SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
-    QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
-    DOM: { ...REGRA_DIA_DEFAULT },
-  })
+  const [regrasDiaForm, setRegrasDiaForm] = useState<Record<string, RegraDiaForm>>(getDefaultRegrasDiaForm)
 
   // Derivados: regra padrao
   const regraPadrao = regrasHorario.find(r => r.dia_semana_regra === null) ?? null
+  const regraFormBaseline = useMemo(() => buildRegraFormFromRegras(regrasHorario), [regrasHorario])
+  const regrasDiaFormBaseline = useMemo(() => buildRegrasDiaFormFromRegras(regrasHorario), [regrasHorario])
+  const hasUnsavedRegraChanges = useMemo(
+    () =>
+      JSON.stringify(regraForm) !== JSON.stringify(regraFormBaseline) ||
+      JSON.stringify(regrasDiaForm) !== JSON.stringify(regrasDiaFormBaseline),
+    [regraForm, regraFormBaseline, regrasDiaForm, regrasDiaFormBaseline],
+  )
 
   // Seccao C: Excecoes por data
   const [excecoesPorData, setExcecoesPorData] = useState<RegraHorarioColaboradorExcecaoData[]>([])
@@ -317,39 +370,8 @@ export function ColaboradorDetalhe() {
     if (!colabId) return
     colaboradoresService.buscarRegraHorario(colabId).then((regras) => {
       setRegrasHorario(regras)
-
-      // Seccao A: Popular form da regra padrao
-      const padrao = regras.find(r => r.dia_semana_regra === null)
-      if (padrao) {
-        const { tipo_restricao, horario } = inicioFimParaRestricao(padrao.inicio, padrao.fim)
-        setRegraForm({
-          perfil_horario_id: padrao.perfil_horario_id != null ? String(padrao.perfil_horario_id) : 'none',
-          tipo_restricao,
-          horario,
-          preferencia_turno_soft: padrao.preferencia_turno_soft ?? 'none',
-          domingo_ciclo_trabalho: padrao.domingo_ciclo_trabalho,
-          domingo_ciclo_folga: padrao.domingo_ciclo_folga,
-          folga_fixa_dia_semana: padrao.folga_fixa_dia_semana ?? 'none',
-          folga_variavel_dia_semana: padrao.folga_variavel_dia_semana ?? 'none',
-        })
-      }
-
-      // Seccao B: Popular form das regras por dia
-      const diaDefaults: Record<string, RegraDiaForm> = {
-        SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
-        QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
-        DOM: { ...REGRA_DIA_DEFAULT },
-      }
-      for (const r of regras.filter(r => r.dia_semana_regra !== null)) {
-        const { tipo_restricao, horario } = inicioFimParaRestricao(r.inicio, r.fim)
-        diaDefaults[r.dia_semana_regra!] = {
-          enabled: true,
-          id: r.id,
-          tipo_restricao,
-          horario,
-        }
-      }
-      setRegrasDiaForm(diaDefaults)
+      setRegraForm(buildRegraFormFromRegras(regras))
+      setRegrasDiaForm(buildRegrasDiaFormFromRegras(regras))
     }).catch(() => {})
     colaboradoresService.listarRegrasExcecaoData(colabId).then(setExcecoesPorData).catch(() => {})
   }, [colabId])
@@ -371,18 +393,30 @@ export function ColaboradorDetalhe() {
       const contratoSelecionado = contratosList.find((tc) => tc.id === contratoId)
       const horasSemanaisEfetivas = contratoSelecionado?.horas_semanais ?? data.horas_semanais
       const tipoTrabalhadorEfetivo = derivarTipoTrabalhadorPorContrato(contratoSelecionado?.nome)
+      const nextValues: ColabFormInput = {
+        nome: data.nome.trim(),
+        sexo: data.sexo,
+        setor_id: data.setor_id,
+        tipo_contrato_id: data.tipo_contrato_id,
+        horas_semanais: horasSemanaisEfetivas,
+        prefere_turno: data.prefere_turno,
+        evitar_dia_semana: data.evitar_dia_semana,
+        tipo_trabalhador: tipoTrabalhadorEfetivo,
+        funcao_id: data.funcao_id,
+      }
 
       await colaboradoresService.atualizar(colabId, {
-        nome: data.nome.trim(),
-        sexo: data.sexo as 'M' | 'F',
-        setor_id: parseInt(data.setor_id),
+        nome: nextValues.nome,
+        sexo: nextValues.sexo as 'M' | 'F',
+        setor_id: parseInt(nextValues.setor_id),
         tipo_contrato_id: contratoId,
         horas_semanais: horasSemanaisEfetivas,
-        prefere_turno: data.prefere_turno === 'none' ? null : data.prefere_turno as 'MANHA' | 'TARDE',
-        evitar_dia_semana: data.evitar_dia_semana === 'none' ? null : data.evitar_dia_semana as DiaSemana,
+        prefere_turno: nextValues.prefere_turno === 'none' ? null : nextValues.prefere_turno as 'MANHA' | 'TARDE',
+        evitar_dia_semana: nextValues.evitar_dia_semana === 'none' ? null : nextValues.evitar_dia_semana as DiaSemana,
         tipo_trabalhador: tipoTrabalhadorEfetivo,
-        funcao_id: data.funcao_id === 'none' ? null : parseInt(data.funcao_id),
+        funcao_id: nextValues.funcao_id === 'none' ? null : parseInt(nextValues.funcao_id),
       })
+      colabForm.reset(nextValues)
       toast.success('Colaborador salvo')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar colaborador')
@@ -477,21 +511,8 @@ export function ColaboradorDetalhe() {
       // 3. Reload
       const regras = await colaboradoresService.buscarRegraHorario(colabId)
       setRegrasHorario(regras)
-      const diaDefaults: Record<string, RegraDiaForm> = {
-        SEG: { ...REGRA_DIA_DEFAULT }, TER: { ...REGRA_DIA_DEFAULT }, QUA: { ...REGRA_DIA_DEFAULT },
-        QUI: { ...REGRA_DIA_DEFAULT }, SEX: { ...REGRA_DIA_DEFAULT }, SAB: { ...REGRA_DIA_DEFAULT },
-        DOM: { ...REGRA_DIA_DEFAULT },
-      }
-      for (const r of regras.filter(r => r.dia_semana_regra !== null)) {
-        const { tipo_restricao, horario } = inicioFimParaRestricao(r.inicio, r.fim)
-        diaDefaults[r.dia_semana_regra!] = {
-          enabled: true,
-          id: r.id,
-          tipo_restricao,
-          horario,
-        }
-      }
-      setRegrasDiaForm(diaDefaults)
+      setRegraForm(buildRegraFormFromRegras(regras))
+      setRegrasDiaForm(buildRegrasDiaFormFromRegras(regras))
 
       toast.success('Regra de horario salva')
     } catch (err) {
@@ -605,6 +626,15 @@ export function ColaboradorDetalhe() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => colabForm.reset()}
+              disabled={salvando || !colabForm.formState.isDirty}
+            >
+              Cancelar
+            </Button>
             <Button size="sm" onClick={colabForm.handleSubmit(handleSalvar)} disabled={salvando}>
               <Save className="mr-1 size-3.5" />
               {salvando ? 'Salvando...' : 'Salvar'}
@@ -837,10 +867,24 @@ export function ColaboradorDetalhe() {
                       <Badge variant="outline" className="text-xs">Configurado</Badge>
                     )}
                   </div>
-                  <Button size="sm" onClick={handleSalvarRegra} disabled={regraSalvando}>
-                    <Save className="mr-1 size-3.5" />
-                    {regraSalvando ? 'Salvando...' : 'Salvar Regra'}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setRegraForm(regraFormBaseline)
+                        setRegrasDiaForm(regrasDiaFormBaseline)
+                      }}
+                      disabled={regraSalvando || !hasUnsavedRegraChanges}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button size="sm" onClick={handleSalvarRegra} disabled={regraSalvando}>
+                      <Save className="mr-1 size-3.5" />
+                      {regraSalvando ? 'Salvando...' : 'Salvar Regra'}
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {/* Perfil de horario */}

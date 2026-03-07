@@ -193,15 +193,21 @@ export function RegrasPagina() {
     if (!empresa) return
     setSalvando(true)
     try {
+      const nextValues: RegrasFormData = {
+        corte_semanal: data.corte_semanal,
+        tolerancia_semanal_min: data.tolerancia_semanal_min,
+        usa_cct_intervalo_reduzido: data.usa_cct_intervalo_reduzido,
+      }
       await empresaService.atualizar({
         nome: empresa.nome,
         cnpj: empresa.cnpj ?? '',
         telefone: empresa.telefone ?? '',
-        corte_semanal: data.corte_semanal,
-        tolerancia_semanal_min: data.tolerancia_semanal_min,
-        min_intervalo_almoco_min: data.usa_cct_intervalo_reduzido ? 30 : 60,
-        usa_cct_intervalo_reduzido: data.usa_cct_intervalo_reduzido,
+        corte_semanal: nextValues.corte_semanal,
+        tolerancia_semanal_min: nextValues.tolerancia_semanal_min,
+        min_intervalo_almoco_min: nextValues.usa_cct_intervalo_reduzido ? 30 : 60,
+        usa_cct_intervalo_reduzido: nextValues.usa_cct_intervalo_reduzido,
       })
+      form.reset(nextValues)
       toast.success('Regras salvas')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
@@ -273,6 +279,15 @@ export function RegrasPagina() {
             >
               <RotateCcw className="mr-1 size-3.5" />
               {resetando ? 'Restaurando...' : 'Restaurar Padrões'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => form.reset()}
+              disabled={salvando || !form.formState.isDirty}
+            >
+              Cancelar
             </Button>
             <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={salvando}>
               <Save className="mr-1 size-3.5" />

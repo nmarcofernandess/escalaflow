@@ -2,18 +2,91 @@ import { ChevronDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import type { IaProviderId, IaModelCatalogItem } from '@shared/index'
+import type { IaProviderId } from '@shared/index'
+import { cn } from '@/lib/utils'
+
+type ProviderOption = {
+  provider: IaProviderId
+  label: string
+  disabled: boolean
+  reason?: string
+}
+
+type ModelOption = {
+  id: string
+  label: string
+  disabled: boolean
+  reason?: string
+}
 
 interface Props {
   provider: IaProviderId
+  providerOptions: ProviderOption[]
   modelo: string
   modeloLabel: string
-  modelOptions: IaModelCatalogItem[]
+  modelOptions: ModelOption[]
+  variant?: 'popover' | 'inline'
+  modelSelectDisabled?: boolean
   onProviderChange: (p: IaProviderId) => Promise<void>
   onModeloChange: (m: string) => Promise<void>
 }
 
-export function IaModelPill({ provider, modelo, modeloLabel, modelOptions, onProviderChange, onModeloChange }: Props) {
+export function IaModelPill({
+  provider,
+  providerOptions,
+  modelo,
+  modeloLabel,
+  modelOptions,
+  variant = 'popover',
+  modelSelectDisabled = false,
+  onProviderChange,
+  onModeloChange,
+}: Props) {
+  const compact = variant === 'popover'
+
+  const content = (
+    <div className={cn('space-y-4', !compact && 'rounded-2xl border bg-card p-6 shadow-sm')}>
+      <div className="space-y-2">
+        <Label className={cn(compact ? 'text-xs' : 'text-sm')}>Provedor</Label>
+        <Select value={provider} onValueChange={(value) => onProviderChange(value as IaProviderId)}>
+          <SelectTrigger className={cn(compact ? 'h-8 text-xs' : 'h-12 text-sm')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {providerOptions.map((option) => (
+              <SelectItem key={option.provider} value={option.provider} disabled={option.disabled} className={cn(compact ? 'text-xs' : 'text-sm')}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className={cn(compact ? 'text-xs' : 'text-sm')}>Modelo</Label>
+        <Select value={modelo} onValueChange={onModeloChange} disabled={modelSelectDisabled}>
+          <SelectTrigger className={cn(compact ? 'h-8 text-xs' : 'h-12 text-sm')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {modelOptions.length > 0 ? (
+              modelOptions.map((model) => (
+                <SelectItem key={model.id} value={model.id} disabled={model.disabled} className={cn(compact ? 'text-xs' : 'text-sm')}>
+                  {model.label}
+                </SelectItem>
+              ))
+            ) : modelo ? (
+              <SelectItem value={modelo} className={cn(compact ? 'text-xs' : 'text-sm')} disabled>
+                {modeloLabel || modelo}
+              </SelectItem>
+            ) : null}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  )
+
+  if (variant === 'inline') return content
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -22,43 +95,8 @@ export function IaModelPill({ provider, modelo, modeloLabel, modelOptions, onPro
           <ChevronDown className="size-3 shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64" align="end" sideOffset={8}>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Provedor</Label>
-            <Select value={provider} onValueChange={(v) => onProviderChange(v as IaProviderId)}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gemini">Gemini</SelectItem>
-                <SelectItem value="openrouter">OpenRouter</SelectItem>
-                <SelectItem value="local">IA Local (Offline)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Modelo</Label>
-            <Select value={modelo} onValueChange={onModeloChange}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {modelOptions.length > 0 ? (
-                  modelOptions.map(m => (
-                    <SelectItem key={m.id} value={m.id} className="text-xs">
-                      {m.label}
-                    </SelectItem>
-                  ))
-                ) : modelo ? (
-                  <SelectItem value={modelo} className="text-xs">
-                    {modeloLabel || modelo}
-                  </SelectItem>
-                ) : null}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+      <PopoverContent className="w-72" align="end" sideOffset={8}>
+        {content}
       </PopoverContent>
     </Popover>
   )

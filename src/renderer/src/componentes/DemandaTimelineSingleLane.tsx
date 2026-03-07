@@ -25,6 +25,60 @@ interface DiaState {
   segmentos: Segmento[]
 }
 
+function buildDiasState(
+  setor: Setor,
+  demandas: Demanda[],
+  horariosSemana: SetorHorarioSemana[],
+): Record<DiaSemana, DiaState> {
+  const next: Record<DiaSemana, DiaState> = {} as Record<DiaSemana, DiaState>
+  const demandasPorDia = new Map<DiaSemana, Segmento[]>()
+
+  for (const dia of DIAS_SEMANA) {
+    const segs = demandas
+      .filter((d) => d.dia_semana === dia)
+      .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+      .map((d) => ({
+        hora_inicio: d.hora_inicio,
+        hora_fim: d.hora_fim,
+        min_pessoas: d.min_pessoas,
+        override: Boolean(d.override),
+      }))
+    demandasPorDia.set(dia, segs)
+  }
+
+  for (const dia of DIAS_SEMANA) {
+    const horario = horariosSemana.find((h) => h.dia_semana === dia)
+    const abertura = horario?.hora_abertura ?? setor.hora_abertura
+    const fechamento = horario?.hora_fechamento ?? setor.hora_fechamento
+    const ativos = Boolean(horario?.ativo ?? true)
+    const usaPadrao = dia === 'SEG' ? false : Boolean(horario?.usa_padrao ?? true)
+    const segs = demandasPorDia.get(dia) ?? []
+
+    next[dia] = {
+      ativo: ativos,
+      usa_padrao: usaPadrao,
+      hora_abertura: abertura,
+      hora_fechamento: fechamento,
+      segmentos: segs.length > 0 ? segs : (ativos ? [buildDefaultSegment(setor, abertura, fechamento)] : []),
+    }
+  }
+
+  return next
+}
+
+function cloneDiasState(source: Record<DiaSemana, DiaState>): Record<DiaSemana, DiaState> {
+  const clone = {} as Record<DiaSemana, DiaState>
+
+  for (const dia of DIAS_SEMANA) {
+    clone[dia] = {
+      ...source[dia],
+      segmentos: source[dia].segmentos.map((segmento) => ({ ...segmento })),
+    }
+  }
+
+  return clone
+}
+
 interface DemandaTimelineSingleLaneProps {
   setor: Setor
   demandas: Demanda[]
@@ -70,55 +124,18 @@ export function DemandaTimelineSingleLane({
   onSalvarDia,
 }: DemandaTimelineSingleLaneProps) {
   const [tab, setTab] = useState<'PADRAO' | DiaSemana>('PADRAO')
-  const [diasState, setDiasState] = useState<Record<DiaSemana, DiaState>>(() => ({
-    SEG: { ativo: true, usa_padrao: false, hora_abertura: setor.hora_abertura, hora_fechamento: setor.hora_fechamento, segmentos: [buildDefaultSegment(setor, setor.hora_abertura, setor.hora_fechamento)] },
-    TER: { ativo: true, usa_padrao: true, hora_abertura: setor.hora_abertura, hora_fechamento: setor.hora_fechamento, segmentos: [buildDefaultSegment(setor, setor.hora_abertura, setor.hora_fechamento)] },
-    QUA: { ativo: true, usa_padrao: true, hora_abertura: setor.hora_abertura, hora_fechamento: setor.hora_fechamento, segmentos: [buildDefaultSegment(setor, setor.hora_abertura, setor.hora_fechamento)] },
-    QUI: { ativo: true, usa_padrao: true, hora_abertura: setor.hora_abertura, hora_fechamento: setor.hora_fechamento, segmentos: [buildDefaultSegment(setor, setor.hora_abertura, setor.hora_fechamento)] },
-    SEX: { ativo: true, usa_padrao: true, hora_abertura: setor.hora_abertura, hora_fechamento: setor.hora_fechamento, segmentos: [buildDefaultSegment(setor, setor.hora_abertura, setor.hora_fechamento)] },
-    SAB: { ativo: true, usa_padrao: true, hora_abertura: setor.hora_abertura, hora_fechamento: setor.hora_fechamento, segmentos: [buildDefaultSegment(setor, setor.hora_abertura, setor.hora_fechamento)] },
-    DOM: { ativo: true, usa_padrao: true, hora_abertura: setor.hora_abertura, hora_fechamento: setor.hora_fechamento, segmentos: [buildDefaultSegment(setor, setor.hora_abertura, setor.hora_fechamento)] },
-  }))
+  const baselineDiasState = useMemo(
+    () => buildDiasState(setor, demandas, horariosSemana),
+    [demandas, horariosSemana, setor],
+  )
+  const [diasState, setDiasState] = useState<Record<DiaSemana, DiaState>>(() => cloneDiasState(baselineDiasState))
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [salvando, setSalvando] = useState(false)
 
   useEffect(() => {
-    const next: Record<DiaSemana, DiaState> = {} as Record<DiaSemana, DiaState>
-    const demandasPorDia = new Map<DiaSemana, Segmento[]>()
-
-    for (const dia of DIAS_SEMANA) {
-      const segs = demandas
-        .filter((d) => d.dia_semana === dia)
-        .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
-        .map((d) => ({
-          hora_inicio: d.hora_inicio,
-          hora_fim: d.hora_fim,
-          min_pessoas: d.min_pessoas,
-          override: Boolean(d.override),
-        }))
-      demandasPorDia.set(dia, segs)
-    }
-
-    for (const dia of DIAS_SEMANA) {
-      const horario = horariosSemana.find((h) => h.dia_semana === dia)
-      const abertura = horario?.hora_abertura ?? setor.hora_abertura
-      const fechamento = horario?.hora_fechamento ?? setor.hora_fechamento
-      const ativos = Boolean(horario?.ativo ?? true)
-      const usaPadrao = dia === 'SEG' ? false : Boolean(horario?.usa_padrao ?? true)
-      const segs = demandasPorDia.get(dia) ?? []
-
-      next[dia] = {
-        ativo: ativos,
-        usa_padrao: usaPadrao,
-        hora_abertura: abertura,
-        hora_fechamento: fechamento,
-        segmentos: segs.length > 0 ? segs : (ativos ? [buildDefaultSegment(setor, abertura, fechamento)] : []),
-      }
-    }
-
-    setDiasState(next)
+    setDiasState(cloneDiasState(baselineDiasState))
     setSelectedIdx(0)
-  }, [demandas, horariosSemana, setor])
+  }, [baselineDiasState])
 
   const diaAtual: DiaSemana = tab === 'PADRAO' ? 'SEG' : tab
   const baseDia = diasState[diaAtual]
@@ -131,6 +148,10 @@ export function DemandaTimelineSingleLane({
   }, [diaRender.hora_abertura, diaRender.hora_fechamento])
 
   const selected = diaRender.segmentos[selectedIdx]
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(diasState) !== JSON.stringify(baselineDiasState),
+    [baselineDiasState, diasState],
+  )
 
   function updateDia(dia: DiaSemana, updater: (cur: DiaState) => DiaState) {
     setDiasState((prev) => ({ ...prev, [dia]: updater(prev[dia]) }))
@@ -256,6 +277,11 @@ export function DemandaTimelineSingleLane({
     }
   }
 
+  function cancelarAlteracoes() {
+    setDiasState(cloneDiasState(baselineDiasState))
+    setSelectedIdx(0)
+  }
+
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={(v) => { setTab(v as 'PADRAO' | DiaSemana); setSelectedIdx(0) }}>
@@ -378,6 +404,9 @@ export function DemandaTimelineSingleLane({
       )}
 
       <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={cancelarAlteracoes} disabled={salvando || !hasUnsavedChanges}>
+          Cancelar
+        </Button>
         <Button size="sm" onClick={() => salvarDia(diaAtual)} disabled={salvando}>
           <Save className="mr-1 size-3.5" />
           Salvar dia

@@ -652,13 +652,15 @@ export function SetorDetalhe() {
   const handleSalvar = async (data: SetorFormData) => {
     setSalvando(true)
     try {
-      await setoresService.atualizar(setorId, {
+      const nextValues: SetorFormInput = {
         nome: data.nome.trim(),
         icone: data.icone ?? null,
         hora_abertura: data.hora_abertura,
         hora_fechamento: data.hora_fechamento,
         regime_escala: data.regime_escala,
-      })
+      }
+      await setoresService.atualizar(setorId, nextValues)
+      setorForm.reset(nextValues)
       toast.success('Setor atualizado')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar setor')
@@ -1131,6 +1133,15 @@ export function SetorDetalhe() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setorForm.reset()}
+              disabled={salvando || !setorForm.formState.isDirty}
+            >
+              Cancelar
+            </Button>
             <Button size="sm" onClick={setorForm.handleSubmit(handleSalvar)} disabled={salvando}>
               <Save className="mr-1 size-3.5" />
               {salvando ? 'Salvando...' : 'Salvar'}

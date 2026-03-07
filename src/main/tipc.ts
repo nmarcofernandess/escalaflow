@@ -2201,6 +2201,12 @@ type IaProviderConfig = {
 
 type IaProviderConfigs = Partial<Record<IaProviderKey, IaProviderConfig>>
 
+const IA_PROVIDER_LABELS: Record<IaProviderKey, string> = {
+  gemini: 'Google Gemini',
+  openrouter: 'OpenRouter',
+  local: 'IA Local',
+}
+
 function parseIaProviderConfigs(raw: unknown): IaProviderConfigs {
   if (!raw) return {}
   if (typeof raw === 'object' && raw !== null) return raw as IaProviderConfigs
@@ -2228,6 +2234,265 @@ function normalizeIaConfigRow(raw: any) {
     ...raw,
     provider_configs_json: serializeIaProviderConfigs(providerConfigs),
     provider_configs: providerConfigs,
+  }
+}
+
+function getProviderToken(config: any, provider: IaProviderKey): string {
+  const providerConfigs = parseIaProviderConfigs(config?.provider_configs_json ?? config?.provider_configs)
+  const providerCfg = providerConfigs?.[provider]
+  if (providerCfg?.token?.trim()) return providerCfg.token.trim()
+  if (provider === config?.provider && typeof config?.api_key === 'string' && config.api_key.trim()) {
+    return config.api_key.trim()
+  }
+  return ''
+}
+
+function getProviderModel(config: any, provider: IaProviderKey): string {
+  const providerConfigs = parseIaProviderConfigs(config?.provider_configs_json ?? config?.provider_configs)
+  const configured = providerConfigs?.[provider]?.modelo?.trim()
+  if (configured) return configured
+  if (provider === config?.provider && typeof config?.modelo === 'string' && config.modelo.trim()) {
+    return config.modelo.trim()
+  }
+  if (provider === 'openrouter') return 'openrouter/free'
+  if (provider === 'local') return 'qwen3.5-9b'
+  return 'gemini-3-flash-preview'
+}
+
+function dedupeCapabilityModels(models: import('@shared/index').IaCapabilityModel[]) {
+  const seen = new Set<string>()
+  return models.filter((model) => {
+    if (!model.id || seen.has(model.id)) return false
+    seen.add(model.id)
+    return true
+  })
+}
+
+function inferCapabilityStatus(activeProvider: IaProviderKey | null, activeAvailable: boolean): import('@shared/index').IaCapabilityStatus {
+  if (!activeProvider) return 'unconfigured'
+  if (activeAvailable) return activeProvider === 'local' ? 'ready_local' : 'ready_cloud'
+  if (activeProvider === 'local') return 'missing_local_model'
+  return 'missing_cloud_token'
+}
+
+async function getIaCapabilities(rawConfig?: any): Promise<import('@shared/index').IaCapabilities> {
+  const config = normalizeIaConfigRow(rawConfig)
+
+  if (!config) {
+    return {
+      provider: null,
+      status: 'unconfigured',
+      has_any_available_provider: false,
+      active_provider: null,
+      active_provider_available: false,
+      show_unconfigured_state: true,
+      providers: [
+        {
+          provider: 'gemini',
+          label: IA_PROVIDER_LABELS.gemini,
+          available: false,
+          disabled: true,
+          reason: 'API key não configurada.',
+          models: dedupeCapabilityModels(staticGeminiCatalog().models.map((model) => ({
+            id: model.id,
+            label: model.label,
+            available: false,
+            disabled: true,
+            reason: 'API key não configurada.',
+          }))),
+        },
+        {
+          provider: 'openrouter',
+          label: IA_PROVIDER_LABELS.openrouter,
+          available: false,
+          disabled: true,
+          reason: 'API key não configurada.',
+          models: [{
+            id: 'openrouter/free',
+            label: 'Free Models Router',
+            available: false,
+            disabled: true,
+            reason: 'API key não configurada.',
+          }],
+        },
+        {
+          provider: 'local',
+          label: IA_PROVIDER_LABELS.local,
+          available: false,
+          disabled: true,
+          reason: 'Nenhum modelo local instalado.',
+          models: [],
+        },
+      ],
+      can_chat: false,
+      can_test_connection: false,
+      can_load_remote_catalog: false,
+      can_use_cloud_llm_features: false,
+      reason: 'configure_provider',
+      message: 'Selecione um provider de IA nas Configurações para usar o assistente.',
+    }
+  }
+
+  const { LOCAL_MODELS, getLocalStatus } = await import('./ia/local-llm')
+  const localStatus = getLocalStatus()
+
+  const geminiToken = getProviderToken(config, 'gemini')
+  const geminiAvailable = geminiToken.length > 0
+  const geminiReason = geminiAvailable ? undefined : 'API key não configurada.'
+  const geminiModels = dedupeCapabilityModels([
+    ...staticGeminiCatalog().models.map((model) => ({
+      id: model.id,
+      label: model.label,
+      available: geminiAvailable,
+      disabled: !geminiAvailable,
+      reason: geminiReason,
+    })),
+    {
+      id: getProviderModel(config, 'gemini'),
+      label: getProviderModel(config, 'gemini'),
+      available: geminiAvailable,
+      disabled: !geminiAvailable,
+      reason: geminiReason,
+    },
+  ])
+
+  const openrouterToken = getProviderToken(config, 'openrouter')
+  const openrouterAvailable = openrouterToken.length > 0
+  const openrouterReason = openrouterAvailable ? undefined : 'API key não configurada.'
+  const openrouterSavedModel = getProviderModel(config, 'openrouter')
+  const openrouterFavorites = parseIaProviderConfigs(config.provider_configs_json).openrouter?.favoritos ?? []
+  const openrouterModels = dedupeCapabilityModels([
+    {
+      id: 'openrouter/free',
+      label: 'Free Models Router',
+      available: openrouterAvailable,
+      disabled: !openrouterAvailable,
+      reason: openrouterReason,
+    },
+    ...openrouterFavorites.map((modelId) => ({
+      id: modelId,
+      label: modelId,
+      available: openrouterAvailable,
+      disabled: !openrouterAvailable,
+      reason: openrouterReason,
+    })),
+    {
+      id: openrouterSavedModel,
+      label: openrouterSavedModel,
+      available: openrouterAvailable,
+      disabled: !openrouterAvailable,
+      reason: openrouterReason,
+    },
+  ])
+
+  const localModels = dedupeCapabilityModels(
+    (Object.entries(LOCAL_MODELS) as Array<[string, typeof LOCAL_MODELS[keyof typeof LOCAL_MODELS]]>).map(([modelId, model]) => {
+      const downloaded = Boolean(localStatus.modelos[modelId]?.baixado)
+      return {
+        id: modelId,
+        label: model.label,
+        available: downloaded,
+        disabled: !downloaded,
+        reason: downloaded ? undefined : 'Modelo não instalado.',
+      }
+    })
+  )
+  const localAvailable = localModels.some((model) => model.available)
+  const localReason = localAvailable ? undefined : 'Nenhum modelo local instalado.'
+
+  const providers: import('@shared/index').IaCapabilityProvider[] = [
+    {
+      provider: 'gemini',
+      label: IA_PROVIDER_LABELS.gemini,
+      available: geminiAvailable,
+      disabled: !geminiAvailable,
+      reason: geminiReason,
+      models: geminiModels,
+    },
+    {
+      provider: 'openrouter',
+      label: IA_PROVIDER_LABELS.openrouter,
+      available: openrouterAvailable,
+      disabled: !openrouterAvailable,
+      reason: openrouterReason,
+      models: openrouterModels,
+    },
+    {
+      provider: 'local',
+      label: IA_PROVIDER_LABELS.local,
+      available: localAvailable,
+      disabled: !localAvailable,
+      reason: localReason,
+      models: localModels,
+    },
+  ]
+
+  const activeProvider = (config.provider ?? null) as IaProviderKey | null
+  const activeProviderEntry = providers.find((provider) => provider.provider === activeProvider) ?? null
+  const hasAnyAvailableProvider = providers.some((provider) => provider.available)
+  const activeProviderAvailable = Boolean(activeProviderEntry?.available)
+  const activeReason = activeProviderEntry?.reason
+  const showUnconfiguredState = !hasAnyAvailableProvider
+  const status = inferCapabilityStatus(activeProvider, activeProviderAvailable)
+
+  let reason: import('@shared/index').IaCapabilities['reason'] | undefined
+  if (showUnconfiguredState) {
+    reason = 'configure_provider'
+  } else if (!activeProviderAvailable && activeProvider === 'local') {
+    reason = 'download_local_model'
+  } else if (!activeProviderAvailable && activeProvider) {
+    reason = 'configure_cloud_token'
+  }
+
+  const message = showUnconfiguredState
+    ? 'Nenhum provider de IA está disponível. Configure Gemini/OpenRouter ou baixe um modelo local.'
+    : activeProviderAvailable
+      ? `${activeProviderEntry?.label ?? 'Provider'} pronto para uso.`
+      : `${activeProviderEntry?.label ?? 'Provider'} indisponível: ${activeReason}`
+
+  return {
+    provider: activeProvider,
+    status,
+    has_any_available_provider: hasAnyAvailableProvider,
+    active_provider: activeProvider,
+    active_provider_available: activeProviderAvailable,
+    show_unconfigured_state: showUnconfiguredState,
+    providers,
+    can_chat: activeProviderAvailable,
+    can_test_connection: activeProviderAvailable,
+    can_load_remote_catalog: activeProvider === 'gemini' || activeProvider === 'openrouter',
+    can_use_cloud_llm_features: activeProviderAvailable && activeProvider !== 'local',
+    reason,
+    message,
+  }
+}
+
+async function requireCloudLlmFeature(featureLabel: string): Promise<any> {
+  const config = await queryOne('SELECT * FROM configuracao_ia LIMIT 1')
+  const capabilities = await getIaCapabilities(config)
+
+  if (!config || capabilities.status === 'unconfigured') {
+    throw new Error('Assistente IA não configurado. Selecione um provider nas Configurações.')
+  }
+
+  if (config.provider === 'local') {
+    throw new Error(`${featureLabel} ainda requer um provider cloud (Gemini ou OpenRouter).`)
+  }
+
+  if (!capabilities.can_use_cloud_llm_features) {
+    throw new Error(`${featureLabel} requer token do provider cloud configurado.`)
+  }
+
+  return config
+}
+
+async function formatIaConfigForRenderer(raw: any) {
+  const normalized = normalizeIaConfigRow(raw)
+  if (!normalized) return null
+  const capabilities = await getIaCapabilities(normalized)
+  return {
+    ...normalized,
+    ativo: capabilities.active_provider_available,
   }
 }
 
@@ -2260,13 +2525,53 @@ const IA_MODEL_CATALOG_CACHE_TTL_MS = 15 * 60 * 1000
 const iaModelCatalogCache = new Map<string, { at: number; value: IaModelCatalogResult }>()
 
 function makeCatalogCacheKey(provider: IaModelCatalogProvider, cfg?: IaProviderConfig): string {
-  const tokenPresent = Boolean(cfg?.token?.trim())
-  return `${provider}:${tokenPresent ? 'token' : 'no-token'}`
+  const token = cfg?.token?.trim()
+  const tokenSignature = token ? `${token.length}:${token.slice(-8)}` : 'no-token'
+  return `${provider}:${tokenSignature}`
 }
 
 function parsePrice(raw: unknown): number {
   const n = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : 0
   return Number.isFinite(n) ? n : 0
+}
+
+function mapOpenRouterModels(data: { data?: any[]; models?: any[] }): IaModelCatalogItem[] {
+  const rawModels = Array.isArray(data.data)
+    ? data.data
+    : Array.isArray(data.models)
+      ? data.models
+      : []
+
+  return rawModels
+    .map((m) => {
+      const prompt = String(m?.pricing?.prompt ?? '0')
+      const completion = String(m?.pricing?.completion ?? '0')
+      const isFree = parsePrice(prompt) === 0 && parsePrice(completion) === 0
+      const supportsTools = Array.isArray(m?.supported_parameters) ? m.supported_parameters.includes('tools') : false
+      return {
+        id: String(m.id),
+        label: m.name ? String(m.name) : String(m.id),
+        provider: 'openrouter' as const,
+        source: 'api' as const,
+        description: typeof m.description === 'string' ? m.description : undefined,
+        context_length: Number.isFinite(Number(m.context_length)) ? Number(m.context_length) : undefined,
+        pricing: { prompt, completion },
+        is_free: isFree,
+        supports_tools: supportsTools,
+        is_agentic: supportsTools,
+        tags: [
+          ...(isFree ? ['free'] : []),
+          ...(supportsTools ? ['tools', 'agentic'] : []),
+        ],
+      }
+    })
+    .sort((a, b) => {
+      if (a.is_free && !b.is_free) return -1
+      if (!a.is_free && b.is_free) return 1
+      if (a.supports_tools && !b.supports_tools) return -1
+      if (!a.supports_tools && b.supports_tools) return 1
+      return a.label.localeCompare(b.label)
+    })
 }
 
 function staticGeminiCatalog(): IaModelCatalogResult {
@@ -2292,37 +2597,7 @@ async function fetchOpenRouterCatalog(): Promise<IaModelCatalogResult> {
     throw new Error(`OpenRouter API error: ${response.status}`)
   }
   const data = await response.json() as { data?: any[] }
-  const models: IaModelCatalogItem[] = (data.data ?? [])
-    .map((m) => {
-      const prompt = String(m?.pricing?.prompt ?? '0')
-      const completion = String(m?.pricing?.completion ?? '0')
-      const isFree = parsePrice(prompt) === 0 && parsePrice(completion) === 0
-      const supportsTools = Array.isArray(m?.supported_parameters) ? m.supported_parameters.includes('tools') : false
-      return {
-        id: String(m.id),
-        label: m.name ? String(m.name) : String(m.id),
-        provider: 'openrouter' as const,
-        source: 'api' as const,
-        description: typeof m.description === 'string' ? m.description : undefined,
-        context_length: Number.isFinite(Number(m.context_length)) ? Number(m.context_length) : undefined,
-        pricing: { prompt, completion },
-        is_free: isFree,
-        supports_tools: supportsTools,
-        // Command Center intelligence: "agentic" here means tool-capable in practice.
-        is_agentic: supportsTools,
-        tags: [
-          ...(isFree ? ['free'] : []),
-          ...(supportsTools ? ['tools', 'agentic'] : []),
-        ],
-      }
-    })
-    .sort((a, b) => {
-      if (a.is_free && !b.is_free) return -1
-      if (!a.is_free && b.is_free) return 1
-      if (a.supports_tools && !b.supports_tools) return -1
-      if (!a.supports_tools && b.supports_tools) return 1
-      return a.label.localeCompare(b.label)
-    })
+  const models = mapOpenRouterModels(data)
 
   return {
     provider: 'openrouter',
@@ -2331,6 +2606,30 @@ async function fetchOpenRouterCatalog(): Promise<IaModelCatalogResult> {
     fetched_at: new Date().toISOString(),
     cached: false,
     message: 'Catálogo em tempo real do OpenRouter com metadados free/tools (agêntico).',
+  }
+}
+
+async function fetchOpenRouterUserCatalog(token: string): Promise<IaModelCatalogResult> {
+  const response = await fetch('https://openrouter.ai/api/v1/models/user', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`OpenRouter user models API error: ${response.status}`)
+  }
+
+  const data = await response.json() as { data?: any[] }
+  const models = mapOpenRouterModels(data)
+
+  return {
+    provider: 'openrouter',
+    source: 'api',
+    models,
+    fetched_at: new Date().toISOString(),
+    cached: false,
+    message: 'Catálogo OpenRouter filtrado pela sua conta e pelas políticas atuais.',
   }
 }
 
@@ -2358,17 +2657,41 @@ async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProvi
     // Lista curada — sem fetch dinâmico (evita Nano Banana, Robotics, TTS etc)
     result = staticGeminiCatalog()
   } else {
-    result = await fetchOpenRouterCatalog()
+    const token = cfg?.token?.trim()
+    if (token) {
+      try {
+        result = await fetchOpenRouterUserCatalog(token)
+      } catch (error: any) {
+        console.warn('[OpenRouter] Falha ao carregar modelos da conta; usando catálogo global:', error?.message)
+        const fallback = await fetchOpenRouterCatalog()
+        result = {
+          ...fallback,
+          message: 'Não consegui carregar os modelos da sua conta OpenRouter. Exibindo catálogo global como fallback.',
+        }
+      }
+    } else {
+      result = await fetchOpenRouterCatalog()
+    }
   }
 
   iaModelCatalogCache.set(cacheKey, { at: now, value: { ...result, cached: false } })
   return result
 }
 
+async function testOpenRouterModel(token: string, modelId: string): Promise<void> {
+  await iaTestarConexao('openrouter', token, modelId)
+}
+
 const iaConfiguracaoObter = t.procedure
   .action(async () => {
     const config = await queryOne('SELECT * FROM configuracao_ia LIMIT 1')
-    return normalizeIaConfigRow(config)
+    return await formatIaConfigForRenderer(config)
+  })
+
+const iaCapabilitiesObter = t.procedure
+  .action(async () => {
+    const config = await queryOne('SELECT * FROM configuracao_ia LIMIT 1')
+    return await getIaCapabilities(config)
   })
 
 const iaConfiguracaoSalvar = t.procedure
@@ -2376,16 +2699,25 @@ const iaConfiguracaoSalvar = t.procedure
   .action(async ({ input }) => {
     const existe = await queryOne<{ id: number }>('SELECT id FROM configuracao_ia LIMIT 1')
     const providerConfigsJson = serializeIaProviderConfigs(parseIaProviderConfigs(input.provider_configs_json))
+    const previewRow = normalizeIaConfigRow({
+      ...(existe ? await queryOne('SELECT * FROM configuracao_ia LIMIT 1') : {}),
+      provider: input.provider,
+      api_key: input.api_key,
+      modelo: input.modelo,
+      provider_configs_json: providerConfigsJson,
+    })
+    const previewCapabilities = await getIaCapabilities(previewRow)
+    const ativo = previewCapabilities.active_provider_available
 
     if (existe) {
-      await execute(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, provider_configs_json = ?, ativo = TRUE, atualizado_em = NOW() WHERE id = ?`,
-        input.provider, input.api_key, input.modelo, providerConfigsJson, existe.id)
+      await execute(`UPDATE configuracao_ia SET provider = ?, api_key = ?, modelo = ?, provider_configs_json = ?, ativo = ?, atualizado_em = NOW() WHERE id = ?`,
+        input.provider, input.api_key, input.modelo, providerConfigsJson, ativo, existe.id)
     } else {
-      await execute(`INSERT INTO configuracao_ia (provider, api_key, modelo, provider_configs_json, ativo) VALUES (?, ?, ?, ?, TRUE)`,
-        input.provider, input.api_key, input.modelo, providerConfigsJson)
+      await execute(`INSERT INTO configuracao_ia (provider, api_key, modelo, provider_configs_json, ativo) VALUES (?, ?, ?, ?, ?)`,
+        input.provider, input.api_key, input.modelo, providerConfigsJson, ativo)
     }
 
-    return normalizeIaConfigRow(await queryOne('SELECT * FROM configuracao_ia LIMIT 1'))
+    return await formatIaConfigForRenderer(await queryOne('SELECT * FROM configuracao_ia LIMIT 1'))
   })
 
 const iaConfiguracaoTestar = t.procedure
@@ -2427,6 +2759,76 @@ const iaModelosCatalogo = t.procedure
   .input<{ provider: IaModelCatalogProvider; provider_config?: IaProviderConfig; force_refresh?: boolean }>()
   .action(async ({ input }) => {
     return await getIaModelCatalog(input.provider, input.provider_config, Boolean(input.force_refresh))
+  })
+
+const iaOpenRouterTestarGratuitos = t.procedure
+  .input<{ provider_config?: IaProviderConfig; model_ids?: string[] }>()
+  .action(async ({ input }) => {
+    const token = input.provider_config?.token?.trim()
+    if (!token) {
+      throw new Error('Token/OpenRouter API Key não configurado.')
+    }
+
+    const catalog = await getIaModelCatalog('openrouter', input.provider_config, true)
+    const requestedIds = new Set((input.model_ids ?? []).filter(Boolean))
+    const freeModels = catalog.models.filter((model) => (
+      model.is_free
+      && model.id !== 'openrouter/free'
+      && (requestedIds.size === 0 || requestedIds.has(model.id))
+    ))
+
+    if (freeModels.length === 0) {
+      return {
+        total_models: catalog.models.length,
+        tested_models: 0,
+        success_count: 0,
+        successful_model_ids: [],
+        failed_models: [],
+      } satisfies import('@shared/index').IaOpenRouterFreeModelsTestResult
+    }
+
+    const queue = [...freeModels]
+    const results: Array<{ id: string; ok: boolean; error?: string }> = []
+    const concurrency = Math.min(4, freeModels.length)
+
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (queue.length > 0) {
+          const nextModel = queue.shift()
+          if (!nextModel) return
+
+          try {
+            await testOpenRouterModel(token, nextModel.id)
+            results.push({ id: nextModel.id, ok: true })
+          } catch (error: any) {
+            results.push({
+              id: nextModel.id,
+              ok: false,
+              error: error?.message || 'Erro desconhecido ao testar modelo.',
+            })
+          }
+        }
+      })
+    )
+
+    const successfulModelIds = freeModels
+      .map((model) => model.id)
+      .filter((id) => results.some((result) => result.id === id && result.ok))
+
+    const failedModels = freeModels
+      .map((model) => {
+        const result = results.find((entry) => entry.id === model.id && !entry.ok)
+        return result ? { id: model.id, error: result.error || 'Erro desconhecido ao testar modelo.' } : null
+      })
+      .filter((entry): entry is { id: string; error: string } => Boolean(entry))
+
+    return {
+      total_models: catalog.models.length,
+      tested_models: freeModels.length,
+      success_count: successfulModelIds.length,
+      successful_model_ids: successfulModelIds,
+      failed_models: failedModels,
+    } satisfies import('@shared/index').IaOpenRouterFreeModelsTestResult
   })
 
 // ---------------------------------------------------------------------------
@@ -3372,17 +3774,15 @@ const knowledgeGerarMetadataIa = t.procedure
   const { createOpenRouter } = await import('@openrouter/ai-sdk-provider')
   const { resolveProviderApiKey, resolveModel } = await import('./ia/config')
 
-  const config = await queryOne<{
+  const config = await requireCloudLlmFeature('Gerar metadados com IA') as {
     provider: 'gemini' | 'openrouter'
     api_key: string
     modelo: string
     provider_configs_json?: string
-  }>('SELECT * FROM configuracao_ia LIMIT 1')
-
-  if (!config) throw new Error('IA não configurada.')
+  }
 
   const apiKey = resolveProviderApiKey(config as any)
-  if (!apiKey) throw new Error('API Key não configurada.')
+  if (!apiKey) throw new Error('Token do provider cloud não configurado.')
 
   const modelo = resolveModel(config as any, config.provider)
 
@@ -3440,12 +3840,10 @@ const knowledgeRebuildGraph = t.procedure
     const { rebuildGraph } = await import('./knowledge/graph')
     const { buildModelFactory } = await import('./ia/config')
 
-    const config = await queryOne<import('@shared/index').IaConfiguracao>(
-      'SELECT * FROM configuracao_ia LIMIT 1')
-    if (!config) throw new Error('IA nao configurada. Configure um provider nas Configuracoes.')
+    const config = await requireCloudLlmFeature('Rebuild do knowledge graph') as import('@shared/index').IaConfiguracao
 
     const factory = buildModelFactory(config)
-    if (!factory) throw new Error('API Key nao configurada. Configure nas Configuracoes.')
+    if (!factory) throw new Error('Provider cloud inválido para rebuild do knowledge graph.')
 
     const origem = input?.origem ?? 'usuario'
     const result = await rebuildGraph(factory.createModel, factory.modelo, origem)
@@ -3471,12 +3869,10 @@ const knowledgeRebuildAndExportSistema = t.procedure.action(async () => {
   const { rebuildGraph, exportGraphSeed } = await import('./knowledge/graph')
   const { buildModelFactory } = await import('./ia/config')
 
-  const config = await queryOne<import('@shared/index').IaConfiguracao>(
-    'SELECT * FROM configuracao_ia LIMIT 1')
-  if (!config) throw new Error('IA nao configurada.')
+  const config = await requireCloudLlmFeature('Rebuild do knowledge graph do sistema') as import('@shared/index').IaConfiguracao
 
   const factory = buildModelFactory(config)
-  if (!factory) throw new Error('API Key nao configurada.')
+  if (!factory) throw new Error('Provider cloud inválido para rebuild do knowledge graph do sistema.')
 
   // 1. Rebuild com LLM
   const result = await rebuildGraph(factory.createModel, factory.modelo, 'sistema')
@@ -3649,9 +4045,11 @@ export const router = {
   'ia.local.deleteModel': iaLocalDeleteModel,
   'ia.local.unload': iaLocalUnload,
   'ia.configuracao.obter': iaConfiguracaoObter,
+  'ia.capabilities.obter': iaCapabilitiesObter,
   'ia.configuracao.salvar': iaConfiguracaoSalvar,
   'ia.configuracao.testar': iaConfiguracaoTestar,
   'ia.modelos.catalogo': iaModelosCatalogo,
+  'ia.openrouter.testarGratuitos': iaOpenRouterTestarGratuitos,
   'ia.chat.lerArquivo': iaChatLerArquivo,
   'ia.chat.salvarAnexo': iaChatSalvarAnexo,
   'ia.chat.lerAnexoPreview': iaChatLerAnexoPreview,

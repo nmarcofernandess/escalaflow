@@ -875,3 +875,56 @@ export interface IaModelCatalogResult {
   cached: boolean
   message?: string
 }
+
+export interface IaModelBatchFailure {
+  id: string
+  error: string
+}
+
+export interface IaOpenRouterFreeModelsTestResult {
+  total_models: number
+  tested_models: number
+  success_count: number
+  successful_model_ids: string[]
+  failed_models: IaModelBatchFailure[]
+}
+
+export type IaCapabilityStatus =
+  | 'unconfigured'
+  | 'ready_cloud'
+  | 'ready_local'
+  | 'missing_cloud_token'
+  | 'missing_local_model'
+
+export interface IaCapabilityModel {
+  id: string
+  label: string
+  available: boolean
+  disabled: boolean
+  reason?: string
+}
+
+export interface IaCapabilityProvider {
+  provider: IaProviderId
+  label: string
+  available: boolean
+  disabled: boolean
+  reason?: string
+  models: IaCapabilityModel[]
+}
+
+export interface IaCapabilities {
+  provider: IaProviderId | null
+  status: IaCapabilityStatus
+  has_any_available_provider: boolean
+  active_provider: IaProviderId | null
+  active_provider_available: boolean
+  show_unconfigured_state: boolean
+  providers: IaCapabilityProvider[]
+  can_chat: boolean
+  can_test_connection: boolean
+  can_load_remote_catalog: boolean
+  can_use_cloud_llm_features: boolean
+  reason?: 'configure_provider' | 'configure_cloud_token' | 'download_local_model'
+  message: string
+}

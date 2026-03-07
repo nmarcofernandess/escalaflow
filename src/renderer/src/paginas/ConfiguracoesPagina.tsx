@@ -35,21 +35,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-} from '@/components/ui/form'
+import { Form } from '@/components/ui/form'
 import { PageHeader } from '@/componentes/PageHeader'
 import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -60,10 +46,16 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { servicoIaLocal } from '@/servicos/iaLocal'
 import { Progress } from '@/components/ui/progress'
+import { IaModelPill } from '@/componentes/IaModelPill'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 
-import type { IaProviderId, IaModelCatalogItem, IaModelCatalogResult } from '@shared/types'
+import type {
+  IaProviderId,
+  IaModelCatalogItem,
+  IaModelCatalogResult,
+  IaOpenRouterFreeModelsTestResult,
+} from '@shared/types'
 import { IaModelCatalogPicker } from '@/componentes/IaModelCatalogPicker'
 
 type IaProviderConfigForm = {
@@ -138,6 +130,31 @@ function normalizeProviderConfigs(input: any, iaConfig?: any) {
       ...defaults.local,
       ...(incoming.local || {}),
     },
+  }
+}
+
+function buildIaFormValues(iaConfig?: any) {
+  let parsedProviderConfigs: any = iaConfig?.provider_configs
+  if (!parsedProviderConfigs && iaConfig?.provider_configs_json) {
+    try {
+      parsedProviderConfigs = JSON.parse(iaConfig.provider_configs_json)
+    } catch {
+      parsedProviderConfigs = {}
+    }
+  }
+
+  const normalized = normalizeProviderConfigs(parsedProviderConfigs, iaConfig)
+  const provider = (iaConfig?.provider || 'gemini') as IaProviderId
+  const activeModel = normalized[provider]?.modelo || iaConfig?.modelo || IA_PROVIDER_MODELS[provider][0].value
+  const activeToken = provider === 'gemini'
+    ? (normalized.gemini.token || iaConfig?.api_key || '')
+    : ''
+
+  return {
+    provider,
+    api_key: activeToken,
+    modelo: activeModel,
+    provider_configs: normalized,
   }
 }
 
@@ -261,6 +278,7 @@ export function ConfiguracoesPagina() {
       await servicoIaLocal.download(modelId)
       toast.success('Modelo baixado com sucesso!')
       await refreshLocalModels()
+      reloadIaConfig()
     } catch (err: any) {
       if (!err.message?.includes('cancelado')) {
         toast.error(err.message || 'Erro ao baixar modelo')
@@ -285,6 +303,7 @@ export function ConfiguracoesPagina() {
       await servicoIaLocal.deleteModel(modelId)
       toast.success('Modelo removido')
       await refreshLocalModels()
+      reloadIaConfig()
     } catch (err: any) {
       toast.error(err.message || 'Erro ao remover modelo')
     }
@@ -307,6 +326,11 @@ export function ConfiguracoesPagina() {
             modelo: z.string().optional(),
             favoritos: z.array(z.string()).optional(),
           }),
+          local: z.object({
+            token: z.string().optional(),
+            modelo: z.string().optional(),
+            favoritos: z.array(z.string()).optional(),
+          }),
         }),
       })
     ),
@@ -320,33 +344,14 @@ export function ConfiguracoesPagina() {
 
   const blocker = useDirtyGuard({ isDirty: iaForm.formState.isDirty })
 
-  const { data: iaConfig } = useApiData<any>(
+  const { data: iaConfig, reload: reloadIaConfig } = useApiData<any>(
     () => window.electron.ipcRenderer.invoke('ia.configuracao.obter'),
     []
   )
 
   useEffect(() => {
     if (iaConfig) {
-      let parsedProviderConfigs: any = iaConfig.provider_configs
-      if (!parsedProviderConfigs && iaConfig.provider_configs_json) {
-        try {
-          parsedProviderConfigs = JSON.parse(iaConfig.provider_configs_json)
-        } catch {
-          parsedProviderConfigs = {}
-        }
-      }
-      const normalized = normalizeProviderConfigs(parsedProviderConfigs, iaConfig)
-      const provider = (iaConfig.provider || 'gemini') as IaProviderId
-      const activeModel = normalized[provider]?.modelo || iaConfig.modelo || IA_PROVIDER_MODELS[provider][0].value
-      const activeToken = provider === 'gemini'
-        ? (normalized.gemini.token || iaConfig.api_key || '')
-        : ''
-      iaForm.reset({
-        provider,
-        api_key: activeToken,
-        modelo: activeModel,
-        provider_configs: normalized,
-      })
+      iaForm.reset(buildIaFormValues(iaConfig))
     }
   }, [iaConfig, iaForm])
 
@@ -355,6 +360,8 @@ export function ConfiguracoesPagina() {
   const [showApiKey, setShowApiKey] = useState(false)
   const [modelCatalogByProvider, setModelCatalogByProvider] = useState<Partial<Record<IaProviderId, IaModelCatalogResult>>>({})
   const [modelCatalogBusyProvider, setModelCatalogBusyProvider] = useState<IaProviderId | null>(null)
+  const [openrouterTestedModelIds, setOpenrouterTestedModelIds] = useState<string[]>([])
+  const [testandoOpenrouterGratuitos, setTestandoOpenrouterGratuitos] = useState(false)
 
   const iaProvider = (iaForm.watch('provider') || 'gemini') as IaProviderId
   const providerConfigs = iaForm.watch('provider_configs') as ReturnType<typeof getDefaultProviderConfigs>
@@ -362,6 +369,53 @@ export function ConfiguracoesPagina() {
   const remoteCatalog = modelCatalogByProvider[iaProvider]
   const openrouterFavoritos = providerConfigs?.openrouter?.favoritos ?? []
   const installedLocalSet = new Set(localModels.filter(m => m.baixado).map(m => m.id))
+  const providerAvailability: Record<IaProviderId, { available: boolean; reason?: string }> = {
+    gemini: {
+      available: Boolean((providerConfigs?.gemini?.token || '').trim()),
+      reason: (providerConfigs?.gemini?.token || '').trim() ? undefined : 'API key não configurada.',
+    },
+    openrouter: {
+      available: Boolean((providerConfigs?.openrouter?.token || '').trim()),
+      reason: (providerConfigs?.openrouter?.token || '').trim() ? undefined : 'API key não configurada.',
+    },
+    local: {
+      available: installedLocalSet.size > 0,
+      reason: installedLocalSet.size > 0 ? undefined : 'Nenhum modelo local instalado.',
+    },
+  }
+  const hasAnyProviderAvailable = Object.values(providerAvailability).some((provider) => provider.available)
+  const selectedProviderAvailability = providerAvailability[iaProvider]
+  const iaStatusBadge = hasAnyProviderAvailable
+    ? selectedProviderAvailability.available
+      ? {
+        label: 'Ativa',
+        className: 'border-green-500/50 text-green-600 dark:text-green-400',
+      }
+      : {
+        label: 'Inativa',
+        className: 'border-amber-500/50 text-amber-600 dark:text-amber-400',
+      }
+    : {
+      label: 'Sem IA disponível',
+      className: 'border-destructive/50 text-destructive',
+    }
+  const providerSelectorOptions = [
+    {
+      provider: 'gemini' as const,
+      label: 'Google Gemini',
+      disabled: false,
+    },
+    {
+      provider: 'openrouter' as const,
+      label: 'OpenRouter',
+      disabled: false,
+    },
+    {
+      provider: 'local' as const,
+      label: 'IA Local (Offline)',
+      disabled: false,
+    },
+  ]
   const currentModelOptions = (() => {
     // Local: mostra todos, mas marca quais estão instalados (disabled handled no render)
     if (iaProvider === 'local') {
@@ -383,22 +437,58 @@ export function ConfiguracoesPagina() {
     return remoteCatalog.models.map((m) => ({ value: m.id, label: m.label }))
   })()
   const currentModelValue = iaForm.watch('modelo')
+  const providerStoredModel = (selectedProviderConfig?.modelo || '').trim()
+  const providerDefaultModel = currentModelOptions[0]?.value || IA_PROVIDER_MODELS[iaProvider][0].value
+  const selectorModelOptions = (() => {
+    if (iaProvider === 'local') {
+      if (selectedProviderAvailability.available) {
+        return IA_PROVIDER_MODELS.local
+          .filter((model) => installedLocalSet.has(model.value))
+          .map((model) => ({ id: model.value, label: model.label, disabled: false }))
+      }
+      return IA_PROVIDER_MODELS.local.map((model) => ({ id: model.value, label: model.label, disabled: true }))
+    }
+
+    const base = currentModelOptions.map((model) => ({
+      id: model.value,
+      label: model.label,
+      disabled: !selectedProviderAvailability.available,
+    }))
+
+    if (currentModelValue && !base.some((model) => model.id === currentModelValue)) {
+      return [
+        ...base,
+        {
+          id: currentModelValue,
+          label: currentModelValue,
+          disabled: !selectedProviderAvailability.available,
+        },
+      ]
+    }
+
+    return base
+  })()
+  const resolvedCurrentModelValue = (() => {
+    if (currentModelValue && selectorModelOptions.some((model) => model.id === currentModelValue)) {
+      return currentModelValue
+    }
+    if (providerStoredModel && selectorModelOptions.some((model) => model.id === providerStoredModel)) {
+      return providerStoredModel
+    }
+    if (selectedProviderAvailability.available) {
+      return selectorModelOptions.find((model) => !model.disabled)?.id || providerDefaultModel
+    }
+    return currentModelValue || providerStoredModel || providerDefaultModel
+  })()
+  const selectorModelLabel = selectorModelOptions.find((model) => model.id === resolvedCurrentModelValue)?.label
+    || currentModelOptions.find((model) => model.value === resolvedCurrentModelValue)?.label
+    || resolvedCurrentModelValue
   const tokenFieldLabel = iaProvider === 'gemini'
     ? 'API Key (Google AI Studio)'
     : 'OpenRouter API Key'
   const tokenFieldPlaceholder = iaProvider === 'gemini'
     ? 'AIza...'
     : 'sk-or-...'
-  useEffect(() => {
-    if (currentModelOptions.length === 0) return
-    if (!currentModelOptions.some((m) => m.value === currentModelValue)) {
-      const fallback = selectedProviderConfig?.modelo && currentModelOptions.some((m) => m.value === selectedProviderConfig.modelo)
-        ? selectedProviderConfig.modelo
-        : currentModelOptions[0].value
-      iaForm.setValue('modelo', fallback, { shouldDirty: true })
-    }
-  }, [currentModelOptions, currentModelValue, iaForm, selectedProviderConfig?.modelo])
-
   useEffect(() => {
     if (iaProvider === 'gemini') {
       const geminiToken = (providerConfigs?.gemini?.token || '').trim()
@@ -408,6 +498,21 @@ export function ConfiguracoesPagina() {
       }
     }
   }, [iaProvider, providerConfigs?.gemini?.token, iaForm])
+
+  useEffect(() => {
+    if (!resolvedCurrentModelValue) return
+
+    const currentValue = (iaForm.getValues('modelo') || '').trim()
+    if (currentValue !== resolvedCurrentModelValue) {
+      iaForm.setValue('modelo', resolvedCurrentModelValue, { shouldDirty: false })
+    }
+
+    const providerModelPath = `provider_configs.${iaProvider}.modelo` as const
+    const currentProviderModel = (iaForm.getValues(providerModelPath as any) || '').trim()
+    if (currentProviderModel !== resolvedCurrentModelValue) {
+      iaForm.setValue(providerModelPath as any, resolvedCurrentModelValue, { shouldDirty: false })
+    }
+  }, [iaForm, iaProvider, resolvedCurrentModelValue])
 
   useEffect(() => {
     // Auto-carrega catálogo dinâmico para OpenRouter e Gemini
@@ -460,17 +565,8 @@ export function ConfiguracoesPagina() {
       }) as IaModelCatalogResult
 
       setModelCatalogByProvider((prev) => ({ ...prev, [provider]: res }))
-
-      const currentValue = iaForm.getValues('modelo')
-      const providerCfg = getCurrentProviderConfig(provider)
-      const preferred = providerCfg?.modelo
-      const nextModel =
-        (preferred && res.models.some((m) => m.id === preferred) && preferred) ||
-        (currentValue && res.models.some((m) => m.id === currentValue) && currentValue) ||
-        res.models[0]?.id
-
-      if (iaForm.getValues('provider') === provider && nextModel) {
-        iaForm.setValue('modelo', nextModel, { shouldDirty: true })
+      if (provider === 'openrouter') {
+        setOpenrouterTestedModelIds([])
       }
 
       if (!silent) {
@@ -485,6 +581,58 @@ export function ConfiguracoesPagina() {
       }
     } finally {
       setModelCatalogBusyProvider(null)
+    }
+  }
+
+  const onTestarModelosGratisOpenRouter = async () => {
+    const providerCfg = getCurrentProviderConfig('openrouter')
+    const token = (providerCfg?.token || '').trim()
+    if (!token) {
+      toast.error('Configure a OpenRouter API Key antes de testar os modelos gratuitos.')
+      return
+    }
+
+    const freeModelIds = (remoteCatalog?.models || [])
+      .filter((model) => model.is_free && model.id !== 'openrouter/free')
+      .map((model) => model.id)
+
+    if (freeModelIds.length === 0) {
+      toast.message('Nenhum modelo gratuito elegível para testar na lista atual.')
+      return
+    }
+
+    setTestandoOpenrouterGratuitos(true)
+    try {
+      const result = await window.electron.ipcRenderer.invoke('ia.openrouter.testarGratuitos', {
+        provider_config: providerCfg,
+        model_ids: freeModelIds,
+      }) as IaOpenRouterFreeModelsTestResult
+
+      setOpenrouterTestedModelIds(result.successful_model_ids)
+
+      const currentFavorites = iaForm.getValues('provider_configs.openrouter.favoritos' as any) as string[] ?? []
+      const mergedFavorites = Array.from(new Set([
+        ...currentFavorites,
+        ...result.successful_model_ids.filter((id) => id !== 'openrouter/free'),
+      ]))
+
+      iaForm.setValue('provider_configs.openrouter.favoritos' as any, mergedFavorites, {
+        shouldDirty: true,
+      })
+
+      if (result.success_count > 0) {
+        toast.success(`${result.success_count} modelos gratuitos aprovados`, {
+          description: `${result.tested_models} testados. Os aprovados foram disponibilizados no seletor.`,
+        })
+      } else {
+        toast.warning('Nenhum modelo gratuito passou no teste.', {
+          description: `${result.tested_models} modelos foram verificados.`,
+        })
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao testar modelos gratuitos do OpenRouter.')
+    } finally {
+      setTestandoOpenrouterGratuitos(false)
     }
   }
 
@@ -508,6 +656,8 @@ export function ConfiguracoesPagina() {
     try {
       const payload = buildIaConfigPayload(data)
       await window.electron.ipcRenderer.invoke('ia.configuracao.salvar', payload)
+      reloadIaConfig()
+      iaForm.reset(buildIaFormValues(payload))
       window.dispatchEvent(new CustomEvent('ia-config-changed'))
       toast.success('Configuracoes de IA salvas.')
     } catch (err: any) {
@@ -826,9 +976,12 @@ export function ConfiguracoesPagina() {
                 <BrainCircuit className="size-4" />
                 Assistente IA
               </CardTitle>
-              {iaConfig?.ativo && (
-                <Badge variant="outline" className="border-green-500/50 text-green-600 dark:text-green-400">
-                  Ativa
+              <Badge variant="outline" className={iaStatusBadge.className}>
+                {iaStatusBadge.label}
+              </Badge>
+              {iaProvider === 'local' && (
+                <Badge variant="outline" className="border-sky-500/40 text-sky-600 dark:border-sky-400/40 dark:text-sky-300">
+                  Beta
                 </Badge>
               )}
             </div>
@@ -837,102 +990,36 @@ export function ConfiguracoesPagina() {
           <CardContent>
             <Form {...iaForm}>
               <form className="space-y-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={iaForm.control}
-                    name="provider"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Provedor</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={(next) => {
-                            field.onChange(next)
-                            const nextProvider = next as IaProviderId
-                            const nextCfg = iaForm.getValues(`provider_configs.${nextProvider}` as any) as IaProviderConfigForm | undefined
-                            const nextOptions = IA_PROVIDER_MODELS[nextProvider]
-                            const nextModel =
-                              nextCfg?.modelo && nextOptions.some((m) => m.value === nextCfg.modelo)
-                                ? nextCfg.modelo
-                                : nextOptions[0].value
-                            iaForm.setValue('modelo', nextModel, { shouldDirty: true })
-                            if (nextProvider === 'gemini') {
-                              iaForm.setValue('api_key', nextCfg?.token || '', { shouldDirty: false })
-                            }
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione o provedor..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="gemini">Google Gemini</SelectItem>
-                            <SelectItem value="openrouter">OpenRouter</SelectItem>
-                            <SelectItem value="local" textValue="IA Local (Offline)">
-                              <span className="flex items-center gap-1.5">
-                                <WifiOff className="size-3" />
-                                IA Local (Offline)
-                              </span>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={iaForm.control}
-                    name="modelo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Modelo</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={(next) => {
-                            if (iaProvider === 'local' && !installedLocalSet.has(next)) return
-                            field.onChange(next)
-                            iaForm.setValue(`provider_configs.${iaProvider}.modelo` as any, next, {
-                              shouldDirty: true,
-                            })
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={iaProvider === 'local' && installedLocalSet.size === 0 ? 'Nenhum instalado' : 'Selecione o modelo...'} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {!currentModelOptions.some((m) => m.value === field.value) && field.value ? (
-                              <SelectItem value={field.value}>{field.value} (custom)</SelectItem>
-                            ) : null}
-                            {currentModelOptions.map((model) => {
-                              const isLocalNotInstalled = iaProvider === 'local' && !installedLocalSet.has(model.value)
-                              const isLocalInstalled = iaProvider === 'local' && installedLocalSet.has(model.value)
-                              return (
-                                <SelectItem key={`${iaProvider}-${model.value}`} value={model.value} disabled={isLocalNotInstalled}>
-                                  <span className="flex items-center gap-1.5">
-                                    {model.label}
-                                    {isLocalInstalled && (
-                                      <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                        Instalado
-                                      </span>
-                                    )}
-                                    {isLocalNotInstalled && (
-                                      <span className="text-[10px] text-muted-foreground">(não instalado)</span>
-                                    )}
-                                  </span>
-                                </SelectItem>
-                              )
-                            })}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <IaModelPill
+                  variant="inline"
+                  provider={iaProvider}
+                  providerOptions={providerSelectorOptions}
+                  modelo={resolvedCurrentModelValue}
+                  modeloLabel={selectorModelLabel}
+                  modelOptions={selectorModelOptions}
+                  modelSelectDisabled={!selectedProviderAvailability.available}
+                  onProviderChange={async (next) => {
+                    const nextProvider = next as IaProviderId
+                    const nextCfg = iaForm.getValues(`provider_configs.${nextProvider}` as any) as IaProviderConfigForm | undefined
+                    const nextOptions = IA_PROVIDER_MODELS[nextProvider]
+                    const nextModel =
+                      nextCfg?.modelo && nextOptions.some((m) => m.value === nextCfg.modelo)
+                        ? nextCfg.modelo
+                        : nextOptions[0].value
+                    iaForm.setValue('provider', nextProvider, { shouldDirty: true })
+                    iaForm.setValue('modelo', nextModel, { shouldDirty: true })
+                    if (nextProvider === 'gemini') {
+                      iaForm.setValue('api_key', nextCfg?.token || '', { shouldDirty: false })
+                    }
+                  }}
+                  onModeloChange={async (next) => {
+                    if (iaProvider === 'local' && !installedLocalSet.has(next)) return
+                    iaForm.setValue('modelo', next, { shouldDirty: true })
+                    iaForm.setValue(`provider_configs.${iaProvider}.modelo` as any, next, {
+                      shouldDirty: true,
+                    })
+                  }}
+                />
 
                 {/* API Key (cloud) ou Model cards (local) */}
                 {iaProvider === 'local' ? (
@@ -1080,6 +1167,8 @@ export function ConfiguracoesPagina() {
                       value={currentModelValue}
                       favorites={openrouterFavoritos}
                       defaultModelId="openrouter/free"
+                      testedModelIds={openrouterTestedModelIds}
+                      testingFreeModels={testandoOpenrouterGratuitos}
                       onChange={(modelId) => {
                         iaForm.setValue('modelo', modelId, { shouldDirty: true })
                         iaForm.setValue('provider_configs.openrouter.modelo' as any, modelId, { shouldDirty: true })
@@ -1101,13 +1190,23 @@ export function ConfiguracoesPagina() {
                         }
                         iaForm.setValue('provider_configs.openrouter.favoritos' as any, [...currentSet], { shouldDirty: true })
                       }}
+                      onTestFreeModels={onTestarModelosGratisOpenRouter}
                     />
                   </div>
                 ) : null}
 
                 {/* Footer com acoes */}
                 <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => iaForm.reset()}
+                    disabled={salvandoIa || !iaForm.formState.isDirty}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa || !selectedProviderAvailability.available}>
                     {testandoIa ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
                     Testar conexao
                   </Button>

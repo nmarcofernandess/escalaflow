@@ -77,13 +77,17 @@ export function EmpresaConfig() {
     if (!empresa) return
     setSalvando(true)
     try {
-      await empresaService.atualizar({
+      const nextValues: EmpresaFormInput = {
         nome: data.nome.trim(),
         cnpj: data.cnpj.trim(),
         telefone: data.telefone.trim(),
+      }
+      await empresaService.atualizar({
+        ...nextValues,
         corte_semanal: empresa.corte_semanal,
         tolerancia_semanal_min: empresa.tolerancia_semanal_min,
       })
+      form.reset(nextValues)
       toast.success('Dados da empresa salvos')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
@@ -147,10 +151,21 @@ export function EmpresaConfig() {
       <PageHeader
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Empresa' }]}
         actions={
-          <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={salvando}>
-            <Save className="mr-1 size-3.5" />
-            {salvando ? 'Salvando...' : 'Salvar'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => form.reset()}
+              disabled={salvando || !form.formState.isDirty}
+            >
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={salvando}>
+              <Save className="mr-1 size-3.5" />
+              {salvando ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </div>
         }
       />
 
