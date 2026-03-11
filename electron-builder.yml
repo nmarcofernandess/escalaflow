@@ -34,8 +34,6 @@ dmg:
   contents:
     - x: 130
       y: 220
-      type: file
-      path: 'dist/mac-arm64/EscalaFlow.app'
     - x: 410
       y: 220
       type: link
