@@ -1,0 +1,18 @@
+EscalaFlow - LEIA ANTES DE INSTALAR
+==================================
+
+Se o macOS disser que o EscalaFlow esta "corrompido", bloqueado ou nao puder ser aberto, faca isto:
+
+1. Certifique-se de que o EscalaFlow esta em /Applications (Aplicativos).
+2. Abra o Terminal.
+3. Cole este comando e aperte Enter:
+
+xattr -cr "/Applications/EscalaFlow.app" && open "/Applications/EscalaFlow.app"
+
+Alternativa do proprio macOS:
+- Ajustes do Sistema -> Privacidade e Seguranca -> Abrir Mesmo Assim
+
+Importante:
+- Use isso apenas se voce baixou o app do release oficial do EscalaFlow.
+- Isso so precisa ser feito quando o macOS bloquear a primeira abertura.
+- O problema some de vez apenas quando o app estiver assinado e notarizado pela Apple.

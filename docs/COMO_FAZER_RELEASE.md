@@ -229,14 +229,17 @@ https://github.com/nmarcofernandess/escalaflow/releases/latest/download/EscalaFl
 ```
 
 **Solução para o usuário:**
-1. Clica com botão direito no `.dmg` > "Abrir"
-2. Aparece o aviso > clica em "Abrir" novamente
-3. Pronto. Só na primeira vez.
+1. Abrir o `.dmg`
+2. Ler o arquivo `LEIA ANTES DE INSTALAR.txt` que vem dentro dele
+3. Arrastar o EscalaFlow para `Aplicativos`
+4. Abrir o Terminal e rodar:
 
-**Alternativa via Terminal:**
 ```bash
-xattr -d com.apple.quarantine /Applications/EscalaFlow.app
+xattr -cr "/Applications/EscalaFlow.app" && open "/Applications/EscalaFlow.app"
 ```
+
+Se quiser, o usuário também pode tentar:
+- Ajustes do Sistema → Privacidade e Segurança → Abrir Mesmo Assim
 
 ---
 

@@ -30,6 +30,20 @@ mac:
     - dmg
   artifactName: '${productName}-${version}-${arch}.${ext}'
   notarize: false
+dmg:
+  contents:
+    - x: 130
+      y: 220
+      type: file
+      path: 'dist/mac-arm64/EscalaFlow.app'
+    - x: 410
+      y: 220
+      type: link
+      path: '/Applications'
+    - x: 270
+      y: 80
+      type: file
+      path: 'resources/LEIA ANTES DE INSTALAR.txt'
 win:
   icon: icon.ico
   target:

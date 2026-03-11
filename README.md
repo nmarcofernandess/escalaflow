@@ -340,7 +340,7 @@ O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui 
 - **Typecheck falha:** `npm run typecheck` mostra erros separados por node e web
 - **Motor trava:** Timeout de 30s protege. Verifique dados do setor (demandas, colaboradores)
 - **Dark mode quebrado:** Cores usam tokens semânticos de `cores.ts`. Se adicionou cor nova, inclua `dark:` variant
-- **Mac "vírus" (Gatekeeper):** Clique direito no app → Abrir (primeira vez apenas)
+- **Mac "corrompido"/Gatekeeper:** Abra o `LEIA ANTES DE INSTALAR.txt` dentro do `.dmg` e rode o comando indicado no Terminal
 
 ---
 

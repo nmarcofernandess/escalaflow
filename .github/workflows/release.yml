@@ -78,7 +78,6 @@ jobs:
             dist/*.dmg
             dist/*.blockmap
             dist/latest-mac.yml
-            scripts/Instalar-EscalaFlow.command
 
       - name: Upload Windows installer
         if: matrix.platform == 'win'
