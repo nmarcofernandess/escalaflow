@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Loader2,
   Download,
+  Printer,
   XCircle,
   AlertTriangle,
   ChevronRight,
@@ -22,6 +23,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
@@ -34,10 +42,11 @@ import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EmptyState } from '@/componentes/EmptyState'
-import { formatarData } from '@/lib/formatadores'
+import { formatarData, formatarDataHora } from '@/lib/formatadores'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda } from '@/lib/gerarCSV'
+import { resolveEscalaEquipe } from '@/lib/escala-team'
 import { useApiData } from '@/hooks/useApiData'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { setoresService } from '@/servicos/setores'
@@ -64,6 +73,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { formatarMinutos, REGRAS_TEXTO } from '@/lib/formatadores'
 
 /** Margem por arredondamento de grid (15min/slot × semanas) */
@@ -281,6 +291,10 @@ export function EscalaPagina() {
     () => colaboradoresService.listarRegrasPadraoSetor(setorId),
     [setorId],
   )
+  const { data: escalas } = useApiData(
+    () => escalasService.listarPorSetor(setorId),
+    [setorId],
+  )
 
   const regrasMap = useMemo(() => {
     const map = new Map<number, RegraHorarioColaborador>()
@@ -312,6 +326,12 @@ export function EscalaPagina() {
     if (!raw) return null
     const parsed = Number(raw)
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  }, [location.search])
+
+  const origemParam = useMemo((): 'simulacao' | 'oficial' | 'historico' | undefined => {
+    const raw = new URLSearchParams(location.search).get('origem')
+    if (raw === 'simulacao' || raw === 'oficial' || raw === 'historico') return raw
+    return undefined
   }, [location.search])
 
   // Load most recent escala (RASCUNHO primeiro, depois OFICIAL)
@@ -356,6 +376,26 @@ export function EscalaPagina() {
   // Count violations for tab badge
   const violacoesCount = escalaCompleta?.violacoes.length ?? 0
   const nenhumBlocoVisivel = !conteudoView.ciclo && !conteudoView.timeline && !conteudoView.funcionarios && !conteudoView.avisos
+  const escalasOrdenadas = useMemo(
+    () => [...(escalas ?? [])].sort((a, b) => b.criada_em.localeCompare(a.criada_em)),
+    [escalas],
+  )
+  const escalaOficialAtual = escalasOrdenadas.find((e) => e.status === 'OFICIAL') ?? null
+  const escalaRascunho = escalasOrdenadas.find((e) => e.status === 'RASCUNHO') ?? null
+  const escalasHistorico = useMemo(() => {
+    const oficialId = escalaOficialAtual?.id ?? null
+    return escalasOrdenadas.filter((e) => e.status !== 'RASCUNHO' && e.id !== oficialId)
+  }, [escalaOficialAtual?.id, escalasOrdenadas])
+
+  const escalaSelecionadaValor = useMemo(() => {
+    if (!escalaCompleta) return null
+    const id = escalaCompleta.escala.id
+    const status = escalaCompleta.escala.status
+    if (status === 'RASCUNHO') return 'simulacao'
+    if (status === 'OFICIAL') return 'oficial'
+    return `historico:${id}`
+  }, [escalaCompleta])
+
   const setoresComEscala = useMemo(() => new Set((resumoPorSetor ?? []).map((s) => s.setor_id)), [resumoPorSetor])
   const outrosSetores = useMemo(
     () => (setores ?? []).filter((s) => s.id !== setorId && setoresComEscala.has(s.id)),
@@ -364,6 +404,10 @@ export function EscalaPagina() {
   const contratoMap = useMemo(
     () => new Map((tiposContrato ?? []).map((tc) => [tc.id, tc.nome])),
     [tiposContrato],
+  )
+  const equipeEscala = useMemo(
+    () => resolveEscalaEquipe(escalaCompleta, colaboradores ?? [], funcoes ?? []),
+    [colaboradores, escalaCompleta, funcoes],
   )
   const domingosTrabalhadosPorColab = useMemo(() => {
     const map = new Map<number, number>()
@@ -386,18 +430,18 @@ export function EscalaPagina() {
   }
 
   function renderExportHTML(conteudo: EscalaExportContent) {
-    if (!escalaCompleta || !setor || !colaboradores) return null
+    if (!escalaCompleta || !setor) return null
     if (!hasConteudoSetorial(conteudo)) return null
     const modo: 'ciclo' | 'detalhado' = conteudo.timeline ? 'detalhado' : 'ciclo'
     const html = (
       <ExportarEscala
         escala={escalaCompleta.escala}
         alocacoes={escalaCompleta.alocacoes}
-        colaboradores={colaboradores}
+        colaboradores={equipeEscala.colaboradores}
         setor={setor}
         violacoes={escalaCompleta.violacoes}
         tiposContrato={tiposContrato ?? []}
-        funcoes={funcoes ?? []}
+        funcoes={equipeEscala.funcoes}
         horariosSemana={horariosSemana ?? []}
         regrasPadrao={regrasPadrao ?? []}
         modo={modo}
@@ -411,7 +455,7 @@ export function EscalaPagina() {
   }
 
   async function handlePrintEscala(conteudo: EscalaExportContent) {
-    if (!escalaCompleta || !setor || !colaboradores) return
+    if (!escalaCompleta || !setor) return
     const payload = renderExportHTML(conteudo)
     if (!payload) {
       toast.error('Selecione Ciclo, Timeline ou Avisos para imprimir.')
@@ -434,7 +478,7 @@ export function EscalaPagina() {
   }
 
   async function handleExportHTMLEscala(conteudo: EscalaExportContent) {
-    if (!escalaCompleta || !setor || !colaboradores) return
+    if (!escalaCompleta || !setor) return
     const payload = renderExportHTML(conteudo)
     if (!payload) {
       toast.error('Selecione Ciclo, Timeline ou Avisos para exportar HTML.')
@@ -458,11 +502,11 @@ export function EscalaPagina() {
   }
 
   async function handleExportCSV(conteudo: EscalaExportContent) {
-    if (!escalaCompleta || !setor || !colaboradores) return
+    if (!escalaCompleta || !setor) return
     const blocos: string[] = []
     const incluirEscala = conteudo.ciclo || conteudo.timeline || conteudo.funcionarios
     if (incluirEscala) {
-      blocos.push(gerarCSVAlocacoes([escalaCompleta], [setor], colaboradores))
+      blocos.push(gerarCSVAlocacoes([escalaCompleta], [setor], equipeEscala.colaboradores))
       blocos.push(gerarCSVComparacaoDemanda([escalaCompleta], [setor]))
     }
     if (conteudo.avisos) {
@@ -485,8 +529,8 @@ export function EscalaPagina() {
   const appVersion = useAppVersion()
 
   function gerarHTMLFuncionarioById(colabId: number, incluirAvisos: boolean) {
-    if (!escalaCompleta || !setor || !colaboradores || !tiposContrato) return null
-    const colab = colaboradores.find((c) => c.id === colabId)
+    if (!escalaCompleta || !setor || !tiposContrato) return null
+    const colab = equipeEscala.colaboradores.find((c) => c.id === colabId)
     if (!colab) return null
     const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
     const r = regrasMap.get(colabId)
@@ -505,8 +549,8 @@ export function EscalaPagina() {
   }
 
   async function handleExportFuncionariosBatch(incluirAvisos: boolean) {
-    if (!colaboradores || colaboradores.length === 0) return
-    const arquivos = colaboradores
+    if (equipeEscala.colaboradores.length === 0) return
+    const arquivos = equipeEscala.colaboradores
       .map((c) => {
         const payload = gerarHTMLFuncionarioById(c.id, incluirAvisos)
         if (!payload) return null
@@ -565,7 +609,7 @@ export function EscalaPagina() {
   }
 
   function renderExportPreview() {
-    if (!escalaCompleta || !setor || !colaboradores) return null
+    if (!escalaCompleta || !setor) return null
     const incluirSetorial = hasConteudoSetorial(conteudoExport)
     return (
       <div className="space-y-3">
@@ -573,11 +617,11 @@ export function EscalaPagina() {
           <ExportarEscala
             escala={escalaCompleta.escala}
             alocacoes={escalaCompleta.alocacoes}
-            colaboradores={colaboradores}
+            colaboradores={equipeEscala.colaboradores}
             setor={setor}
             violacoes={escalaCompleta.violacoes}
             tiposContrato={tiposContrato ?? []}
-            funcoes={funcoes ?? []}
+            funcoes={equipeEscala.funcoes}
             horariosSemana={horariosSemana ?? []}
             regrasPadrao={regrasPadrao ?? []}
             modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
@@ -598,7 +642,7 @@ export function EscalaPagina() {
           <div className="rounded-md border bg-background p-4">
             <p className="text-sm font-medium">Por funcionario ativo</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Serao gerados arquivos para todos os {colaboradores.length} funcionario(s) do setor.
+              Serao gerados arquivos para todos os {equipeEscala.colaboradores.length} funcionario(s) do setor.
             </p>
           </div>
         )}
@@ -608,6 +652,21 @@ export function EscalaPagina() {
 
   function handleAbrirOutroSetor(setorDestinoId: number) {
     navigate(`/setores/${setorDestinoId}/escala`)
+  }
+
+  function handleTrocarEscala(valor: string) {
+    if (valor === 'simulacao' && escalaRascunho) {
+      navigate(`/setores/${setorId}/escala?escalaId=${escalaRascunho.id}&origem=simulacao`)
+      return
+    }
+    if (valor === 'oficial' && escalaOficialAtual) {
+      navigate(`/setores/${setorId}/escala?escalaId=${escalaOficialAtual.id}&origem=oficial`)
+      return
+    }
+    const match = valor.match(/^historico:(\d+)$/)
+    if (match) {
+      navigate(`/setores/${setorId}/escala?escalaId=${match[1]}&origem=historico`)
+    }
   }
 
   // Loading / no data states
@@ -641,15 +700,34 @@ export function EscalaPagina() {
         ) : escalaCompleta ? (
           <>
             {/* Header com info + controles */}
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">
-                  {setor.nome} — Detalhes da Escala
-                </h2>
-                <div className="mt-1 flex items-center gap-2">
-                  <p className="text-sm text-muted-foreground">
-                    {formatarData(escalaCompleta.escala.data_inicio)} — {formatarData(escalaCompleta.escala.data_fim)}
-                  </p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Select
+                  value={escalaSelecionadaValor ?? ''}
+                  onValueChange={handleTrocarEscala}
+                >
+                  <SelectTrigger className="h-9 w-auto min-w-[260px] max-w-[340px]">
+                    <SelectValue placeholder="Selecionar escala" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="simulacao" disabled={!escalaRascunho}>
+                      {escalaRascunho
+                        ? `Simulacao (${formatarData(escalaRascunho.data_inicio)} — ${formatarData(escalaRascunho.data_fim)})`
+                        : 'Simulacao'}
+                    </SelectItem>
+                    <SelectItem value="oficial" disabled={!escalaOficialAtual}>
+                      {escalaOficialAtual
+                        ? `Oficial (${formatarData(escalaOficialAtual.data_inicio)} — ${formatarData(escalaOficialAtual.data_fim)})`
+                        : 'Oficial'}
+                    </SelectItem>
+                    {escalasHistorico.map((escala) => (
+                      <SelectItem key={escala.id} value={`historico:${escala.id}`}>
+                        Historico ({formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-2">
                   <StatusBadge status={escalaCompleta.escala.status as 'OFICIAL' | 'RASCUNHO'} />
                 </div>
               </div>
@@ -665,7 +743,22 @@ export function EscalaPagina() {
                   <Download className="size-3.5" />
                   Exportar
                 </Button>
-
+                <Button
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => {
+                    if (hasConteudoSetorial(conteudoView)) {
+                      void handlePrintEscala(conteudoView)
+                    } else {
+                      setConteudoExport(conteudoView)
+                      setExportOpen(true)
+                    }
+                  }}
+                  title={!hasConteudoSetorial(conteudoView) ? 'Selecione Ciclo, Timeline ou Avisos para imprimir' : undefined}
+                >
+                  <Printer className="size-3.5" />
+                  Imprimir
+                </Button>
                 {outrosSetores.length > 0 && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -682,6 +775,18 @@ export function EscalaPagina() {
                 )}
               </div>
             </div>
+
+            {escalaCompleta.escala.criada_em && (
+              <p className="text-sm text-muted-foreground">Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}</p>
+            )}
+
+            {origemParam === 'historico' && (
+              <Alert className="border-muted-foreground/30 bg-muted/30">
+                <AlertDescription>
+                  Voce esta vendo uma escala historica (snapshot). Alterar cadastros de pessoas ou postos nao muda este historico nem afeta escalas atuais.
+                </AlertDescription>
+              </Alert>
+            )}
 
             <Tabs defaultValue="escala" className="space-y-4">
               <TabsList>
@@ -792,7 +897,7 @@ export function EscalaPagina() {
                 <div>
                   <h3 className="text-sm font-semibold text-foreground mb-2">Por colaborador</h3>
                   <ResumoTable
-                    colaboradores={colaboradores}
+                    colaboradores={equipeEscala.colaboradores}
                     alocacoes={escalaCompleta.alocacoes}
                     violacoes={escalaCompleta.violacoes}
                     tiposContrato={tiposContrato ?? []}
@@ -856,8 +961,8 @@ export function EscalaPagina() {
                       <EscalaCicloResumo
                         escala={escalaCompleta.escala}
                         alocacoes={escalaCompleta.alocacoes}
-                        colaboradores={colaboradores}
-                        funcoes={funcoes ?? []}
+                        colaboradores={equipeEscala.colaboradores}
+                        funcoes={equipeEscala.funcoes}
                         regrasPadrao={regrasPadrao ?? []}
                       />
                     </CardContent>
@@ -891,15 +996,15 @@ export function EscalaPagina() {
                         <EscalaTimelineDiaria
                           escala={escalaCompleta.escala}
                           alocacoes={escalaCompleta.alocacoes}
-                          colaboradores={colaboradores}
+                          colaboradores={equipeEscala.colaboradores}
                           setor={setor}
                           tiposContrato={tiposContrato ?? []}
-                          funcoes={funcoes ?? []}
+                          funcoes={equipeEscala.funcoes}
                           horariosSemana={horariosSemana ?? []}
                         />
                       ) : (
                         <TimelineGrid
-                          colaboradores={colaboradores}
+                          colaboradores={equipeEscala.colaboradores}
                           alocacoes={escalaCompleta.alocacoes}
                           setor={setor}
                           dataSelecionada={escalaCompleta.escala.data_inicio}
@@ -923,7 +1028,7 @@ export function EscalaPagina() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <ResumoFolgas
-                        colaboradores={colaboradores}
+                        colaboradores={equipeEscala.colaboradores}
                         alocacoes={escalaCompleta.alocacoes}
                         regrasMap={regrasMap}
                       />
@@ -939,7 +1044,7 @@ export function EscalaPagina() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {colaboradores.map((colab) => {
+                            {equipeEscala.colaboradores.map((colab) => {
                               const regra = regrasMap.get(colab.id)
                               return (
                                 <TableRow key={colab.id}>

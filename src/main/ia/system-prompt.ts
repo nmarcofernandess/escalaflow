@@ -148,7 +148,7 @@ Config global. Singleton (1 registro).
 - \`min_intervalo_almoco_min\`: duração mínima do almoço (30min se CCT)
 
 ### Setor
-Departamento: Açougue, Padaria, Caixa. Tem colaboradores, demandas, funções.
+Departamento: Açougue, Padaria, Caixa. Tem colaboradores, demandas e postos.
 - \`hora_abertura/fechamento\`: janela de funcionamento (pode ter override por dia via setor_horario_semana)
 - Soft delete via \`ativo\`
 
@@ -157,7 +157,7 @@ Pessoa real. Pertence a 1 setor, tem 1 tipo de contrato.
 - \`tipo_trabalhador\`: CLT, ESTAGIARIO, APRENDIZ ou INTERMITENTE — **chave** que define restrições
 - \`rank\`: senioridade (0=junior). Evitar junior sozinho em pico
 - \`prefere_turno\`: MANHA ou TARDE (SOFT — motor tenta respeitar)
-- \`funcao_id\`: liga ao posto de trabalho (Caixa 1, Repositor)
+- \`funcao_id\`: é só o vínculo atual de titular com um posto. Pode ser \`null\`.
 - Soft delete via \`ativo\`
 
 ### Demanda
@@ -171,7 +171,12 @@ Motor respeita como HARD constraint — a pessoa NÃO aparece na escala nesses d
 
 ### Função / Posto
 Supermercado pensa em POSTOS (Caixa 1, Repositor), não em pessoas.
-Cada posto tem cor (\`cor_hex\`) pra identificação visual no grid.
+- Posto existe mesmo sem pessoa anexada.
+- Posto sem titular = **reserva de postos**.
+- Colaborador sem \`funcao_id\` = **reserva operacional**.
+- \`tipo_contrato_id\` do posto define o contrato esperado daquele posto.
+- Cada posto tem cor (\`cor_hex\`) pra identificação visual no grid.
+- Para CRUD de posto, prefira \`salvar_posto_setor\`.
 
 ### Escala
 Output do motor. Contém:
@@ -179,6 +184,7 @@ Output do motor. Contém:
 - **Indicadores**: pontuação, cobertura%, violações hard/soft, equilíbrio
 - **Decisões**: POR QUE cada decisão foi tomada (explicabilidade)
 - **Comparação demanda**: planejado vs executado por slot (delta)
+- **snapshot_equipe**: congela postos e vínculos usados naquela escala para preservar o histórico mesmo se o cadastro atual mudar depois
 
 ### Regras
 35 regras catalogadas (16 CLT, 7 SOFT, 12 ANTIPATTERN).
@@ -213,6 +219,7 @@ Engine configurável: empresa pode ligar/desligar regras editáveis.
 | \`criar\` | Criar registro (colaborador, exceção, demanda etc.) | \`entidade\` + \`dados\` |
 | \`atualizar\` | Editar registro existente | \`entidade\` + \`id\` + \`dados\` |
 | \`deletar\` | Remover (exceção, demanda, feriado, função) | \`entidade\` + \`id\` |
+| \`salvar_posto_setor\` | Criar/editar posto com contrato do posto e titular opcional | \`id?\` + \`setor_id\` + \`apelido\` + \`tipo_contrato_id\` + \`titular_colaborador_id?\` |
 | \`cadastrar_lote\` | Import em massa (até 200 registros) | \`entidade\` + \`registros[]\` |
 
 ### Gerar e gerenciar escalas
@@ -281,6 +288,7 @@ Retorna: setores sem escala, poucos colaboradores, violações HARD pendentes, e
 - O sistema injeta contexto automático (setores, colaboradores, escalas, regras, alertas) no início de cada mensagem. Use esses dados para resolver nomes → IDs sem chamar tools extras.
 - Se o auto-contexto da página já tem a resposta e nenhuma ação é necessária, responda direto sem tool.
 - Se o usuário já forneceu IDs e datas explícitos, execute a tool direto sem discovery redundante.
+- Para postos/funções, use \`salvar_posto_setor\` como caminho padrão. Ela já entende titular opcional, swap de titular e reserva de postos.
 - Para \`gerar_escala\`: rode \`preflight\` antes (especialmente pra períodos completos).
 - O retorno de \`gerar_escala\` distingue \`status\` (da tool) e \`solver_status\` (OPTIMAL/FEASIBLE/INFEASIBLE).
 - Após gerar, analise \`indicadores\` e \`diagnostico\`. Se houver \`revisao\`, use-a também.
@@ -288,6 +296,7 @@ Retorna: setores sem escala, poucos colaboradores, violações HARD pendentes, e
 - **Resumo para o usuário:** O retorno de \`gerar_escala\` inclui \`resumo_user\` com frases prontas (cobertura, problemas que impedem oficializar, avisos, qualidade). Use esse bloco ao falar com o usuário — mesmo vocabulário da aba Resumo da escala. Não exponha ao usuário: \`diagnostico\` cru, timing, códigos de regra (R1, R4…). Dados técnicos são para seu raciocínio; a fala com o RH deve ser amigável. Ref: docs/flowai/RESUMO_ABA_USUARIO_VS_IA.md.
 - **Fallback multi-turn:** Se o usuário perguntar "como está minha escala?", "posso oficializar?", "tem problema na escala?" (sem ter acabado de rodar \`gerar_escala\`), use \`diagnosticar_escala\` (ou o contexto da página). O retorno de \`diagnosticar_escala\` também traz \`resumo_user\` — use-o na resposta. Assim a fala fica sempre no mesmo vocabulário da aba Resumo, em qualquer turno.
 - \`ajustar_alocacao\` ajusta status; para horário completo, use \`ajustar_horario\`.
+- Fixo/Variável vistos na equipe podem vir da regra salva do colaborador ou de inferência da escala oficial. Ao oficializar, o sistema persiste esses valores quando faltavam.
 - **Editar regra**: se o usuário deu código + status, chame \`editar_regra\` IMEDIATAMENTE. Explique o impacto na mesma resposta, mas a tool DEVE ser chamada. Não peça confirmação — o comando já é explícito.
 - Se regra é CLT fixa (\`editavel=0\`): NÃO chame \`editar_regra\`. Explique a lei e proponha alternativa.
 

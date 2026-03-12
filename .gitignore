@@ -2,6 +2,9 @@
 .DS_Store
 Thumbs.db
 
+# Superpowers brainstorm mockups
+.superpowers/
+
 # Node
 node_modules/
 .npm
@@ -81,6 +84,7 @@ logs/security/
 # Temporários de dev
 tmp/
 agora.md
+dist-mac-verify/
 
 # Seed local (dados de dev, chaves API — nunca versionar)
 src/main/db/seed-local.ts

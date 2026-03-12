@@ -2,6 +2,7 @@ import { queryOne, queryAll, execute, insertReturningId, transaction } from '../
 import { minutesBetween as minutesBetweenUtil } from '../date-utils'
 import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride } from '../preflight-capacity'
 import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenarioHash } from '../motor/solver-bridge'
+import { salvarDetalheFuncao, deletarFuncao } from '../funcoes-service'
 import { textoResumoCobertura, textoResumoViolacoesHard, textoResumoViolacoesSoft } from '../../shared/resumo-user'
 import { coreAlerts } from './discovery'
 import { validarEscalaV3 } from '../motor/validador'
@@ -82,6 +83,10 @@ function toolTruncated<T extends Record<string, any>>(
   }
 }
 
+function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
+}
+
 const HORA_HHMM_REGEX = /^\d{2}:\d{2}$/
 const DiaSemanaSchema = z.enum(['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM'])
 const RegimeOverrideSchema = z.object({
@@ -102,6 +107,40 @@ function summarizeViolacoesTop(items: Array<{ codigo?: string }> | undefined, li
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([codigo, count]) => ({ codigo, count }))
+}
+
+async function getTitularAtualPostoId(funcaoId: number): Promise<number | null> {
+  const titular = await queryOne<{ id: number }>(
+    'SELECT id FROM colaboradores WHERE funcao_id = ? AND ativo = true LIMIT 1',
+    funcaoId,
+  )
+  return titular?.id ?? null
+}
+
+async function getPostoToolView(funcaoId: number): Promise<Record<string, any> | undefined> {
+  return queryOne<Record<string, any>>(
+    `
+      SELECT
+        f.id,
+        f.setor_id,
+        f.apelido,
+        f.tipo_contrato_id,
+        f.ordem,
+        f.ativo,
+        f.cor_hex,
+        s.nome AS setor_nome,
+        t.nome AS tipo_contrato_nome,
+        c.id AS titular_colaborador_id,
+        c.nome AS titular_nome
+      FROM funcoes f
+      LEFT JOIN setores s ON s.id = f.setor_id
+      LEFT JOIN tipos_contrato t ON t.id = f.tipo_contrato_id
+      LEFT JOIN colaboradores c ON c.funcao_id = f.id AND c.ativo = true
+      WHERE f.id = ?
+      LIMIT 1
+    `,
+    funcaoId,
+  )
 }
 
 // ==================== ZOD SCHEMAS (Type-Safe) ====================
@@ -170,7 +209,7 @@ const CriarSchema = z.object({
 
 // atualizar
 const AtualizarSchema = z.object({
-  entidade: z.enum(['colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas', 'excecoes']).describe('Entidade a atualizar.'),
+  entidade: z.enum(['colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas', 'excecoes', 'funcoes']).describe('Entidade a atualizar. Para postos/funções, prefira `salvar_posto_setor`.'),
   id: z.number().int().positive().describe('ID do registro a atualizar. Resolva via contexto automático ou consultar.'),
   dados: z.record(z.string(), z.any()).describe('Campos a atualizar (parcial).')
 })
@@ -179,6 +218,14 @@ const AtualizarSchema = z.object({
 const DeletarSchema = z.object({
   entidade: z.enum(['excecoes', 'demandas', 'feriados', 'funcoes']).describe('Entidade permitida para deleção.'),
   id: z.number().int().positive().describe('ID do registro a deletar.')
+})
+
+const SalvarPostoSetorSchema = z.object({
+  id: z.number().int().positive().optional().describe('ID do posto para edição. Omitido = cria um novo posto.'),
+  setor_id: z.number().int().positive().describe('ID do setor dono do posto. Resolva via contexto automático ou consultar("setores").'),
+  apelido: z.string().min(1).describe('Nome/apelido do posto. Ex: "Caixa 1", "Açougue Balcão", "Repositor".'),
+  tipo_contrato_id: z.number().int().positive().describe('ID do contrato exigido pelo posto. Resolva via consultar("tipos_contrato").'),
+  titular_colaborador_id: z.number().int().positive().nullable().optional().describe('ID do titular atual do posto. Null remove o titular e manda o posto para reserva de postos. Omitido mantém o titular atual ao editar; na criação, omitido = sem titular.'),
 })
 
 // editar_regra
@@ -386,18 +433,23 @@ export const IA_TOOLS = [
     },
     {
         name: 'criar',
-        description: 'Cria registro em: colaboradores, excecoes, demandas, tipos_contrato, setores, feriados, funcoes. Prefira tools semânticas quando existirem (ex: salvar_demanda_excecao_data). Exemplo: criar({"entidade": "excecoes", "dados": {"colaborador_id": 5, "tipo": "FERIAS", "data_inicio": "2026-03-10", "data_fim": "2026-03-24"}}).',
+        description: 'Cria registro em: colaboradores, excecoes, demandas, tipos_contrato, setores, feriados e, como fallback, funcoes. Prefira tools semânticas quando existirem (ex: salvar_demanda_excecao_data, salvar_posto_setor). Exemplo: criar({"entidade": "excecoes", "dados": {"colaborador_id": 5, "tipo": "FERIAS", "data_inicio": "2026-03-10", "data_fim": "2026-03-24"}}).',
         parameters: toJsonSchema(CriarSchema)
     },
     {
         name: 'atualizar',
-        description: 'Atualiza registro em: colaboradores, empresa, tipos_contrato, setores, demandas. Requer id do registro. Exemplo: atualizar({"entidade": "colaboradores", "id": 5, "dados": {"nome": "João Silva Atualizado"}}).',
+        description: 'Atualiza registro em: colaboradores, empresa, tipos_contrato, setores, demandas, excecoes e, como fallback, funcoes. Para postos/funções, prefira salvar_posto_setor porque ele já trata titular opcional, swap e reserva de postos.',
         parameters: toJsonSchema(AtualizarSchema)
     },
     {
         name: 'deletar',
-        description: 'Remove registro de: excecoes, demandas, feriados, funcoes. Requer id. Exemplo: deletar({"entidade": "excecoes", "id": 12}).',
+        description: 'Remove registro de: excecoes, demandas, feriados, funcoes. Para funcoes/postos, a deleção passa pela regra de negócio oficial (desanexa titular antes e preserva histórico por snapshot). Requer id.',
         parameters: toJsonSchema(DeletarSchema)
+    },
+    {
+        name: 'salvar_posto_setor',
+        description: 'Cria ou edita um posto do setor com contrato do posto e titular opcional. Use esta tool para CRUD de postos. Ela já trata posto sem titular = reserva de postos, troca de titular com semântica de swap e remoção de titular sem apagar o posto.',
+        parameters: toJsonSchema(SalvarPostoSetorSchema)
     },
     {
         name: 'editar_regra',
@@ -625,7 +677,7 @@ const ENTIDADES_CRIACAO_PERMITIDAS = new Set([
 ])
 
 const ENTIDADES_ATUALIZACAO_PERMITIDAS = new Set([
-    'colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas', 'excecoes',
+    'colaboradores', 'empresa', 'tipos_contrato', 'setores', 'demandas', 'excecoes', 'funcoes',
 ])
 
 const ENTIDADES_DELECAO_PERMITIDAS = new Set([
@@ -642,6 +694,7 @@ function getConsultarRelatedTools(entidade: string): string[] {
     alocacoes: ['ajustar_alocacao', 'consultar'],
     excecoes: ['criar', 'deletar', 'consultar'],
     demandas: ['criar', 'atualizar', 'consultar'],
+    funcoes: ['salvar_posto_setor', 'deletar', 'consultar'],
     tipos_contrato: ['criar', 'atualizar', 'consultar'],
     regra_definicao: ['editar_regra', 'consultar'],
     regra_empresa: ['editar_regra', 'consultar'],
@@ -780,6 +833,7 @@ export const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   criar: CriarSchema,
   atualizar: AtualizarSchema,
   deletar: DeletarSchema,
+  salvar_posto_setor: SalvarPostoSetorSchema,
   editar_regra: EditarRegraSchema,
   gerar_escala: GerarEscalaSchema,
   ajustar_alocacao: AjustarAlocacaoSchema,
@@ -1496,6 +1550,55 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
     }
 
+    if (name === 'salvar_posto_setor') {
+        const titularColaboradorId = hasOwnField(args, 'titular_colaborador_id')
+          ? (args.titular_colaborador_id ?? null)
+          : (args.id ? await getTitularAtualPostoId(args.id) : null)
+
+        try {
+            const posto = await salvarDetalheFuncao({
+              id: args.id,
+              setor_id: args.setor_id,
+              apelido: args.apelido.trim(),
+              tipo_contrato_id: args.tipo_contrato_id,
+              titular_colaborador_id: titularColaboradorId,
+            })
+
+            const view = await getPostoToolView(posto.id)
+            const operacao = args.id ? 'atualizado' : 'criado'
+            const resumoTitular = view?.titular_nome
+              ? `Titular atual: ${view.titular_nome}.`
+              : 'Sem titular: posto está na reserva de postos.'
+
+            return toolOk(
+              {
+                sucesso: true,
+                operacao,
+                posto: view ?? posto,
+              },
+              {
+                summary: `Posto ${operacao}: ${posto.apelido}. ${resumoTitular}`,
+                meta: {
+                  tool_kind: 'action',
+                  action: 'save-posto',
+                  entidade: 'funcoes',
+                  id: posto.id,
+                  ids_usaveis_em: ['consultar', 'salvar_posto_setor', 'deletar'],
+                }
+              }
+            )
+        } catch (e: any) {
+            return toolError(
+              'SALVAR_POSTO_SETOR_FALHOU',
+              `Erro ao salvar posto: ${e.message}`,
+              {
+                correction: 'Revise setor, contrato e titular. O titular deve pertencer ao mesmo setor do posto.',
+                meta: { tool_kind: 'action', action: 'save-posto', entidade: 'funcoes', id: args.id ?? null }
+              }
+            )
+        }
+    }
+
     if (name === 'criar') {
         const { entidade, dados } = args
 
@@ -1607,6 +1710,68 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
         }
 
+        if (entidade === 'funcoes') {
+            if (!dados.setor_id || typeof dados.setor_id !== 'number') {
+                return toolError(
+                  'CRIAR_POSTO_SETOR_ID_OBRIGATORIO',
+                  '❌ Campo obrigatório: "setor_id" (number). Resolva via contexto automático ou consultar("setores").',
+                  { correction: 'Informe `dados.setor_id` ou use a tool `salvar_posto_setor`.' }
+                )
+            }
+            if (!dados.apelido || typeof dados.apelido !== 'string') {
+                return toolError(
+                  'CRIAR_POSTO_APELIDO_OBRIGATORIO',
+                  '❌ Campo obrigatório: "apelido" (string).',
+                  { correction: 'Informe `dados.apelido` ou use a tool `salvar_posto_setor`.' }
+                )
+            }
+            if (!dados.tipo_contrato_id || typeof dados.tipo_contrato_id !== 'number') {
+                return toolError(
+                  'CRIAR_POSTO_CONTRATO_OBRIGATORIO',
+                  '❌ Campo obrigatório: "tipo_contrato_id" (number).',
+                  { correction: 'Informe `dados.tipo_contrato_id` ou use `salvar_posto_setor`.' }
+                )
+            }
+
+            try {
+                const posto = await salvarDetalheFuncao({
+                  setor_id: dados.setor_id,
+                  apelido: dados.apelido.trim(),
+                  tipo_contrato_id: dados.tipo_contrato_id,
+                  titular_colaborador_id: hasOwnField(dados, 'titular_colaborador_id')
+                    ? (dados.titular_colaborador_id ?? null)
+                    : null,
+                })
+                const view = await getPostoToolView(posto.id)
+                return toolOk(
+                  {
+                    sucesso: true,
+                    id: posto.id,
+                    entidade,
+                    posto: view ?? posto,
+                  },
+                  {
+                    summary: `Posto criado com sucesso (id: ${String(posto.id)}). Prefira \`salvar_posto_setor\` nas próximas alterações de posto.`,
+                    meta: {
+                      tool_kind: 'action',
+                      action: 'create',
+                      entidade,
+                      ids_usaveis_em: ['consultar', 'salvar_posto_setor', 'deletar'],
+                    }
+                  }
+                )
+            } catch (e: any) {
+                return toolError(
+                  'CRIAR_POSTO_FALHOU',
+                  `❌ Erro ao criar posto: ${e.message}`,
+                  {
+                    correction: 'Revise setor, contrato e titular. Prefira a tool `salvar_posto_setor`.',
+                    meta: { entidade }
+                  }
+                )
+            }
+        }
+
         const keys = Object.keys(dados)
         const placeholders = keys.map(() => '?').join(', ')
         const values = Object.values(dados)
@@ -1689,6 +1854,65 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
+        if (entidade === 'funcoes') {
+            const postoAtual = await queryOne<{ id: number; setor_id: number; apelido: string; tipo_contrato_id: number }>(
+              'SELECT id, setor_id, apelido, tipo_contrato_id FROM funcoes WHERE id = ?',
+              id,
+            )
+
+            if (!postoAtual) {
+                return toolError(
+                  'ATUALIZAR_POSTO_NAO_ENCONTRADO',
+                  `Posto ${id} não encontrado.`,
+                  {
+                    correction: 'Confirme o ID com consultar("funcoes") ou use `salvar_posto_setor`.',
+                    meta: { entidade, id }
+                  }
+                )
+            }
+
+            try {
+                const titularAtualId = await getTitularAtualPostoId(id)
+                const posto = await salvarDetalheFuncao({
+                  id,
+                  setor_id: typeof dados.setor_id === 'number' ? dados.setor_id : postoAtual.setor_id,
+                  apelido: typeof dados.apelido === 'string' ? dados.apelido.trim() : postoAtual.apelido,
+                  tipo_contrato_id: typeof dados.tipo_contrato_id === 'number' ? dados.tipo_contrato_id : postoAtual.tipo_contrato_id,
+                  titular_colaborador_id: hasOwnField(dados, 'titular_colaborador_id')
+                    ? (dados.titular_colaborador_id ?? null)
+                    : titularAtualId,
+                })
+                const view = await getPostoToolView(posto.id)
+                return toolOk(
+                  {
+                    sucesso: true,
+                    entidade,
+                    id,
+                    posto: view ?? posto,
+                  },
+                  {
+                    summary: `Posto ${id} atualizado com sucesso. Prefira \`salvar_posto_setor\` para futuras mudanças de posto.`,
+                    meta: {
+                      tool_kind: 'action',
+                      action: 'update',
+                      entidade,
+                      id,
+                      campos_atualizados: Object.keys(dados),
+                    }
+                  }
+                )
+            } catch (e: any) {
+                return toolError(
+                  'ATUALIZAR_POSTO_FALHOU',
+                  `Erro ao atualizar posto: ${e.message}`,
+                  {
+                    correction: 'Revise setor, contrato e titular. O titular deve pertencer ao mesmo setor.',
+                    meta: { entidade, id, campos_atualizados: Object.keys(dados) }
+                  }
+                )
+            }
+        }
+
         const sets = Object.keys(dados).map((k: string) => `${k} = ?`).join(', ')
         const values = [...Object.values(dados), id]
 
@@ -1739,6 +1963,39 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
+            if (entidade === 'funcoes') {
+                const postoAtual = await queryOne<{ id: number; apelido: string }>(
+                  'SELECT id, apelido FROM funcoes WHERE id = ?',
+                  id,
+                )
+
+                if (!postoAtual) {
+                    return toolError(
+                      'DELETAR_NAO_ENCONTRADO',
+                      `Nenhum registro com id ${id} foi encontrado em '${entidade}'.`,
+                      {
+                        correction: 'Confirme o ID consultando a entidade antes de deletar.',
+                        meta: { tool_kind: 'action', action: 'delete', entidade, id }
+                      }
+                    )
+                }
+
+                await deletarFuncao(id)
+                return toolOk(
+                  {
+                    sucesso: true,
+                    entidade,
+                    id,
+                    changes: 1,
+                    posto_removido: postoAtual.apelido,
+                  },
+                  {
+                    summary: `Posto ${postoAtual.apelido} removido com sucesso. O histórico das escalas permanece preservado.`,
+                    meta: { tool_kind: 'action', action: 'delete', entidade, id }
+                  }
+                )
+            }
+
             const res = await execute(`DELETE FROM ${entidade} WHERE id = ?`, id)
             const changes = res.changes
 
@@ -2555,35 +2812,89 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         try {
-          // Para regras de dia específico, forçar defaults em campos nível-colaborador
-          const domCicloTrabalho = isDiaEspecifico ? 2 : (domingo_ciclo_trabalho ?? 2)
-          const domCicloFolga = isDiaEspecifico ? 1 : (domingo_ciclo_folga ?? 1)
-          const folgaFixa = isDiaEspecifico ? null : (folga_fixa_dia_semana ?? null)
-          const folgaVariavel = isDiaEspecifico ? null : (folga_variavel_dia_semana ?? null)
-
           // Buscar existente com match exato de dia_semana_regra (NULL-safe)
           const existe = diaSemana === null
-            ? await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', colaborador_id)
-            : await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', colaborador_id, diaSemana)
+            ? await queryOne<{
+              id: number
+              ativo: boolean
+              perfil_horario_id: number | null
+              inicio: string | null
+              fim: string | null
+              preferencia_turno_soft: string | null
+              domingo_ciclo_trabalho: number
+              domingo_ciclo_folga: number
+              folga_fixa_dia_semana: string | null
+              folga_variavel_dia_semana: string | null
+            }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', colaborador_id)
+            : await queryOne<{
+              id: number
+              ativo: boolean
+              perfil_horario_id: number | null
+              inicio: string | null
+              fim: string | null
+              preferencia_turno_soft: string | null
+              domingo_ciclo_trabalho: number
+              domingo_ciclo_folga: number
+              folga_fixa_dia_semana: string | null
+              folga_variavel_dia_semana: string | null
+            }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', colaborador_id, diaSemana)
+
+          const nextAtivo = ativo !== undefined
+            ? ativo
+            : (existe?.ativo ?? true)
+          const nextPerfilHorarioId = hasOwnField(args, 'perfil_horario_id')
+            ? (perfil_horario_id ?? null)
+            : (existe?.perfil_horario_id ?? null)
+          const nextInicio = hasOwnField(args, 'inicio')
+            ? (inicio ?? null)
+            : (existe?.inicio ?? null)
+          const nextFim = hasOwnField(args, 'fim')
+            ? (fim ?? null)
+            : (existe?.fim ?? null)
+          const nextPreferenciaTurnoSoft = hasOwnField(args, 'preferencia_turno_soft')
+            ? (preferencia_turno_soft ?? null)
+            : (existe?.preferencia_turno_soft ?? null)
+
+          // Regras de dia específico não carregam campos de ciclo/folga no schema.
+          const domCicloTrabalho = isDiaEspecifico
+            ? 2
+            : (hasOwnField(args, 'domingo_ciclo_trabalho')
+                ? (domingo_ciclo_trabalho ?? 2)
+                : (existe?.domingo_ciclo_trabalho ?? 2))
+          const domCicloFolga = isDiaEspecifico
+            ? 1
+            : (hasOwnField(args, 'domingo_ciclo_folga')
+                ? (domingo_ciclo_folga ?? 1)
+                : (existe?.domingo_ciclo_folga ?? 1))
+          const folgaFixa = isDiaEspecifico
+            ? null
+            : (hasOwnField(args, 'folga_fixa_dia_semana')
+                ? (folga_fixa_dia_semana ?? null)
+                : (existe?.folga_fixa_dia_semana ?? null))
+          const folgaVariavel = isDiaEspecifico
+            ? null
+            : (hasOwnField(args, 'folga_variavel_dia_semana')
+                ? (folga_variavel_dia_semana ?? null)
+                : (existe?.folga_variavel_dia_semana ?? null))
 
           if (existe) {
             await execute(`
               UPDATE colaborador_regra_horario SET
-                ativo = COALESCE(?, ativo),
+                ativo = ?,
                 perfil_horario_id = ?,
                 inicio = ?, fim = ?,
                 preferencia_turno_soft = ?,
-                domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
-                domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
+                domingo_ciclo_trabalho = ?,
+                domingo_ciclo_folga = ?,
                 folga_fixa_dia_semana = ?,
                 folga_variavel_dia_semana = ?
               WHERE id = ?
             `,
-              ativo !== undefined ? ativo : null,
-              perfil_horario_id ?? null,
-              inicio ?? null,
-              fim ?? null,
-              preferencia_turno_soft ?? null,
+              nextAtivo,
+              nextPerfilHorarioId,
+              nextInicio,
+              nextFim,
+              nextPreferenciaTurnoSoft,
               domCicloTrabalho,
               domCicloFolga,
               folgaFixa,
@@ -2598,11 +2909,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             `,
               colaborador_id,
               diaSemana,
-              ativo !== undefined ? ativo : true,
-              perfil_horario_id ?? null,
-              inicio ?? null,
-              fim ?? null,
-              preferencia_turno_soft ?? null,
+              nextAtivo,
+              nextPerfilHorarioId,
+              nextInicio,
+              nextFim,
+              nextPreferenciaTurnoSoft,
               domCicloTrabalho,
               domCicloFolga,
               folgaFixa,

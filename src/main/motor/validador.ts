@@ -1,4 +1,5 @@
 import { queryOne, queryAll } from '../db/query'
+import { parseEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 import type {
   EscalaCompletaV3, Alocacao, Escala, Setor, Demanda, Feriado,
   SetorHorarioSemana, Empresa, AntipatternViolacao, DecisaoMotor,
@@ -520,10 +521,12 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     ...escala,
     pontuacao,
   }
+  const snapshotEquipe = parseEscalaEquipeSnapshot(escala.equipe_snapshot_json ?? null)
 
   return {
     escala: escalaAtualizada,
     alocacoes: alocacoesDB,          // alocações originais do banco (não o mapa interno)
+    snapshot_equipe: snapshotEquipe,
     indicadores,
     violacoes,
     antipatterns: allAntipatterns,

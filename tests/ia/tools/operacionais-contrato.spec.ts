@@ -6,6 +6,7 @@ const queryMocks = vi.hoisted(() => ({
   queryAll: vi.fn(),
   execute: vi.fn(),
   insertReturningId: vi.fn(),
+  transaction: vi.fn(),
 }))
 
 const solverBridgeMocks = vi.hoisted(() => ({
@@ -15,8 +16,14 @@ const solverBridgeMocks = vi.hoisted(() => ({
   computeSolverScenarioHash: vi.fn(),
 }))
 
+const funcoesServiceMocks = vi.hoisted(() => ({
+  salvarDetalheFuncao: vi.fn(),
+  deletarFuncao: vi.fn(),
+}))
+
 vi.mock('../../../src/main/db/query', () => queryMocks)
 vi.mock('../../../src/main/motor/solver-bridge', () => solverBridgeMocks)
+vi.mock('../../../src/main/funcoes-service', () => funcoesServiceMocks)
 vi.mock('../../../src/main/knowledge/search', () => ({
   searchKnowledge: vi.fn().mockResolvedValue([]),
   exploreRelations: vi.fn().mockResolvedValue([]),
@@ -121,6 +128,7 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
         { codigo: 'X_CUSTOM', nome: 'Regra X', editavel: true, descricao: 'Descricao customizada' },
       ],
     })
+    queryMocks.transaction.mockImplementation(async (fn: (db: unknown) => Promise<unknown>) => fn({}))
   })
 
   afterEach(() => {
@@ -154,6 +162,61 @@ describe('executeTool ferramentas restantes (contrato padronizado)', () => {
     expect(result.status).toBe('error')
     expect(result.code).toBe('DELETAR_NAO_ENCONTRADO')
     expect(result.erro).toMatch(/Nenhum registro/i)
+  })
+
+  it('salvar_posto_setor usa o fluxo semântico oficial de posto', async () => {
+    funcoesServiceMocks.salvarDetalheFuncao.mockResolvedValue({
+      id: 41,
+      setor_id: 7,
+      apelido: 'Caixa 1',
+      tipo_contrato_id: 3,
+      ativo: true,
+      ordem: 0,
+      cor_hex: null,
+    })
+    queryMocks.queryOne.mockResolvedValueOnce({
+      id: 41,
+      setor_id: 7,
+      apelido: 'Caixa 1',
+      tipo_contrato_id: 3,
+      tipo_contrato_nome: 'CLT 44h',
+      titular_colaborador_id: 9,
+      titular_nome: 'Marina',
+    })
+
+    const result = await executeTool('salvar_posto_setor', {
+      setor_id: 7,
+      apelido: 'Caixa 1',
+      tipo_contrato_id: 3,
+      titular_colaborador_id: 9,
+    })
+
+    expect(funcoesServiceMocks.salvarDetalheFuncao).toHaveBeenCalledWith({
+      setor_id: 7,
+      apelido: 'Caixa 1',
+      tipo_contrato_id: 3,
+      titular_colaborador_id: 9,
+    })
+    expect(result.status).toBe('ok')
+    expect(result.operacao).toBe('criado')
+    expect(result.posto).toEqual(expect.objectContaining({
+      id: 41,
+      apelido: 'Caixa 1',
+      titular_nome: 'Marina',
+    }))
+    expect(result.summary).toMatch(/Posto criado/i)
+  })
+
+  it('deletar(funcoes) usa regra de negócio em vez de DELETE cru', async () => {
+    queryMocks.queryOne.mockResolvedValueOnce({ id: 55, apelido: 'Balcão' })
+    funcoesServiceMocks.deletarFuncao.mockResolvedValue(undefined)
+
+    const result = await executeTool('deletar', { entidade: 'funcoes', id: 55 })
+
+    expect(funcoesServiceMocks.deletarFuncao).toHaveBeenCalledWith(55)
+    expect(queryMocks.execute).not.toHaveBeenCalledWith(expect.stringContaining('DELETE FROM funcoes'), 55)
+    expect(result.status).toBe('ok')
+    expect(result.posto_removido).toBe('Balcão')
   })
 
   it('editar_regra retorna status ok com meta e compat legado', async () => {

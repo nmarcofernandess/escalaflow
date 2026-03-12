@@ -28,8 +28,11 @@ import {
   Pencil,
   UserMinus,
   Briefcase,
+  Trash2,
   Square,
   Terminal,
+  CheckCircle2,
+  CircleAlert,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -45,7 +48,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Form,
   FormField,
@@ -82,11 +84,11 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/componentes/PageHeader'
 import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
-import { EmptyState } from '@/componentes/EmptyState'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
@@ -104,10 +106,12 @@ import { excecoesService } from '@/servicos/excecoes'
 import { useApiData } from '@/hooks/useApiData'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { formatarData, formatarDataHora, mapError } from '@/lib/formatadores'
+import { toastErroGeracaoEscala } from '@/lib/toast-escala'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
 import { getPresetLabel, resolvePresetRange, type EscalaPeriodoPreset } from '@/lib/escala-periodo-preset'
+import { resolveEscalaEquipe } from '@/lib/escala-team'
 import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
 import { exportarService } from '@/servicos/exportar'
@@ -127,8 +131,39 @@ import {
   SetorHorarioSemana,
   SalvarTimelineDiaInput,
   RegraHorarioColaborador,
-  ColaboradorPostoSnapshotItem,
+  inferFolgasFromAlocacoes,
 } from '@shared/index'
+
+function PrecondicaoItem({
+  ok,
+  label,
+  linkTo,
+  hint,
+}: {
+  ok: boolean
+  label: string
+  linkTo?: string
+  hint?: string
+}) {
+  const Icon = ok ? CheckCircle2 : CircleAlert
+  const content = (
+    <span className="flex items-center gap-2">
+      <Icon className={cn('size-4 shrink-0', ok ? 'text-success' : 'text-muted-foreground')} />
+      <span className={ok ? 'text-muted-foreground' : 'text-foreground'}>{label}</span>
+      {hint && !ok && <span className="text-xs text-muted-foreground">({hint})</span>}
+    </span>
+  )
+  if (linkTo && !ok) {
+    return (
+      <li>
+        <Link to={linkTo} className="hover:underline">
+          {content}
+        </Link>
+      </li>
+    )
+  }
+  return <li>{content}</li>
+}
 
 // ─── DnD: Sortable row for posto hierarchy reorder ──────────────────
 
@@ -170,6 +205,120 @@ function SortablePostoRow({
       </TableCell>
       {children}
     </TableRow>
+  )
+}
+
+function TitularAssignmentPanel({
+  titular,
+  candidatos,
+  funcaoMap,
+  searchTerm,
+  onSearchTermChange,
+  onSelectColaborador,
+  onRemoveTitular,
+  removeLabel,
+  getDescricaoBuscaColaborador,
+  loading,
+}: {
+  titular: Colaborador | null
+  candidatos: Colaborador[]
+  funcaoMap: Map<number, string>
+  searchTerm: string
+  onSearchTermChange: (value: string) => void
+  onSelectColaborador: (colaboradorId: number) => void
+  onRemoveTitular?: () => void
+  removeLabel?: string
+  getDescricaoBuscaColaborador: (colaborador: Colaborador) => string
+  loading: boolean
+}) {
+  return (
+    <div className="space-y-3 p-3">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium">Titular atual</p>
+          {titular && onRemoveTitular && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={onRemoveTitular}
+              disabled={loading}
+            >
+              <UserMinus className="size-3" />
+              {removeLabel ?? 'Remover'}
+            </Button>
+          )}
+        </div>
+
+        {titular ? (
+          <div className="rounded-md border px-3 py-2">
+            <p className="truncate text-sm font-medium text-foreground">{titular.nome}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {getDescricaoBuscaColaborador(titular)}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
+            Sem titular anexado.
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-medium">Buscar colaborador</p>
+        <Input
+          value={searchTerm}
+          onChange={(e) => onSearchTermChange(e.target.value)}
+          placeholder="Digite o nome do colaborador"
+          autoFocus
+        />
+      </div>
+
+      <ScrollArea className="h-48 rounded-md border bg-background/60">
+        <div className="space-y-1 p-2 pr-3">
+          {candidatos.length === 0 ? (
+            <p className="rounded-md border border-dashed px-2 py-2 text-xs text-muted-foreground">
+              Nenhum colaborador encontrado.
+            </p>
+          ) : (
+            candidatos.map((candidato) => {
+              const postoAtualNome = candidato.funcao_id != null ? (funcaoMap.get(candidato.funcao_id) ?? 'Posto') : 'Reserva operacional'
+
+              return (
+                <button
+                  key={candidato.id}
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-md border px-2 py-2 text-left hover:bg-muted"
+                  onClick={() => onSelectColaborador(candidato.id)}
+                  disabled={loading}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-foreground">{candidato.nome}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {getDescricaoBuscaColaborador(candidato)}
+                    </p>
+                  </div>
+                  <Badge variant={candidato.funcao_id != null ? 'outline' : 'secondary'} className="shrink-0 text-xs">
+                    {candidato.funcao_id != null ? (
+                      <>
+                        <Briefcase className="mr-1 size-3" />
+                        {postoAtualNome}
+                      </>
+                    ) : (
+                      <>
+                        <Users className="mr-1 size-3" />
+                        Reserva
+                      </>
+                    )}
+                  </Badge>
+                </button>
+              )
+            })
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   )
 }
 
@@ -220,7 +369,7 @@ export function SetorDetalhe() {
     [setorId],
   )
 
-  const { data: colaboradores } = useApiData<Colaborador[]>(
+  const { data: colaboradores, reload: reloadColaboradores } = useApiData<Colaborador[]>(
     () => colaboradoresService.listar({ setor_id: setorId, ativo: true }),
     [setorId],
   )
@@ -262,14 +411,21 @@ export function SetorDetalhe() {
 
   // ─── State ───────────────────────────────────────────────────────────
   const [showPostoDialog, setShowPostoDialog] = useState(false)
-  const [novoPostoApelido, setNovoPostoApelido] = useState('')
-  const [criandoPosto, setCriandoPosto] = useState(false)
+  const [postoDialogMode, setPostoDialogMode] = useState<'create' | 'edit'>('create')
+  const [postoDialogPostoId, setPostoDialogPostoId] = useState<number | null>(null)
+  const [postoDialogApelido, setPostoDialogApelido] = useState('')
+  const [postoDialogTitularId, setPostoDialogTitularId] = useState<number | null>(null)
+  const [postoDialogSearchTerm, setPostoDialogSearchTerm] = useState('')
+  const [postoDialogTitularPickerOpen, setPostoDialogTitularPickerOpen] = useState(false)
+  const [salvandoPosto, setSalvandoPosto] = useState(false)
+  const [deletandoPosto, setDeletandoPosto] = useState(false)
   const [orderedPostos, setOrderedPostos] = useState<Funcao[]>([])
   const [orderedColabs, setOrderedColabs] = useState<Colaborador[]>([])
-  const [editingPostoId, setEditingPostoId] = useState<number | null>(null)
-  const [postoSearchTerm, setPostoSearchTerm] = useState('')
+  const [titularPickerPostoId, setTitularPickerPostoId] = useState<number | null>(null)
+  const [titularPickerSearchTerm, setTitularPickerSearchTerm] = useState('')
   const [postoAssignmentLoading, setPostoAssignmentLoading] = useState(false)
   const [pendingAutocompleteSwap, setPendingAutocompleteSwap] = useState<{
+    source: 'picker' | 'dialog'
     postoId: number
     colabId: number
     colaboradorNome: string
@@ -277,8 +433,8 @@ export function SetorDetalhe() {
     postoDestinoNome: string
   } | null>(null)
 
-  // Geracao inline
-  const [escalaTab, setEscalaTab] = useState<'simulacao' | 'oficial' | 'historico'>('simulacao')
+  // Geracao inline — seletor unificado: simulacao | oficial | historico:${id}
+  const [escalaSelecionada, setEscalaSelecionada] = useState<string>('simulacao')
   const [periodoPreset, setPeriodoPreset] = useState<EscalaPeriodoPreset>('3_MESES')
   const [gerando, setGerando] = useState(false)
   const [solverLogs, setSolverLogs] = useState<string[]>([])
@@ -366,6 +522,47 @@ export function SetorDetalhe() {
     return map
   }, [regrasPadrao])
 
+  const folgasInferidasOficialMap = useMemo(() => {
+    const map = new Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>()
+    if (!oficialCompleta) return map
+
+    const alocacoesPorColaborador = new Map<number, typeof oficialCompleta.alocacoes>()
+    for (const aloc of oficialCompleta.alocacoes) {
+      const current = alocacoesPorColaborador.get(aloc.colaborador_id) ?? []
+      current.push(aloc)
+      alocacoesPorColaborador.set(aloc.colaborador_id, current)
+    }
+
+    for (const colab of orderedColabs) {
+      const alocs = alocacoesPorColaborador.get(colab.id)
+      if (!alocs || alocs.length === 0) continue
+
+      const regra = regrasMap.get(colab.id)
+      map.set(colab.id, inferFolgasFromAlocacoes({
+        alocacoes: alocs,
+        folgaFixaAtual: regra?.folga_fixa_dia_semana ?? null,
+        folgaVariavelAtual: regra?.folga_variavel_dia_semana ?? null,
+      }))
+    }
+
+    return map
+  }, [oficialCompleta, orderedColabs, regrasMap])
+
+  const folgasEquipeMap = useMemo(() => {
+    const map = new Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>()
+
+    for (const colab of orderedColabs) {
+      const regra = regrasMap.get(colab.id)
+      const inferidas = folgasInferidasOficialMap.get(colab.id)
+      map.set(colab.id, {
+        fixa: regra?.folga_fixa_dia_semana ?? inferidas?.fixa ?? null,
+        variavel: regra?.folga_variavel_dia_semana ?? inferidas?.variavel ?? null,
+      })
+    }
+
+    return map
+  }, [orderedColabs, regrasMap, folgasInferidasOficialMap])
+
   const ocupanteMap = useMemo(() => {
     const map = new Map<number, Colaborador>()
     for (const c of orderedColabs) {
@@ -377,6 +574,14 @@ export function SetorDetalhe() {
   }, [orderedColabs])
 
   const postosOrdenados = orderedPostos
+  const postosAtivos = useMemo(
+    () => postosOrdenados.filter((posto) => posto.ativo),
+    [postosOrdenados],
+  )
+  const postosBancoEspera = useMemo(
+    () => postosOrdenados.filter((posto) => !posto.ativo),
+    [postosOrdenados],
+  )
 
   const colabsSemPosto = useMemo(
     () => orderedColabs.filter((c) => c.funcao_id == null),
@@ -388,11 +593,21 @@ export function SetorDetalhe() {
     [orderedColabs],
   )
 
-  const colaboradoresFiltradosBusca = useMemo(() => {
-    const query = postoSearchTerm.trim().toLowerCase()
+  const filtrarColaboradoresPorBusca = useCallback((searchTerm: string) => {
+    const query = searchTerm.trim().toLowerCase()
     if (!query) return colaboradoresParaBusca
     return colaboradoresParaBusca.filter((c) => c.nome.toLowerCase().includes(query))
-  }, [colaboradoresParaBusca, postoSearchTerm])
+  }, [colaboradoresParaBusca])
+
+  const colaboradoresFiltradosPicker = useMemo(
+    () => filtrarColaboradoresPorBusca(titularPickerSearchTerm),
+    [filtrarColaboradoresPorBusca, titularPickerSearchTerm],
+  )
+
+  const colaboradoresFiltradosDialogo = useMemo(
+    () => filtrarColaboradoresPorBusca(postoDialogSearchTerm),
+    [filtrarColaboradoresPorBusca, postoDialogSearchTerm],
+  )
 
   const getStatusColaborador = useCallback((colabId: number) => {
     const exc = excecaoMap.get(colabId)?.tipo ?? null
@@ -402,42 +617,49 @@ export function SetorDetalhe() {
     return 'Bloqueio'
   }, [excecaoMap])
 
-  const applyPostoSnapshot = useCallback((snapshot: ColaboradorPostoSnapshotItem[]) => {
-    if (snapshot.length === 0) return
-    const snapshotMap = new Map(snapshot.map((item) => [item.colaborador_id, item.funcao_id ?? null]))
-    setOrderedColabs((prev) =>
-      prev.map((colab) =>
-        snapshotMap.has(colab.id)
-          ? { ...colab, funcao_id: snapshotMap.get(colab.id) ?? null }
-          : colab,
-      ),
-    )
-  }, [])
-
   // ─── DnD setup (reorder postos) ─────────────────────────────────────
   const postoSortSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   )
 
-  const handlePostoReorderDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-
-    const oldIndex = postosOrdenados.findIndex((p) => `posto-${p.id}` === active.id)
-    const newIndex = postosOrdenados.findIndex((p) => `posto-${p.id}` === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
-
-    const reordered = arrayMove(postosOrdenados, oldIndex, newIndex)
-    setOrderedPostos(reordered)
+  const persistPostosBuckets = useCallback(async (nextPostosAtivos: Funcao[], nextPostosEspera: Funcao[]) => {
+    const normalizedAtivos = nextPostosAtivos.map((posto, index) => ({
+      ...posto,
+      ativo: true,
+      ordem: index,
+    }))
+    const normalizedEspera = nextPostosEspera.map((posto, index) => ({
+      ...posto,
+      ativo: false,
+      ordem: normalizedAtivos.length + index,
+    }))
+    const normalized = [...normalizedAtivos, ...normalizedEspera]
+    setOrderedPostos(normalized)
 
     try {
       await Promise.all(
-        reordered.map((posto, idx) => funcoesService.atualizar(posto.id, { ordem: idx })),
+        normalized.map((posto) => funcoesService.atualizar(posto.id, {
+          ordem: posto.ordem,
+          ativo: posto.ativo,
+        })),
       )
     } catch {
-      toast.error('Erro ao salvar nova ordem dos postos')
+      toast.error('Erro ao salvar organizacao dos postos')
+      reloadFuncoes()
     }
-  }
+  }, [reloadFuncoes])
+
+  const handlePostoReorderDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = postosAtivos.findIndex((p) => `posto-${p.id}` === active.id)
+    const newIndex = postosAtivos.findIndex((p) => `posto-${p.id}` === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reorderedAtivos = arrayMove(postosAtivos, oldIndex, newIndex)
+    await persistPostosBuckets(reorderedAtivos, postosBancoEspera)
+  }, [persistPostosBuckets, postosAtivos, postosBancoEspera])
 
   // Sync ordered list when API data changes
   useEffect(() => {
@@ -462,95 +684,188 @@ export function SetorDetalhe() {
     setoresService.listarDemandasExcecaoData(setorId).then(setDemandasExcecao).catch(() => {})
   }, [setorId])
 
-  const applyPostoAssignment = useCallback(async (colabId: number, newFuncaoId: number | null) => {
-    const colab = orderedColabs.find((c) => c.id === colabId)
-    if (!colab) return
+  const resetPostoDialogState = useCallback(() => {
+    setPostoDialogMode('create')
+    setPostoDialogPostoId(null)
+    setPostoDialogApelido('')
+    setPostoDialogTitularId(null)
+    setPostoDialogSearchTerm('')
+    setPostoDialogTitularPickerOpen(false)
+  }, [])
 
-    if (colab.funcao_id === newFuncaoId) return
+  const openTitularPicker = useCallback((postoId: number) => {
+    setTitularPickerPostoId(postoId)
+    setTitularPickerSearchTerm('')
+  }, [])
+
+  const closeTitularPicker = useCallback(() => {
+    setTitularPickerPostoId(null)
+    setTitularPickerSearchTerm('')
+  }, [])
+
+  const openCreatePostoDialog = useCallback(() => {
+    resetPostoDialogState()
+    setShowPostoDialog(true)
+  }, [resetPostoDialogState])
+
+  const openEditPostoDialog = useCallback((posto: Funcao) => {
+    setPostoDialogMode('edit')
+    setPostoDialogPostoId(posto.id)
+    setPostoDialogApelido(posto.apelido)
+    setPostoDialogTitularId(ocupanteMap.get(posto.id)?.id ?? null)
+    setPostoDialogSearchTerm('')
+    setPostoDialogTitularPickerOpen(false)
+    setShowPostoDialog(true)
+  }, [ocupanteMap])
+
+  const closePostoDialog = useCallback((open: boolean) => {
+    setShowPostoDialog(open)
+    if (!open) resetPostoDialogState()
+  }, [resetPostoDialogState])
+
+  const moverPostoParaBancoEspera = useCallback(async (
+    posto: Funcao,
+    options?: {
+      desanexarTitular?: boolean
+      basePostosAtivos?: Funcao[]
+      basePostosEspera?: Funcao[]
+    },
+  ) => {
+    const shouldDesanexarTitular = options?.desanexarTitular ?? true
+    const ocupanteAtual = shouldDesanexarTitular ? (ocupanteMap.get(posto.id) ?? null) : null
+    const postosAtivosBase = options?.basePostosAtivos ?? postosAtivos
+    const postosEsperaBase = options?.basePostosEspera ?? postosBancoEspera
+
+    if (ocupanteAtual) {
+      await colaboradoresService.atribuirPosto({
+        colaborador_id: ocupanteAtual.id,
+        funcao_id: null,
+        estrategia: 'swap',
+      })
+    }
+
+    const nextPostosAtivos = postosAtivosBase.filter((item) => item.id !== posto.id)
+    const nextPostosEspera = [
+      ...postosEsperaBase.filter((item) => item.id !== posto.id),
+      { ...posto, ativo: false },
+    ]
+
+    await persistPostosBuckets(nextPostosAtivos, nextPostosEspera)
+  }, [ocupanteMap, persistPostosBuckets, postosAtivos, postosBancoEspera])
+
+  const ativarPostoBancoEspera = useCallback(async (posto: Funcao) => {
+    const nextPostosAtivos = [...postosAtivos, { ...posto, ativo: true }]
+    const nextPostosEspera = postosBancoEspera.filter((item) => item.id !== posto.id)
+    await persistPostosBuckets(nextPostosAtivos, nextPostosEspera)
+  }, [persistPostosBuckets, postosAtivos, postosBancoEspera])
+
+  const resolveTipoContratoInternoPosto = useCallback((titularId: number | null, postoAtual: Funcao | null) => {
+    const titularSelecionado = titularId != null
+      ? (orderedColabs.find((colab) => colab.id === titularId) ?? null)
+      : null
+
+    return titularSelecionado?.tipo_contrato_id
+      ?? postoAtual?.tipo_contrato_id
+      ?? tiposContrato?.[0]?.id
+      ?? null
+  }, [orderedColabs, tiposContrato])
+
+  const salvarTitularNoPosto = useCallback(async (posto: Funcao, titularId: number | null) => {
+    const titularAtual = ocupanteMap.get(posto.id)
+    const proximoTitular = titularId != null ? orderedColabs.find((colab) => colab.id === titularId) ?? null : null
+    const postoOrigemProximoTitular = proximoTitular?.funcao_id != null && proximoTitular.funcao_id !== posto.id
+      ? (postosOrdenados.find((item) => item.id === proximoTitular.funcao_id) ?? null)
+      : null
+
+    if (titularId == null && !titularAtual) {
+      closeTitularPicker()
+      return
+    }
 
     setPostoAssignmentLoading(true)
     try {
-      const result = await colaboradoresService.atribuirPosto({
-        colaborador_id: colabId,
-        funcao_id: newFuncaoId,
-        estrategia: 'swap',
-      })
+      if (titularId == null) {
+        await moverPostoParaBancoEspera(posto)
+      } else {
+        await colaboradoresService.atribuirPosto({
+          colaborador_id: titularId,
+          funcao_id: posto.id,
+          estrategia: 'swap',
+        })
 
-      applyPostoSnapshot(result.snapshot_depois)
+        if (proximoTitular && proximoTitular.tipo_contrato_id !== posto.tipo_contrato_id) {
+          await funcoesService.atualizar(posto.id, { tipo_contrato_id: proximoTitular.tipo_contrato_id })
+        }
 
-      const swappedOutId = newFuncaoId == null
-        ? null
-        : result.snapshot_antes.find((item) => item.funcao_id === newFuncaoId && item.colaborador_id !== colabId)?.colaborador_id ?? null
-      const swappedOutName = swappedOutId != null
-        ? (orderedColabs.find((c) => c.id === swappedOutId)?.nome ?? 'Outro colaborador')
-        : null
-      const destinoNome = newFuncaoId == null ? 'reserva operacional' : (funcaoMap.get(newFuncaoId) ?? 'posto')
+        if (postoOrigemProximoTitular) {
+          await moverPostoParaBancoEspera(postoOrigemProximoTitular, { desanexarTitular: false })
+        }
+      }
 
-      toast.success(
-        newFuncaoId == null
-          ? `${colab.nome} movido para reserva operacional`
-          : swappedOutName
-            ? `${colab.nome} alocado em ${destinoNome}; ${swappedOutName} foi para reserva operacional`
-            : `${colab.nome} alocado em ${destinoNome}`,
-        {
-          action: {
-            label: 'Desfazer',
-            onClick: async () => {
-              try {
-                await colaboradoresService.restaurarPostos({ snapshot: result.snapshot_antes })
-                applyPostoSnapshot(result.snapshot_antes)
-                toast.success('Alocacao desfeita')
-              } catch (undoErr) {
-                toast.error(mapError(undoErr) || 'Erro ao desfazer alocacao')
-              }
-            },
-          },
-        },
-      )
+      reloadFuncoes()
+      reloadColaboradores()
+      closeTitularPicker()
+
+      if (titularId == null) {
+        toast.success(`${posto.apelido} foi movido para o banco de espera`)
+      } else if (proximoTitular) {
+        toast.success(
+          titularAtual?.id === proximoTitular.id
+            ? `${proximoTitular.nome} permanece em ${posto.apelido}`
+            : `${proximoTitular.nome} vinculado a ${posto.apelido}`,
+        )
+      } else {
+        toast.success(`Titular salvo em ${posto.apelido}`)
+      }
     } catch (err) {
-      toast.error(mapError(err) || 'Erro ao atribuir posto')
+      toast.error(mapError(err) || 'Erro ao salvar titular do posto')
     } finally {
       setPostoAssignmentLoading(false)
     }
-  }, [applyPostoSnapshot, funcaoMap, orderedColabs])
+  }, [closeTitularPicker, moverPostoParaBancoEspera, ocupanteMap, orderedColabs, postosOrdenados, reloadColaboradores, reloadFuncoes])
 
-  const openPostoEditor = useCallback((postoId: number) => {
-    setEditingPostoId(postoId)
-    setPostoSearchTerm('')
-  }, [])
-
-  const closePostoEditor = useCallback(() => {
-    setEditingPostoId(null)
-    setPostoSearchTerm('')
-  }, [])
-
-  const handleSelecionarNoAutocomplete = useCallback(async (postoId: number, colabId: number) => {
+  const handleSelecionarNoAutocomplete = useCallback((source: 'picker' | 'dialog', postoId: number, colabId: number) => {
     const candidato = orderedColabs.find((c) => c.id === colabId)
     if (!candidato) return
+    const postoDestinoNome = source === 'dialog' && postoId === 0
+      ? (postoDialogApelido.trim() || 'novo posto')
+      : (funcaoMap.get(postoId) ?? 'posto selecionado')
     if (candidato.funcao_id != null && candidato.funcao_id !== postoId) {
       setPendingAutocompleteSwap({
+        source,
         postoId,
         colabId,
         colaboradorNome: candidato.nome,
         postoOrigemNome: funcaoMap.get(candidato.funcao_id) ?? 'posto atual',
-        postoDestinoNome: funcaoMap.get(postoId) ?? 'posto selecionado',
+        postoDestinoNome,
       })
       return
     }
-    await applyPostoAssignment(colabId, postoId)
-    closePostoEditor()
-  }, [applyPostoAssignment, closePostoEditor, funcaoMap, orderedColabs])
+
+    if (source === 'dialog') {
+      setPostoDialogTitularId(colabId)
+      return
+    }
+
+    const posto = postosOrdenados.find((item) => item.id === postoId)
+    if (!posto) return
+    void salvarTitularNoPosto(posto, colabId)
+  }, [funcaoMap, orderedColabs, postoDialogApelido, postosOrdenados, salvarTitularNoPosto])
 
   const handleConfirmarAutocompleteSwap = useCallback(async () => {
     if (!pendingAutocompleteSwap) return
-    await applyPostoAssignment(pendingAutocompleteSwap.colabId, pendingAutocompleteSwap.postoId)
-    setPendingAutocompleteSwap(null)
-    closePostoEditor()
-  }, [applyPostoAssignment, closePostoEditor, pendingAutocompleteSwap])
 
-  const handleRemoverTitularPosto = useCallback(async (colabId: number) => {
-    await applyPostoAssignment(colabId, null)
-  }, [applyPostoAssignment])
+    if (pendingAutocompleteSwap.source === 'dialog') {
+      setPostoDialogTitularId(pendingAutocompleteSwap.colabId)
+      setPendingAutocompleteSwap(null)
+      return
+    }
+
+    const posto = postosOrdenados.find((item) => item.id === pendingAutocompleteSwap.postoId)
+    setPendingAutocompleteSwap(null)
+    if (!posto) return
+    await salvarTitularNoPosto(posto, pendingAutocompleteSwap.colabId)
+  }, [pendingAutocompleteSwap, postosOrdenados, salvarTitularNoPosto])
 
   const getDescricaoBuscaColaborador = useCallback((colab: Colaborador) => {
     const postoAtual = colab.funcao_id != null ? (funcaoMap.get(colab.funcao_id) ?? 'Posto') : 'Reserva operacional'
@@ -558,6 +873,11 @@ export function SetorDetalhe() {
     const status = getStatusColaborador(colab.id)
     return `${postoAtual} • ${contratoNome} • ${status}`
   }, [contratoMap, funcaoMap, getStatusColaborador])
+
+  const postoDialogTitularAtual = useMemo(
+    () => postoDialogTitularId != null ? (orderedColabs.find((colab) => colab.id === postoDialogTitularId) ?? null) : null,
+    [orderedColabs, postoDialogTitularId],
+  )
 
   // ─── Escala ──────────────────────────────────────────────────────────
   const escalasOrdenadas = useMemo(
@@ -569,6 +889,31 @@ export function SetorDetalhe() {
     const oficialAtualId = escalaOficialAtual?.id ?? null
     return escalasOrdenadas.filter((escala) => escala.status !== 'RASCUNHO' && escala.id !== oficialAtualId)
   }, [escalaOficialAtual?.id, escalasOrdenadas])
+
+  const exportColaboradoresBase = useMemo(() => {
+    if (orderedColabs.length > 0) return orderedColabs
+    return colaboradores ?? []
+  }, [colaboradores, orderedColabs])
+
+  const equipeEscalaSimulacao = useMemo(
+    () => resolveEscalaEquipe(escalaCompleta, orderedColabs, postosOrdenados),
+    [escalaCompleta, orderedColabs, postosOrdenados],
+  )
+
+  const equipeEscalaOficial = useMemo(
+    () => resolveEscalaEquipe(oficialCompleta, orderedColabs, postosOrdenados),
+    [oficialCompleta, orderedColabs, postosOrdenados],
+  )
+
+  const equipeEscalaHistorico = useMemo(
+    () => resolveEscalaEquipe(historicoCompleta, orderedColabs, postosOrdenados),
+    [historicoCompleta, orderedColabs, postosOrdenados],
+  )
+
+  const equipeEscalaExport = useMemo(
+    () => resolveEscalaEquipe(exportDetalhe, exportColaboradoresBase, postosOrdenados),
+    [exportColaboradoresBase, exportDetalhe, postosOrdenados],
+  )
 
   // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -587,17 +932,32 @@ export function SetorDetalhe() {
     setPeriodoGeracao(resolvePresetRange(periodoPreset, new Date(), inicioSemanaEscala))
   }, [periodoPreset, inicioSemanaEscala])
 
+  // Fallback: se oficial sumir, volta para simulacao
+  useEffect(() => {
+    if (!escalaOficialAtual && escalaSelecionada === 'oficial') {
+      setEscalaSelecionada('simulacao')
+    }
+  }, [escalaOficialAtual, escalaSelecionada])
+
+  // Sincroniza historicoSelecionadaId com escalaSelecionada
   useEffect(() => {
     if (escalasHistorico.length === 0) {
       setHistoricoSelecionadaId(null)
       setHistoricoCompleta(null)
+      if (escalaSelecionada.startsWith('historico:')) setEscalaSelecionada('simulacao')
       return
     }
-    setHistoricoSelecionadaId((prev) => {
-      if (prev && escalasHistorico.some((escala) => escala.id === prev)) return prev
-      return escalasHistorico[0].id
-    })
-  }, [escalasHistorico])
+    const match = escalaSelecionada.match(/^historico:(\d+)$/)
+    if (match) {
+      const id = parseInt(match[1], 10)
+      if (escalasHistorico.some((e) => e.id === id)) {
+        setHistoricoSelecionadaId(id)
+        return
+      }
+    }
+    setHistoricoSelecionadaId(escalasHistorico[0].id)
+    setEscalaSelecionada(`historico:${escalasHistorico[0].id}`)
+  }, [escalasHistorico, escalaSelecionada])
 
   const carregarDetalheEscala = useCallback(async (escalaId: number) => {
     try {
@@ -611,10 +971,34 @@ export function SetorDetalhe() {
   useEffect(() => {
     let canceled = false
 
+    async function hydrateOfficialDetail() {
+      if (!escalaOficialAtual) {
+        setOficialCompleta(null)
+        return
+      }
+      if (oficialCompleta?.escala.id === escalaOficialAtual.id) return
+
+      const detail = await carregarDetalheEscala(escalaOficialAtual.id)
+      if (!canceled) setOficialCompleta(detail)
+    }
+
+    void hydrateOfficialDetail()
+    return () => {
+      canceled = true
+    }
+  }, [carregarDetalheEscala, escalaOficialAtual, oficialCompleta?.escala.id])
+
+  useEffect(() => {
+    let canceled = false
+
     async function run() {
-      if (escalaTab === 'oficial') {
+      if (escalaSelecionada === 'oficial') {
         if (!escalaOficialAtual) {
           setOficialCompleta(null)
+          setCarregandoTabEscala(false)
+          return
+        }
+        if (oficialCompleta?.escala.id === escalaOficialAtual.id) {
           setCarregandoTabEscala(false)
           return
         }
@@ -625,7 +1009,7 @@ export function SetorDetalhe() {
         return
       }
 
-      if (escalaTab === 'historico') {
+      if (escalaSelecionada.startsWith('historico:')) {
         if (!historicoSelecionadaId) {
           setHistoricoCompleta(null)
           setCarregandoTabEscala(false)
@@ -635,18 +1019,17 @@ export function SetorDetalhe() {
         const detail = await carregarDetalheEscala(historicoSelecionadaId)
         if (!canceled) setHistoricoCompleta(detail)
         if (!canceled) setCarregandoTabEscala(false)
+        return
       }
 
-      if (escalaTab === 'simulacao') {
-        setCarregandoTabEscala(false)
-      }
+      setCarregandoTabEscala(false)
     }
 
     void run()
     return () => {
       canceled = true
     }
-  }, [carregarDetalheEscala, escalaOficialAtual, escalaTab, historicoSelecionadaId])
+  }, [carregarDetalheEscala, escalaOficialAtual, escalaSelecionada, historicoSelecionadaId, oficialCompleta?.escala.id])
 
   // ─── Handlers ────────────────────────────────────────────────────────
   const handleSalvar = async (data: SetorFormData) => {
@@ -740,12 +1123,12 @@ export function SetorDetalhe() {
     try {
       const preflight = await escalasService.preflight(setorId, { data_inicio: dataInicio, data_fim: dataFim })
       if (!preflight.ok) {
-        toast.error(preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao')
+        toastErroGeracaoEscala(new Error(preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao'))
         return
       }
       // Warnings seguem para a camada de detalhes (sem ruido no fluxo principal)
     } catch (err) {
-      toast.error(mapError(err) || 'Falha no preflight')
+      toastErroGeracaoEscala(err)
       return
     }
 
@@ -762,7 +1145,7 @@ export function SetorDetalhe() {
     } catch (err) {
       const msg = mapError(err) || 'Nao foi possivel gerar a escala.'
       if (!msg.includes('cancelado') && !msg.includes('SIGTERM') && !msg.includes('killed')) {
-        toast.error(msg)
+        toastErroGeracaoEscala(err)
       }
     } finally {
       setGerando(false)
@@ -774,15 +1157,17 @@ export function SetorDetalhe() {
     setOficializando(true)
     try {
       await escalasService.oficializar(escalaCompleta.escala.id)
+      const detalheOficial = await escalasService.buscar(escalaCompleta.escala.id)
       await Promise.all([reloadEscalas(), reloadRegrasPadrao()])
+      setOficialCompleta(detalheOficial)
       toast.success('Escala oficializada')
       setEscalaCompleta(null)
     } catch (err) {
       const msg = mapError(err) || 'Erro ao oficializar'
       if (msg.includes('ESCALA_DESATUALIZADA')) {
-        toast.error('Escala desatualizada — gere novamente.')
+        toastErroGeracaoEscala(new Error('Escala desatualizada — gere novamente.'))
       } else {
-        toast.error(msg)
+        toastErroGeracaoEscala(err)
       }
     } finally {
       setOficializando(false)
@@ -803,11 +1188,6 @@ export function SetorDetalhe() {
     }
   }
 
-  const resolveExportColaboradores = useCallback(() => {
-    if (orderedColabs.length > 0) return orderedColabs
-    return colaboradores ?? []
-  }, [colaboradores, orderedColabs])
-
   const hasConteudoSetorial = useCallback((conteudo: EscalaExportContent) => {
     return conteudo.ciclo || conteudo.timeline
   }, [])
@@ -815,8 +1195,8 @@ export function SetorDetalhe() {
   const appVersion = useAppVersion()
   const buildHTMLFuncionario = useCallback((detalhe: EscalaCompletaV3, colabId: number, incluirAvisos: boolean) => {
     if (!setor || !tiposContrato) return null
-    const baseColaboradores = resolveExportColaboradores()
-    const colab = baseColaboradores.find((c) => c.id === colabId)
+    const equipeEscala = resolveEscalaEquipe(detalhe, exportColaboradoresBase, postosOrdenados)
+    const colab = equipeEscala.colaboradores.find((c) => c.id === colabId)
     if (!colab) return null
     const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
     const regra = regrasMap.get(colabId)
@@ -832,24 +1212,24 @@ export function SetorDetalhe() {
       version: appVersion ?? undefined,
     })
     return { html, colaboradorNome: colab.nome }
-  }, [appVersion, regrasMap, resolveExportColaboradores, setor, tiposContrato])
+  }, [appVersion, exportColaboradoresBase, postosOrdenados, regrasMap, setor, tiposContrato])
 
   const renderExportSetorial = useCallback((detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
     if (!detalhe || !setor || !colaboradores) return
     if (!hasConteudoSetorial(conteudo)) return null
     const modo: 'ciclo' | 'detalhado' = conteudo.timeline ? 'detalhado' : 'ciclo'
-    const baseColaboradores = resolveExportColaboradores()
+    const equipeEscala = resolveEscalaEquipe(detalhe, exportColaboradoresBase, postosOrdenados)
     return {
       modo,
       jsx: (
         <ExportarEscala
           escala={detalhe.escala}
           alocacoes={detalhe.alocacoes}
-          colaboradores={baseColaboradores}
+          colaboradores={equipeEscala.colaboradores}
           setor={setor}
           violacoes={detalhe.violacoes}
           tiposContrato={tiposContrato ?? []}
-          funcoes={funcoes ?? []}
+          funcoes={equipeEscala.funcoes}
           horariosSemana={horariosSemana ?? []}
           regrasPadrao={regrasPadrao ?? []}
           modo={modo}
@@ -860,7 +1240,7 @@ export function SetorDetalhe() {
         />
       ),
     }
-  }, [colaboradores, funcoes, hasConteudoSetorial, horariosSemana, resolveExportColaboradores, setor, tiposContrato])
+  }, [colaboradores, exportColaboradoresBase, hasConteudoSetorial, horariosSemana, postosOrdenados, regrasPadrao, setor, tiposContrato])
 
   const handleExportarHTML = async (detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
     const payload = renderExportSetorial(detalhe, conteudo)
@@ -908,11 +1288,11 @@ export function SetorDetalhe() {
 
   const handleExportarCSV = async (detalhe: EscalaCompletaV3 | null, conteudo: EscalaExportContent) => {
     if (!detalhe || !setor || !colaboradores) return
-    const baseColaboradores = resolveExportColaboradores()
+    const equipeEscala = resolveEscalaEquipe(detalhe, exportColaboradoresBase, postosOrdenados)
     const blocos: string[] = []
     const incluirEscala = conteudo.ciclo || conteudo.timeline || conteudo.funcionarios
     if (incluirEscala) {
-      blocos.push(gerarCSVAlocacoes([detalhe], [setor], baseColaboradores))
+      blocos.push(gerarCSVAlocacoes([detalhe], [setor], equipeEscala.colaboradores))
       blocos.push(gerarCSVComparacaoDemanda([detalhe], [setor]))
     }
     if (conteudo.avisos) {
@@ -934,8 +1314,8 @@ export function SetorDetalhe() {
 
   const handleExportarFuncionariosBatch = async (detalhe: EscalaCompletaV3 | null, incluirAvisos: boolean) => {
     if (!detalhe) return
-    const baseColaboradores = resolveExportColaboradores()
-    const arquivos = baseColaboradores
+    const equipeEscala = resolveEscalaEquipe(detalhe, exportColaboradoresBase, postosOrdenados)
+    const arquivos = equipeEscala.colaboradores
       .map((colab) => {
         const payload = buildHTMLFuncionario(detalhe, colab.id, incluirAvisos)
         if (!payload) return null
@@ -1001,7 +1381,6 @@ export function SetorDetalhe() {
 
   const renderExportPreview = () => {
     if (!exportDetalhe || !setor || !colaboradores) return null
-    const baseColaboradores = resolveExportColaboradores()
     const incluirSetorial = hasConteudoSetorial(conteudoExport)
     return (
       <div className="space-y-3">
@@ -1009,11 +1388,11 @@ export function SetorDetalhe() {
           <ExportarEscala
             escala={exportDetalhe.escala}
             alocacoes={exportDetalhe.alocacoes}
-            colaboradores={baseColaboradores}
+            colaboradores={equipeEscalaExport.colaboradores}
             setor={setor}
             violacoes={exportDetalhe.violacoes}
             tiposContrato={tiposContrato ?? []}
-            funcoes={funcoes ?? []}
+            funcoes={equipeEscalaExport.funcoes}
             horariosSemana={horariosSemana ?? []}
             regrasPadrao={regrasPadrao ?? []}
             modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
@@ -1034,7 +1413,7 @@ export function SetorDetalhe() {
           <div className="rounded-md border bg-background p-4">
             <p className="text-sm font-medium">Por funcionario ativo</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Serao gerados arquivos para todos os {baseColaboradores.length} funcionario(s) do setor.
+              Serao gerados arquivos para todos os {equipeEscalaExport.colaboradores.length} funcionario(s) do setor.
             </p>
           </div>
         )}
@@ -1053,28 +1432,146 @@ export function SetorDetalhe() {
     }
   }, [escalas]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleCriarPosto = async () => {
-    if (!novoPostoApelido.trim()) return
-    const defaultContratoId = tiposContrato?.[0]?.id
-    if (!defaultContratoId) {
-      toast.error('Cadastre um tipo de contrato antes de criar postos')
+  const handleSalvarPostoDialog = async () => {
+    if (!postoDialogApelido.trim()) {
+      toast.error('Informe o nome do posto')
       return
     }
-    setCriandoPosto(true)
+
+    setSalvandoPosto(true)
     try {
-      await funcoesService.criar({
-        setor_id: setorId,
-        apelido: novoPostoApelido.trim(),
-        tipo_contrato_id: defaultContratoId,
-      })
-      toast.success('Posto criado')
-      setShowPostoDialog(false)
-      setNovoPostoApelido('')
+      const postoAtual = postoDialogMode === 'edit' && postoDialogPostoId != null
+        ? (postosOrdenados.find((posto) => posto.id === postoDialogPostoId) ?? null)
+        : null
+      const titularAtualId = postoAtual ? (ocupanteMap.get(postoAtual.id)?.id ?? null) : null
+      const proximoTitular = postoDialogTitularId != null
+        ? (orderedColabs.find((colab) => colab.id === postoDialogTitularId) ?? null)
+        : null
+      const postoOrigemProximoTitular = proximoTitular?.funcao_id != null
+        ? (postosOrdenados.find((posto) => posto.id === proximoTitular.funcao_id) ?? null)
+        : null
+      const tipoContratoInterno = resolveTipoContratoInternoPosto(postoDialogTitularId, postoAtual)
+      const deveIrParaEsperaNoCreate = postoDialogMode === 'create' && postoDialogTitularId == null
+      const deveMoverParaEspera = postoDialogMode === 'edit' && titularAtualId != null && postoDialogTitularId == null
+      const deveFicarAtivo = postoDialogMode === 'create'
+        ? !deveIrParaEsperaNoCreate
+        : (postoAtual?.ativo ?? true)
+      const ordemDestino = postoDialogMode === 'create'
+        ? (deveFicarAtivo ? postosAtivos.length : postosOrdenados.length)
+        : (postoAtual?.ordem ?? postosOrdenados.length)
+
+      if (!tipoContratoInterno) {
+        toast.error('Cadastre ao menos um tipo de contrato antes de criar postos')
+        return
+      }
+
+      let postoSalvo = postoDialogMode === 'create'
+        ? await funcoesService.criar({
+          setor_id: setorId,
+          apelido: postoDialogApelido.trim(),
+          tipo_contrato_id: tipoContratoInterno,
+          ordem: ordemDestino,
+        })
+        : await funcoesService.atualizar(postoDialogPostoId!, {
+          apelido: postoDialogApelido.trim(),
+          ativo: deveFicarAtivo,
+          ordem: ordemDestino,
+          ...(tipoContratoInterno !== postoAtual?.tipo_contrato_id
+            ? { tipo_contrato_id: tipoContratoInterno }
+            : {}),
+        })
+
+      if (postoDialogMode === 'create') {
+        if (deveIrParaEsperaNoCreate) {
+          await persistPostosBuckets(postosAtivos, [...postosBancoEspera, { ...postoSalvo, ativo: false }])
+          postoSalvo = { ...postoSalvo, ativo: false, ordem: postosAtivos.length + postosBancoEspera.length }
+        } else {
+          await persistPostosBuckets([...postosAtivos, { ...postoSalvo, ativo: true }], postosBancoEspera)
+          postoSalvo = { ...postoSalvo, ativo: true, ordem: postosAtivos.length }
+        }
+      }
+
+      if (postoDialogTitularId !== titularAtualId) {
+        if (deveMoverParaEspera) {
+          await moverPostoParaBancoEspera(postoSalvo)
+        } else if (postoDialogTitularId != null) {
+          await colaboradoresService.atribuirPosto({
+            colaborador_id: postoDialogTitularId,
+            funcao_id: postoSalvo.id,
+            estrategia: 'swap',
+          })
+
+          if (postoOrigemProximoTitular && postoOrigemProximoTitular.id !== postoSalvo.id) {
+            const basePostosAtivos = postoDialogMode === 'create'
+              ? [...postosAtivos, { ...postoSalvo, ativo: true }]
+              : postosAtivos.map((posto) => posto.id === postoSalvo.id ? { ...posto, ...postoSalvo, ativo: true } : posto)
+            await moverPostoParaBancoEspera(postoOrigemProximoTitular, {
+              desanexarTitular: false,
+              basePostosAtivos,
+              basePostosEspera: postosBancoEspera,
+            })
+          }
+        }
+      }
+
       reloadFuncoes()
+      reloadColaboradores()
+      closePostoDialog(false)
+      toast.success(
+        postoDialogMode === 'create'
+          ? (deveIrParaEsperaNoCreate ? 'Posto criado no banco de espera' : 'Posto criado')
+          : (deveMoverParaEspera ? 'Posto movido para o banco de espera' : 'Posto atualizado'),
+      )
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao criar posto')
+      toast.error(mapError(err) || 'Erro ao salvar posto')
     } finally {
-      setCriandoPosto(false)
+      setSalvandoPosto(false)
+    }
+  }
+
+  const handleMoverPostoDialogParaEspera = async () => {
+    if (postoDialogPostoId == null) return
+    const posto = postosOrdenados.find((item) => item.id === postoDialogPostoId)
+    if (!posto) return
+
+    setSalvandoPosto(true)
+    try {
+      await moverPostoParaBancoEspera(posto)
+      reloadFuncoes()
+      reloadColaboradores()
+      closePostoDialog(false)
+      toast.success(`${posto.apelido} foi movido para o banco de espera`)
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao mover posto para o banco de espera')
+    } finally {
+      setSalvandoPosto(false)
+    }
+  }
+
+  const handleAtivarPostoEspera = async (posto: Funcao) => {
+    setPostoAssignmentLoading(true)
+    try {
+      await ativarPostoBancoEspera(posto)
+      reloadFuncoes()
+      toast.success(`${posto.apelido} voltou para a hierarquia ativa`)
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao ativar posto')
+    } finally {
+      setPostoAssignmentLoading(false)
+    }
+  }
+
+  const handleDeletarPostoEspera = async (posto: Funcao) => {
+    setDeletandoPosto(true)
+    try {
+      await funcoesService.deletar(posto.id)
+      reloadFuncoes()
+      reloadColaboradores()
+      toast.success('Posto removido')
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao remover posto')
+    } finally {
+      setDeletandoPosto(false)
     }
   }
 
@@ -1241,7 +1738,7 @@ export function SetorDetalhe() {
                   Equipe
                 </CollapsibleTrigger>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowPostoDialog(true)}>
+                  <Button variant="outline" size="sm" onClick={openCreatePostoDialog}>
                     <Plus className="mr-1 size-3.5" /> Novo Posto
                   </Button>
                   <Button variant="outline" size="sm" asChild>
@@ -1252,280 +1749,369 @@ export function SetorDetalhe() {
                 </div>
               </CardHeader>
               <CollapsibleContent>
-              <CardContent className="space-y-4">
-                {postosOrdenados.length === 0 && (
-                  <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
-                    Nenhum posto definido para este setor.
-                  </div>
-                )}
-                {orderedColabs.length === 0 ? (
-                  <EmptyState
-                    icon={Users}
-                    title="Nenhum colaborador vinculado a este setor"
-                    description="Cadastre colaboradores e vincule a este setor"
-                    action={
-                      <Button variant="outline" size="sm" asChild>
-                        <Link to="/colaboradores">
-                          <Users className="mr-1 size-3.5" /> Gerenciar Colaboradores
-                        </Link>
-                      </Button>
-                    }
-                  />
-                ) : (
-                  <div className="space-y-4">
-                    {colabsSemPosto.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reserva operacional</p>
-                          <span className="text-xs text-muted-foreground">{colabsSemPosto.length}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 rounded-md border border-dashed bg-muted/20 p-2">
-                          {colabsSemPosto.map((colab) => (
-                            <Link key={colab.id} to={`/colaboradores/${colab.id}`}>
-                              <Badge variant="secondary" className="cursor-pointer gap-1 text-xs hover:bg-secondary/80">
-                                {colab.nome}
-                                <ArrowRight className="size-3" />
-                              </Badge>
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                <CardContent className="space-y-4">
+                  {orderedColabs.length === 0 && (
+                    <div className="rounded-md border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                      Nenhum colaborador vinculado a este setor.
+                    </div>
+                  )}
 
-                    {colabsSemPosto.length > 0 && <div className="h-px bg-border" />}
-
+                  {colabsSemPosto.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Postos
-                        <span className="ml-2 text-xs font-normal normal-case tracking-normal text-muted-foreground/70">(arraste ⠿ para reordenar)</span>
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reserva operacional</p>
+                        <span className="text-xs text-muted-foreground">{colabsSemPosto.length}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 rounded-md border border-dashed bg-muted/20 p-2">
+                        {colabsSemPosto.map((colab) => (
+                          <Link key={colab.id} to={`/colaboradores/${colab.id}`}>
+                            <Badge variant="secondary" className="cursor-pointer gap-1 text-xs hover:bg-secondary/80">
+                              {colab.nome}
+                              <ArrowRight className="size-3" />
+                            </Badge>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {colabsSemPosto.length > 0 && <div className="h-px bg-border" />}
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Postos
+                      <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
+                        <GripVertical className="size-3.5" />
+                        hierarquia de decisao - arraste para reordenar
+                      </span>
+                    </p>
+
+                    {postosAtivos.length === 0 ? (
+                      <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
+                        Nenhum posto na hierarquia no momento.
+                      </div>
+                    ) : (
                       <DndContext
                         sensors={postoSortSensors}
                         collisionDetection={closestCenter}
-                        onDragEnd={handlePostoReorderDragEnd}
+                        onDragEnd={(event) => { void handlePostoReorderDragEnd(event) }}
                       >
+                        <div className="rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[60px] text-center">#</TableHead>
+                                <TableHead className="w-[120px]">Posto</TableHead>
+                                <TableHead>Titular</TableHead>
+                                <TableHead className="w-[84px] text-center">Variavel</TableHead>
+                                <TableHead className="w-[70px] text-center">Fixo</TableHead>
+                                <TableHead className="w-[110px]">Contrato</TableHead>
+                                <TableHead className="w-[60px]">Sexo</TableHead>
+                                <TableHead className="w-[100px]">Status</TableHead>
+                                <TableHead className="w-[120px] text-right">Acoes</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              <SortableContext
+                                items={postosAtivos.map((posto) => `posto-${posto.id}`)}
+                                strategy={verticalListSortingStrategy}
+                              >
+                                {postosAtivos.map((posto, index) => {
+                                  const ocupante = ocupanteMap.get(posto.id)
+                                  const contratoNome = ocupante
+                                    ? (contratoMap.get(ocupante.tipo_contrato_id) ?? 'Contrato')
+                                    : '-'
+                                  const status = ocupante ? getStatusColaborador(ocupante.id) : '-'
+                                  const folgas = ocupante ? folgasEquipeMap.get(ocupante.id) : null
+                                  const pickerAberto = titularPickerPostoId === posto.id
+
+                                  return (
+                                    <SortablePostoRow key={posto.id} postoId={posto.id} index={index}>
+                                      <TableCell className="font-medium">{posto.apelido}</TableCell>
+                                      <TableCell>
+                                        {ocupante ? (
+                                          <span className="truncate text-sm">{ocupante.nome}</span>
+                                        ) : (
+                                          <span className="text-sm italic text-muted-foreground">Vazio</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {ocupante ? (
+                                          <Select
+                                            value={folgas?.variavel ?? '__none__'}
+                                            onValueChange={async (val) => {
+                                              try {
+                                                await colaboradoresService.salvarRegraHorario({
+                                                  colaborador_id: ocupante.id,
+                                                  folga_variavel_dia_semana: val === '__none__' ? null : (val as DiaSemana),
+                                                })
+                                                await reloadRegrasPadrao()
+                                              } catch (err) {
+                                                toast.error(mapError(err) || 'Erro ao salvar folga')
+                                              }
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                              {DIAS_SEMANA.filter((d) => d !== 'DOM').map((dia) => (
+                                                <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">-</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {ocupante ? (
+                                          <Select
+                                            value={folgas?.fixa ?? '__none__'}
+                                            onValueChange={async (val) => {
+                                              try {
+                                                await colaboradoresService.salvarRegraHorario({
+                                                  colaborador_id: ocupante.id,
+                                                  folga_fixa_dia_semana: val === '__none__' ? null : (val as DiaSemana),
+                                                })
+                                                await reloadRegrasPadrao()
+                                              } catch (err) {
+                                                toast.error(mapError(err) || 'Erro ao salvar folga')
+                                              }
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                              {DIAS_SEMANA.map((dia) => (
+                                                <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">-</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-xs text-muted-foreground">{contratoNome}</TableCell>
+                                      <TableCell className="text-xs text-muted-foreground">
+                                        {ocupante ? (ocupante.sexo === 'M' ? 'Masc' : 'Fem') : '-'}
+                                      </TableCell>
+                                      <TableCell>
+                                        {ocupante ? (
+                                          <Badge variant="outline" className={cn(
+                                            'text-xs',
+                                            status === 'Ativo' && 'border-success/40 text-success',
+                                            status === 'Ferias' && 'border-warning/40 text-warning',
+                                            status === 'Atestado' && 'border-destructive/40 text-destructive',
+                                            status === 'Bloqueio' && 'border-muted-foreground/40 text-muted-foreground',
+                                          )}>
+                                            {status}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">-</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="flex items-center justify-end gap-1">
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="size-7"
+                                                onClick={() => openEditPostoDialog(posto)}
+                                                disabled={postoAssignmentLoading}
+                                                aria-label={`Editar posto ${posto.apelido}`}
+                                              >
+                                                <Pencil className="size-3.5" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>Editar posto</TooltipContent>
+                                          </Tooltip>
+
+                                          <Popover
+                                            open={pickerAberto}
+                                            onOpenChange={(open) => {
+                                              if (open) openTitularPicker(posto.id)
+                                              else if (pickerAberto) closeTitularPicker()
+                                            }}
+                                          >
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <PopoverTrigger asChild>
+                                                  <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="size-7"
+                                                    disabled={postoAssignmentLoading}
+                                                    aria-label={`Gerenciar titular de ${posto.apelido}`}
+                                                  >
+                                                    <Users className="size-3.5" />
+                                                  </Button>
+                                                </PopoverTrigger>
+                                              </TooltipTrigger>
+                                              <TooltipContent>Gerenciar titular</TooltipContent>
+                                            </Tooltip>
+                                            <PopoverContent
+                                              side="bottom"
+                                              align="end"
+                                              sideOffset={8}
+                                              collisionPadding={16}
+                                              style={{ maxHeight: 'min(var(--radix-popover-content-available-height), 24rem)' }}
+                                              className="w-[20rem] max-w-[calc(100vw-2rem)] overflow-hidden p-0"
+                                            >
+                                              <TitularAssignmentPanel
+                                                titular={ocupante ?? null}
+                                                candidatos={colaboradoresFiltradosPicker}
+                                                funcaoMap={funcaoMap}
+                                                searchTerm={titularPickerSearchTerm}
+                                                onSearchTermChange={setTitularPickerSearchTerm}
+                                                onSelectColaborador={(colaboradorId) => {
+                                                  void handleSelecionarNoAutocomplete('picker', posto.id, colaboradorId)
+                                                }}
+                                                onRemoveTitular={ocupante ? () => { void salvarTitularNoPosto(posto, null) } : undefined}
+                                                removeLabel="Mover para espera"
+                                                getDescricaoBuscaColaborador={getDescricaoBuscaColaborador}
+                                                loading={postoAssignmentLoading}
+                                              />
+                                            </PopoverContent>
+                                          </Popover>
+
+                                          {ocupante && (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="size-7" asChild>
+                                                  <Link to={`/colaboradores/${ocupante.id}`} aria-label={`Ver perfil de ${ocupante.nome}`}>
+                                                    <ArrowRight className="size-3.5" />
+                                                  </Link>
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>Abrir colaborador</TooltipContent>
+                                            </Tooltip>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    </SortablePostoRow>
+                                  )
+                                })}
+                              </SortableContext>
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </DndContext>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Banco de espera
+                      <span className="ml-2 text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
+                        fora da hierarquia de decisao
+                      </span>
+                    </p>
+
+                    {postosBancoEspera.length === 0 ? (
+                      <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
+                        Nenhum posto no banco de espera.
+                      </div>
+                    ) : (
                       <div className="rounded-md border">
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[60px] text-center">#</TableHead>
-                              <TableHead className="w-[120px]">Posto</TableHead>
+                              <TableHead>Posto</TableHead>
                               <TableHead>Titular</TableHead>
-                              <TableHead className="w-[84px] text-center">Variavel</TableHead>
-                              <TableHead className="w-[70px] text-center">Fixo</TableHead>
-                              <TableHead className="w-[100px]">Contrato</TableHead>
-                              <TableHead className="w-[60px]">Sexo</TableHead>
-                              <TableHead className="w-[100px]">Status</TableHead>
-                              <TableHead className="w-[100px] text-right">Ações</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead className="w-[150px] text-right">Acoes</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            <SortableContext
-                              items={postosOrdenados.map((p) => `posto-${p.id}`)}
-                              strategy={verticalListSortingStrategy}
-                            >
-                            {postosOrdenados.map((posto, index) => {
+                            {postosBancoEspera.map((posto) => {
                               const ocupante = ocupanteMap.get(posto.id)
-                              const status = ocupante ? getStatusColaborador(ocupante.id) : '-'
-                              const contratoNome = ocupante ? (contratoMap.get(ocupante.tipo_contrato_id) ?? 'Contrato') : '-'
-                              const regra = ocupante ? regrasMap.get(ocupante.id) : null
-                              const editorAberto = editingPostoId === posto.id
 
                               return (
-                                <SortablePostoRow key={posto.id} postoId={posto.id} index={index}>
+                                <TableRow key={posto.id}>
                                   <TableCell className="font-medium">{posto.apelido}</TableCell>
                                   <TableCell>
                                     {ocupante ? (
-                                      <span className="truncate text-sm">{ocupante.nome}</span>
+                                      <span className="text-sm">{ocupante.nome}</span>
                                     ) : (
-                                      <span className="text-sm italic text-muted-foreground">Vazio</span>
+                                      <span className="text-sm italic text-muted-foreground">Sem titular</span>
                                     )}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {ocupante ? (
-                                      <Select
-                                        value={regra?.folga_variavel_dia_semana ?? '__none__'}
-                                        onValueChange={async (val) => {
-                                          try {
-                                            await colaboradoresService.salvarRegraHorario({
-                                              colaborador_id: ocupante.id,
-                                              folga_variavel_dia_semana: val === '__none__' ? null : (val as DiaSemana),
-                                            })
-                                            await reloadRegrasPadrao()
-                                          } catch (err) {
-                                            toast.error(mapError(err) || 'Erro ao salvar folga')
-                                          }
-                                        }}
-                                      >
-                                        <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                                          {DIAS_SEMANA.filter((d) => d !== 'DOM').map((dia) => (
-                                            <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">-</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {ocupante ? (
-                                      <Select
-                                        value={regra?.folga_fixa_dia_semana ?? '__none__'}
-                                        onValueChange={async (val) => {
-                                          try {
-                                            await colaboradoresService.salvarRegraHorario({
-                                              colaborador_id: ocupante.id,
-                                              folga_fixa_dia_semana: val === '__none__' ? null : (val as DiaSemana),
-                                            })
-                                            await reloadRegrasPadrao()
-                                          } catch (err) {
-                                            toast.error(mapError(err) || 'Erro ao salvar folga')
-                                          }
-                                        }}
-                                      >
-                                        <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                                          {DIAS_SEMANA.map((dia) => (
-                                            <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">-</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-xs text-muted-foreground">{contratoNome}</TableCell>
-                                  <TableCell className="text-xs text-muted-foreground">
-                                    {ocupante ? (ocupante.sexo === 'M' ? 'Masc' : 'Fem') : '-'}
                                   </TableCell>
                                   <TableCell>
-                                    {ocupante ? (
-                                      <Badge variant="outline" className={cn(
-                                        'text-xs',
-                                        status === 'Ativo' && 'border-success/40 text-success',
-                                        status === 'Ferias' && 'border-warning/40 text-warning',
-                                        status === 'Atestado' && 'border-destructive/40 text-destructive',
-                                        status === 'Bloqueio' && 'border-muted-foreground/40 text-muted-foreground',
-                                      )}>
-                                        {status}
-                                      </Badge>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">-</span>
-                                    )}
+                                    <Badge variant="outline" className="text-xs text-muted-foreground">
+                                      Em espera
+                                    </Badge>
                                   </TableCell>
                                   <TableCell className="text-right">
                                     <div className="flex items-center justify-end gap-1">
-                                      <Popover
-                                        open={editorAberto}
-                                        onOpenChange={(open) => {
-                                          if (open) openPostoEditor(posto.id)
-                                          else if (editorAberto) closePostoEditor()
-                                        }}
-                                      >
-                                        <PopoverTrigger asChild>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
                                           <Button
                                             type="button"
                                             variant="ghost"
                                             size="icon"
                                             className="size-7"
-                                            disabled={postoAssignmentLoading}
-                                            aria-label={`Editar titular de ${posto.apelido}`}
+                                            disabled={postoAssignmentLoading || deletandoPosto}
+                                            onClick={() => { void handleAtivarPostoEspera(posto) }}
+                                            aria-label={`Ativar posto ${posto.apelido}`}
                                           >
-                                            <Pencil className="size-3.5" />
+                                            <RotateCcw className="size-3.5" />
                                           </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent align="end" className="w-80 space-y-2">
-                                          <div className="space-y-1">
-                                            <p className="text-xs font-medium">Selecionar titular para {posto.apelido}</p>
-                                            <Input
-                                              value={postoSearchTerm}
-                                              onChange={(e) => setPostoSearchTerm(e.target.value)}
-                                              placeholder="Digite o nome do colaborador"
-                                              autoFocus
-                                            />
-                                          </div>
-                                          <div className="max-h-64 space-y-1 overflow-auto">
-                                            {colaboradoresFiltradosBusca.length === 0 ? (
-                                              <p className="rounded-md border border-dashed px-2 py-2 text-xs text-muted-foreground">
-                                                Nenhum colaborador encontrado.
-                                              </p>
-                                            ) : (
-                                              colaboradoresFiltradosBusca.map((candidato) => (
-                                                <button
-                                                  key={candidato.id}
-                                                  type="button"
-                                                  className="flex w-full items-center justify-between rounded-md border px-2 py-2 text-left hover:bg-muted"
-                                                  onClick={() => {
-                                                    void handleSelecionarNoAutocomplete(posto.id, candidato.id)
-                                                  }}
-                                                  disabled={postoAssignmentLoading}
-                                                >
-                                                  <div className="min-w-0">
-                                                    <p className="truncate text-xs font-medium text-foreground">{candidato.nome}</p>
-                                                    <p className="truncate text-xs text-muted-foreground">
-                                                      {getDescricaoBuscaColaborador(candidato)}
-                                                    </p>
-                                                  </div>
-                                                  {candidato.funcao_id != null ? (
-                                                    <Badge variant="outline" className="text-xs">
-                                                      <Briefcase className="mr-1 size-3" />
-                                                      {funcaoMap.get(candidato.funcao_id) ?? 'Posto'}
-                                                    </Badge>
-                                                  ) : (
-                                                    <Badge variant="secondary" className="text-xs">
-                                                      <Users className="mr-1 size-3" />
-                                                      Reserva
-                                                    </Badge>
-                                                  )}
-                                                </button>
-                                              ))
-                                            )}
-                                          </div>
-                                        </PopoverContent>
-                                      </Popover>
-                                      {ocupante && (
-                                        <>
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="size-7"
-                                            onClick={() => {
-                                              void handleRemoverTitularPosto(ocupante.id)
-                                            }}
-                                            disabled={postoAssignmentLoading}
-                                            aria-label={`Remover ${ocupante.nome} de ${posto.apelido}`}
-                                          >
-                                            <UserMinus className="size-3.5" />
-                                          </Button>
-                                          <Button variant="ghost" size="icon" className="size-7" asChild>
-                                            <Link to={`/colaboradores/${ocupante.id}`} aria-label={`Ver perfil de ${ocupante.nome}`}>
-                                              <ArrowRight className="size-3.5" />
-                                            </Link>
-                                          </Button>
-                                        </>
-                                      )}
+                                        </TooltipTrigger>
+                                        <TooltipContent>Ativar posto</TooltipContent>
+                                      </Tooltip>
+
+                                      <AlertDialog>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <AlertDialogTrigger asChild>
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="size-7 text-destructive hover:text-destructive"
+                                                disabled={postoAssignmentLoading || deletandoPosto}
+                                                aria-label={`Deletar posto ${posto.apelido}`}
+                                              >
+                                                <Trash2 className="size-3.5" />
+                                              </Button>
+                                            </AlertDialogTrigger>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Deletar posto</TooltipContent>
+                                        </Tooltip>
+                                        <AlertDialogContent>
+                                          <AlertDialogHeader>
+                                            <AlertDialogTitle>Deletar posto?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                              {`O posto ${posto.apelido} sera removido do cadastro atual. O historico das escalas continua preservado por snapshot.`}
+                                            </AlertDialogDescription>
+                                          </AlertDialogHeader>
+                                          <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => { void handleDeletarPostoEspera(posto) }}>
+                                              {deletandoPosto ? 'Deletando...' : 'Deletar'}
+                                            </AlertDialogAction>
+                                          </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                      </AlertDialog>
                                     </div>
                                   </TableCell>
-                                </SortablePostoRow>
+                                </TableRow>
                               )
                             })}
-                            </SortableContext>
                           </TableBody>
                         </Table>
                       </div>
-                      </DndContext>
-                    </div>
+                    )}
                   </div>
-                )}
-              </CardContent>
+                </CardContent>
               </CollapsibleContent>
             </Card>
           </Collapsible>
@@ -1549,27 +2135,56 @@ export function SetorDetalhe() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Escala</CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base font-semibold">Escala</CardTitle>
+                <Select
+                  value={escalaSelecionada}
+                  onValueChange={setEscalaSelecionada}
+                >
+                  <SelectTrigger className="h-8 w-auto min-w-[240px] max-w-[320px]">
+                    <SelectValue placeholder="Selecionar escala" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="simulacao">
+                      {escalaCompleta
+                        ? `Simulacao (${formatarData(escalaCompleta.escala.data_inicio)} — ${formatarData(escalaCompleta.escala.data_fim)})`
+                        : 'Simulacao'}
+                    </SelectItem>
+                    <SelectItem value="oficial" disabled={!escalaOficialAtual}>
+                      {escalaOficialAtual
+                        ? `Oficial (${formatarData(escalaOficialAtual.data_inicio)} — ${formatarData(escalaOficialAtual.data_fim)})`
+                        : 'Oficial'}
+                    </SelectItem>
+                    {escalasHistorico.map((escala) => (
+                      <SelectItem key={escala.id} value={`historico:${escala.id}`}>
+                        Historico ({formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Tabs value={escalaTab} onValueChange={(value) => setEscalaTab(value as 'simulacao' | 'oficial' | 'historico')} className="space-y-4">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="simulacao">Simulacao</TabsTrigger>
-                  <TabsTrigger value="oficial">Oficial</TabsTrigger>
-                  <TabsTrigger value="historico">Historico</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="simulacao" className="space-y-4">
+              {escalaSelecionada === 'simulacao' && (
+                <div className="space-y-4">
                   <div className="space-y-2 rounded-md border p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Periodo para proxima geracao</p>
                     <div className="flex flex-wrap items-center gap-2">
                       <Select value={periodoPreset} onValueChange={(value) => setPeriodoPreset(value as EscalaPeriodoPreset)}>
-                        <SelectTrigger className="h-8 w-[150px]">
-                          <SelectValue />
+                        <SelectTrigger className="h-8 w-auto min-w-[220px] max-w-[280px]">
+                          <span className="tabular-nums">
+                            {getPresetLabel(periodoPreset)}: {formatarData(periodoGeracao.data_inicio)} — {formatarData(periodoGeracao.data_fim)}
+                          </span>
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="3_MESES">{getPresetLabel('3_MESES')}</SelectItem>
-                          <SelectItem value="6_MESES">{getPresetLabel('6_MESES')}</SelectItem>
-                          <SelectItem value="1_ANO">{getPresetLabel('1_ANO')}</SelectItem>
+                          {(['3_MESES', '6_MESES', '1_ANO'] as const).map((p) => {
+                            const r = resolvePresetRange(p, new Date(), inicioSemanaEscala)
+                            return (
+                              <SelectItem key={p} value={p}>
+                                <span className="tabular-nums">{getPresetLabel(p)}: {formatarData(r.data_inicio)} — {formatarData(r.data_fim)}</span>
+                              </SelectItem>
+                            )
+                          })}
                         </SelectContent>
                       </Select>
 
@@ -1607,7 +2222,22 @@ export function SetorDetalhe() {
                         </PopoverContent>
                       </Popover>
 
-                      <Button size="sm" className="gap-1.5" onClick={handleGerar} disabled={gerando}>
+                      <Button
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={handleGerar}
+                        disabled={
+                          gerando ||
+                          !empresa ||
+                          (tiposContrato?.length ?? 0) === 0 ||
+                          (orderedColabs?.length ?? 0) === 0
+                        }
+                        title={
+                          !empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0
+                            ? 'Complete os itens em "Antes de gerar" abaixo'
+                            : undefined
+                        }
+                      >
                         {gerando ? (
                           <Loader2 className="size-3.5 animate-spin" />
                         ) : escalaCompleta ? (
@@ -1627,16 +2257,6 @@ export function SetorDetalhe() {
                             {descartando ? 'Descartando...' : 'Descartar'}
                           </Button>
                         </>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span>
-                        Janela calculada: {formatarData(periodoGeracao.data_inicio)} — {formatarData(periodoGeracao.data_fim)}
-                      </span>
-                      {escalaCompleta?.escala?.criada_em && (
-                        <Badge variant="secondary" className="font-normal text-muted-foreground">
-                          Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}
-                        </Badge>
                       )}
                     </div>
                   </div>
@@ -1662,15 +2282,18 @@ export function SetorDetalhe() {
                             Exportar
                           </Button>
                           <Button variant="outline" size="sm" asChild>
-                            <Link to={`/setores/${setorId}/escala?escalaId=${escalaCompleta.escala.id}`}>Ver completo</Link>
+                            <Link to={`/setores/${setorId}/escala?escalaId=${escalaCompleta.escala.id}&origem=simulacao`}>Ver completo</Link>
                           </Button>
                         </div>
                       </div>
+                      {escalaCompleta.escala.criada_em && (
+                        <p className="text-xs text-muted-foreground">Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}</p>
+                      )}
                       <EscalaCicloResumo
                         escala={escalaCompleta.escala}
                         alocacoes={escalaCompleta.alocacoes}
-                        colaboradores={orderedColabs}
-                        funcoes={postosOrdenados}
+                        colaboradores={equipeEscalaSimulacao.colaboradores}
+                        funcoes={equipeEscalaSimulacao.funcoes}
                         regrasPadrao={regrasPadrao ?? []}
                       />
                       {escalaCompleta.comparacao_demanda.length > 0 && (
@@ -1682,23 +2305,58 @@ export function SetorDetalhe() {
                       )}
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-dashed px-4 py-5">
-                      <p className="text-sm font-medium text-foreground">Nenhuma simulacao gerada</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Selecione o periodo e clique em <strong>Gerar Escala</strong>.
-                      </p>
+                    <div className="space-y-4 rounded-lg border border-dashed px-4 py-5">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Nenhuma simulacao gerada</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Selecione o periodo e clique em <strong>Gerar Escala</strong>.
+                        </p>
+                      </div>
+                      {(!empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0 || (demandas?.length ?? 0) === 0) && (
+                        <div className="rounded-md border bg-muted/30 px-3 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                            Antes de gerar
+                          </p>
+                          <ul className="space-y-1.5 text-sm">
+                            <PrecondicaoItem
+                              ok={!!empresa}
+                              label="Empresa configurada"
+                              linkTo="/empresa"
+                            />
+                            <PrecondicaoItem
+                              ok={(tiposContrato?.length ?? 0) > 0}
+                              label="Tipo de contrato cadastrado"
+                              linkTo="/tipos-contrato"
+                            />
+                            <PrecondicaoItem
+                              ok={(orderedColabs?.length ?? 0) > 0}
+                              label="Colaborador(es) ativo(s) no setor"
+                              linkTo="/colaboradores"
+                              hint="Cadastre na secao Colaboradores acima"
+                            />
+                            <PrecondicaoItem
+                              ok={(demandas?.length ?? 0) > 0}
+                              label="Demanda cadastrada (faixas horarias)"
+                              linkTo={undefined}
+                              hint="Configure na secao Demanda acima"
+                            />
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   )}
-                </TabsContent>
+                </div>
+              )}
 
-                <TabsContent value="oficial" className="space-y-4">
+              {escalaSelecionada === 'oficial' && (
+                <div className="space-y-4">
                   {!escalaOficialAtual ? (
                     <div className="rounded-lg border border-dashed px-4 py-5">
                       <p className="text-sm font-medium text-foreground">Nenhuma escala oficial encontrada</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Gere uma simulacao e oficialize para aparecer aqui.
                       </p>
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => setEscalaTab('simulacao')}>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => setEscalaSelecionada('simulacao')}>
                         Ir para Simulacao
                       </Button>
                     </div>
@@ -1722,15 +2380,18 @@ export function SetorDetalhe() {
                             Exportar
                           </Button>
                           <Button variant="outline" size="sm" asChild>
-                            <Link to={`/setores/${setorId}/escala?escalaId=${oficialCompleta.escala.id}`}>Ver completo</Link>
+                            <Link to={`/setores/${setorId}/escala?escalaId=${oficialCompleta.escala.id}&origem=oficial`}>Ver completo</Link>
                           </Button>
                         </div>
                       </div>
+                      {oficialCompleta.escala.criada_em && (
+                        <p className="text-xs text-muted-foreground">Gerado em {formatarDataHora(oficialCompleta.escala.criada_em)}</p>
+                      )}
                       <EscalaCicloResumo
                         escala={oficialCompleta.escala}
                         alocacoes={oficialCompleta.alocacoes}
-                        colaboradores={orderedColabs}
-                        funcoes={postosOrdenados}
+                        colaboradores={equipeEscalaOficial.colaboradores}
+                        funcoes={equipeEscalaOficial.funcoes}
                         regrasPadrao={regrasPadrao ?? []}
                       />
                       {oficialCompleta.comparacao_demanda.length > 0 && (
@@ -1742,39 +2403,23 @@ export function SetorDetalhe() {
                       )}
                     </div>
                   ) : null}
-                </TabsContent>
+                </div>
+              )}
 
-                <TabsContent value="historico" className="space-y-4">
+              {escalaSelecionada.startsWith('historico:') && (
+                <div className="space-y-4">
                   {escalasHistorico.length === 0 ? (
                     <div className="rounded-lg border border-dashed px-4 py-5">
                       <p className="text-sm font-medium text-foreground">Historico vazio</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Ainda nao existem escalas arquivadas para este setor.
                       </p>
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => setEscalaTab('simulacao')}>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => setEscalaSelecionada('simulacao')}>
                         Gerar primeira simulacao
                       </Button>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <div className="flex flex-wrap gap-2">
-                        {escalasHistorico.map((escala) => (
-                          <Button
-                            key={escala.id}
-                            type="button"
-                            size="sm"
-                            variant={historicoSelecionadaId === escala.id ? 'secondary' : 'outline'}
-                            onClick={() => setHistoricoSelecionadaId(escala.id)}
-                            className="h-auto items-start px-3 py-2"
-                          >
-                            <div className="text-left">
-                              <p className="text-xs font-medium">{formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)}</p>
-                              <p className="text-xs uppercase text-muted-foreground">{escala.status}</p>
-                            </div>
-                          </Button>
-                        ))}
-                      </div>
-
                       {carregandoTabEscala ? (
                         <div className="flex items-center justify-center py-10">
                           <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -1797,23 +2442,26 @@ export function SetorDetalhe() {
                                 Exportar
                               </Button>
                               <Button variant="outline" size="sm" asChild>
-                                <Link to={`/setores/${setorId}/escala?escalaId=${historicoCompleta.escala.id}`}>Ver completo</Link>
+                                <Link to={`/setores/${setorId}/escala?escalaId=${historicoCompleta.escala.id}&origem=historico`}>Ver completo</Link>
                               </Button>
                             </div>
                           </div>
+                          {historicoCompleta.escala.criada_em && (
+                            <p className="text-xs text-muted-foreground">Gerado em {formatarDataHora(historicoCompleta.escala.criada_em)}</p>
+                          )}
                           <EscalaCicloResumo
                             escala={historicoCompleta.escala}
                             alocacoes={historicoCompleta.alocacoes}
-                            colaboradores={orderedColabs}
-                            funcoes={postosOrdenados}
+                            colaboradores={equipeEscalaHistorico.colaboradores}
+                            funcoes={equipeEscalaHistorico.funcoes}
                             regrasPadrao={regrasPadrao ?? []}
                           />
                         </div>
                       ) : null}
                     </div>
                   )}
-                </TabsContent>
-              </Tabs>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1961,39 +2609,133 @@ export function SetorDetalhe() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Novo Posto Dialog ─── */}
-      <Dialog open={showPostoDialog} onOpenChange={setShowPostoDialog}>
-        <DialogContent className="max-w-sm">
+      <Dialog open={showPostoDialog} onOpenChange={closePostoDialog}>
+        <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Novo Posto</DialogTitle>
+            <DialogTitle>{postoDialogMode === 'create' ? 'Novo Posto' : 'Editar Posto'}</DialogTitle>
             <DialogDescription>
-              Defina um posto de trabalho para este setor.
+              {postoDialogMode === 'create'
+                ? 'Defina o nome do posto. Se ele ainda nao entrar na hierarquia, crie direto no banco de espera.'
+                : 'Atualize o nome do posto e o titular anexado. Quando ele sair da hierarquia, mova para espera.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-5 py-4">
             <div className="space-y-2">
               <Label>Nome do Posto</Label>
               <Input
                 placeholder="Ex: Caixa, Repositor, Seguranca"
-                value={novoPostoApelido}
-                onChange={(e) => setNovoPostoApelido(e.target.value)}
+                value={postoDialogApelido}
+                onChange={(e) => setPostoDialogApelido(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCriarPosto()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void handleSalvarPostoDialog()
+                  }
                 }}
                 autoFocus
               />
             </div>
+            <div className="space-y-2">
+              <Label>Titular</Label>
+              <div className="flex items-start justify-between gap-3 rounded-md border px-3 py-3">
+                <div className="min-w-0">
+                  {postoDialogTitularAtual ? (
+                    <>
+                      <p className="truncate text-sm font-medium text-foreground">{postoDialogTitularAtual.nome}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {getDescricaoBuscaColaborador(postoDialogTitularAtual)}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm italic text-muted-foreground">Vazio</p>
+                  )}
+                </div>
+
+                <Popover
+                  open={postoDialogTitularPickerOpen}
+                  onOpenChange={(open) => {
+                    setPostoDialogTitularPickerOpen(open)
+                    if (!open) setPostoDialogSearchTerm('')
+                  }}
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="size-8 shrink-0"
+                          disabled={salvandoPosto || deletandoPosto}
+                          aria-label="Gerenciar titular"
+                        >
+                          <Users className="size-4" />
+                        </Button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Gerenciar titular</TooltipContent>
+                  </Tooltip>
+                  <PopoverContent
+                    side="bottom"
+                    align="end"
+                    sideOffset={8}
+                    collisionPadding={16}
+                    style={{ maxHeight: 'min(var(--radix-popover-content-available-height), 24rem)' }}
+                    className="w-[20rem] max-w-[calc(100vw-2rem)] overflow-hidden p-0"
+                  >
+                    <TitularAssignmentPanel
+                      titular={postoDialogTitularAtual}
+                      candidatos={colaboradoresFiltradosDialogo}
+                      funcaoMap={funcaoMap}
+                      searchTerm={postoDialogSearchTerm}
+                      onSearchTermChange={setPostoDialogSearchTerm}
+                      onSelectColaborador={(colaboradorId) => {
+                        void handleSelecionarNoAutocomplete('dialog', postoDialogPostoId ?? 0, colaboradorId)
+                        setPostoDialogTitularPickerOpen(false)
+                        setPostoDialogSearchTerm('')
+                      }}
+                      onRemoveTitular={postoDialogTitularAtual ? () => {
+                        setPostoDialogTitularId(null)
+                        setPostoDialogTitularPickerOpen(false)
+                        setPostoDialogSearchTerm('')
+                      } : undefined}
+                      removeLabel="Mover para espera"
+                      getDescricaoBuscaColaborador={getDescricaoBuscaColaborador}
+                      loading={salvandoPosto || deletandoPosto}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPostoDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleCriarPosto}
-              disabled={criandoPosto || !novoPostoApelido.trim()}
-            >
-              {criandoPosto ? 'Criando...' : 'Criar Posto'}
-            </Button>
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              {postoDialogMode === 'edit' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={salvandoPosto || deletandoPosto}
+                  onClick={() => { void handleMoverPostoDialogParaEspera() }}
+                >
+                  <Archive className="size-4" />
+                  Mover para espera
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => closePostoDialog(false)} disabled={salvandoPosto || deletandoPosto}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => { void handleSalvarPostoDialog() }}
+                disabled={salvandoPosto || !postoDialogApelido.trim()}
+              >
+                {salvandoPosto
+                  ? (postoDialogMode === 'create' ? 'Criando...' : 'Salvando...')
+                  : (postoDialogMode === 'create' ? 'Criar' : 'Salvar')}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2021,7 +2763,14 @@ export function SetorDetalhe() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <DirtyGuardDialog blocker={blocker} />
+      <DirtyGuardDialog
+        blocker={blocker}
+        onSaveAndExit={async () => {
+          return new Promise<void>((resolve, reject) => {
+            setorForm.handleSubmit((data) => handleSalvar(data).then(resolve, reject), () => reject())()
+          })
+        }}
+      />
     </div>
   )
 }

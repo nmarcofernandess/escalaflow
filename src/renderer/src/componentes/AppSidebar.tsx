@@ -90,11 +90,27 @@ export function AppSidebar() {
   const appVersion = useAppVersion()
 
   useEffect(() => {
-    empresaService.buscar().then((emp) => {
-      if (emp?.nome) setEmpresaNome(emp.nome)
-    }).catch(() => {
-      // silently fallback to default
-    })
+    empresaService
+      .buscar()
+      .then((emp) => {
+        if (emp?.nome) setEmpresaNome(emp.nome)
+      })
+      .catch(() => {
+        // silently fallback to default
+      })
+
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ nome?: string }>
+      if (custom.detail?.nome) {
+        setEmpresaNome(custom.detail.nome)
+      }
+    }
+
+    window.addEventListener('empresa:atualizada', handler)
+
+    return () => {
+      window.removeEventListener('empresa:atualizada', handler)
+    }
   }, [])
 
   const iniciais = extrairIniciais(empresaNome)

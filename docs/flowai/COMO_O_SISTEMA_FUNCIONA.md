@@ -2,7 +2,7 @@
 
 > **Proposito:** Mapeamento completo do sistema para reescrita do system prompt, gap analysis de tools, e evolucao da IA.
 >
-> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-03-06 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
+> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-03-12 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
 
 ---
 
@@ -54,8 +54,8 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 | **Empresa** | `empresa` | `nome`, `corte_semanal`, `tolerancia_semanal_min`, `min_intervalo_almoco_min`, `usa_cct_intervalo_reduzido`, `grid_minutos` | **Singleton** (1 registro). Config global do supermercado. `corte_semanal` define quando a semana "vira" (SEG_DOM, TER_SEG, etc). `grid_minutos=15` e fonte unica do grid. |
 | **TipoContrato** | `tipos_contrato` | `nome`, `horas_semanais`, `regime_escala`, `dias_trabalho`, `max_minutos_dia` | 4 templates imutaveis (seed): CLT 44h, CLT 36h, Estagiario, Intermitente. Define as restricoes legais de cada tipo de trabalhador. `trabalha_domingo` foi removido — domingo e gerenciado por ciclo rotativo e regras por colaborador. |
 | **Setor** | `setores` | `nome`, `icone`, `hora_abertura`, `hora_fechamento`, `ativo` | Departamento do supermercado (Acougue, Padaria, Caixa...). `hora_abertura/fechamento` sao defaults — podem ser overridden por `setor_horario_semana`. Soft delete via `ativo`. |
-| **Colaborador** | `colaboradores` | `setor_id`, `tipo_contrato_id`, `nome`, `sexo`, `horas_semanais`, `rank`, `prefere_turno`, `evitar_dia_semana`, `tipo_trabalhador`, `funcao_id`, `ativo` | FK setor + contrato. `tipo_trabalhador` (CLT/ESTAGIARIO/APRENDIZ) determina restricoes especiais. `rank` define senioridade (0=junior). `funcao_id` liga ao posto de trabalho. Soft delete. |
-| **Funcao** | `funcoes` | `setor_id`, `apelido`, `tipo_contrato_id`, `cor_hex`, `ativo`, `ordem` | Posto de trabalho dentro do setor (Caixa 1, Repositor...). Tem `cor_hex` pra identificacao visual no grid. FK tipo_contrato define qual contrato esse posto exige. |
+| **Colaborador** | `colaboradores` | `setor_id`, `tipo_contrato_id`, `nome`, `sexo`, `horas_semanais`, `rank`, `prefere_turno`, `evitar_dia_semana`, `tipo_trabalhador`, `funcao_id`, `ativo` | FK setor + contrato. `tipo_trabalhador` (CLT/ESTAGIARIO/APRENDIZ) determina restricoes especiais. `rank` define senioridade (0=junior). `funcao_id` e apenas o vínculo atual do titular com um posto; `null` = reserva operacional. Soft delete. |
+| **Funcao** | `funcoes` | `setor_id`, `apelido`, `tipo_contrato_id`, `cor_hex`, `ativo`, `ordem` | Posto de trabalho dentro do setor (Caixa 1, Repositor...). Existe independentemente de pessoa. Se nao ha titular anexado, o posto fica na **reserva de postos**. FK `tipo_contrato_id` define qual contrato esse posto exige. |
 | **Demanda** | `demandas` | `setor_id`, `dia_semana`, `hora_inicio`, `hora_fim`, `min_pessoas`, `override` | "Quantas pessoas preciso nesse slot". Segmentada por dia da semana e faixa horaria. `override=1` significa que o gestor forcou esse valor (nao e sugestao do sistema). |
 | **Excecao** | `excecoes` | `colaborador_id`, `data_inicio`, `data_fim`, `tipo`, `observacao` | Ferias, atestado ou bloqueio. Periodo em que o colaborador esta INDISPONIVEL. Motor respeita como HARD constraint (H5). |
 
@@ -66,7 +66,7 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 | **EmpresaHorarioSemana** | `empresa_horario_semana` | `dia_semana`, `ativo`, `hora_abertura`, `hora_fechamento` | Horario de funcionamento da empresa por dia da semana. Fallback global quando setor nao tem horario proprio. UNIQUE(dia_semana). Seed: SEG-SEX 08-22, SAB 08-20, DOM 08-14. |
 | **SetorHorarioSemana** | `setor_horario_semana` | `setor_id`, `dia_semana`, `ativo`, `usa_padrao`, `hora_abertura`, `hora_fechamento` | Override do horario da empresa para um setor especifico. `usa_padrao=1` herda da empresa. UNIQUE(setor_id, dia_semana). |
 | **PerfilHorarioContrato** | `contrato_perfis_horario` | `tipo_contrato_id`, `nome`, `inicio`, `fim`, `preferencia_turno_soft` | Horario de entrada/saida por tipo de contrato. Seed: 3 perfis de estagiario (Manha 08-12, Tarde 13:30-20, Noite-Estudo 08-14). CLT nao tem perfil (usa janela do setor). |
-| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id` (UNIQUE), `perfil_horario_id`, `inicio`, `fim`, `domingo_ciclo_trabalho/folga`, `folga_fixa_dia_semana`, `folga_variavel_dia_semana` | Regra individual 1:1. Override dos campos do perfil. Ciclo domingo default: 2 trabalho / 1 folga. Folga fixa = dia que SEMPRE folga. Folga variavel = segundo dia de folga (SEG-SAB). **Fonte de verdade: regra do colaborador.** Editavel na aba Equipe do setor (save imediato). Na vista de escala e somente leitura. Ao oficializar, colaboradores sem F/V definido tem esses valores inferidos a partir da escala e gravados automaticamente. |
+| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id` (UNIQUE), `perfil_horario_id`, `inicio`, `fim`, `domingo_ciclo_trabalho/folga`, `folga_fixa_dia_semana`, `folga_variavel_dia_semana` | Regra individual 1:1. Override dos campos do perfil. Ciclo domingo default: 2 trabalho / 1 folga. Folga fixa = dia que SEMPRE folga. Folga variavel = segundo dia de folga (SEG-SAB). **Fonte de verdade persistida: regra do colaborador.** Na UI da Equipe, Fixo/Variavel podem aparecer tambem por fallback inferido da escala OFICIAL quando a regra ainda nao foi salva. Ao oficializar, colaboradores sem F/V definido tem esses valores inferidos a partir da escala e gravados automaticamente. |
 | **ExcecaoDataColaborador** | `colaborador_regra_horario_excecao_data` | `colaborador_id`, `data`, `inicio`, `fim`, `domingo_forcar_folga` | Override pontual por data. Ex: "dia 15/03, Cleunice so pode 08-12". Maior precedencia na hierarquia. UNIQUE(colaborador_id, data). |
 | **DemandaExcecaoData** | `demandas_excecao_data` | `setor_id`, `data`, `hora_inicio`, `hora_fim`, `min_pessoas`, `override` | Override de demanda por data especifica (Black Friday, vespera de feriado). Substitui a demanda semanal padrao naquele dia. |
 
@@ -74,7 +74,7 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 
 | Entidade | Tabela | Campos criticos | Notas |
 |----------|--------|-----------------|-------|
-| **Escala** | `escalas` | `setor_id`, `data_inicio`, `data_fim`, `status`, `pontuacao`, `cobertura_percent`, `violacoes_hard`, `violacoes_soft`, `equilibrio`, `input_hash`, `simulacao_config_json` | **Lifecycle: RASCUNHO → OFICIAL → ARQUIVADA.** So oficializa se `violacoes_hard = 0`. `input_hash` detecta se os dados mudaram desde a ultima geracao. `simulacao_config_json` guarda a config do solver usada. |
+| **Escala** | `escalas` | `setor_id`, `data_inicio`, `data_fim`, `status`, `pontuacao`, `cobertura_percent`, `violacoes_hard`, `violacoes_soft`, `equilibrio`, `input_hash`, `simulacao_config_json`, `equipe_snapshot_json` | **Lifecycle: RASCUNHO → OFICIAL → ARQUIVADA.** So oficializa se `violacoes_hard = 0`. `input_hash` detecta se os dados mudaram desde a ultima geracao. `simulacao_config_json` guarda a config do solver usada. `equipe_snapshot_json` preserva o contexto historico de postos + titulares usado pela UI/export mesmo se o cadastro atual mudar depois. |
 | **Alocacao** | `alocacoes` | `escala_id`, `colaborador_id`, `data`, `status`, `hora_inicio`, `hora_fim`, `minutos_trabalho`, `hora_almoco_inicio/fim`, `minutos_almoco`, `intervalo_15min`, `funcao_id` | **1 linha = 1 dia de 1 pessoa.** Status: TRABALHO, FOLGA, INDISPONIVEL. Inclui horarios de almoco e intervalo curto. UNIQUE(escala_id, colaborador_id, data). |
 | **EscalaDecisao** | `escala_decisoes` | `escala_id`, `colaborador_id`, `data`, `acao`, `razao`, `alternativas_tentadas` | **Explicabilidade.** O motor registra POR QUE tomou cada decisao (ALOCADO, FOLGA, MOVIDO, REMOVIDO) com a razao e quantas alternativas tentou. |
 | **EscalaComparacaoDemanda** | `escala_comparacao_demanda` | `escala_id`, `data`, `hora_inicio`, `hora_fim`, `planejado`, `executado`, `delta` | Delta entre demanda planejada e cobertura real. `delta = executado - planejado`. Negativo = deficit, positivo = excesso. |
@@ -155,6 +155,14 @@ ativo=1 (normal) ──[desativar]──→ ativo=0 (soft deleted, invisivel no 
 ativo=1 (normal) ──[desativar]──→ ativo=0 (invisivel no sidebar, motor nao gera)
 ```
 
+**Funcao / Posto (cadastro atual):**
+```
+posto existe com ou sem titular
+sem titular = reserva de postos
+deletar posto = hard delete no cadastro atual
+historico = preservado por equipe_snapshot_json nas escalas
+```
+
 ### 2.4 Contratos CLT — Templates e Restricoes
 
 | ID | Nome | Horas/sem | Regime | Dias | Max/dia | Compensacao 9h45 | Restricoes especiais |
@@ -191,9 +199,11 @@ CLT 44h e 36h **nao tem perfis seed** — usam a janela do setor inteira.
 ### 2.7 Soft Delete
 
 Entidades com soft delete (`ativo` = 1 ou 0):
-- `setores`, `colaboradores`, `funcoes`, `contrato_perfis_horario`, `colaborador_regra_horario`, `colaborador_regra_horario_excecao_data`, `escala_ciclo_modelos`
+- `setores`, `colaboradores`, `contrato_perfis_horario`, `colaborador_regra_horario`, `colaborador_regra_horario_excecao_data`, `escala_ciclo_modelos`
 
 **Regra:** NUNCA usar `DELETE FROM` nessas tabelas. Sempre `UPDATE SET ativo = 0`.
+
+**Excecao importante:** `funcoes` nao entram mais nessa regra. O cadastro atual de postos pode sofrer hard delete; a memoria historica da equipe fica garantida por `escalas.equipe_snapshot_json`.
 
 **Excecao:** Tabelas com `ON DELETE CASCADE` (alocacoes, decisoes, comparacao_demanda, ciclo_itens, ia_mensagens) sao deletadas automaticamente quando o pai e deletado.
 
@@ -288,7 +298,7 @@ CLT.GRID_MINUTOS               = 15    // quantizacao universal
 - `colaboradores` — via tools genericas `criar`, `atualizar`, `cadastrar_lote`
 - `excecoes` — via tools genericas `criar`, `deletar`
 - `demandas` — via tools genericas `criar`, `atualizar`, `deletar`
-- `funcoes` — via tools genericas `criar`, `atualizar`, `deletar`
+- `funcoes` — via `salvar_posto_setor` (preferencial) e `deletar` para remover o posto do cadastro atual
 - `feriados` — via tools genericas `criar`, `deletar`
 - `setores` — via tools genericas `criar`, `atualizar`
 - `colaborador_regra_horario` — via tool `salvar_regra_horario_colaborador`
@@ -311,7 +321,7 @@ CLT.GRID_MINUTOS               = 15    // quantizacao universal
 4. Estagiario NUNCA domingo, NUNCA hora extra
 5. Aprendiz NUNCA domingo, feriado, noturno (22h-5h), hora extra
 6. 25/12 e 01/01 = proibido trabalhar (CCT)
-7. Soft delete — `ativo=0`, nunca DELETE
+7. Soft delete — `ativo=0`, nunca DELETE (exceto `funcoes`, cujo historico agora e preservado por snapshot)
 8. Grid 15min — tudo quantizado
 
 ---
@@ -697,7 +707,7 @@ Campos incluidos no hash: setor_id, datas, empresa, colaboradores (ordenados por
 
 **Para oficializar:**
 - Tool `oficializar_escala` valida `violacoes_hard = 0` antes de permitir
-- Pos-oficializacao: infere e grava folga fixa/variavel em colaboradores que nao tinham F/V definido (baseado nos padroes da escala gerada). Gerar e salvar rascunho NAO alteram o colaborador.
+- Pos-oficializacao: infere e grava folga fixa/variavel em colaboradores que nao tinham F/V definido (baseado nos padroes da escala gerada). Por isso a aba Equipe pode exibir Fixo/Variavel via helper da escala OFICIAL mesmo antes da persistencia. Gerar e salvar rascunho NAO alteram o colaborador.
 
 **Gaps:**
 - IA nao consegue ver detalhes de constraints especificas (ex: quais slots tem deficit)
@@ -1184,7 +1194,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `setores.salvarDemandaExcecaoData` | `{setor_id, data, hora_inicio, hora_fim, min_pessoas}` | `DemandaExcecaoData` criada | |
 | `setores.deletarDemandaExcecaoData` | `{id}` | void | Hard DELETE |
 
-#### Funcoes (5 handlers)
+#### Funcoes (6 handlers)
 
 | Handler | Input | O que retorna | Notas |
 |---------|-------|---------------|-------|
@@ -1192,7 +1202,8 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `funcoes.buscar` | `{id}` | `Funcao` | |
 | `funcoes.criar` | `{setor_id, apelido, tipo_contrato_id?, cor_hex?, ordem?}` | `Funcao` criada | |
 | `funcoes.atualizar` | `{id, apelido?, cor_hex?, ordem?}` | `Funcao` atualizada | |
-| `funcoes.deletar` | `{id}` | void | Soft delete (ativo=0) |
+| `funcoes.salvarDetalhe` | `{id?, setor_id, apelido, tipo_contrato_id, titular_colaborador_id}` | `Funcao` | Handler transacional oficial para CRUD de posto com titular opcional. Faz swap de titular, remove titular para reserva de postos e reordena secoes ocupados/reserva. |
+| `funcoes.deletar` | `{id}` | void | Hard delete no cadastro atual. Se houver titular, desanexa antes. Historico continua via `equipe_snapshot_json`. |
 
 #### Feriados (3 handlers)
 
@@ -1236,7 +1247,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `escalas.listarPorSetor` | `{setor_id}` | `Escala[]` | Todas as escalas do setor |
 | `escalas.preflight` | `{setor_id, data_inicio, data_fim, regimes_override?}` | `EscalaPreflightResult` | Blockers + warnings ANTES de gerar |
 | `escalas.gerar` | `{setor_id, data_inicio, data_fim, solve_mode?, max_time_seconds?, rules_override?}` | `EscalaCompletaV3` | Fluxo completo: preflight → buildInput → runSolver → persist |
-| `escalas.oficializar` | `{escala_id}` | `EscalaCompletaV3` | Valida violacoes_hard=0, UPDATE status→OFICIAL, arquiva anteriores. **Pos-oficializacao:** infere folga fixa/variavel para colaboradores sem F/V definido e grava na regra do colaborador. |
+| `escalas.oficializar` | `{escala_id}` | `EscalaCompletaV3` | Valida violacoes_hard=0, UPDATE status→OFICIAL, arquiva anteriores. **Pos-oficializacao:** infere folga fixa/variavel para colaboradores sem F/V definido, grava na regra do colaborador e atualiza `equipe_snapshot_json`. |
 | `escalas.ajustar` | `{escala_id, ajustes[]}` | `EscalaCompletaV3` | UPDATE alocacoes + revalida via validarEscalaV3() |
 | `escalas.deletar` | `{escala_id}` | void | DELETE (CASCADE em alocacoes, decisoes, comparacao) |
 | `escalas.detectarCicloRotativo` | `{escala_id}` | `{detectado, ciclo?}` | Analisa padrao ciclico na escala |
@@ -1343,12 +1354,13 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 
 A IA tem **34 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
 
-**A IA EXECUTA DIRETAMENTE (via 34 tools):**
+**A IA EXECUTA DIRETAMENTE (via 35 tools):**
 
 | Capacidade | Tool(s) | IPC equivalente |
 |-----------|---------|-----------------|
 | Discovery completo | `get_context`, `consultar` (18 tabelas), `buscar_colaborador`, `obter_alertas` | Multiplos SELECT |
-| CRUD generico | `criar` (7 entidades), `atualizar` (5), `deletar` (4), `cadastrar_lote` | colaboradores/setores/excecoes/demandas/funcoes/feriados/tipos_contrato |
+| CRUD generico | `criar` (7 entidades), `atualizar` (6), `deletar` (4), `cadastrar_lote` | colaboradores/setores/excecoes/demandas/funcoes/feriados/tipos_contrato |
+| CRUD de postos | `salvar_posto_setor`, `deletar` | funcoes.salvarDetalhe / funcoes.deletar |
 | Gerar escala | `gerar_escala` (com `solve_mode` e `rules_override`) | escalas.gerar |
 | Ajustar alocacao | `ajustar_alocacao`, `ajustar_horario` | escalas.ajustar |
 | Oficializar | `oficializar_escala` | escalas.oficializar |
@@ -1640,20 +1652,21 @@ Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemin
 | 6 | `explicar_violacao` | `{codigo_regra}` | Lookup em DICIONARIO_VIOLACOES (20+ regras) + fallback pra regra_definicao. |
 | 7 | `obter_alertas` | nenhum | Agregacao: poucos colabs, sem escala, violacoes HARD, escala desatualizada (hash), excecoes expirando. |
 
-#### CRUD generico (4 tools)
+#### CRUD generico + postos (5 tools)
 
 | # | Tool | Schema | O que faz |
 |---|------|--------|-----------|
 | 8 | `criar` | `{entidade, dados}` | INSERT generico — 7 entidades permitidas, defaults inteligentes pra colabs/excecoes. |
-| 9 | `atualizar` | `{entidade, id, dados}` | UPDATE parcial — 5 entidades permitidas. |
-| 10 | `deletar` | `{entidade, id}` | DELETE — 4 entidades permitidas. Soft delete onde aplicavel. |
-| 11 | `cadastrar_lote` | `{entidade, registros[]}` | Batch INSERT ate 200 registros com mesmos defaults de `criar`. |
+| 9 | `atualizar` | `{entidade, id, dados}` | UPDATE parcial — 6 entidades permitidas. Para `funcoes`, redireciona para a regra de negocio oficial. |
+| 10 | `deletar` | `{entidade, id}` | DELETE — 4 entidades permitidas. Para `funcoes`, chama `deletarFuncao` em vez de SQL cru. |
+| 11 | `salvar_posto_setor` | `{id?, setor_id, apelido, tipo_contrato_id, titular_colaborador_id?}` | CRUD semantico de posto: cria/edita, faz swap de titular e move vazio para reserva de postos. |
+| 12 | `cadastrar_lote` | `{entidade, registros[]}` | Batch INSERT ate 200 registros com mesmos defaults de `criar`. |
 
 #### Geracao e ajuste de escalas (6 tools)
 
 | # | Tool | Schema | O que faz |
 |---|------|--------|-----------|
-| 12 | `preflight` | `{setor_id, datas}` | Verifica viabilidade rapida: setor ativo, colabs, demandas, feriados. |
+| 13 | `preflight` | `{setor_id, datas}` | Verifica viabilidade rapida: setor ativo, colabs, demandas, feriados. |
 | 13 | `preflight_completo` | `{setor_id, datas}` | Versao completa: chama `buildEscalaPreflight()` com capacity checks por colab/dia. |
 | 14 | `gerar_escala` | `{setor_id, datas, solve_mode?, rules_override?}` | buildSolverInput → runSolver (60s rapido / 180s otimizado) → multi-pass → persistirSolverResult. Retorna escala RASCUNHO com diagnostico (pass_usado, regras_relaxadas). |
 | 15 | `ajustar_alocacao` | `{escala_id, colab_id, data, status}` | UPDATE alocacoes.status (TRABALHO/FOLGA/INDISPONIVEL). |
@@ -2290,10 +2303,16 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 
 | Tool | Parametros | Validacoes | Efeito |
 |------|-----------|------------|--------|
-| `criar` | entidade, dados | Whitelist 7 entidades (colaboradores, setores, excecoes, funcoes, feriados, demandas, escalas) | INSERT |
-| `atualizar` | entidade, id, dados | Whitelist 5 entidades (colaboradores, setores, funcoes, feriados, demandas) | UPDATE parcial |
-| `deletar` | entidade, id | Whitelist 4 entidades (excecoes, funcoes, feriados, demandas) | DELETE |
+| `criar` | entidade, dados | Whitelist 7 entidades (colaboradores, setores, excecoes, funcoes, feriados, demandas, escalas) | INSERT ou fluxo semantico para funcoes |
+| `atualizar` | entidade, id, dados | Whitelist 6 entidades (colaboradores, setores, funcoes, feriados, demandas, excecoes) | UPDATE parcial ou fluxo semantico para funcoes |
+| `deletar` | entidade, id | Whitelist 4 entidades (excecoes, funcoes, feriados, demandas) | DELETE; para funcoes usa regra de negocio (`deletarFuncao`) |
 | `cadastrar_lote` | entidade, registros[] (1-200) | Mesma whitelist de `criar`. Batch INSERT com erros parciais | INSERT em batch |
+
+### C.2.1 CRUD semantico de postos
+
+| Tool | Parametros | Validacoes | Efeito |
+|------|-----------|------------|--------|
+| `salvar_posto_setor` | `id?`, `setor_id`, `apelido`, `tipo_contrato_id`, `titular_colaborador_id?` | Mesmo setor entre posto e titular; contrato obrigatorio; `null` remove titular | Cria/edita posto, faz swap de titular, move posto vazio para reserva de postos |
 
 ### C.3 Escalas (6 tools)
 
@@ -2360,7 +2379,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 |----------|-------------------------------|
 | **Leitura** (consultar) | 18: setores, colaboradores, escalas, alocacoes, excecoes, tipos_contrato, demandas, funcoes, feriados, regra_definicao, regra_empresa, colaborador_regra_horario, colaborador_regra_horario_excecao_data, contrato_perfis_horario, empresa_horario_semana, setor_horario_semana, demandas_excecao_data, escala_ciclo_modelos |
 | **Criacao** (criar, cadastrar_lote) | 7: colaboradores, setores, excecoes, funcoes, feriados, demandas, escalas |
-| **Atualizacao** (atualizar) | 5: colaboradores, setores, funcoes, feriados, demandas |
+| **Atualizacao** (atualizar) | 6: colaboradores, setores, funcoes, feriados, demandas, excecoes |
 | **Delecao** (deletar) | 4: excecoes, funcoes, feriados, demandas |
 
 ### C.11 Schemas Zod (principais)

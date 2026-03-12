@@ -53,7 +53,19 @@ export function EmpresaConfig() {
   const [horarios, setHorarios] = useState<EmpresaHorarioSemana[]>([])
 
   useEffect(() => {
-    if (horariosApi) setHorarios(horariosApi)
+    if (horariosApi && horariosApi.length > 0) {
+      setHorarios(horariosApi)
+    } else if (horariosApi && horariosApi.length === 0) {
+      setHorarios(
+        DIAS_SEMANA.map(({ key }) => ({
+          id: 0,
+          dia_semana: key as EmpresaHorarioSemana['dia_semana'],
+          ativo: key !== 'DOM',
+          hora_abertura: '08:00',
+          hora_fechamento: '18:00',
+        }))
+      )
+    }
   }, [horariosApi])
 
   const form = useForm<EmpresaFormInput, unknown, EmpresaFormData>({
@@ -61,7 +73,19 @@ export function EmpresaConfig() {
     defaultValues: { nome: '', cnpj: '', telefone: '' },
   })
 
-  const blocker = useDirtyGuard({ isDirty: form.formState.isDirty })
+  const horariosDirty = horariosApi
+    ? horarios.length !== horariosApi.length ||
+      horarios.some((h) => {
+        const api = horariosApi.find((x) => x.dia_semana === h.dia_semana)
+        if (!api) return true
+        return (
+          h.ativo !== api.ativo ||
+          h.hora_abertura !== api.hora_abertura ||
+          h.hora_fechamento !== api.hora_fechamento
+        )
+      })
+    : false
+  const blocker = useDirtyGuard({ isDirty: form.formState.isDirty || !!horariosDirty })
 
   useEffect(() => {
     if (empresa) {
@@ -74,7 +98,6 @@ export function EmpresaConfig() {
   }, [empresa, form])
 
   const onSubmit = async (data: EmpresaFormData) => {
-    if (!empresa) return
     setSalvando(true)
     try {
       const nextValues: EmpresaFormInput = {
@@ -82,12 +105,28 @@ export function EmpresaConfig() {
         cnpj: data.cnpj.trim(),
         telefone: data.telefone.trim(),
       }
-      await empresaService.atualizar({
+      const updated = await empresaService.atualizar({
         ...nextValues,
-        corte_semanal: empresa.corte_semanal,
-        tolerancia_semanal_min: empresa.tolerancia_semanal_min,
+        corte_semanal: empresa?.corte_semanal ?? 'SEG_DOM',
+        tolerancia_semanal_min: empresa?.tolerancia_semanal_min ?? 0,
       })
+      if (updated?.nome) {
+        window.dispatchEvent(
+          new CustomEvent('empresa:atualizada', {
+            detail: { nome: updated.nome },
+          }),
+        )
+      }
       form.reset(nextValues)
+      for (const h of horarios) {
+        await empresaService.atualizarHorario({
+          dia_semana: h.dia_semana,
+          ativo: h.ativo,
+          hora_abertura: h.hora_abertura,
+          hora_fechamento: h.hora_fechamento,
+        })
+      }
+      await reloadHorarios()
       toast.success('Dados da empresa salvos')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
@@ -96,37 +135,8 @@ export function EmpresaConfig() {
     }
   }
 
-  const handleHorarioAtivo = async (dia_semana: string, ativo: boolean) => {
-    const horario = horarios.find((h) => h.dia_semana === dia_semana)
-    if (!horario) return
+  const handleHorarioAtivo = (dia_semana: string, ativo: boolean) => {
     setHorarios((prev) => prev.map((h) => (h.dia_semana === dia_semana ? { ...h, ativo } : h)))
-    try {
-      await empresaService.atualizarHorario({
-        dia_semana,
-        ativo,
-        hora_abertura: horario.hora_abertura,
-        hora_fechamento: horario.hora_fechamento,
-      })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar horario')
-      reloadHorarios()
-    }
-  }
-
-  const handleHorarioBlur = async (dia_semana: string) => {
-    const horario = horarios.find((h) => h.dia_semana === dia_semana)
-    if (!horario) return
-    try {
-      await empresaService.atualizarHorario({
-        dia_semana,
-        ativo: horario.ativo,
-        hora_abertura: horario.hora_abertura,
-        hora_fechamento: horario.hora_fechamento,
-      })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar horario')
-      reloadHorarios()
-    }
   }
 
   const handleHorarioInput = (dia_semana: string, field: 'hora_abertura' | 'hora_fechamento', value: string) => {
@@ -156,8 +166,23 @@ export function EmpresaConfig() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => form.reset()}
-              disabled={salvando || !form.formState.isDirty}
+              onClick={() => {
+                form.reset(
+                  empresa ? { nome: empresa.nome, cnpj: empresa.cnpj ?? '', telefone: empresa.telefone ?? '' } : { nome: '', cnpj: '', telefone: '' }
+                )
+                if (horariosApi && horariosApi.length > 0) setHorarios(horariosApi)
+                else if (horariosApi && horariosApi.length === 0)
+                  setHorarios(
+                    DIAS_SEMANA.map(({ key }) => ({
+                      id: 0,
+                      dia_semana: key as EmpresaHorarioSemana['dia_semana'],
+                      ativo: key !== 'DOM',
+                      hora_abertura: '08:00',
+                      hora_fechamento: '18:00',
+                    }))
+                  )
+              }}
+              disabled={salvando || (!form.formState.isDirty && !horariosDirty)}
             >
               Cancelar
             </Button>
@@ -264,7 +289,6 @@ export function EmpresaConfig() {
                           value={h.hora_abertura}
                           disabled={!h.ativo}
                           onChange={(e) => handleHorarioInput(key, 'hora_abertura', e.target.value)}
-                          onBlur={() => handleHorarioBlur(key)}
                           className="w-32"
                         />
                         <span className="text-sm text-muted-foreground">ate</span>
@@ -273,7 +297,6 @@ export function EmpresaConfig() {
                           value={h.hora_fechamento}
                           disabled={!h.ativo}
                           onChange={(e) => handleHorarioInput(key, 'hora_fechamento', e.target.value)}
-                          onBlur={() => handleHorarioBlur(key)}
                           className="w-32"
                         />
                       </div>
@@ -289,7 +312,17 @@ export function EmpresaConfig() {
         </Card>
       </div>
 
-      <DirtyGuardDialog blocker={blocker} />
+      <DirtyGuardDialog
+        blocker={blocker}
+        onSaveAndExit={async () => {
+          return new Promise<void>((resolve, reject) => {
+            form.handleSubmit(
+              (data) => onSubmit(data).then(resolve, reject),
+              () => reject()
+            )()
+          })
+        }}
+      />
     </div>
   )
 }

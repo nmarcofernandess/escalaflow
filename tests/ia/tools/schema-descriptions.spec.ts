@@ -59,4 +59,12 @@ describe('IA tool schemas (.describe -> JSON Schema)', () => {
     expect(ajustarHorario.properties.hora_inicio.description).toMatch(/HH:MM/i)
     expect(diagnosticarEscala.properties.escala_id.description).toMatch(/contexto autom[áa]tico|consultar/i)
   })
+
+  it('expõe descriptions na tool semântica de posto', () => {
+    const salvarPosto = getToolParameters('salvar_posto_setor')
+
+    expect(salvarPosto.properties.setor_id.description).toMatch(/contexto autom[áa]tico|consultar/i)
+    expect(salvarPosto.properties.tipo_contrato_id.description).toMatch(/tipos_contrato/i)
+    expect(salvarPosto.properties.titular_colaborador_id.description).toMatch(/reserva de postos|Null remove/i)
+  })
 })

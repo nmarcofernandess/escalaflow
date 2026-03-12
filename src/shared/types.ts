@@ -103,6 +103,7 @@ export interface Escala {
   criada_em: string
   input_hash?: string | null
   simulacao_config_json?: string | null
+  equipe_snapshot_json?: string | null
 }
 
 /** Alocacao v2 — mantida pra compat do frontend ate S4 */
@@ -184,6 +185,27 @@ export interface EscalaComparacaoDemanda {
   delta: number
   override: boolean
   justificativa: string | null
+}
+
+export interface EscalaEquipeSnapshotFuncao {
+  id: number
+  apelido: string
+  tipo_contrato_id: number
+  cor_hex: string | null
+  ordem: number
+}
+
+export interface EscalaEquipeSnapshotColaborador {
+  id: number
+  nome: string
+  sexo: 'M' | 'F'
+  tipo_contrato_id: number
+  funcao_id: number | null
+}
+
+export interface EscalaEquipeSnapshot {
+  funcoes: EscalaEquipeSnapshotFuncao[]
+  colaboradores: EscalaEquipeSnapshotColaborador[]
 }
 
 // ============================================================================
@@ -353,6 +375,7 @@ export interface EscalaPreflightResult {
 export interface EscalaCompletaV3 {
   escala: Escala
   alocacoes: Alocacao[]
+  snapshot_equipe?: EscalaEquipeSnapshot
   indicadores: Indicadores
   violacoes: Violacao[]
   antipatterns: AntipatternViolacao[]
@@ -507,6 +530,14 @@ export interface ColaboradorPostoSnapshotItem {
 export interface AtribuirPostoResult {
   snapshot_antes: ColaboradorPostoSnapshotItem[]
   snapshot_depois: ColaboradorPostoSnapshotItem[]
+}
+
+export interface SalvarDetalheFuncaoRequest {
+  id?: number
+  setor_id: number
+  apelido: string
+  tipo_contrato_id: number
+  titular_colaborador_id: number | null
 }
 
 // ============================================================================

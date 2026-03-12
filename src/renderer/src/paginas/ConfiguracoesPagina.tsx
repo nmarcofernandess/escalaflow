@@ -1226,7 +1226,14 @@ export function ConfiguracoesPagina() {
 
       </div>
 
-      <DirtyGuardDialog blocker={blocker} />
+      <DirtyGuardDialog
+        blocker={blocker}
+        onSaveAndExit={async () => {
+          return new Promise<void>((resolve, reject) => {
+            iaForm.handleSubmit((data) => onSubmitIa(data).then(resolve, reject), () => reject())()
+          })
+        }}
+      />
     </div>
   )
 }

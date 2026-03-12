@@ -1335,7 +1335,14 @@ export function ColaboradorDetalhe() {
         </DialogContent>
       </Dialog>
 
-      <DirtyGuardDialog blocker={blocker} />
+      <DirtyGuardDialog
+        blocker={blocker}
+        onSaveAndExit={async () => {
+          return new Promise<void>((resolve, reject) => {
+            colabForm.handleSubmit((data) => handleSalvar(data).then(resolve, reject), () => reject())()
+          })
+        }}
+      />
     </div>
   )
 }

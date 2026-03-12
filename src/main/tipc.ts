@@ -9,6 +9,8 @@ import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
 import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
 import { persistirAjusteResult } from './tipc/escalas-utils'
+import { atualizarEscalaEquipeSnapshot } from './escala-equipe-snapshot'
+import { deletarFuncao, salvarDetalheFuncao } from './funcoes-service'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
@@ -18,6 +20,12 @@ import type {
   DashboardResumo,
   SetorResumo,
   AlertaDashboard,
+  DiaSemana,
+  SalvarDetalheFuncaoRequest,
+} from '../shared'
+import {
+  inferFolgasFromAlocacoes,
+  type FolgaInferenceAlocacao,
 } from '../shared'
 
 const require = createRequire(import.meta.url)
@@ -182,89 +190,12 @@ async function buildInfeasibleMessage(
   return 'INFEASIBLE: Nao foi possivel gerar uma escala viavel com as regras e a equipe atuais. Revise demanda, excecoes, contratos e periodo.'
 }
 
-type DiaSemanaSigla = 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'
-type DiaSemanaSemDomingo = Exclude<DiaSemanaSigla, 'DOM'>
-
-const DIA_SEMANA_ORDENADA: DiaSemanaSigla[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
-const DIA_SEMANA_ORDENADA_SEM_DOM: DiaSemanaSemDomingo[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
-const DIA_SEMANA_BY_UTC_DAY: Record<number, DiaSemanaSigla> = {
-  0: 'DOM',
-  1: 'SEG',
-  2: 'TER',
-  3: 'QUA',
-  4: 'QUI',
-  5: 'SEX',
-  6: 'SAB',
-}
-
-function isoDateToUtcDate(value: string): Date {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1))
-}
-
-function utcDateToIso(value: Date): string {
-  return value.toISOString().slice(0, 10)
-}
-
-function diaSemanaFromIso(value: string): DiaSemanaSigla {
-  return DIA_SEMANA_BY_UTC_DAY[isoDateToUtcDate(value).getUTCDay()] ?? 'SEG'
-}
-
-function detectarDiaMaisFrequente<T extends string>(countByDay: Map<T, number>, ordem: readonly T[]): T | null {
-  let melhorDia: T | null = null
-  let melhorCount = 0
-  for (const dia of ordem) {
-    const count = countByDay.get(dia) ?? 0
-    if (count > melhorCount) {
-      melhorDia = dia
-      melhorCount = count
-    }
-  }
-  return melhorDia
-}
-
 type AutoFolgaAlocacao = {
   colaborador_id: number
-  data: string
-  status: 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
-}
+} & FolgaInferenceAlocacao
 
-function detectarFolgaFixaPelaEscala(alocacoes: AutoFolgaAlocacao[]): DiaSemanaSigla | null {
-  const countByDay = new Map<DiaSemanaSigla, number>()
-  for (const aloc of alocacoes) {
-    if (aloc.status !== 'FOLGA') continue
-    const dia = diaSemanaFromIso(aloc.data)
-    countByDay.set(dia, (countByDay.get(dia) ?? 0) + 1)
-  }
-  return detectarDiaMaisFrequente(countByDay, DIA_SEMANA_ORDENADA)
-}
-
-function detectarFolgaVariavelPelaEscala(
-  alocacoes: AutoFolgaAlocacao[],
-  statusPorData: Map<string, AutoFolgaAlocacao['status']>,
-): DiaSemanaSemDomingo | null {
-  const countByDay = new Map<DiaSemanaSemDomingo, number>()
-
-  for (const aloc of alocacoes) {
-    if (aloc.status !== 'TRABALHO') continue
-    if (diaSemanaFromIso(aloc.data) !== 'DOM') continue
-
-    const domingo = isoDateToUtcDate(aloc.data)
-    for (let offset = 1; offset <= 6; offset += 1) {
-      const next = new Date(domingo)
-      next.setUTCDate(domingo.getUTCDate() + offset)
-      const nextIso = utcDateToIso(next)
-      const status = statusPorData.get(nextIso)
-      if (status !== 'FOLGA') continue
-
-      const dia = diaSemanaFromIso(nextIso)
-      if (dia === 'DOM') continue
-      countByDay.set(dia, (countByDay.get(dia) ?? 0) + 1)
-      break
-    }
-  }
-
-  return detectarDiaMaisFrequente(countByDay, DIA_SEMANA_ORDENADA_SEM_DOM)
+function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
 }
 
 async function autoDefinirFolgasPendentesPosOficializacao(escalaId: number, setorId: number): Promise<void> {
@@ -277,8 +208,8 @@ async function autoDefinirFolgasPendentesPosOficializacao(escalaId: number, seto
   const regrasPadrao = await queryAll<{
     id: number
     colaborador_id: number
-    folga_fixa_dia_semana: DiaSemanaSigla | null
-    folga_variavel_dia_semana: DiaSemanaSemDomingo | null
+    folga_fixa_dia_semana: string | null
+    folga_variavel_dia_semana: string | null
   }>(`
     SELECT r.id, r.colaborador_id, r.folga_fixa_dia_semana, r.folga_variavel_dia_semana
     FROM colaborador_regra_horario r
@@ -297,15 +228,10 @@ async function autoDefinirFolgasPendentesPosOficializacao(escalaId: number, seto
   `, escalaId, setorId)
 
   const alocacoesPorColaborador = new Map<number, AutoFolgaAlocacao[]>()
-  const statusPorColaboradorData = new Map<number, Map<string, AutoFolgaAlocacao['status']>>()
   for (const aloc of alocacoes) {
     const alocs = alocacoesPorColaborador.get(aloc.colaborador_id) ?? []
     alocs.push(aloc)
     alocacoesPorColaborador.set(aloc.colaborador_id, alocs)
-
-    const statusMap = statusPorColaboradorData.get(aloc.colaborador_id) ?? new Map<string, AutoFolgaAlocacao['status']>()
-    statusMap.set(aloc.data, aloc.status)
-    statusPorColaboradorData.set(aloc.colaborador_id, statusMap)
   }
 
   for (const colaborador of colaboradores) {
@@ -317,16 +243,14 @@ async function autoDefinirFolgasPendentesPosOficializacao(escalaId: number, seto
     const alocs = alocacoesPorColaborador.get(colaborador.id) ?? []
     if (alocs.length === 0) continue
 
-    const folgaFixaDetectada = folgaFixaAtual ?? detectarFolgaFixaPelaEscala(alocs)
-    let folgaVariavelDetectada = folgaVariavelAtual
-      ?? detectarFolgaVariavelPelaEscala(alocs, statusPorColaboradorData.get(colaborador.id) ?? new Map())
+    const inferidas = inferFolgasFromAlocacoes({
+      alocacoes: alocs,
+      folgaFixaAtual: folgaFixaAtual as DiaSemana | null,
+      folgaVariavelAtual: folgaVariavelAtual as DiaSemana | null,
+    })
 
-    if (!folgaVariavelAtual && folgaVariavelDetectada && folgaVariavelDetectada === (folgaFixaAtual ?? folgaFixaDetectada)) {
-      folgaVariavelDetectada = null
-    }
-
-    const nextFolgaFixa = folgaFixaAtual ?? folgaFixaDetectada
-    const nextFolgaVariavel = folgaVariavelAtual ?? folgaVariavelDetectada
+    const nextFolgaFixa = folgaFixaAtual ?? inferidas.fixa
+    const nextFolgaVariavel = folgaVariavelAtual ?? inferidas.variavel
     if (!nextFolgaFixa && !nextFolgaVariavel) continue
 
     if (regra) {
@@ -1175,6 +1099,7 @@ const escalasOficializar = t.procedure
 
     // Oficializar esta
     await execute("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?", input.id)
+    await atualizarEscalaEquipeSnapshot(input.id, escala.setor_id)
 
     try {
       await autoDefinirFolgasPendentesPosOficializacao(input.id, escala.setor_id)
@@ -1376,30 +1301,27 @@ const dashboardResumo = t.procedure
     `, hoje, hoje)
     const totalEmAtestado = totalEmAtestadoRow?.count ?? 0
 
-    const setoresDb = await queryAll<{ id: number; nome: string; icone?: string | null }>('SELECT * FROM setores WHERE ativo = TRUE ORDER BY nome')
+    const setoresDb = await queryAll<{ id: number; nome: string; icone?: string | null }>(
+      'SELECT * FROM setores WHERE ativo = TRUE ORDER BY nome',
+    )
     const setores: SetorResumo[] = []
     for (const s of setoresDb) {
       const totalColabRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE setor_id = ? AND ativo = TRUE', s.id)
       const totalColab = totalColabRow?.count ?? 0
-      const escalaAtual = await queryOne<{ status: string; violacoes_hard: number; criada_em: string }>(`
-        SELECT status, COALESCE(violacoes_hard, 0)::int as violacoes_hard, criada_em FROM escalas
+      const escalaAtual = await queryOne<{ status: string; violacoes_hard: number; criada_em: string }>(
+        `
+        SELECT status, COALESCE(violacoes_hard, 0)::int as violacoes_hard, criada_em
+        FROM escalas
         WHERE setor_id = ? AND status IN ('RASCUNHO', 'OFICIAL')
-        ORDER BY CASE status WHEN 'OFICIAL' THEN 1 WHEN 'RASCUNHO' THEN 2 END LIMIT 1
-      `, s.id)
+        ORDER BY CASE status WHEN 'OFICIAL' THEN 1 WHEN 'RASCUNHO' THEN 2 END
+        LIMIT 1
+      `,
+        s.id,
+      )
 
-      // Staleness check: algo mudou no setor apos a escala ser gerada?
-      let stale = false
-      if (escalaAtual) {
-        const ultimoChange = await queryOne<{ ts: string }>(`
-          SELECT GREATEST(
-            COALESCE((SELECT MAX(atualizada_em) FROM colaboradores WHERE setor_id = ?), '1970-01-01'),
-            COALESCE((SELECT MAX(atualizada_em) FROM demandas WHERE setor_id = ?), '1970-01-01')
-          )::text as ts
-        `, s.id, s.id)
-        if (ultimoChange?.ts) {
-          stale = new Date(ultimoChange.ts) > new Date(escalaAtual.criada_em)
-        }
-      }
+      // Ainda nao rastreamos timestamps de atualizacao em colaboradores/demandas,
+      // entao por enquanto nao marcamos a escala como desatualizada automaticamente.
+      const stale = false
 
       setores.push({
         id: s.id,
@@ -1602,12 +1524,16 @@ const funcoesAtualizar = t.procedure
     return await queryOne('SELECT * FROM funcoes WHERE id = ?', input.id)
   })
 
+const funcoesSalvarDetalhe = t.procedure
+  .input<SalvarDetalheFuncaoRequest>()
+  .action(async ({ input }) => {
+    return await salvarDetalheFuncao(input)
+  })
+
 const funcoesDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
-    // Desassociar colaboradores antes de deletar
-    await execute('UPDATE colaboradores SET funcao_id = NULL WHERE funcao_id = ?', input.id)
-    await execute('DELETE FROM funcoes WHERE id = ?', input.id)
+    await deletarFuncao(input.id)
     return undefined
   })
 
@@ -1959,32 +1885,86 @@ const colaboradoresSalvarRegraHorario = t.procedure
 
     // Buscar existente com match exato de dia_semana_regra (NULL-safe)
     const existe = diaSemana === null
-      ? await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', input.colaborador_id)
-      : await queryOne<{ id: number }>('SELECT id FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', input.colaborador_id, diaSemana)
+      ? await queryOne<{
+        id: number
+        ativo: boolean
+        perfil_horario_id: number | null
+        inicio: string | null
+        fim: string | null
+        preferencia_turno_soft: string | null
+        domingo_ciclo_trabalho: number
+        domingo_ciclo_folga: number
+        folga_fixa_dia_semana: string | null
+        folga_variavel_dia_semana: string | null
+      }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', input.colaborador_id)
+      : await queryOne<{
+        id: number
+        ativo: boolean
+        perfil_horario_id: number | null
+        inicio: string | null
+        fim: string | null
+        preferencia_turno_soft: string | null
+        domingo_ciclo_trabalho: number
+        domingo_ciclo_folga: number
+        folga_fixa_dia_semana: string | null
+        folga_variavel_dia_semana: string | null
+      }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', input.colaborador_id, diaSemana)
 
-    // Para regras de dia específico, forçar defaults em campos nível-colaborador
-    const domCicloTrabalho = isDiaEspecifico ? 2 : (input.domingo_ciclo_trabalho ?? 2)
-    const domCicloFolga = isDiaEspecifico ? 1 : (input.domingo_ciclo_folga ?? 1)
-    const folgaFixa = isDiaEspecifico ? null : (input.folga_fixa_dia_semana ?? null)
-    const folgaVariavel = isDiaEspecifico ? null : (input.folga_variavel_dia_semana ?? null)
+    const ativo = input.ativo !== undefined
+      ? input.ativo
+      : (existe?.ativo ?? true)
+    const perfilHorarioId = hasOwnField(input, 'perfil_horario_id')
+      ? (input.perfil_horario_id ?? null)
+      : (existe?.perfil_horario_id ?? null)
+    const inicio = hasOwnField(input, 'inicio')
+      ? (input.inicio ?? null)
+      : (existe?.inicio ?? null)
+    const fim = hasOwnField(input, 'fim')
+      ? (input.fim ?? null)
+      : (existe?.fim ?? null)
+    const preferenciaTurnoSoft = hasOwnField(input, 'preferencia_turno_soft')
+      ? (input.preferencia_turno_soft ?? null)
+      : (existe?.preferencia_turno_soft ?? null)
+
+    // Regras de dia específico não carregam campos de ciclo/folga no schema.
+    const domCicloTrabalho = isDiaEspecifico
+      ? 2
+      : (hasOwnField(input, 'domingo_ciclo_trabalho')
+          ? (input.domingo_ciclo_trabalho ?? 2)
+          : (existe?.domingo_ciclo_trabalho ?? 2))
+    const domCicloFolga = isDiaEspecifico
+      ? 1
+      : (hasOwnField(input, 'domingo_ciclo_folga')
+          ? (input.domingo_ciclo_folga ?? 1)
+          : (existe?.domingo_ciclo_folga ?? 1))
+    const folgaFixa = isDiaEspecifico
+      ? null
+      : (hasOwnField(input, 'folga_fixa_dia_semana')
+          ? (input.folga_fixa_dia_semana ?? null)
+          : (existe?.folga_fixa_dia_semana ?? null))
+    const folgaVariavel = isDiaEspecifico
+      ? null
+      : (hasOwnField(input, 'folga_variavel_dia_semana')
+          ? (input.folga_variavel_dia_semana ?? null)
+          : (existe?.folga_variavel_dia_semana ?? null))
 
     if (existe) {
       await execute(`
         UPDATE colaborador_regra_horario SET
-          ativo = COALESCE(?, ativo),
+          ativo = ?,
           perfil_horario_id = ?,
           inicio = ?, fim = ?,
           preferencia_turno_soft = ?,
-          domingo_ciclo_trabalho = COALESCE(?, domingo_ciclo_trabalho),
-          domingo_ciclo_folga = COALESCE(?, domingo_ciclo_folga),
+          domingo_ciclo_trabalho = ?,
+          domingo_ciclo_folga = ?,
           folga_fixa_dia_semana = ?,
           folga_variavel_dia_semana = ?
         WHERE id = ?
       `,
-        input.ativo !== undefined ? input.ativo : null,
-        input.perfil_horario_id ?? null,
-        input.inicio ?? null, input.fim ?? null,
-        input.preferencia_turno_soft ?? null,
+        ativo,
+        perfilHorarioId,
+        inicio, fim,
+        preferenciaTurnoSoft,
         domCicloTrabalho,
         domCicloFolga,
         folgaFixa,
@@ -2000,10 +1980,10 @@ const colaboradoresSalvarRegraHorario = t.procedure
       `,
         input.colaborador_id,
         diaSemana,
-        input.ativo !== undefined ? input.ativo : true,
-        input.perfil_horario_id ?? null,
-        input.inicio ?? null, input.fim ?? null,
-        input.preferencia_turno_soft ?? null,
+        ativo,
+        perfilHorarioId,
+        inicio, fim,
+        preferenciaTurnoSoft,
         domCicloTrabalho,
         domCicloFolga,
         folgaFixa,
@@ -3283,10 +3263,13 @@ const empresaHorariosAtualizar = t.procedure
   .input<{ dia_semana: string; ativo: boolean; hora_abertura: string; hora_fechamento: string }>()
   .action(async ({ input }) => {
     await execute(`
-      UPDATE empresa_horario_semana
-      SET ativo = ?, hora_abertura = ?, hora_fechamento = ?
-      WHERE dia_semana = ?
-    `, input.ativo, input.hora_abertura, input.hora_fechamento, input.dia_semana)
+      INSERT INTO empresa_horario_semana (dia_semana, ativo, hora_abertura, hora_fechamento)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT (dia_semana) DO UPDATE SET
+        ativo = EXCLUDED.ativo,
+        hora_abertura = EXCLUDED.hora_abertura,
+        hora_fechamento = EXCLUDED.hora_fechamento
+    `, input.dia_semana, input.ativo, input.hora_abertura, input.hora_fechamento)
     return await queryOne('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?', input.dia_semana)
   })
 
@@ -3984,6 +3967,7 @@ export const router = {
   'funcoes.buscar': funcoesBuscar,
   'funcoes.criar': funcoesCriar,
   'funcoes.atualizar': funcoesAtualizar,
+  'funcoes.salvarDetalhe': funcoesSalvarDetalhe,
   'funcoes.deletar': funcoesDeletar,
   // Feriados
   'feriados.listar': feriadosListar,

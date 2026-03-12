@@ -31,8 +31,10 @@ import { cn } from '@/lib/utils'
 import { formatarData, formatarMinutos } from '@/lib/formatadores'
 import { escalasService } from '@/servicos/escalas'
 import { colaboradoresService } from '@/servicos/colaboradores'
+import { funcoesService } from '@/servicos/funcoes'
 import { setoresService } from '@/servicos/setores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
+import { resolveEscalaEquipe } from '@/lib/escala-team'
 import type {
   Setor,
   Escala,
@@ -41,6 +43,7 @@ import type {
   Demanda,
   TipoContrato,
   SetorHorarioSemana,
+  Funcao,
 } from '@shared/index'
 
 export interface EscalaResumo {
@@ -74,6 +77,7 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
   // Lazy loaded data
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
+  const [funcoes, setFuncoes] = useState<Funcao[]>([])
   const [demandas, setDemandas] = useState<Demanda[]>([])
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([])
   const [horariosSemana, setHorariosSemana] = useState<SetorHorarioSemana[]>([])
@@ -82,15 +86,17 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
     if (loaded || !escalaResumo) return
     setLoading(true)
     try {
-      const [ec, colabs, dems, tcs, hs] = await Promise.all([
+      const [ec, colabs, funcs, dems, tcs, hs] = await Promise.all([
         escalasService.buscar(escalaResumo.id),
         colaboradoresService.listar({ setor_id: setor.id, ativo: true }),
+        funcoesService.listar(setor.id).catch(() => [] as Funcao[]),
         setoresService.listarDemandas(setor.id),
         tiposContratoService.listar(),
         setoresService.listarHorarioSemana(setor.id),
       ])
       setEscalaCompleta(ec)
       setColaboradores(colabs)
+      setFuncoes(funcs)
       setDemandas(dems)
       setTiposContrato(tcs)
       setHorariosSemana(hs)
@@ -242,16 +248,17 @@ export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighli
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : escalaCompleta && colaboradores.length > 0 ? (
-            <SectionTabs
-              escalaCompleta={escalaCompleta}
-              colaboradores={colaboradores}
-              demandas={demandas}
-              tiposContrato={tiposContrato}
-              setor={setor}
-              viewMode={viewMode}
-              avisosCount={avisosCount}
-              horariosSemana={horariosSemana}
-            />
+          <SectionTabs
+            escalaCompleta={escalaCompleta}
+            colaboradores={colaboradores}
+            funcoes={funcoes}
+            demandas={demandas}
+            tiposContrato={tiposContrato}
+            setor={setor}
+            viewMode={viewMode}
+            avisosCount={avisosCount}
+            horariosSemana={horariosSemana}
+          />
           ) : (
             <div className="flex items-center justify-center py-8">
               <p className="text-xs text-muted-foreground">Nao foi possivel carregar detalhes.</p>
@@ -280,6 +287,7 @@ function SectionIcon({ icone }: { icone: string | null }) {
 interface SectionTabsProps {
   escalaCompleta: EscalaCompletaV3
   colaboradores: Colaborador[]
+  funcoes: Funcao[]
   demandas: Demanda[]
   tiposContrato: TipoContrato[]
   setor: Setor
@@ -291,6 +299,7 @@ interface SectionTabsProps {
 function SectionTabs({
   escalaCompleta,
   colaboradores,
+  funcoes,
   demandas,
   tiposContrato,
   setor,
@@ -298,6 +307,11 @@ function SectionTabs({
   avisosCount,
   horariosSemana,
 }: SectionTabsProps) {
+  const equipeEscala = useMemo(
+    () => resolveEscalaEquipe(escalaCompleta, colaboradores, funcoes),
+    [colaboradores, escalaCompleta, funcoes],
+  )
+
   // Count collaborators with problems (for badge)
   const problemCount = useMemo(() => {
     const start = new Date(escalaCompleta.escala.data_inicio + 'T00:00:00')
@@ -319,7 +333,7 @@ function SectionTabs({
     )
 
     let count = 0
-    for (const colab of colaboradores) {
+    for (const colab of equipeEscala.colaboradores) {
       const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
       const real = minutosReais.get(colab.id) ?? 0
       const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
@@ -329,7 +343,7 @@ function SectionTabs({
       if (belowTolerance || colabsComViolacao.has(colab.id)) count++
     }
     return count
-  }, [escalaCompleta, colaboradores, tiposContrato])
+  }, [equipeEscala.colaboradores, escalaCompleta, tiposContrato])
 
   return (
     <Tabs defaultValue="escala" className="space-y-3">
@@ -349,17 +363,18 @@ function SectionTabs({
       <TabsContent value="escala">
         {viewMode === 'grid' ? (
           <EscalaGrid
-            colaboradores={colaboradores}
+            colaboradores={equipeEscala.colaboradores}
             alocacoes={escalaCompleta.alocacoes}
             dataInicio={escalaCompleta.escala.data_inicio}
             dataFim={escalaCompleta.escala.data_fim}
             demandas={demandas}
             tiposContrato={tiposContrato}
+            funcoes={equipeEscala.funcoes}
             readOnly
           />
         ) : (
           <TimelineGrid
-            colaboradores={colaboradores}
+            colaboradores={equipeEscala.colaboradores}
             alocacoes={escalaCompleta.alocacoes}
             setor={setor}
             dataSelecionada={escalaCompleta.escala.data_inicio}
@@ -376,7 +391,7 @@ function SectionTabs({
       {/* Tab Resumo (merge Horas + Avisos) */}
       <TabsContent value="resumo">
         <ResumoTable
-          colaboradores={colaboradores}
+          colaboradores={equipeEscala.colaboradores}
           alocacoes={escalaCompleta.alocacoes}
           violacoes={escalaCompleta.violacoes}
           tiposContrato={tiposContrato}

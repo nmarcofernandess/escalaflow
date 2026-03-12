@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatarData } from '@/lib/formatadores'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
+import { resolveEscalaEquipe } from '@/lib/escala-team'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
 import { colaboradoresService } from '@/servicos/colaboradores'
@@ -116,7 +117,7 @@ export function EscalasHub() {
     try {
       const [colaboradores, funcoes, horarios, regras] = await Promise.all([
         colaboradoresService.listar({ setor_id: setorId, ativo: true }),
-        funcoesService.listar(setorId, true).catch(() => [] as Funcao[]),
+        funcoesService.listar(setorId).catch(() => [] as Funcao[]),
         setoresService.listarHorarioSemana(setorId).catch(() => [] as SetorHorarioSemana[]),
         colaboradoresService.listarRegrasPadraoSetor(setorId).catch(() => [] as RegraHorarioColaborador[]),
       ])
@@ -260,8 +261,11 @@ export function EscalasHub() {
 
     const setor = item.setor
     const detalhe = escalaDetalheByEscalaId.get(exportTarget.escalaId) ?? null
-    const colaboradores = colaboradoresBySetor.get(exportTarget.setorId) ?? []
-    const funcoes = funcoesBySetor.get(exportTarget.setorId) ?? []
+    const equipeEscala = resolveEscalaEquipe(
+      detalhe,
+      colaboradoresBySetor.get(exportTarget.setorId) ?? [],
+      funcoesBySetor.get(exportTarget.setorId) ?? [],
+    )
     const horariosSemana = horariosBySetor.get(exportTarget.setorId) ?? []
     const regrasPadrao = regrasBySetor.get(exportTarget.setorId) ?? []
     const regrasMap = new Map<number, RegraHorarioColaborador>()
@@ -270,8 +274,8 @@ export function EscalasHub() {
     return {
       setor,
       detalhe,
-      colaboradores,
-      funcoes,
+      colaboradores: equipeEscala.colaboradores,
+      funcoes: equipeEscala.funcoes,
       horariosSemana,
       regrasPadrao,
       regrasMap,
@@ -543,8 +547,11 @@ export function EscalasHub() {
               const selectedEscala = getSelectedEscala(item)
               const isExpanded = expandedSetores.has(setor.id)
               const detalhe = selectedEscalaId != null ? escalaDetalheByEscalaId.get(selectedEscalaId) : null
-              const colaboradores = colaboradoresBySetor.get(setor.id) ?? []
-              const funcoes = funcoesBySetor.get(setor.id) ?? []
+              const equipeEscala = resolveEscalaEquipe(
+                detalhe,
+                colaboradoresBySetor.get(setor.id) ?? [],
+                funcoesBySetor.get(setor.id) ?? [],
+              )
               const regrasPadrao = regrasBySetor.get(setor.id) ?? []
               const loadingCard = Boolean(
                 isExpanded
@@ -636,8 +643,8 @@ export function EscalasHub() {
                           <EscalaCicloResumo
                             escala={detalhe.escala}
                             alocacoes={detalhe.alocacoes}
-                            colaboradores={colaboradores}
-                            funcoes={funcoes}
+                            colaboradores={equipeEscala.colaboradores}
+                            funcoes={equipeEscala.funcoes}
                             regrasPadrao={regrasPadrao}
                           />
                           {detalhe.comparacao_demanda.length > 0 && (

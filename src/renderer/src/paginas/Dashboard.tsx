@@ -30,17 +30,33 @@ const statConfig = [
 ]
 
 export function Dashboard() {
-  const { data: dados, loading } = useApiData<DashboardResumo>(
+  const { data: dados, loading, error, reload } = useApiData<DashboardResumo>(
     () => dashboardService.resumo(),
     [],
   )
 
-  if (loading || !dados) {
+  if (loading && !dados) {
     return (
       <div className="flex flex-1 flex-col">
         <PageHeader breadcrumbs={[{ label: 'Dashboard' }]} />
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">Carregando...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !dados) {
+    return (
+      <div className="flex flex-1 flex-col">
+        <PageHeader breadcrumbs={[{ label: 'Dashboard' }]} />
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+          <p className="text-sm text-destructive">
+            {error ?? 'Nao foi possivel carregar o dashboard.'}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => reload()}>
+            Tentar novamente
+          </Button>
         </div>
       </div>
     )

@@ -11,6 +11,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
 import { queryOne, queryAll, execute, insertReturningId, transaction } from '../db/query'
+import { buildEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 import type {
   SolverInput,
   SolverOutput,
@@ -797,18 +798,20 @@ export async function persistirSolverResult(
   const ind = solverResult.indicadores!
   const decisoes = solverResult.decisoes ?? []
   const comparacao = solverResult.comparacao_demanda ?? []
+  const equipeSnapshot = await buildEscalaEquipeSnapshot(setorId)
 
   return await transaction(async () => {
     const escalaId = await insertReturningId(`
       INSERT INTO escalas
         (setor_id, data_inicio, data_fim, status, pontuacao,
-         cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json)
-      VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?)
+         cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json, equipe_snapshot_json)
+      VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       setorId, dataInicio, dataFim,
       ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
       inputHash ?? null,
       JSON.stringify({ regimes_override: regimesOverride ?? [] }),
+      JSON.stringify(equipeSnapshot),
     )
 
     for (const a of solverResult.alocacoes!) {

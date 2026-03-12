@@ -126,8 +126,8 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
     lines.push(`- Ativo: ${setor.ativo ? 'sim' : 'não'}`)
 
     // Colaboradores do setor
-    const colabs = await queryAll<{ id: number; nome: string; tipo_trabalhador: string; contrato_nome: string; horas_semanais: number }>(`
-        SELECT c.id, c.nome, c.tipo_trabalhador, t.nome as contrato_nome, t.horas_semanais
+    const colabs = await queryAll<{ id: number; nome: string; tipo_trabalhador: string; contrato_nome: string; horas_semanais: number; funcao_id: number | null }>(`
+        SELECT c.id, c.nome, c.tipo_trabalhador, t.nome as contrato_nome, t.horas_semanais, c.funcao_id
         FROM colaboradores c
         JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
         WHERE c.setor_id = ? AND c.ativo = true
@@ -141,6 +141,47 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
         }
     } else {
         lines.push(`\n⚠️ Setor sem colaboradores ativos.`)
+    }
+
+    const postos = await queryAll<{
+        id: number
+        apelido: string
+        tipo_contrato_nome: string | null
+        titular_id: number | null
+        titular_nome: string | null
+    }>(`
+        SELECT
+          f.id,
+          f.apelido,
+          t.nome AS tipo_contrato_nome,
+          c.id AS titular_id,
+          c.nome AS titular_nome
+        FROM funcoes f
+        LEFT JOIN tipos_contrato t ON t.id = f.tipo_contrato_id
+        LEFT JOIN colaboradores c ON c.funcao_id = f.id AND c.ativo = true
+        WHERE f.setor_id = ?
+        ORDER BY f.ordem, f.apelido
+    `, setor_id)
+
+    if (postos.length > 0) {
+        const postosVazios = postos.filter((posto) => posto.titular_id == null)
+        const reservaOperacional = colabs.filter((colab) => colab.funcao_id == null)
+
+        lines.push(`\n#### Postos do setor (${postos.length}):`)
+        lines.push(`- ${postosVazios.length} posto(s) sem titular = reserva de postos`)
+        lines.push(`- ${reservaOperacional.length} colaborador(es) sem funcao_id = reserva operacional`)
+
+        for (const posto of postos) {
+            const contratoNome = posto.tipo_contrato_nome ?? 'Contrato'
+            const titularTexto = posto.titular_nome
+              ? `${posto.titular_nome} (ID: ${posto.titular_id})`
+              : 'vazio'
+            lines.push(`- ${posto.apelido} (ID: ${posto.id}) — ${contratoNome} — titular: ${titularTexto}`)
+        }
+    } else {
+        lines.push(`\n#### Postos do setor`)
+        lines.push(`- Nenhum posto cadastrado ainda.`)
+        lines.push(`- Posto sem titular = reserva de postos.`)
     }
 
     // Exceções ativas do setor (férias/atestados que impactam escalas)

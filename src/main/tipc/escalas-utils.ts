@@ -1,6 +1,7 @@
-import { execute, transaction } from '../db/query'
+import { execute, queryOne, transaction } from '../db/query'
 import type { SolverOutput } from '../../shared'
 import type { EscalaSimulacaoConfig } from '../preflight-capacity'
+import { buildEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 
 export async function persistirAjusteResult(
   escalaId: number,
@@ -11,6 +12,10 @@ export async function persistirAjusteResult(
   inputHash: string,
   cfg: EscalaSimulacaoConfig,
 ): Promise<void> {
+  const escala = await queryOne<{ setor_id: number }>('SELECT setor_id FROM escalas WHERE id = ?', escalaId)
+  if (!escala) throw new Error('Escala nao encontrada para atualizar snapshot')
+  const equipeSnapshot = await buildEscalaEquipeSnapshot(escala.setor_id)
+
   await transaction(async () => {
     await execute('DELETE FROM alocacoes WHERE escala_id = ?', escalaId)
     await execute('DELETE FROM escala_decisoes WHERE escala_id = ?', escalaId)
@@ -82,7 +87,7 @@ export async function persistirAjusteResult(
     await execute(
       `
       UPDATE escalas
-      SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?, input_hash = ?, simulacao_config_json = ?
+      SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?, input_hash = ?, simulacao_config_json = ?, equipe_snapshot_json = ?
       WHERE id = ?
     `,
       ind.pontuacao,
@@ -92,6 +97,7 @@ export async function persistirAjusteResult(
       ind.equilibrio,
       inputHash,
       JSON.stringify({ regimes_override: cfg.regimes_override ?? [] } satisfies EscalaSimulacaoConfig),
+      JSON.stringify(equipeSnapshot),
       escalaId,
     )
   })

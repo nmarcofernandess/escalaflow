@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS escalas (
     equilibrio REAL DEFAULT 0,
     input_hash TEXT,
     simulacao_config_json TEXT,
+    equipe_snapshot_json TEXT,
     criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -525,6 +526,7 @@ async function migrateSchema(): Promise<void> {
   await addColumnIfMissing('alocacoes', 'intervalo_15min', 'BOOLEAN NOT NULL DEFAULT FALSE')
   await addColumnIfMissing('alocacoes', 'funcao_id', 'INTEGER REFERENCES funcoes(id)')
   await addColumnIfMissing('alocacoes', 'minutos_trabalho', 'INTEGER')
+  await addColumnIfMissing('escalas', 'equipe_snapshot_json', 'TEXT')
 
   await migrateLegacyDemandasNullToByDay()
 

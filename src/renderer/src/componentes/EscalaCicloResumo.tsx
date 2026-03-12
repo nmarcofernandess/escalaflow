@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -99,6 +99,68 @@ const ESTADO_CLASSES: Record<SimboloEscala, {
 }
 
 const LEGENDA_ORDEM: SimboloLegenda[] = ['T', 'F', 'V', 'I', '.']
+
+// ── Resumo visual: tipos expandidos (domingo split, siglas duplas) ──
+
+type SimboloResumo = 'T' | 'FF' | 'FV' | 'DT' | 'DF' | 'I' | '.' | '-'
+
+const RESUMO_CLASSES: Record<SimboloResumo, {
+  cell: string
+  sigla: string
+  swatch: string
+  descricao: string
+}> = {
+  T: {
+    cell: 'bg-success/10 text-success font-medium',
+    sigla: 'T',
+    swatch: 'bg-success/30 text-success',
+    descricao: 'Trabalho',
+  },
+  FF: {
+    cell: 'bg-slate-200 text-slate-700 font-semibold dark:bg-slate-700 dark:text-slate-200',
+    sigla: 'FF',
+    swatch: 'bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-200',
+    descricao: 'Folga fixa',
+  },
+  FV: {
+    cell: 'bg-warning/10 text-warning font-semibold',
+    sigla: 'FV',
+    swatch: 'bg-warning/30 text-warning',
+    descricao: 'Folga variavel',
+  },
+  DT: {
+    cell: 'bg-warning/10 text-warning font-semibold ring-1 ring-inset ring-warning/40',
+    sigla: 'DT',
+    swatch: 'bg-warning/30 text-warning ring-1 ring-inset ring-warning/40',
+    descricao: 'Dom trabalhado',
+  },
+  DF: {
+    cell: 'bg-blue-100 text-blue-700 font-semibold ring-1 ring-inset ring-blue-400 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-600',
+    sigla: 'DF',
+    swatch: 'bg-blue-200 text-blue-700 ring-1 ring-inset ring-blue-400 dark:bg-blue-800 dark:text-blue-300',
+    descricao: 'Dom folga',
+  },
+  I: {
+    cell: 'bg-rose-100 text-rose-700 font-semibold dark:bg-rose-900 dark:text-rose-200',
+    sigla: 'I',
+    swatch: 'bg-rose-200 text-rose-700 dark:bg-rose-700 dark:text-rose-200',
+    descricao: 'Indisponivel',
+  },
+  '.': {
+    cell: 'text-muted-foreground',
+    sigla: '\u00B7',
+    swatch: 'bg-muted text-muted-foreground',
+    descricao: 'Sem alocacao',
+  },
+  '-': {
+    cell: 'text-muted-foreground',
+    sigla: '\u2013',
+    swatch: '',
+    descricao: 'Sem titular',
+  },
+}
+
+const RESUMO_LEGENDA: SimboloResumo[] = ['T', 'FF', 'FV', 'DT', 'DF', 'I', '.']
 
 function FolgaSelect({
   colabId,
@@ -297,6 +359,7 @@ export function EscalaCicloResumo({
   }, [weeks, rows, alocMap])
 
   const [selectedWeek, setSelectedWeek] = useState(0)
+  const [viewMode, setViewMode] = useState<'tabela' | 'resumo'>('tabela')
 
   useEffect(() => {
     if (periodoCiclo <= 0) {
@@ -388,6 +451,15 @@ export function EscalaCicloResumo({
     return 'F'
   }
 
+  function resolveResumoSymbol(colab: Colaborador | null, dia: DiaSemana, dateStr: string | null): SimboloResumo {
+    const base = resolveSymbol(colab, dia, dateStr)
+    if (base === '-' || base === '.' || base === 'I') return base
+    if (dia === 'DOM') return base === 'T' ? 'DT' : 'DF'
+    if (base === 'F') return 'FF'
+    if (base === 'V') return 'FV'
+    return 'T'
+  }
+
   if (rows.length === 0) {
     return (
       <div className={cn('rounded-md border border-dashed px-4 py-6 text-sm text-muted-foreground', className)}>
@@ -399,6 +471,117 @@ export function EscalaCicloResumo({
   const weeksToRender = mostrarTodasSemanas
     ? weeks.slice(0, Math.max(1, periodoCiclo))
     : [week]
+
+  function renderResumoGrid() {
+    return (
+      <div className="overflow-x-auto rounded-md border print-colors">
+        <Table>
+          <TableHeader>
+            {/* Row 1: Week group headers */}
+            <TableRow className="bg-muted/30">
+              <TableHead
+                rowSpan={2}
+                className="sticky left-0 z-20 w-[100px] min-w-[100px] bg-muted"
+              >
+                Posto
+              </TableHead>
+              <TableHead
+                rowSpan={2}
+                className="sticky left-[100px] z-20 w-[140px] min-w-[140px] border-r bg-muted"
+              >
+                Titular
+              </TableHead>
+              {weeks.map((_, idx) => {
+                const isCycleEnd = periodoCiclo > 0 && (idx + 1) % periodoCiclo === 0 && idx < weeks.length - 1
+                return (
+                  <TableHead
+                    key={`wh-${idx}`}
+                    colSpan={7}
+                    className={cn(
+                      'text-center text-xs font-semibold',
+                      isCycleEnd && 'border-r-2 border-r-purple-400 dark:border-r-purple-500',
+                    )}
+                  >
+                    S{idx + 1}
+                  </TableHead>
+                )
+              })}
+            </TableRow>
+            {/* Row 2: Day-of-week labels */}
+            <TableRow className="bg-muted/30">
+              {weeks.map((_, weekIdx) => (
+                <Fragment key={`dl-${weekIdx}`}>
+                  {DIAS_ORDEM.map((dia, diaIdx) => {
+                    const isLastDay = diaIdx === 6
+                    const isCycleEnd = periodoCiclo > 0 && (weekIdx + 1) % periodoCiclo === 0 && weekIdx < weeks.length - 1
+                    return (
+                      <TableHead
+                        key={`${weekIdx}-${dia}`}
+                        className={cn(
+                          'w-9 min-w-[36px] px-0 text-center text-[10px] font-medium',
+                          dia === 'DOM' && 'font-semibold text-warning',
+                          isLastDay && isCycleEnd && 'border-r-2 border-r-purple-400 dark:border-r-purple-500',
+                          isLastDay && !isCycleEnd && weekIdx < weeks.length - 1 && 'border-r',
+                        )}
+                      >
+                        {dia[0]}
+                      </TableHead>
+                    )
+                  })}
+                </Fragment>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map(({ posto, titular }) => (
+              <TableRow key={posto.id} className="hover:bg-muted/20">
+                <TableCell className="sticky left-0 z-10 w-[100px] min-w-[100px] truncate bg-background font-medium">
+                  {posto.apelido}
+                </TableCell>
+                <TableCell
+                  className={cn(
+                    'sticky left-[100px] z-10 w-[140px] min-w-[140px] truncate border-r bg-background',
+                    !titular && 'italic text-muted-foreground',
+                  )}
+                >
+                  {titular?.nome ?? '(sem titular)'}
+                </TableCell>
+                {weeks.map((weekData, weekIdx) => (
+                  <Fragment key={`r-${posto.id}-${weekIdx}`}>
+                    {DIAS_ORDEM.map((dia, diaIdx) => {
+                      const simbolo = resolveResumoSymbol(titular, dia, weekData[dia])
+                      const estado = RESUMO_CLASSES[simbolo]
+                      const dateStr = weekData[dia]
+                      const isLastDay = diaIdx === 6
+                      const isCycleEnd = periodoCiclo > 0 && (weekIdx + 1) % periodoCiclo === 0 && weekIdx < weeks.length - 1
+                      return (
+                        <TableCell
+                          key={`${weekIdx}-${dia}`}
+                          className={cn(
+                            'w-9 min-w-[36px] px-0 py-1 text-center text-xs select-none',
+                            estado.cell,
+                            isLastDay && isCycleEnd && 'border-r-2 border-r-purple-400 dark:border-r-purple-500',
+                            isLastDay && !isCycleEnd && weekIdx < weeks.length - 1 && 'border-r',
+                          )}
+                          title={
+                            dateStr
+                              ? `${DIAS_CURTOS[dia]} ${dateStr.slice(8)}/${dateStr.slice(5, 7)} — ${estado.descricao}`
+                              : estado.descricao
+                          }
+                        >
+                          {estado.sigla}
+                        </TableCell>
+                      )
+                    })}
+                  </Fragment>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    )
+  }
 
   function renderWeekTable(weekData: WeekMap, weekLabel?: string) {
     return (
@@ -468,49 +651,99 @@ export function EscalaCicloResumo({
     )
   }
 
+  const isResumo = !mostrarTodasSemanas && viewMode === 'resumo'
+
   return (
     <div className={cn('space-y-3', className)}>
-      {!mostrarTodasSemanas && periodoCiclo > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {Array.from({ length: periodoCiclo }, (_, idx) => idx).map((idx) => (
-              <Button
-                key={idx}
-                type="button"
-                size="sm"
-                variant={idx === selectedWeek ? 'secondary' : 'outline'}
-                className="h-8 min-w-10 px-2 text-xs"
-                onClick={() => setSelectedWeek(idx)}
-              >
-                S{idx + 1}
-              </Button>
-            ))}
+      {!mostrarTodasSemanas && (
+        <div className="flex flex-wrap items-center gap-3">
+          {/* View mode toggle */}
+          <div className="inline-flex rounded-lg border bg-muted p-0.5">
+            <button
+              type="button"
+              className={cn(
+                'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                viewMode === 'tabela'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => setViewMode('tabela')}
+            >
+              Tabela
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                viewMode === 'resumo'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => setViewMode('resumo')}
+            >
+              Resumo
+            </button>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {pendentesFolgaConfig > 0 && (
-              <Badge variant="outline" className="border-warning/20 text-xs text-warning">
-                {pendentesFolgaConfig} pendente(s) F/V
-              </Badge>
-            )}
-          </div>
+
+          {/* S1/S2/S3 week selector — only in tabela mode */}
+          {viewMode === 'tabela' && periodoCiclo > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {Array.from({ length: periodoCiclo }, (_, idx) => idx).map((idx) => (
+                <Button
+                  key={idx}
+                  type="button"
+                  size="sm"
+                  variant={idx === selectedWeek ? 'secondary' : 'outline'}
+                  className="h-8 min-w-10 px-2 text-xs"
+                  onClick={() => setSelectedWeek(idx)}
+                >
+                  S{idx + 1}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {viewMode === 'tabela' && pendentesFolgaConfig > 0 && (
+            <Badge variant="outline" className="border-warning/20 text-xs text-warning">
+              {pendentesFolgaConfig} pendente(s) F/V
+            </Badge>
+          )}
         </div>
       )}
 
       {mostrarTodasSemanas
         ? weeksToRender.map((w, idx) => renderWeekTable(w, `Semana ${idx + 1}`))
-        : renderWeekTable(week)
+        : isResumo
+          ? renderResumoGrid()
+          : renderWeekTable(week)
       }
 
-      <div className="flex items-center gap-4 pt-1 text-xs text-muted-foreground">
-        {LEGENDA_ORDEM.map((simbolo) => {
-          const estado = ESTADO_CLASSES[simbolo]
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-muted-foreground">
+        {(isResumo ? RESUMO_LEGENDA : LEGENDA_ORDEM).map((simbolo) => {
+          const estado = isResumo
+            ? RESUMO_CLASSES[simbolo as SimboloResumo]
+            : ESTADO_CLASSES[simbolo as SimboloEscala]
           return (
             <span key={simbolo} className="inline-flex items-center gap-1.5">
-              <span className={cn('size-3 rounded-sm', estado.swatch)} />
+              <span
+                className={cn(
+                  'flex size-4 items-center justify-center rounded-sm text-[7px] font-bold',
+                  estado.swatch,
+                )}
+              >
+                {isResumo ? (estado as typeof RESUMO_CLASSES['T']).sigla : ''}
+              </span>
               <span>{estado.descricao}</span>
             </span>
           )
         })}
+        {isResumo && periodoCiclo > 0 && (
+          <span className="inline-flex items-center gap-1.5 border-l border-border pl-4">
+            <span className="h-3 w-0.5 rounded-full bg-purple-400 dark:bg-purple-500" />
+            <span>Fim do ciclo</span>
+          </span>
+        )}
       </div>
     </div>
   )
