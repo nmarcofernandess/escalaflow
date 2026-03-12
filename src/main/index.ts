@@ -1,5 +1,6 @@
 import path from 'node:path'
 import os from 'node:os'
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { execSync } from 'node:child_process'
 import electron from 'electron'
@@ -20,106 +21,193 @@ process.on('uncaughtException', (err: Error) => {
 let mainWindow: import('electron').BrowserWindow | null = null
 const require = createRequire(import.meta.url)
 
-/**
- * Instala update no macOS sem usar ShipIt (que exige code signing da Apple).
- * Pega o .app extraído do cache, limpa quarantine + assinatura, e substitui o app atual.
- */
-function installMacUpdateManually(app: import('electron').App): void {
-  const cacheDir = path.join(os.homedir(), 'Library', 'Caches', 'com.escalaflow.desktop.ShipIt')
-  const result = execSync(
-    `find "${cacheDir}" -maxdepth 2 -name "EscalaFlow.app" -type d 2>/dev/null || true`
-  ).toString().trim()
+// --- Auto-Update ---
+// No Mac, Squirrel.Mac (ShipIt) exige Apple Developer cert ($99/ano) para validar
+// code signature ao instalar updates. Sem cert, QUALQUER download via electron-updater falha.
+// Solução: no Mac, usamos electron-updater APENAS para detectar versão nova.
+// O download e instalação são feitos manualmente (fetch + ditto + mv).
+// No Windows, o fluxo padrão do electron-updater (NSIS) funciona normalmente.
 
-  const updateAppPath = result.split('\n').filter(Boolean)[0]
-  if (!updateAppPath) throw new Error('Update .app not found in ShipIt cache')
+const updaterLog = (...args: unknown[]) => console.log('[AUTO-UPDATER]', ...args)
+let pendingMacZipPath: string | null = null
+
+/**
+ * Baixa o ZIP do release via fetch (sem Squirrel, sem quarantine).
+ * Streama direto pro disco — não bufferiza 300MB em RAM.
+ */
+async function downloadMacUpdate(zipUrl: string, version: string): Promise<void> {
+  const tmpDir = path.join(os.tmpdir(), 'escalaflow-update')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const zipPath = path.join(tmpDir, `update-${version}.zip`)
+
+  updaterLog('Downloading ZIP:', zipUrl)
+  const response = await fetch(zipUrl, { redirect: 'follow' })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  if (!response.body) throw new Error('No response body')
+
+  const total = parseInt(response.headers.get('content-length') || '0')
+  let downloaded = 0
+  const reader = response.body.getReader()
+  const fileStream = fs.createWriteStream(zipPath)
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    fileStream.write(value)
+    downloaded += value.length
+    if (total > 0) {
+      mainWindow?.webContents.send('update:progress', { percent: (downloaded / total) * 100 })
+    }
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    fileStream.on('finish', resolve)
+    fileStream.on('error', reject)
+    fileStream.end()
+  })
+
+  updaterLog('ZIP saved:', zipPath, `(${(downloaded / 1024 / 1024).toFixed(1)}MB)`)
+  pendingMacZipPath = zipPath
+  mainWindow?.webContents.send('update:downloaded')
+}
+
+/**
+ * Extrai ZIP, limpa signatures/quarantine, substitui o app, relança.
+ * Rollback automático se falhar.
+ */
+function installMacUpdate(zipPath: string, app: import('electron').App): void {
+  const extractDir = path.join(os.tmpdir(), 'escalaflow-update-extract')
+  execSync(`rm -rf "${extractDir}" && mkdir -p "${extractDir}"`)
+
+  // Extrair (ditto preserva resource forks do macOS)
+  updaterLog('Extracting ZIP...')
+  execSync(`ditto -xk "${zipPath}" "${extractDir}"`)
+
+  // Encontrar o .app extraído
+  const findResult = execSync(
+    `find "${extractDir}" -maxdepth 2 -name "EscalaFlow.app" -type d 2>/dev/null || true`
+  ).toString().trim()
+  const updateAppPath = findResult.split('\n').filter(Boolean)[0]
+  if (!updateAppPath) throw new Error('EscalaFlow.app not found in ZIP')
 
   // App atual (ex: /Applications/EscalaFlow.app)
   const currentAppPath = app.getAppPath().replace(/\/Contents\/Resources\/app(\.asar)?$/, '')
-  if (!currentAppPath.endsWith('.app')) throw new Error('Cannot determine current .app path: ' + currentAppPath)
+  if (!currentAppPath.endsWith('.app')) throw new Error('Cannot determine .app path: ' + currentAppPath)
 
-  console.log('[AUTO-UPDATER] Mac manual install:', updateAppPath, '→', currentAppPath)
+  updaterLog('Installing:', updateAppPath, '→', currentAppPath)
 
-  // Limpa quarantine e remove assinaturas do update
+  // Limpar quarantine e code signatures
   execSync(`xattr -cr "${updateAppPath}" 2>/dev/null || true`)
   execSync(`codesign --remove-signature --deep "${updateAppPath}" 2>/dev/null || true`)
 
-  // Substituição atômica: backup → move update → remove backup
+  // Substituição atômica com rollback
   const backupPath = `${currentAppPath}.update-backup`
   execSync(`rm -rf "${backupPath}"`)
   execSync(`mv "${currentAppPath}" "${backupPath}"`)
 
   try {
     execSync(`mv "${updateAppPath}" "${currentAppPath}"`)
-    execSync(`rm -rf "${backupPath}"`)
+    // Limpar tudo
+    execSync(`rm -rf "${backupPath}" "${extractDir}" "${zipPath}" 2>/dev/null || true`)
+    // Limpar cache do ShipIt (pode ter lixo de tentativas anteriores)
+    const shipItCache = path.join(os.homedir(), 'Library', 'Caches', 'com.escalaflow.desktop.ShipIt')
+    execSync(`rm -rf "${shipItCache}" 2>/dev/null || true`)
   } catch (err) {
-    // Rollback se falhar
+    // Rollback
     execSync(`mv "${backupPath}" "${currentAppPath}" 2>/dev/null || true`)
     throw err
   }
 
-  // Limpa cache do ShipIt
-  execSync(`rm -rf "${cacheDir}" 2>/dev/null || true`)
-
+  updaterLog('Install complete. Relaunching...')
   app.relaunch()
   app.exit(0)
 }
 
 function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('electron').App): void {
-  const log = (...args: unknown[]) => console.log('[AUTO-UPDATER]', ...args)
+  const isMac = process.platform === 'darwin'
 
-  // Handlers de versão e update: sempre registrados (para a UI mostrar a versão em dev também)
+  // Handlers sempre registrados (inclusive em dev, pra UI mostrar versão)
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('update:check', () => {
     if (process.env.ELECTRON_RENDERER_URL) return
-    log('Manual check triggered, current version:', app.getVersion())
+    updaterLog('Manual check, version:', app.getVersion())
     return autoUpdater.checkForUpdates()
   })
   ipcMain.handle('update:install', () => {
-    if (process.platform === 'darwin') {
+    if (isMac && pendingMacZipPath) {
       try {
-        installMacUpdateManually(app)
+        installMacUpdate(pendingMacZipPath, app)
         return
       } catch (err) {
-        log('Mac manual install failed, trying standard:', err)
+        updaterLog('Mac install failed:', err)
+        mainWindow?.webContents.send('update:error', `Falha ao instalar: ${(err as Error).message}`)
       }
+      return
     }
     autoUpdater.quitAndInstall()
   })
 
-  // Em dev não configura auto-update (só os handlers acima)
+  // Em dev não configura auto-update
   if (process.env.ELECTRON_RENDERER_URL) return
 
-  autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = false // No Mac, ShipIt falha sem Apple cert — instalamos manualmente
+  // Mac: NÃO deixar electron-updater baixar (ele usa Squirrel.Mac que exige Apple cert)
+  // Windows: fluxo normal
+  autoUpdater.autoDownload = !isMac
+  autoUpdater.autoInstallOnAppQuit = !isMac
 
   autoUpdater.on('checking-for-update', () => {
-    log('Checking for update...')
+    updaterLog('Checking...')
     mainWindow?.webContents.send('update:checking')
   })
+
   autoUpdater.on('update-available', (info) => {
-    log('Update available:', info.version)
+    updaterLog('Available:', info.version, 'files:', info.files?.map((f: { url: string }) => f.url))
     mainWindow?.webContents.send('update:available', info)
+
+    if (isMac) {
+      // No Mac, baixar o ZIP direto (sem Squirrel)
+      const zipFile = info.files?.find((f: { url: string }) => f.url.endsWith('.zip'))
+      if (zipFile) {
+        const zipUrl = `https://github.com/nmarcofernandess/escalaflow/releases/download/v${info.version}/${zipFile.url}`
+        downloadMacUpdate(zipUrl, info.version).catch((err) => {
+          updaterLog('Mac download error:', err)
+          mainWindow?.webContents.send('update:error', `Download falhou: ${(err as Error).message}`)
+        })
+      } else {
+        updaterLog('No ZIP in release — Mac update impossible')
+        mainWindow?.webContents.send('update:error', 'ZIP nao encontrado no release. Baixe o DMG manualmente.')
+      }
+    }
+    // Windows: autoDownload = true já cuida
   })
+
   autoUpdater.on('update-not-available', (info) => {
-    log('No update available. Latest:', info?.version, '| Current:', app.getVersion())
+    updaterLog('Up to date. Latest:', info?.version, '| Current:', app.getVersion())
     mainWindow?.webContents.send('update:not-available')
   })
+
+  // Windows: progresso do electron-updater
   autoUpdater.on('download-progress', (progress) => {
     mainWindow?.webContents.send('update:progress', progress)
   })
+
+  // Windows: download completo via electron-updater
   autoUpdater.on('update-downloaded', (info) => {
-    log('Update downloaded:', info.version)
+    updaterLog('Downloaded (electron-updater):', info.version)
     mainWindow?.webContents.send('update:downloaded')
   })
+
   autoUpdater.on('error', (err) => {
-    log('Update error:', err.message)
+    updaterLog('Error:', err.message)
+    // No Mac, ignorar erros do Squirrel — o download manual é quem manda
+    if (isMac) return
     mainWindow?.webContents.send('update:error', err.message)
   })
 
-  // Checa ao iniciar (5s de delay pra janela estar pronta)
-  log('Auto-updater configured. Current version:', app.getVersion())
+  updaterLog('Configured. Version:', app.getVersion(), '| Platform:', process.platform)
   setTimeout(() => {
-    log('Starting auto-check...')
+    updaterLog('Auto-check...')
     autoUpdater.checkForUpdates()
   }, 5000)
 }
