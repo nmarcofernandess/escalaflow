@@ -19,10 +19,13 @@ let mainWindow: import('electron').BrowserWindow | null = null
 const require = createRequire(import.meta.url)
 
 function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('electron').App): void {
+  const log = (...args: unknown[]) => console.log('[AUTO-UPDATER]', ...args)
+
   // Handlers de versão e update: sempre registrados (para a UI mostrar a versão em dev também)
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('update:check', () => {
     if (process.env.ELECTRON_RENDERER_URL) return
+    log('Manual check triggered, current version:', app.getVersion())
     return autoUpdater.checkForUpdates()
   })
   ipcMain.handle('update:install', () => {
@@ -36,26 +39,35 @@ function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('elec
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => {
+    log('Checking for update...')
     mainWindow?.webContents.send('update:checking')
   })
   autoUpdater.on('update-available', (info) => {
+    log('Update available:', info.version)
     mainWindow?.webContents.send('update:available', info)
   })
-  autoUpdater.on('update-not-available', () => {
+  autoUpdater.on('update-not-available', (info) => {
+    log('No update available. Latest:', info?.version, '| Current:', app.getVersion())
     mainWindow?.webContents.send('update:not-available')
   })
   autoUpdater.on('download-progress', (progress) => {
     mainWindow?.webContents.send('update:progress', progress)
   })
-  autoUpdater.on('update-downloaded', () => {
+  autoUpdater.on('update-downloaded', (info) => {
+    log('Update downloaded:', info.version)
     mainWindow?.webContents.send('update:downloaded')
   })
   autoUpdater.on('error', (err) => {
+    log('Update error:', err.message)
     mainWindow?.webContents.send('update:error', err.message)
   })
 
   // Checa ao iniciar (5s de delay pra janela estar pronta)
-  setTimeout(() => autoUpdater.checkForUpdates(), 5000)
+  log('Auto-updater configured. Current version:', app.getVersion())
+  setTimeout(() => {
+    log('Starting auto-check...')
+    autoUpdater.checkForUpdates()
+  }, 5000)
 }
 
 function createWindow(

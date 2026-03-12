@@ -73,7 +73,7 @@ jobs:
         if: matrix.platform == 'mac'
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
           files: |
             dist/*.dmg
             dist/*.blockmap
@@ -83,7 +83,7 @@ jobs:
         if: matrix.platform == 'win'
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
           files: |
             dist/*.exe
             dist/*.blockmap
