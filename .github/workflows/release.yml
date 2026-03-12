@@ -69,13 +69,14 @@ jobs:
         shell: bash
         run: ls -la dist/*.dmg dist/*.exe dist/*.blockmap dist/*.yml 2>/dev/null || ls -la dist/
 
-      - name: Upload Mac DMG
+      - name: Upload Mac DMG + ZIP
         if: matrix.platform == 'mac'
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           files: |
             dist/*.dmg
+            dist/*.zip
             dist/*.blockmap
             dist/latest-mac.yml
 

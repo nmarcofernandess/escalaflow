@@ -28,6 +28,7 @@ mac:
   identity: null
   target:
     - dmg
+    - zip
   artifactName: '${productName}-${version}-${arch}.${ext}'
   notarize: false
 dmg:
