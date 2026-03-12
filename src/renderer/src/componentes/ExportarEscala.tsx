@@ -62,7 +62,6 @@ export function ExportarEscala({
 
   const violacoesHard = violacoes.filter((v) => v.severidade === 'HARD')
   const violacoesSoft = violacoes.filter((v) => v.severidade === 'SOFT')
-  const violacoesResumo = violacoes.slice(0, 8)
 
   return (
     <div className="bg-white p-5 font-sans text-xs text-gray-900 print:p-0">
@@ -118,39 +117,8 @@ export function ExportarEscala({
         </div>
       )}
 
-      {/* Summary warnings (cycle mode) */}
-      {!mostrarTimeline && deveIncluirAvisos && violacoes.length > 0 && (
-        <div className="mt-6 break-inside-avoid">
-          <h2 className="mb-2.5 border-b border-gray-200 pb-1.5 text-sm font-semibold text-gray-900">
-            Avisos ({violacoes.length})
-          </h2>
-          <p className="mb-2 text-[10px] text-gray-600">
-            Criticas: {violacoesHard.length} | Alertas: {violacoesSoft.length}
-          </p>
-          {violacoesResumo.map((v, i) => (
-            <div
-              key={i}
-              className={cn(
-                'mb-1 rounded px-2.5 py-1.5 text-[10px]',
-                v.severidade === 'HARD'
-                  ? 'border border-red-200 bg-red-50 text-red-800'
-                  : 'border border-amber-200 bg-amber-50 text-amber-800',
-              )}
-            >
-              <strong>{v.colaborador_nome}</strong> — {v.mensagem || REGRAS_TEXTO[v.regra] || v.regra}
-              {v.data && <span className="ml-2">({formatarData(v.data)})</span>}
-            </div>
-          ))}
-          {violacoes.length > violacoesResumo.length && (
-            <p className="mt-1 text-[10px] text-gray-500">
-              ... e mais {violacoes.length - violacoesResumo.length} aviso(s).
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Detailed violations */}
-      {mostrarTimeline && deveIncluirAvisos && violacoes.length > 0 && (
+      {/* Violations — always detailed (HARD/SOFT sections) when avisos is on */}
+      {deveIncluirAvisos && violacoes.length > 0 && (
         <div className="mt-6 break-inside-avoid">
           <h2 className="mb-2.5 border-b border-gray-200 pb-1.5 text-sm font-semibold text-gray-900">
             Violacoes ({violacoes.length})

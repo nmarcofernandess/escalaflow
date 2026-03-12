@@ -1189,7 +1189,7 @@ export function SetorDetalhe() {
   }
 
   const hasConteudoSetorial = useCallback((conteudo: EscalaExportContent) => {
-    return conteudo.ciclo || conteudo.timeline
+    return conteudo.ciclo || conteudo.timeline || conteudo.avisos
   }, [])
 
   const appVersion = useAppVersion()
@@ -1404,7 +1404,7 @@ export function SetorDetalhe() {
           <div className="rounded-md border bg-background p-4">
             <p className="text-sm font-medium">Preview setorial desativada</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Ative <strong>Ciclo</strong> e/ou <strong>Timeline</strong> para visualizar aqui.
+              Ative <strong>Ciclo</strong>, <strong>Timeline</strong> ou <strong>Avisos</strong> para visualizar aqui.
             </p>
           </div>
         )}

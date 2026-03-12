@@ -114,7 +114,7 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
           <div>
             <span className="text-2xl font-bold tabular-nums">
-              {viewMode === 'tudo' ? indicadores.cobertura_percent.toFixed(1) : pageCoverage.toFixed(1)}%
+              {pageCoverage.toFixed(1)}%
             </span>
             <span className="ml-1.5 text-xs text-muted-foreground">cobertura</span>
           </div>

@@ -71,7 +71,7 @@ function escolherEscalaPadrao(escalas: Escala[]): number | null {
 }
 
 function hasConteudoSetorial(conteudo: EscalaExportContent): boolean {
-  return conteudo.ciclo || conteudo.timeline
+  return conteudo.ciclo || conteudo.timeline || conteudo.avisos
 }
 
 export function EscalasHub() {
@@ -499,7 +499,7 @@ export function EscalasHub() {
         ) : (
           <div className="rounded-md border bg-background p-4">
             <p className="text-sm font-medium">Preview setorial desativada</p>
-            <p className="mt-1 text-xs text-muted-foreground">Ative Ciclo e/ou Timeline para visualizar aqui.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Ative Ciclo, Timeline ou Avisos para visualizar aqui.</p>
           </div>
         )}
 

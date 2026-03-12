@@ -4,7 +4,6 @@ import {
   CalendarDays,
   Loader2,
   Download,
-  Printer,
   XCircle,
   AlertTriangle,
   ChevronRight,
@@ -461,20 +460,27 @@ export function EscalaPagina() {
       toast.error('Selecione Ciclo, Timeline ou Avisos para imprimir.')
       return
     }
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) {
-      toast.error('Bloqueio de popup detectado. Permita popups para imprimir.')
-      return
-    }
     const { renderToStaticMarkup } = await import('react-dom/server')
     const html = renderToStaticMarkup(payload.html)
     const fullHTML = buildStandaloneHtml(html, {
       title: `Escala - ${setor.nome}`,
     })
-    printWindow.document.write(fullHTML)
-    printWindow.document.close()
-    printWindow.focus()
-    setTimeout(() => printWindow.print(), 250)
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+    document.body.appendChild(iframe)
+    const iframeDoc = iframe.contentDocument ?? iframe.contentWindow?.document
+    if (!iframeDoc) {
+      toast.error('Erro ao preparar impressao.')
+      document.body.removeChild(iframe)
+      return
+    }
+    iframeDoc.open()
+    iframeDoc.write(fullHTML)
+    iframeDoc.close()
+    setTimeout(() => {
+      iframe.contentWindow?.print()
+      setTimeout(() => document.body.removeChild(iframe), 1000)
+    }, 250)
   }
 
   async function handleExportHTMLEscala(conteudo: EscalaExportContent) {
@@ -742,22 +748,6 @@ export function EscalaPagina() {
                 >
                   <Download className="size-3.5" />
                   Exportar
-                </Button>
-                <Button
-                  variant="outline"
-                  className="gap-1.5"
-                  onClick={() => {
-                    if (hasConteudoSetorial(conteudoView)) {
-                      void handlePrintEscala(conteudoView)
-                    } else {
-                      setConteudoExport(conteudoView)
-                      setExportOpen(true)
-                    }
-                  }}
-                  title={!hasConteudoSetorial(conteudoView) ? 'Selecione Ciclo, Timeline ou Avisos para imprimir' : undefined}
-                >
-                  <Printer className="size-3.5" />
-                  Imprimir
                 </Button>
                 {outrosSetores.length > 0 && (
                   <DropdownMenu>
