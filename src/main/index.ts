@@ -1,5 +1,7 @@
 import path from 'node:path'
+import os from 'node:os'
 import { createRequire } from 'node:module'
+import { execSync } from 'node:child_process'
 import electron from 'electron'
 import { createTables } from './db/schema'
 import { seedData, seedLocalData } from './db/seed'
@@ -18,6 +20,50 @@ process.on('uncaughtException', (err: Error) => {
 let mainWindow: import('electron').BrowserWindow | null = null
 const require = createRequire(import.meta.url)
 
+/**
+ * Instala update no macOS sem usar ShipIt (que exige code signing da Apple).
+ * Pega o .app extraído do cache, limpa quarantine + assinatura, e substitui o app atual.
+ */
+function installMacUpdateManually(app: import('electron').App): void {
+  const cacheDir = path.join(os.homedir(), 'Library', 'Caches', 'com.escalaflow.desktop.ShipIt')
+  const result = execSync(
+    `find "${cacheDir}" -maxdepth 2 -name "EscalaFlow.app" -type d 2>/dev/null || true`
+  ).toString().trim()
+
+  const updateAppPath = result.split('\n').filter(Boolean)[0]
+  if (!updateAppPath) throw new Error('Update .app not found in ShipIt cache')
+
+  // App atual (ex: /Applications/EscalaFlow.app)
+  const currentAppPath = app.getAppPath().replace(/\/Contents\/Resources\/app(\.asar)?$/, '')
+  if (!currentAppPath.endsWith('.app')) throw new Error('Cannot determine current .app path: ' + currentAppPath)
+
+  console.log('[AUTO-UPDATER] Mac manual install:', updateAppPath, '→', currentAppPath)
+
+  // Limpa quarantine e remove assinaturas do update
+  execSync(`xattr -cr "${updateAppPath}" 2>/dev/null || true`)
+  execSync(`codesign --remove-signature --deep "${updateAppPath}" 2>/dev/null || true`)
+
+  // Substituição atômica: backup → move update → remove backup
+  const backupPath = `${currentAppPath}.update-backup`
+  execSync(`rm -rf "${backupPath}"`)
+  execSync(`mv "${currentAppPath}" "${backupPath}"`)
+
+  try {
+    execSync(`mv "${updateAppPath}" "${currentAppPath}"`)
+    execSync(`rm -rf "${backupPath}"`)
+  } catch (err) {
+    // Rollback se falhar
+    execSync(`mv "${backupPath}" "${currentAppPath}" 2>/dev/null || true`)
+    throw err
+  }
+
+  // Limpa cache do ShipIt
+  execSync(`rm -rf "${cacheDir}" 2>/dev/null || true`)
+
+  app.relaunch()
+  app.exit(0)
+}
+
 function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('electron').App): void {
   const log = (...args: unknown[]) => console.log('[AUTO-UPDATER]', ...args)
 
@@ -29,6 +75,14 @@ function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('elec
     return autoUpdater.checkForUpdates()
   })
   ipcMain.handle('update:install', () => {
+    if (process.platform === 'darwin') {
+      try {
+        installMacUpdateManually(app)
+        return
+      } catch (err) {
+        log('Mac manual install failed, trying standard:', err)
+      }
+    }
     autoUpdater.quitAndInstall()
   })
 
@@ -36,7 +90,7 @@ function setupAutoUpdater(ipcMain: import('electron').IpcMain, app: import('elec
   if (process.env.ELECTRON_RENDERER_URL) return
 
   autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoInstallOnAppQuit = false // No Mac, ShipIt falha sem Apple cert — instalamos manualmente
 
   autoUpdater.on('checking-for-update', () => {
     log('Checking for update...')
