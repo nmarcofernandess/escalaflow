@@ -138,9 +138,9 @@ describe('executeTool memórias IA', () => {
     expect(result.summary).toMatch(/atualizada/i)
   })
 
-  it('salvar_memoria retorna erro quando limite de 20 é atingido', async () => {
-    // Seed 20 memories
-    for (let i = 1; i <= 20; i++) {
+  it('salvar_memoria retorna erro quando limite de 50 é atingido', async () => {
+    // Seed 50 memories
+    for (let i = 1; i <= 50; i++) {
       memorias.push({
         id: i,
         conteudo: `memo ${i}`,
@@ -150,12 +150,12 @@ describe('executeTool memórias IA', () => {
     }
 
     const result = await executeTool('salvar_memoria', {
-      conteudo: 'tentando a 21ª',
+      conteudo: 'tentando a 51ª',
     })
 
     expect(result.status).toBe('error')
     expect(result.code).toBe('LIMITE_MEMORIAS')
-    expect(result.erro).toMatch(/Limite de 20/i)
+    expect(result.erro).toMatch(/Limite de 50/i)
     expect(result.correction).toMatch(/listar_memorias/i)
   })
 
@@ -167,7 +167,7 @@ describe('executeTool memórias IA', () => {
     expect(result.status).toBe('ok')
     expect(result.memorias).toEqual([])
     expect(result.total).toBe(0)
-    expect(result.limite).toBe(20)
+    expect(result.limite).toBe(50)
     expect(result.summary).toMatch(/0 memória/i)
   })
 

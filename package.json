@@ -1,7 +1,7 @@
 {
   "name": "escalaflow",
   "productName": "EscalaFlow",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "App desktop offline para geração automática de escalas de trabalho em supermercados",
   "author": "Marco Fernandes",
   "private": true,
@@ -21,6 +21,7 @@
     "test:ia:live": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/live/live-smoke.ts",
     "ia:chat": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/live/ia-chat-cli.ts",
     "db:reset": "node scripts/db-reset.mjs",
+    "db:seed2": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/seed2-cli.ts",
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",

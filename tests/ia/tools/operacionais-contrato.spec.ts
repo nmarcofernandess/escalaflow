@@ -21,9 +21,32 @@ const funcoesServiceMocks = vi.hoisted(() => ({
   deletarFuncao: vi.fn(),
 }))
 
+const validadorMocks = vi.hoisted(() => ({
+  validarEscalaV3: vi.fn().mockResolvedValue({
+    indicadores: { violacoes_hard: 0, violacoes_soft: 2, cobertura_percent: 98, cobertura_efetiva_percent: 99, pontuacao: 85, equilibrio: 95 },
+    violacoes: [],
+    antipatterns: [],
+    comparacao_demanda: [],
+    decisoes: [],
+    alocacoes: [],
+    escala: { id: 321 },
+  }),
+}))
+
+const escalasUtilsMocks = vi.hoisted(() => ({
+  persistirResumoAutoritativoEscala: vi.fn().mockResolvedValue(undefined),
+}))
+
+const rulePolicyMocks = vi.hoisted(() => ({
+  inferGenerationModeForOverrides: vi.fn().mockResolvedValue('OFFICIAL'),
+}))
+
 vi.mock('../../../src/main/db/query', () => queryMocks)
 vi.mock('../../../src/main/motor/solver-bridge', () => solverBridgeMocks)
 vi.mock('../../../src/main/funcoes-service', () => funcoesServiceMocks)
+vi.mock('../../../src/main/motor/validador', () => validadorMocks)
+vi.mock('../../../src/main/tipc/escalas-utils', () => escalasUtilsMocks)
+vi.mock('../../../src/main/motor/rule-policy', () => rulePolicyMocks)
 vi.mock('../../../src/main/knowledge/search', () => ({
   searchKnowledge: vi.fn().mockResolvedValue([]),
   exploreRelations: vi.fn().mockResolvedValue([]),

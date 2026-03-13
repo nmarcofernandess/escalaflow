@@ -88,4 +88,5 @@ dist-mac-verify/
 
 # Seed local (dados de dev, chaves API — nunca versionar)
 src/main/db/seed-local.ts
+src/main/db/seed2.ts
 .devtools

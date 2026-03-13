@@ -123,29 +123,22 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
     }
   }
 
-  // KPIs: contextuais (dia selecionado) ou totais
+  // KPIs: contextuais — escopados pela pagina/dia selecionado
+  // Cobertura usa formula slot-binary (mesma do KPI card): % de slots com executado >= planejado
   const { totalDeficit, totalSurplus, pageCoverage, showEquilibrio } = useMemo(() => {
+    const pageDates = new Set(pageData.map(d => d.data))
     const source = selectedDate
       ? comparacao.filter(s => s.data === selectedDate)
-      : comparacao
+      : comparacao.filter(s => pageDates.has(s.data))
+
     const deficit = source.filter(s => s.delta < 0).reduce((sum, s) => sum + Math.abs(s.delta), 0)
     const surplus = source.filter(s => s.delta > 0).reduce((sum, s) => sum + s.delta, 0)
 
-    // Cobertura: da página se overview, do dia se drill
-    let coverage: number
-    if (selectedDate) {
-      const totalNec = source.reduce((s, sl) => s + sl.planejado, 0)
-      const totalCob = source.reduce((s, sl) => s + sl.executado, 0)
-      coverage = totalNec > 0 ? (totalCob / totalNec) * 100 : 100
-    } else {
-      if (pageData.length === 0) {
-        coverage = 0
-      } else {
-        const totalNec = pageData.reduce((s, d) => s + d.necessario, 0)
-        const totalCob = pageData.reduce((s, d) => s + d.coberto, 0)
-        coverage = totalNec > 0 ? (totalCob / totalNec) * 100 : 100
-      }
-    }
+    // Cobertura: % de slots onde executado >= planejado (slot-binary, igual a calcularIndicadoresV3)
+    const slotsTotal = source.length
+    const slotsCobertos = source.filter(s => s.executado >= s.planejado).length
+    const coverage = slotsTotal > 0 ? (slotsCobertos / slotsTotal) * 100 : 100
+
     return { totalDeficit: deficit, totalSurplus: surplus, pageCoverage: coverage, showEquilibrio: !selectedDate }
   }, [comparacao, selectedDate, pageData])
 
