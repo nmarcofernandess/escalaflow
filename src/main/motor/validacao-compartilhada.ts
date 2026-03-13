@@ -1,5 +1,6 @@
 import { CLT, ANTIPATTERNS, FERIADOS_CCT_PROIBIDOS, type DiaSemana } from '../../shared'
 import type {
+  RuleConfig, RuleStatus,
   Setor, Demanda, Colaborador, Excecao, Alocacao, Funcao, Feriado,
   SetorHorarioSemana, Empresa, TipoContrato,
   Violacao, Indicadores, DecisaoMotor, SlotComparacao, AntipatternViolacao, PinnedCell,
@@ -291,7 +292,8 @@ export function celulaIndisponivel(): CelulaMotor {
 export function checkH1(
   c: ColabMotor,
   diasOrdered: Array<[string, CelulaMotor]>,
-  lookback: LookbackV3
+  lookback: LookbackV3,
+  severidade: 'HARD' | 'SOFT' = 'HARD',
 ): Violacao[] {
   const violacoes: Violacao[] = []
   let consec = lookback.diasConsec
@@ -301,7 +303,7 @@ export function checkH1(
       consec++
       if (consec > CLT.MAX_DIAS_CONSECUTIVOS) {
         violacoes.push({
-          severidade: 'HARD',
+          severidade,
           regra: 'H1_MAX_DIAS_CONSECUTIVOS',
           colaborador_id: c.id,
           colaborador_nome: c.nome,
@@ -531,14 +533,15 @@ export function checkH5(
 export function checkH6(
   cel: CelulaMotor,
   c: ColabMotor,
-  data: string
+  data: string,
+  severidade: 'HARD' | 'SOFT' = 'HARD',
 ): Violacao[] {
   if (cel.status !== 'TRABALHO') return []
   if (cel.minutos_trabalho <= CLT.LIMIAR_ALMOCO_MIN) return []
 
   if (cel.hora_almoco_inicio === null || cel.minutos_almoco === 0) {
     return [{
-      severidade: 'HARD',
+      severidade,
       regra: 'H6_ALMOCO_OBRIGATORIO',
       colaborador_id: c.id,
       colaborador_nome: c.nome,
@@ -690,7 +693,8 @@ export function checkH10(
   semana: string[],
   mapa: Map<string, CelulaMotor>,
   tolerancia_min: number,
-  _empresa: Empresa
+  _empresa: Empresa,
+  severidade: 'HARD' | 'SOFT' = 'SOFT',
 ): Violacao[] {
   if (semana.length === 0) return []
 
@@ -721,8 +725,7 @@ export function checkH10(
   if (desvio > tolerancia_min) {
     const semanaRef = semana[0]
     return [{
-      // v3.1 pragmático: divergência de meta semanal é alertável, não bloqueante.
-      severidade: 'SOFT',
+      severidade,
       regra: 'H10_META_SEMANAL',
       colaborador_id: c.id,
       colaborador_nome: c.nome,
@@ -1168,16 +1171,29 @@ export interface ValidarTudoParams {
   tolerancia_min: number
   empresa: Empresa
   corte_semanal: string                               // ex: 'SEG_DOM', 'DOM_SAB'
+  rules?: RuleConfig
+}
+
+function resolveRuleSeverity(
+  rules: RuleConfig | undefined,
+  codigo: string,
+  fallback: Extract<RuleStatus, 'HARD' | 'SOFT' | 'ON'>,
+): 'HARD' | 'SOFT' | null {
+  const status = rules?.[codigo] ?? fallback
+  if (status === 'OFF') return null
+  if (status === 'HARD') return 'HARD'
+  if (status === 'SOFT') return 'SOFT'
+  return fallback === 'SOFT' ? 'SOFT' : 'HARD'
 }
 
 /**
- * validarTudoV3 — Orquestrador de todas as 20 regras HARD (H1-H20).
+ * validarTudoV3 — Orquestrador das regras H1-H20 conforme policy efetiva.
  * Chamada tanto pelo gerador (Fase 6) quanto pelo validador pós-ajuste.
- * Retorna SOMENTE violações com severidade='HARD'.
+ * Retorna violações HARD e SOFT conforme configuração.
  */
 export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
   const { colaboradores, resultado, dias, feriados, excecoes, lookback,
-    tolerancia_min, empresa, corte_semanal } = params
+    tolerancia_min, empresa, corte_semanal, rules } = params
 
   const violacoes: Violacao[] = []
 
@@ -1202,8 +1218,10 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
       ultimaHoraFim: null,
     }
 
-    // H1 — max dias consecutivos (por colaborador)
-    violacoes.push(...checkH1(c, diasOrdered, lb))
+    const h1Severity = resolveRuleSeverity(rules, 'H1', 'HARD')
+    if (h1Severity) {
+      violacoes.push(...checkH1(c, diasOrdered, lb, h1Severity))
+    }
 
     // H2 — descanso entre jornadas (por colaborador)
     violacoes.push(...checkH2(c, diasOrdered, lb))
@@ -1211,9 +1229,9 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
     // H2b — DSR interjornada (por colaborador)
     violacoes.push(...checkH2b(c, diasOrdered))
 
-    // H3 — rodízio de domingo (v3.1: SOFT — nao bloqueia, apenas indicador)
-    // Retornado junto com as violacoes para o dashboard, mas com severidade SOFT
-    violacoes.push(...checkH3(c, domingos, mapa, lb))
+    if ((rules?.H3 ?? 'SOFT') !== 'OFF') {
+      violacoes.push(...checkH3(c, domingos, mapa, lb))
+    }
 
     // H4 — max jornada diária (por colaborador, itera internamente)
     violacoes.push(...checkH4(c, diasOrdered))
@@ -1228,8 +1246,10 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
     for (const [data, cel] of diasOrdered) {
       if (cel.status !== 'TRABALHO') continue
 
-      // H6 — almoço obrigatório
-      violacoes.push(...checkH6(cel, c, data))
+      const h6Severity = resolveRuleSeverity(rules, 'H6', 'HARD')
+      if (h6Severity) {
+        violacoes.push(...checkH6(cel, c, data, h6Severity))
+      }
 
       // H7 — intervalo curto (>4h e <=6h → 15min obrigatório)
       violacoes.push(...checkH7(cel, c, data))
@@ -1262,8 +1282,10 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
         if (cel) mapaSemana.set(d, cel)
       }
 
-      // H10 — meta semanal
-      violacoes.push(...checkH10(c, semana, mapaSemana, tolerancia_min, empresa))
+      const h10Severity = resolveRuleSeverity(rules, 'H10', 'SOFT')
+      if (h10Severity) {
+        violacoes.push(...checkH10(c, semana, mapaSemana, tolerancia_min, empresa, h10Severity))
+      }
 
       // H14 — aprendiz hora extra (diário + semanal)
       violacoes.push(...checkH14(c, semana, mapaSemana))
@@ -2132,10 +2154,15 @@ export function checkS5_ConsistenciaHorario(
 
 /**
  * H20 — ALMOCO_POSICAO
- * O almoço não pode estar na primeira nem na última hora da jornada.
- * Deve haver pelo menos 2h (120min) de trabalho antes e depois do almoço (TST 5ª Turma).
+ * Regras de posicionamento do almoço:
+ * 1. Janela: almoço deve INICIAR entre 11:00 e 14:00 (nunca às 06:30 ou 18:00)
+ * 2. Min 2h (120min) de trabalho ANTES do início do almoço (TST 5ª Turma)
+ * 3. Min 2h (120min) de trabalho DEPOIS do fim do almoço (TST 5ª Turma)
  * Só aplica quando há almoço definido (hora_almoco_inicio != null).
  */
+const LUNCH_WINDOW_START = 11 * 60  // 11:00
+const LUNCH_WINDOW_END = 14 * 60    // 14:00
+
 export function checkH20(
   cel: CelulaMotor,
   c: ColabMotor,
@@ -2151,6 +2178,28 @@ export function checkH20(
   const almocoFimMin = timeToMin(cel.hora_almoco_fim)
 
   const violacoes: Violacao[] = []
+
+  // Janela: almoço deve iniciar >= 11:00 e terminar <= 14:00
+  if (almocoInicioMin < LUNCH_WINDOW_START) {
+    violacoes.push({
+      severidade: 'HARD',
+      regra: 'H20_ALMOCO_POSICAO',
+      colaborador_id: c.id,
+      colaborador_nome: c.nome,
+      mensagem: `${c.nome} tem almoço às ${cel.hora_almoco_inicio} em ${data} — almoço deve iniciar a partir das 11:00`,
+      data,
+    })
+  }
+  if (almocoFimMin > LUNCH_WINDOW_END) {
+    violacoes.push({
+      severidade: 'HARD',
+      regra: 'H20_ALMOCO_POSICAO',
+      colaborador_id: c.id,
+      colaborador_nome: c.nome,
+      mensagem: `${c.nome} tem almoço até ${cel.hora_almoco_fim} em ${data} — almoço deve terminar até as 14:00`,
+      data,
+    })
+  }
 
   // Min 2h (120min) de trabalho ANTES do almoço
   const trabalhoAntes = almocoInicioMin - inicioMin

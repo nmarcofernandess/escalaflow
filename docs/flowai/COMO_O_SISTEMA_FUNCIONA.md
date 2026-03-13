@@ -2,7 +2,7 @@
 
 > **Proposito:** Mapeamento completo do sistema para reescrita do system prompt, gap analysis de tools, e evolucao da IA.
 >
-> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-03-12 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
+> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-03-13 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
 
 ---
 
@@ -19,19 +19,27 @@
 | Shell | Electron 34 |
 | IPC | @egoist/tipc (~116 handlers) |
 | Database | PGlite (Postgres 17 WASM, pgvector, FTS portugues, pg_trgm) |
-| Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) — multi-pass graceful degradation |
+| Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) — multi-pass legal-first com modos OFFICIAL/EXPLORATORY |
 | Frontend | React 19 + Vite + Tailwind + shadcn/ui + Zustand + recharts |
 | IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local via node-llama-cpp (Qwen 3.5) — 34 tools |
 | Knowledge | RAG local: embeddings ONNX (multilingual-e5-small) + pgvector + Knowledge Graph |
 
 ### Fluxo macro
 
-```
+``` 
 Usuario (React) → IPC (tipc.ts) → Main Process (Node.js)
                                     ├── Database (PGlite — Postgres WASM)
                                     ├── Motor Python (solver-bridge.ts → spawn solver)
                                     └── IA (cliente.ts → Gemini/OpenRouter/Local)
 ```
+
+### Estado atual do motor (2026-03-13)
+
+- **Fonte unica de verdade:** o solver gera; o **validador TypeScript julga**. KPIs e cobertura persistidos no banco são recalculados pelo validador após gerar/ajustar.
+- **Modo `OFFICIAL`:** fallback legal-first. Relaxa apenas regras de produto/contrato no multi-pass.
+- **Modo `EXPLORATORY`:** ativado quando um `rules_override` rebaixa uma regra que está HARD na policy oficial atual.
+- **H10:** voltou a seguir a policy real. Não é mais relaxada automaticamente pelo multi-pass oficial.
+- **UI de geração:** `SolverConfigDrawer` agora expõe `solve_mode` e overrides temporários por sessão.
 
 ---
 
@@ -345,7 +353,7 @@ UI (EscalaPagina)
   ├─ [2] solver-bridge.ts: buildSolverInput(setor_id, datas, pinnedCells, options)
   │     └── Queries ao DB: empresa, setor, colaboradores+contrato, demandas,
   │         feriados, excecoes, regras_colaborador_dia (resolve precedencia),
-  │         demanda_excecao_data, hints (warm-start), regras (buildRulesConfig)
+  │         demanda_excecao_data, hints (warm-start), policy de regras compartilhada
   │     └── Retorna: SolverInput JSON (~500-2000 linhas dependendo do periodo)
   │
   ├─ [3] solver-bridge.ts: runSolver(input, timeout)
@@ -353,9 +361,9 @@ UI (EscalaPagina)
   │     └── stdin: JSON (SolverInput)
   │     └── stdout: JSON (SolverOutput)
   │     └── stderr: logs de progresso (streaming via onLog callback)
-  │     └── Timeout default: 3.700s (wrapper), solver interno: 30s rapido / 120s otimizado
+  │     └── Timeout wrapper: ate 61min; solver interno usa budgets por solve_mode
   │
-  ├─ [4] Python solver_ortools.py: solve(data) — MULTI-PASS GRACEFUL DEGRADATION
+  ├─ [4] Python solver_ortools.py: solve(data) — MULTI-PASS LEGAL-FIRST
   │     ├── _analyze_capacity(data) → analise pre-solve de capacidade vs demanda
   │     ├── parse_demand() → grid de demanda por (dia_idx, slot_idx)
   │     │
@@ -370,27 +378,39 @@ UI (EscalaPagina)
   │     │     └── model.minimize(sum(objective_terms))
   │     │     Se OPTIMAL/FEASIBLE → retorna
   │     │
+  │     ├── Pass 1b (se Pass 1 falhou com pattern de folga viavel):
+  │     │     ├── Mantem o padrao de folgas da Fase 1
+  │     │     ├── Relaxa apenas DIAS_TRABALHO e MIN_DIARIO
+  │     │     └── Se resolver → retorna com diagnostico.pass_usado='1b'
+  │     │
   │     ├── Pass 2 (Relaxed Product Rules — 30% do tempo):
-  │     │     ├── Relaxa: H10_ELASTIC, DIAS_TRABALHO, MIN_DIARIO, H6 → SOFT
-  │     │     ├── H2, H4, H5, H11-H18 permanecem HARD (CLT inviolavel)
+  │     │     ├── Remove o pin de folgas e continua relaxando so DIAS_TRABALHO e MIN_DIARIO
+  │     │     ├── H10 segue a policy efetiva (nao e auto-elastic no modo OFFICIAL)
+  │     │     ├── H1/H6 so entram no relax se generation_mode = EXPLORATORY
   │     │     └── Se resolver → retorna com diagnostico.pass_usado=2
   │     │
-  │     ├── Pass 3 (Emergency CLT Skeleton — 20% do tempo):
-  │     │     ├── Relaxa: ALL_PRODUCT_RULES (tudo que nao e CLT core)
-  │     │     ├── Somente H2, H4, H5, H11-H18 ficam HARD
-  │     │     ├── Remove janela colab e folga fixa (hard → skip)
-  │     │     └── diagnostico.modo_emergencia=true
+  │     ├── Pass 3:
+  │     │     ├── OFFICIAL: relaxa DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW
+  │     │     ├── EXPLORATORY: usa ALL_PRODUCT_RULES como ultimo recurso
+  │     │     ├── H2, H4, H5, H11-H18 ficam HARD
+  │     │     └── diagnostico.modo_emergencia reflete o path exploratorio
   │     │
   │     └── extract_solution() → alocacoes, indicadores, decisoes, comparacao, diagnostico
   │
   ├─ [5] solver-bridge.ts: persistirSolverResult(setor_id, datas, result, hash)
   │     └── Transacao PGlite:
-  │         ├── INSERT escalas (status='RASCUNHO', indicadores)
+  │         ├── INSERT escalas (status='RASCUNHO', base do solver)
   │         ├── INSERT alocacoes (1 por colab/dia)
   │         ├── INSERT escala_decisoes (explicabilidade)
   │         └── INSERT escala_comparacao_demanda (delta planejado vs executado)
   │
-  └─ [6] Retorna EscalaCompletaV3 ao frontend
+  ├─ [6] validador.ts: validarEscalaV3(escalaId)
+  │     └── Recalcula violacoes, indicadores e comparacao_demanda com a policy compartilhada
+  │
+  ├─ [7] tipc/escalas-utils.ts: persistirResumoAutoritativoEscala(escalaId, validacao)
+  │     └── Sobrescreve KPIs e comparacao_demanda oficiais com o resultado do validador
+  │
+  └─ [8] Retorna EscalaCompletaV3 autoritativa ao frontend
 ```
 
 ### 3.2 Modelo CP-SAT — Variaveis
@@ -424,9 +444,9 @@ Onde:
 | H2 | `add_h2_interjornada` | `constraints.py:117` | Min 11h entre jornadas (CLT Art. 66). Para janela 08-20h, rest >= 12h sempre (zero clauses). | Nao (sempre HARD) |
 | H4 | `add_h4_max_jornada_diaria` | `constraints.py:142` | Max minutos/dia per contrato. CLT 44h/36h = 585min (9h45). Estagiario = 360min. | Nao (sempre HARD) |
 | H5 | `add_h5_excecoes` | `constraints.py:469` | Ferias/atestado/bloqueio = work[c,d,s] = 0 em todos os slots do periodo. | Nao (sempre HARD) |
-| H6 | `add_human_blocks` | `constraints.py:156` | Estrutura jornada: <=6h → 1 bloco; >6h → 2 blocos + almoco [1h-2h] na janela [11h-15h]. Min 2h/bloco. Max 6h seguidas. | Sim (HARD/SOFT/OFF) |
+| H6 | `add_human_blocks` | `constraints.py:156` | Estrutura jornada: <=6h → 1 bloco; >6h → 2 blocos + almoco [1h-2h]. A janela dura do almoco e checada separadamente em 11h-14h com min 2h antes/depois. | Sim (HARD/SOFT/OFF) |
 | H10 | `add_h10_meta_semanal` | `constraints.py:256` | Horas semanais ± tolerancia. Pro-rata em chunks parciais. Ajusta por dias disponiveis. | Sim (HARD/SOFT/OFF) |
-| H10 (elastic) | `add_h10_meta_semanal_elastic` | `constraints.py:315` | Variante elastic: dominio [0, max_capacity] com slack variables. Peso 8000/min desvio. Usada em Pass 2/3 da degradacao graciosa. | Auto (via multi-pass) |
+| H10 (elastic) | `add_h10_meta_semanal_elastic` | `constraints.py:315` | Variante elastic: dominio [0, max_capacity] com slack variables. Peso 8000/min desvio. Usada quando a policy efetiva define H10 como SOFT ou em fallback exploratorio. | Via policy / exploratory |
 | H11 | `add_h11_aprendiz_domingo` | `constraints.py:493` | Aprendiz NUNCA domingo (Art. 432 CLT). | Nao (sempre HARD) |
 | H12 | `add_h12_aprendiz_feriado` | `constraints.py:507` | Aprendiz NUNCA feriado. | Nao (sempre HARD) |
 | H13 | `add_h13_aprendiz_noturno` | `constraints.py:521` | Aprendiz NUNCA slots >= 22h. Para janela 08-20h: zero clauses. | Nao (sempre HARD) |
@@ -498,30 +518,37 @@ Quando uma regra HARD e configurada como SOFT pela engine de regras:
 | `add_dias_trabalho_soft_penalty` | 4.000 | DIAS_TRABALHO |
 | `add_min_diario_soft_penalty` | 2.000 | MIN_DIARIO |
 
-### 3.4 Engine de Regras no Solver
+### 3.4 Engine de Regras Compartilhada
 
 O fluxo de regras configuraveis:
 
 ```
-1. Bridge: buildRulesConfig(db, rulesOverride)
+1. TS: buildEffectiveRulePolicy({ generationMode, rulesOverride })
    ├── SELECT rd.codigo, COALESCE(re.status, rd.status_sistema) FROM regra_definicao LEFT JOIN regra_empresa
-   ├── Monta Record<codigo, RuleStatus> base
-   └── Merge rulesOverride por cima (drawer de config por geracao)
+   ├── Monta solverRules + validatorRules a partir da mesma policy
+   ├── Aplica locks oficiais (ex.: H1/H6/H2/H4 etc.)
+   └── Registra policy_adjustments quando corrige override invalido ou endurece regra legal
 
-2. SolverInput.config.rules = { H1: 'HARD', H6: 'SOFT', S_DEFICIT: 'ON', AP1: 'OFF', ... }
+2. inferGenerationModeForOverrides(rules_override)
+   ├── OFFICIAL se so endureceu regra ou mexeu em SOFT/AP
+   └── EXPLORATORY se rebaixou regra que hoje esta HARD na policy oficial
 
-3. Python: rule_is(codigo, default) (`solver_ortools.py:395`)
+3. SolverInput.config.rules = { H10: 'HARD', S_DEFICIT: 'ON', AP1: 'OFF', ... }
+
+4. Python: rule_is(codigo, default) (`solver_ortools.py`)
    ├── Se rules dict presente: return rules.get(codigo, default)
    └── Fallback: nivel_rigor (backward compat: ALTO/MEDIO/BAIXO)
 
-4. Cada constraint builder verifica rule_is() antes de emitir clauses:
+5. Cada constraint builder verifica rule_is() antes de emitir clauses:
    ├── 'HARD' → model.add() (constraint obrigatoria)
    ├── 'SOFT' → penalty var adicionada ao objetivo
    ├── 'OFF'  → nao emite nada
    └── 'ON'   → mesmo que SOFT/ativo (usado por SOFT e ANTIPATTERN)
 ```
 
-**Implementacao real do `rule_is()`** (`solver_ortools.py:395-410`):
+**Fonte unica de verdade:** `validatorRules` e derivado da mesma policy. O solver nao e mais juiz semantico da propria escala; ele gera, o validador confirma.
+
+**Implementacao real do `rule_is()`** (`solver_ortools.py`):
 ```python
 def rule_is(codigo: str, default: str = 'HARD') -> str:
     """Retorna status da regra: HARD, SOFT, OFF, ON."""
@@ -534,11 +561,11 @@ def rule_is(codigo: str, default: str = 'HARD') -> str:
     return "OFF"  # BAIXO
 ```
 
-### 3.5 Validador TS (PolicyEngine)
+### 3.5 Validador TS (Autoridade de oficializacao)
 
-**Quando roda:** Apos QUALQUER ajuste manual de alocacao no frontend.
+**Quando roda:** Apos QUALQUER ajuste manual e tambem logo apos gerar via solver.
 
-**O que faz:** Reconstroi o estado da escala a partir do banco, roda todas as regras (H1-H20, APs, SOFTs) e retorna `EscalaCompletaV3` com indicadores e violacoes atualizados.
+**O que faz:** Reconstroi o estado da escala a partir do banco, aplica `buildEffectiveRulePolicy()` e retorna `EscalaCompletaV3` com indicadores, comparacao_demanda e violacoes oficiais.
 
 **NAO faz backtrack. NAO modifica alocacoes. Apenas analisa e reporta.**
 
@@ -546,7 +573,7 @@ def rule_is(codigo: str, default: str = 'HARD') -> str:
 validarEscalaV3(escalaId, db)
   │
   ├─ [1] Buscar escala + alocacoes do banco
-  ├─ [2] Ler regras efetivas (merge empresa + sistema via ruleIs())
+  ├─ [2] Ler policy efetiva compartilhada (solverRules/validatorRules)
   ├─ [3] Buscar entidades: empresa, setor, horarios, demandas, colabs, excecoes, feriados
   ├─ [4] Build ColabMotor[] (igual ao gerador)
   ├─ [5] Calcular dias, semanas (corte_semanal)
@@ -565,6 +592,7 @@ validarEscalaV3(escalaId, db)
 **Diferenca chave validador vs solver:**
 - Solver GERA alocacoes do zero (ou com hints)
 - Validador ANALISA alocacoes existentes sem modificar
+- Oficializacao, KPIs e cobertura persistidos seguem o validador
 
 ### 3.6 Output do Solver
 
@@ -574,11 +602,13 @@ interface DiagnosticoSolver {
   solve_time_ms: number
   regras_ativas: string[]           // codigos com status HARD/SOFT/ON
   regras_off: string[]              // codigos com status OFF
+  generation_mode?: 'OFFICIAL' | 'EXPLORATORY'
+  policy_adjustments?: Array<{ codigo: string; from: string | null; to: string; reason: string }>
   motivo_infeasible?: string        // so no path INFEASIBLE
   num_colaboradores: number
   num_dias: number
-  // ↓ Graceful Degradation (multi-pass) ↓
-  pass_usado?: 1 | 2 | 3           // qual pass resolveu (1=normal, 2=relaxed, 3=emergency)
+  // ↓ Multi-pass legal-first ↓
+  pass_usado?: 1 | '1b' | 2 | 3    // qual pass resolveu
   regras_relaxadas?: string[]       // quais regras foram relaxadas no pass bem-sucedido
   capacidade_vs_demanda?: {         // analise pre-solve
     total_slots_demanda: number
@@ -586,7 +616,7 @@ interface DiagnosticoSolver {
     ratio_cobertura_max: number
     cobertura_matematicamente_possivel: boolean
   }
-  modo_emergencia?: boolean         // true quando Pass 3 — revisao obrigatoria
+  modo_emergencia?: boolean         // true quando entrou no last resort exploratorio
 }
 
 interface SolverOutput {
@@ -601,7 +631,7 @@ interface SolverOutput {
     surplus_total: number
     equilibrio: number                // 0-100 (inverso do spread)
     pontuacao: number                 // 0-100 (calibrada)
-    violacoes_hard: number            // sempre 0 se sucesso=true
+    violacoes_hard: number            // autoindicador do solver; o valor oficial persistido vem do validador TS
     violacoes_soft: number
   }
   decisoes?: DecisaoMotor[]           // explicabilidade: POR QUE cada decisao
@@ -651,23 +681,28 @@ hints = alocacoesAnteriores.map(h => ({
 
 | Modo | Timeout total | Gap Limit | Quando usar |
 |------|--------------|-----------|-------------|
-| `rapido` | 30s (default) | 5% | Geracao normal, feedback rapido |
-| `otimizado` | 120s | 0% (prove optimal) | Quando quer a melhor solucao possivel |
+| `rapido` | 45s (default) | 5% | Geracao normal, feedback rapido |
+| `balanceado` | 180s | 2% | Quando quer melhorar sem esperar demais |
+| `otimizado` | 600s | 0.5% | Quando quer uma escala bem refinada |
+| `maximo` | 1800s | 0.1% | Busca pesada; usar com intencao explicita |
 
 Configuraveis via `SolverConfigDrawer` no frontend ou via tool `gerar_escala` da IA (parametro `solve_mode`).
 
-**Time budget splitting (multi-pass):**
+**Time budget splitting (multi-pass oficial):**
 
 | Pass | Objetivo | Tempo alocado | Relaxations |
 |------|----------|---------------|-------------|
 | Pass 1 | Normal (todas regras conforme config) | 50% do timeout | Nenhuma |
-| Pass 2 | Relaxar product rules → SOFT | 30% do timeout | H10_ELASTIC, DIAS_TRABALHO, MIN_DIARIO, H6 |
-| Pass 3 | Emergency CLT skeleton | 20% do timeout | ALL_PRODUCT_RULES (so H2/H4/H5/H11-H18 ficam HARD) |
+| Pass 1b | Manter pattern de folgas | reutiliza budget do Pass 1 | DIAS_TRABALHO, MIN_DIARIO |
+| Pass 2 | Relaxar product rules | 30% do timeout | DIAS_TRABALHO, MIN_DIARIO |
+| Pass 3 | Fallback legal-first | 20% do timeout | DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW |
 
 **INFEASIBLE e provado em <1s** — dar mais tempo NAO resolve. Se o CP-SAT prova impossibilidade matematica, e instantaneo. O multi-pass tenta com regras relaxadas, nao com mais tempo.
 
 **Regras que NUNCA relaxam (CLT core):**
 H2 (interjornada 11h), H4 (max 10h/dia), H5 (excecoes), H11-H18 (aprendiz/estagiario/feriados proibidos)
+
+**Observacao importante:** `H10` nao entra mais no relaxamento automatico do modo `OFFICIAL`. Se estiver SOFT, foi por configuracao/policy, nao por fallback silencioso.
 
 ### 3.9 Input Hash (Deteccao de Mudancas)
 
@@ -681,15 +716,18 @@ Campos incluidos no hash: setor_id, datas, empresa, colaboradores (ordenados por
 
 **Para gerar escala:**
 - Precisa de setor_id, data_inicio, data_fim (minimo)
-- Pode passar `solve_mode` ('rapido' | 'otimizado'), `rules_override`
+- Pode passar `solve_mode` ('rapido' | 'balanceado' | 'otimizado' | 'maximo') e `rules_override`
 - Tool `gerar_escala` ja faz tudo isso
-- INFEASIBLE e provado em <1s — dar mais tempo NAO resolve. Multi-pass resolve relaxando regras automaticamente.
+- O retorno oficial ja vem revalidado pelo TS; use `indicadores` e `comparacao_demanda` retornados ao inves de confiar em autoindicador cru do solver
+- INFEASIBLE e provado em <1s — dar mais tempo NAO resolve. Multi-pass tenta fallback, mas sem mudar o que o app considera oficial no modo OFFICIAL.
 
-**Para entender falhas (graceful degradation):**
-- `diagnostico.pass_usado` indica qual pass resolveu (1=normal, 2=relaxed, 3=emergency)
+**Para entender fallback / flexibilidade:**
+- `diagnostico.generation_mode` indica se a geracao ficou `OFFICIAL` ou `EXPLORATORY`
+- `diagnostico.pass_usado` indica qual pass resolveu (`1`, `1b`, `2`, `3`)
 - `diagnostico.regras_relaxadas` lista quais regras foram afrouxadas
+- `diagnostico.policy_adjustments` mostra correcoes automaticas da policy compartilhada
 - `diagnostico.capacidade_vs_demanda` mostra analise pre-solve de viabilidade
-- `diagnostico.modo_emergencia` indica Pass 3 (revisao obrigatoria pelo RH)
+- `diagnostico.modo_emergencia` sinaliza path exploratorio de ultimo recurso
 - `diagnostico.motivo_infeasible` explica o que deu errado (se todos os 3 passes falharam)
 - `erro.sugestoes[]` tem dicas acionaveis
 - Tool `explicar_violacao` tem dicionario das 20+ regras
@@ -699,6 +737,7 @@ Campos incluidos no hash: setor_id, datas, empresa, colaboradores (ordenados por
 - Identifica qual regra (ou combinacao) esta causando o conflito
 - Retorna `regras_que_resolvem_ao_desligar` + `capacidade_vs_demanda`
 - Workflow recomendado: gerar_escala → INFEASIBLE → diagnosticar_infeasible → explicar ao RH
+- Se sugerir `rules_override`, explicite quando isso vai colocar a geracao em `EXPLORATORY`
 
 **Para ajustar alocacao:**
 - Tool `ajustar_alocacao` faz UPDATE direto no DB
@@ -864,9 +903,10 @@ A tool `preflight` da IA (`tools.ts:1313-1390`) e uma **versao simplificada** qu
 > - `src/main/db/schema.ts` — DDL: `regra_definicao`, `regra_empresa` (DDL_V6_REGRAS)
 > - `src/main/db/seed.ts` — `seedRegrasDefinicao()` — 35 regras catalogadas
 > - `src/main/tipc.ts` — handlers `regras.*` (4), `colaboradores.*RegraHorario` (5), `perfisHorario.*` (4), `setores.*DemandaExcecaoData` (3), `escalas.*CicloRotativo` (4)
-> - `src/main/motor/solver-bridge.ts` — `buildRulesConfig()`, `buildSolverInput()` (resolve precedencia)
+> - `src/main/motor/solver-bridge.ts` — `buildSolverInput()` (resolve precedencia e injeta policy efetiva)
 > - `solver/solver_ortools.py` — `rule_is()` helper
-> - `src/main/motor/validador.ts` — `ruleIs()` TS equivalent
+> - `src/main/motor/rule-policy.ts` — `buildEffectiveRulePolicy()`, `inferGenerationModeForOverrides()`
+> - `src/main/motor/validador.ts` — usa a mesma policy compartilhada do solver
 
 O sistema de regras tem **3 camadas independentes** que atuam em momentos diferentes:
 
@@ -906,18 +946,23 @@ regra_definicao (catalogo fixo — seed)     regra_empresa (override do usuario)
 1. DB: SELECT COALESCE(re.status, rd.status_sistema) as status_efetivo
        FROM regra_definicao rd LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
 
-2. Bridge: buildRulesConfig(db, rulesOverride?)
-   → Monta Record<string, RuleStatus>
+2. TS: buildEffectiveRulePolicy({ generationMode, rulesOverride })
+   → Monta solverRules + validatorRules
    → Merge rulesOverride (do SolverConfigDrawer) POR CIMA
+   → Registra policy_adjustments quando corrige algo
 
 3. Resultado final no SolverInput:
-   config.rules = { H1: 'HARD', H6: 'SOFT', S_DEFICIT: 'ON', AP1: 'OFF', ... }
+   config.rules = { H10: 'HARD', S_DEFICIT: 'ON', AP1: 'OFF', ... }
 
-4. Python: rule_is('H1', 'HARD')
+4. TS: inferGenerationModeForOverrides(rulesOverride)
+   → OFFICIAL se so endureceu regras / mexeu em SOFT-AP
+   → EXPLORATORY se rebaixou regra que esta HARD na policy oficial atual
+
+5. Python: rule_is('H1', 'HARD')
    → Se rules dict preenchido: return rules['H1']
    → Fallback: nivel_rigor (backward compat ALTO/MEDIO/BAIXO)
 
-5. Cada constraint builder: if h1_status == 'HARD': add_hard() elif 'SOFT': add_soft_penalty()
+6. Cada constraint builder: if h1_status == 'HARD': add_hard() elif 'SOFT': add_soft_penalty()
 ```
 
 #### IPC handlers (4)
@@ -1114,7 +1159,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
   │       → Resultado: inicio, fim, turno, folga_fixa, domingo_forcar_folga
   │
   ├─ [7] Warm-start hints (ultima escala do mesmo periodo)
-  ├─ [8] Rules config: buildRulesConfig(db, rulesOverride)
+  ├─ [8] Rule policy: buildEffectiveRulePolicy() + inferGenerationModeForOverrides()
   └─ [9] Retorna SolverInput JSON completo
 ```
 
@@ -1246,7 +1291,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `escalas.resumoPorSetor` | — | `Array<{setor_id, setor_nome, status, data_inicio, data_fim}>` | Ultima escala por setor |
 | `escalas.listarPorSetor` | `{setor_id}` | `Escala[]` | Todas as escalas do setor |
 | `escalas.preflight` | `{setor_id, data_inicio, data_fim, regimes_override?}` | `EscalaPreflightResult` | Blockers + warnings ANTES de gerar |
-| `escalas.gerar` | `{setor_id, data_inicio, data_fim, solve_mode?, max_time_seconds?, rules_override?}` | `EscalaCompletaV3` | Fluxo completo: preflight → buildInput → runSolver → persist |
+| `escalas.gerar` | `{setor_id, data_inicio, data_fim, solve_mode?, max_time_seconds?, rules_override?}` | `EscalaCompletaV3` | Fluxo completo: preflight → buildInput → runSolver → persist base → validarEscalaV3() → persistencia autoritativa |
 | `escalas.oficializar` | `{escala_id}` | `EscalaCompletaV3` | Valida violacoes_hard=0, UPDATE status→OFICIAL, arquiva anteriores. **Pos-oficializacao:** infere folga fixa/variavel para colaboradores sem F/V definido, grava na regra do colaborador e atualiza `equipe_snapshot_json`. |
 | `escalas.ajustar` | `{escala_id, ajustes[]}` | `EscalaCompletaV3` | UPDATE alocacoes + revalida via validarEscalaV3() |
 | `escalas.deletar` | `{escala_id}` | void | DELETE (CASCADE em alocacoes, decisoes, comparacao) |
@@ -1323,8 +1368,9 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 | `enrichPreflightWithCapacityChecks()` | tipc.ts:89 | Valida capacidade diaria, domingo sem colabs, feriado proibido com demanda, janela insuficiente por colab. |
 | `normalizeRegimesOverride()` | tipc.ts:40 | Sanitiza array de regime overrides por colab. |
 | `buildSolverInput()` | solver-bridge.ts | Monta o JSON completo pra o solver Python. |
-| `persistirSolverResult()` | solver-bridge.ts | Transacao: INSERT escala + alocacoes + decisoes + comparacao. |
-| `validarEscalaV3()` | validador.ts | Reconstroi estado e valida todas as regras. |
+| `persistirSolverResult()` | solver-bridge.ts | Transacao base: INSERT escala + alocacoes + decisoes + comparacao do solver. |
+| `validarEscalaV3()` | validador.ts | Reconstroi estado, aplica a policy compartilhada e valida todas as regras. |
+| `persistirResumoAutoritativoEscala()` | tipc/escalas-utils.ts | Sobrescreve KPIs e comparacao_demanda oficiais com a validacao TS. |
 
 ### 5.3 Contagem final
 
@@ -1668,7 +1714,7 @@ Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemin
 |---|------|--------|-----------|
 | 13 | `preflight` | `{setor_id, datas}` | Verifica viabilidade rapida: setor ativo, colabs, demandas, feriados. |
 | 13 | `preflight_completo` | `{setor_id, datas}` | Versao completa: chama `buildEscalaPreflight()` com capacity checks por colab/dia. |
-| 14 | `gerar_escala` | `{setor_id, datas, solve_mode?, rules_override?}` | buildSolverInput → runSolver (60s rapido / 180s otimizado) → multi-pass → persistirSolverResult. Retorna escala RASCUNHO com diagnostico (pass_usado, regras_relaxadas). |
+| 14 | `gerar_escala` | `{setor_id, datas, solve_mode?, rules_override?}` | buildSolverInput → runSolver (45s rapido / 180s balanceado / 600s otimizado / 1800s maximo) → persistirSolverResult → validarEscalaV3 → persistencia autoritativa. Retorna escala RASCUNHO com diagnostico (`generation_mode`, `pass_usado`, `regras_relaxadas`). |
 | 15 | `ajustar_alocacao` | `{escala_id, colab_id, data, status}` | UPDATE alocacoes.status (TRABALHO/FOLGA/INDISPONIVEL). |
 | 16 | `ajustar_horario` | `{escala_id, colab_id, data, hora_inicio, hora_fim}` | UPDATE hora_inicio/hora_fim em alocacoes. Revalida via validarEscalaV3(). |
 | 17 | `oficializar_escala` | `{escala_id}` | UPDATE status='OFICIAL'. Valida violacoes_hard=0 antes de permitir. |
@@ -2318,7 +2364,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 
 | Tool | Parametros | O que faz | Efeito |
 |------|-----------|-----------|--------|
-| `gerar_escala` | setor_id, data_inicio, data_fim, solve_mode?, rules_override? | Roda solver Python (OR-Tools CP-SAT) com multi-pass graceful degradation. Retorna escala_id, indicadores, diagnostico (pass_usado, regras_relaxadas, capacidade_vs_demanda) | INSERT escala + alocacoes |
+| `gerar_escala` | setor_id, data_inicio, data_fim, solve_mode?, rules_override? | Roda solver Python (OR-Tools CP-SAT) com multi-pass legal-first, depois valida no TS e retorna diagnostico (`generation_mode`, `pass_usado`, `regras_relaxadas`, `capacidade_vs_demanda`) + indicadores oficiais | INSERT escala + alocacoes + resumo autoritativo |
 | `ajustar_alocacao` | escala_id, colaborador_id, data, status | Muda status de uma alocacao (TRABALHO/FOLGA/INDISPONIVEL) | UPDATE alocacoes |
 | `ajustar_horario` | escala_id, colaborador_id, data, hora_inicio, hora_fim, almoco_inicio?, almoco_fim? | Altera horarios de uma alocacao especifica | UPDATE alocacoes |
 | `oficializar_escala` | escala_id | Valida violacoes_hard=0, muda status RASCUNHO→OFICIAL | UPDATE escalas |

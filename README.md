@@ -101,6 +101,7 @@ npm run solver:cli -- 2 --json                       # output JSON raw (pipe)
 
 # Motor — outros
 npm run solver:test      # smoke test E2E (bridge TS → Python)
+npm run solver:test:parity # teste de paridade CLI solver real ↔ validador TS
 npm run solver:build     # compila binario Python (PyInstaller)
 
 # Banco
@@ -153,6 +154,36 @@ O `solver:cli` roda o motor OR-Tools direto do terminal, sem precisar abrir o ap
 | `--mode rapido\|otimizado` | Tempo do solver (default: rapido) |
 | `--dump` | Salva input JSON em `tmp/solver-input-setor-N.json` |
 | `--json` | Output JSON raw (usar com `npm run --silent` + `2>/dev/null` pra pipe limpo) |
+
+---
+
+## Teste de Paridade Solver ↔ Validador
+
+O projeto tem um teste de regressao pesado para blindar a consistencia entre o solver Python e o validador TypeScript:
+
+```bash
+npm run solver:test:parity
+```
+
+**O que ele faz:**
+- cria um banco isolado temporario;
+- roda seed core + seed local real;
+- executa o `solver:cli` real em modo `OFFICIAL` para cenarios de **Acougue** e **Rotisseria**;
+- persiste o resultado e revalida tudo com `validarEscalaV3()`;
+- falha se o solver relaxar regra inegociavel, quebrar invariantes de almoco ou divergir do validador alem do toleravel.
+
+**Quando rodar obrigatoriamente:**
+- mudou `solver/solver_ortools.py` ou `solver/constraints.py`;
+- mudou policy de regras (`HARD` / `SOFT` / `OFFICIAL` / `EXPLORATORY`);
+- mudou validador em `src/main/motor/`;
+- mudou persistencia/resumo oficial da escala;
+- mudou geracao/config de solver no renderer ou na IA.
+
+**Arquivos de referencia:**
+- `tests/main/solver-cli-parity.spec.ts`
+- `tests/main/rule-policy.spec.ts`
+
+Esse teste e mais lento que o smoke (`~3 min` no ambiente local), entao ele existe para pegar regressao estrutural, nao para substituir todos os testes rapidos.
 
 ---
 

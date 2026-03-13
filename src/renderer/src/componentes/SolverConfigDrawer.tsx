@@ -51,45 +51,58 @@ export function SolverConfigDrawer({
   const [solveMode, setSolveMode] = useState(config.solveMode)
 
   useEffect(() => {
+    if (!open) return
     setLocalOverride(config.rulesOverride)
     setSolveMode(config.solveMode)
-  }, [config])
+  }, [config, open])
 
   const handleSave = () => {
-    onConfigChange({ solveMode, rulesOverride: localOverride })
+    onConfigChange({ ...config, solveMode, rulesOverride: localOverride })
     onOpenChange(false)
   }
 
-  const handleRegraChange = (codigo: string, status: string) => {
-    setLocalOverride((prev) => ({ ...prev, [codigo]: status as RuleStatus }))
+  const handleRegraChange = (regra: RuleDefinition, status: string) => {
+    if (!regra.editavel) return
+    setLocalOverride((prev) => {
+      const next = { ...prev }
+      if (status === regra.status_efetivo) {
+        delete next[regra.codigo]
+      } else {
+        next[regra.codigo] = status as RuleStatus
+      }
+      return next
+    })
   }
 
   const handleBulkChange = (categoria: string, status: string) => {
     if (!regrasData) return
-    const updates: RuleConfig = {}
-    regrasData
-      .filter((r) => r.categoria === categoria)
-      .forEach((r) => {
-        if (r.codigo === 'H10' && status === 'OFF') return
-        updates[r.codigo] = status as RuleStatus
-      })
-    setLocalOverride((prev) => ({ ...prev, ...updates }))
+    setLocalOverride((prev) => {
+      const next = { ...prev }
+      regrasData
+        .filter((r) => r.categoria === categoria && r.editavel)
+        .forEach((r) => {
+          if (r.codigo === 'H10' && status === 'OFF') return
+          if (status === r.status_efetivo) {
+            delete next[r.codigo]
+          } else {
+            next[r.codigo] = status as RuleStatus
+          }
+        })
+      return next
+    })
   }
 
   const handleRestaurarEmpresa = () => {
-    if (!regrasData) return
-    const override: RuleConfig = {}
-    regrasData.forEach((r) => {
-      override[r.codigo] = r.status_efetivo
-    })
-    setLocalOverride(override)
+    setLocalOverride({})
   }
 
   const handleRestaurarSistema = () => {
     if (!regrasData) return
     const override: RuleConfig = {}
     regrasData.forEach((r) => {
-      override[r.codigo] = r.status_sistema
+      if (r.status_sistema !== r.status_efetivo) {
+        override[r.codigo] = r.status_sistema
+      }
     })
     setLocalOverride(override)
   }
@@ -150,11 +163,22 @@ export function SolverConfigDrawer({
                         •
                       </Badge>
                     )}
+                    {!r.editavel && (
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 text-muted-foreground">
+                        fixo
+                      </Badge>
+                    )}
                   </div>
+                  {r.codigo === 'H10' && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Quando HARD, respeita a tolerancia semanal configurada em /Regras.
+                    </p>
+                  )}
                 </div>
                 <Select
                   value={status}
-                  onValueChange={(val) => handleRegraChange(r.codigo, val)}
+                  onValueChange={(val) => handleRegraChange(r, val)}
+                  disabled={!r.editavel}
                 >
                   <SelectTrigger className="h-7 w-[100px] text-xs shrink-0">
                     <SelectValue />
@@ -183,6 +207,9 @@ export function SolverConfigDrawer({
       <SheetContent side="right" className="w-3/4 max-w-xl sm:max-w-xl flex flex-col p-0">
         <SheetHeader className="px-6 pt-6 pb-4 border-b">
           <SheetTitle>Configuracoes de Geracao</SheetTitle>
+          <p className="text-sm text-muted-foreground">
+            Ajuste a estrategia do solver e os overrides desta geracao sem mexer nas regras salvas da empresa.
+          </p>
         </SheetHeader>
 
         <ScrollArea className="flex-1">

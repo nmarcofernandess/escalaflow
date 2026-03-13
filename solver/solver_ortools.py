@@ -48,6 +48,7 @@ from constraints import (
     add_h5_excecoes,
     add_human_blocks,
     add_human_blocks_soft_penalty,
+    add_lunch_window_always_hard,
     add_band_demand_coverage,
     add_min_headcount_per_day,
     add_h10_meta_semanal,
@@ -607,18 +608,17 @@ def build_model(
     grid_min = int(empresa.get("grid_minutos", 30))
     horario_por_dia = empresa.get("horario_por_dia", {})
 
-    # S = slots do MAIOR dia (grade uniforme pro CP-SAT)
+    # S = slots que cobrem o RANGE GLOBAL (min_abertura..max_fechamento)
     if horario_por_dia:
-        max_minutes = 0
         min_base = base_h * 60
+        max_fech = end_h * 60 + end_m
         for dia_info in horario_por_dia.values():
             ab_h, ab_m = map(int, dia_info["abertura"].split(":"))
             fe_h, fe_m = map(int, dia_info["fechamento"].split(":"))
-            minutes = (fe_h * 60 + fe_m) - (ab_h * 60 + ab_m)
-            max_minutes = max(max_minutes, minutes)
             min_base = min(min_base, ab_h * 60 + ab_m)
+            max_fech = max(max_fech, fe_h * 60 + fe_m)
         base_h = min_base // 60
-        S = max_minutes // grid_min
+        S = (max_fech - base_h * 60) // grid_min
     else:
         S = ((end_h * 60 + end_m) - base_h * 60) // grid_min
 
@@ -629,7 +629,7 @@ def build_model(
     max_gap_slots = max_lunch_min // grid_min
 
     lunch_win_start = (11 * 60 - base_h * 60) // grid_min
-    lunch_win_end = (15 * 60 - base_h * 60) // grid_min
+    lunch_win_end = (14 * 60 - base_h * 60) // grid_min
 
     demand_by_slot, override_by_slot = parse_demand(
         data["demanda"],
@@ -799,15 +799,17 @@ def build_model(
     nivel_rigor = config.get("nivel_rigor", "ALTO")
     rules = config.get("rules", {})
 
+    generation_mode = config.get("generation_mode", "OFFICIAL")
+
     # Relaxation sets for multi-pass graceful degradation
     is_emergency = "ALL_PRODUCT_RULES" in relax
     force_h10_elastic = "H10_ELASTIC" in relax or is_emergency
-    force_h6_soft = "H6" in relax or is_emergency
+    force_h6_soft = "H6" in relax or (is_emergency and generation_mode == "EXPLORATORY")
     force_dt_soft = "DIAS_TRABALHO" in relax or is_emergency
     force_md_soft = "MIN_DIARIO" in relax or is_emergency
-    force_h1_soft = "H1" in relax or is_emergency
-    skip_time_window_hard = is_emergency
-    skip_folga_fixa = is_emergency
+    force_h1_soft = "H1" in relax or (is_emergency and generation_mode == "EXPLORATORY")
+    skip_time_window_hard = "TIME_WINDOW" in relax or is_emergency
+    skip_folga_fixa = "FOLGA_FIXA" in relax or "FOLGA_VARIAVEL" in relax or is_emergency
 
     def rule_is(codigo: str, default: str = 'HARD') -> str:
         """Retorna status da regra: HARD, SOFT, OFF, ON.
@@ -889,8 +891,43 @@ def build_model(
             max_work_slots=360 // grid_min,
         )
 
-    # H10: Meta semanal — can be elastic in degradation passes
+    # LUNCH WINDOW: ALWAYS HARD — never relaxed, regardless of H6 status
+    # If a day has a lunch gap, it MUST be between 11:00-14:00 with >=2h work before/after.
+    # This prevents solver from placing lunch at 06:30 even when H6 is relaxed to SOFT.
+    add_lunch_window_always_hard(
+        model,
+        work,
+        block_starts,
+        C,
+        D,
+        S,
+        base_h=base_h,
+        grid_min=grid_min,
+        lunch_window_start_hour=11,
+        lunch_window_end_hour=14,
+        min_work_before_lunch_slots=120 // grid_min,   # 2h before lunch
+        min_work_after_lunch_slots=120 // grid_min,     # 2h after lunch
+    )
+
+    # H10: Meta semanal — policy-driven. OFF/SOFT use the elastic builder.
+    h10_status = rule_is('H10', 'HARD')
     if force_h10_elastic:
+        h10_status = 'SOFT'
+    if h10_status == 'HARD':
+        weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal(
+            model,
+            work,
+            colabs,
+            C,
+            D,
+            S,
+            week_chunks=week_chunks,
+            blocked_days=blocked_days,
+            tolerance_min=tolerance,
+            grid_min=grid_min,
+        )
+    else:
+        h10_weight = 8000 if h10_status == 'SOFT' else 0
         weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal_elastic(
             model,
             obj_terms_list,
@@ -903,19 +940,7 @@ def build_model(
             blocked_days=blocked_days,
             tolerance_min=tolerance,
             grid_min=grid_min,
-        )
-    else:
-        weekly_minutes, weekly_minutes_by_colab = add_h10_meta_semanal(
-            model,
-            work,
-            colabs,
-            C,
-            D,
-            S,
-            week_chunks=week_chunks,
-            blocked_days=blocked_days,
-            tolerance_min=tolerance,
-            grid_min=grid_min,
+            weight=h10_weight,
         )
 
     # CLT constraints that NEVER relax (aprendiz, estagiario, feriados proibidos)
@@ -1058,6 +1083,8 @@ def extract_solution(
     base_h: int,
     grid_min: int,
     rules: dict = {},
+    generation_mode: str = "OFFICIAL",
+    policy_adjustments: list | None = None,
 ) -> dict:
     status_name = {
         cp_model.OPTIMAL: "OPTIMAL",
@@ -1091,6 +1118,8 @@ def extract_solution(
             "diagnostico": {
                 "status_cp_sat": status_name,
                 "solve_time_ms": round(solve_time_ms, 1),
+                "generation_mode": generation_mode,
+                "policy_adjustments": policy_adjustments or [],
                 "regras_ativas": regras_ativas,
                 "regras_off": regras_off,
                 "motivo_infeasible": f"Solver retornou {status_name}: impossivel satisfazer todas as restricoes simultaneamente",
@@ -1344,6 +1373,8 @@ def extract_solution(
     diagnostico = {
         "status_cp_sat": status_name,
         "solve_time_ms": round(solve_time_ms, 1),
+        "generation_mode": generation_mode,
+        "policy_adjustments": policy_adjustments or [],
         "regras_ativas": regras_ativas,
         "regras_off": regras_off,
         "num_colaboradores": len(colabs),
@@ -1433,7 +1464,7 @@ def _analyze_capacity(data: dict) -> dict:
 
 def _solve_pass(
     data: dict,
-    pass_num: int,
+    pass_num: int | str,
     relaxations: List[str],
     max_time: float,
     gap_limit: float,
@@ -1445,6 +1476,8 @@ def _solve_pass(
 
     if pass_num == 1:
         log(f"Passo 1: resolvendo com todas as regras CLT (max {max_time:.0f}s)...")
+    elif pass_num == "1b":
+        log(f"Passo 1b: padrao de folgas fixado + meta de horas flexivel (max {max_time:.0f}s)...")
     elif pass_num == 2:
         log(f"Passo 2: relaxando meta de horas e dias de trabalho (max {max_time:.0f}s)...")
     else:
@@ -1501,6 +1534,8 @@ def _solve_pass(
         base_h,
         grid_min,
         rules=config.get("rules", {}),
+        generation_mode=config.get("generation_mode", "OFFICIAL"),
+        policy_adjustments=config.get("policy_adjustments", []),
     )
 
     status_label = result.get('status', 'UNKNOWN')
@@ -1531,8 +1566,10 @@ def solve(data: dict) -> dict:
     """Main solve function with multi-pass graceful degradation.
 
     Pass 1: Normal solve with all configured rules.
-    Pass 2: Relax H10→elastic, DIAS_TRABALHO→SOFT, MIN_DIARIO→SOFT, H6→SOFT.
-    Pass 3: Emergency — strip to CLT-only (H2+H4+H5), all product rules SOFT.
+    Pass 2: Relax only product/contract rules that do not invalidate legality.
+    Pass 3:
+      - OFFICIAL: legal-first fallback, still preserving legal blockers.
+      - EXPLORATORY: emergency mode, including relaxations that can invalidate officialization.
 
     Minimum-coverage continuation: if a pass returns FEASIBLE but coverage
     is below MIN_COVERAGE_THRESHOLD, the solver retries with progressively
@@ -1557,6 +1594,7 @@ def solve(data: dict) -> dict:
         }
 
     config = data.get("config", {})
+    generation_mode = config.get("generation_mode", "OFFICIAL")
     solve_mode = config.get("solve_mode", "rapido")
     num_workers = config.get("num_workers", 8)
 
@@ -1586,26 +1624,33 @@ def solve(data: dict) -> dict:
     cycle_weeks = _compute_cycle_weeks_fast(colabs, data.get("demanda", []))
 
     # --- Helper: run a pass with minimum-coverage continuation ---
+    # Per-pass cap: don't let continuation blow past the mode budget
+    pass_time_cap = total_budget * 2  # generous but bounded
+
     def _run_with_continuation(
-        pass_num: int,
+        pass_num: int | str,
         relaxations: list,
         initial_time: float,
         pass_gap: float,
         pinned_folga: Dict[Tuple[int, int], int] | None = None,
     ) -> dict:
         """Run a solver pass. If FEASIBLE but below MIN_COVERAGE_THRESHOLD,
-        retry with doubled time budget until coverage is met or hard cap is hit."""
+        retry with doubled time budget until coverage is met or time cap is hit."""
         current_time = initial_time
         best_result = None
         attempt = 0
+        MAX_CONTINUATION_ATTEMPTS = 3
 
         while True:
             attempt += 1
             elapsed_total = time.time() - t_global_start
-            remaining = HARD_TIME_CAP_SECONDS - elapsed_total
+            remaining = min(HARD_TIME_CAP_SECONDS, pass_time_cap) - elapsed_total
 
-            if remaining <= 5:
-                log(f"Tempo limite atingido ({elapsed_total:.0f}s) — usando melhor resultado ate agora")
+            if remaining <= 5 or attempt > MAX_CONTINUATION_ATTEMPTS:
+                if attempt > MAX_CONTINUATION_ATTEMPTS:
+                    log(f"Passo {pass_num}: max tentativas ({MAX_CONTINUATION_ATTEMPTS}) — usando melhor resultado")
+                else:
+                    log(f"Tempo limite atingido ({elapsed_total:.0f}s) — usando melhor resultado ate agora")
                 break
 
             # Clamp to remaining time
@@ -1635,6 +1680,11 @@ def solve(data: dict) -> dict:
             # Check if coverage is good enough
             if _coverage_is_viable(best_result):
                 log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}% atingida")
+                return best_result
+
+            # OPTIMAL = provably best — retrying won't improve
+            if result.get("status") == "OPTIMAL":
+                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}% (OPTIMAL — melhor resultado possivel)")
                 return best_result
 
             # Coverage below threshold and demand IS mathematically possible
@@ -1687,6 +1737,7 @@ def solve(data: dict) -> dict:
     if result and result.get("sucesso"):
         diag = result.get("diagnostico", {})
         diag["pass_usado"] = 1
+        diag["generation_mode"] = generation_mode
         diag["regras_relaxadas"] = []
         diag["capacidade_vs_demanda"] = capacidade_diag
         diag["cycle_length_weeks"] = cycle_weeks
@@ -1695,12 +1746,58 @@ def solve(data: dict) -> dict:
         result["diagnostico"] = diag
         return result
 
+    exploratory_mode = generation_mode == "EXPLORATORY"
+
+    # ---- Pass 1b: Keep Phase 1 folga pattern + relax hours ----
+    # When Pass 1 fails because short days (e.g. Sunday 05:30-11:00) make the
+    # weekly hour target unreachable with tolerance=0, this pass preserves the
+    # OFF pattern (which days are folga) while freeing band assignments.
+    # This keeps 5X2 + domingo_ciclo intact but lets the solver schedule hours freely.
+    if pinned_folga is not None:
+        elapsed = time.time() - t_global_start
+        if elapsed < HARD_TIME_CAP_SECONDS - 5:
+            log("Passo 1b: mantendo padrao de folgas, flexibilizando horarios...")
+
+            # Convert to folga-only pins: OFF stays OFF, everything else → INTEGRAL (no restriction)
+            BAND_OFF = 0
+            BAND_INTEGRAL = 3
+            folga_only_pins = {
+                k: (BAND_OFF if v == BAND_OFF else BAND_INTEGRAL)
+                for k, v in pinned_folga.items()
+            }
+
+            pass1b_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO"]
+            if exploratory_mode:
+                pass1b_relaxations.append("H6")
+            result = _run_with_continuation(
+                pass_num="1b", relaxations=pass1b_relaxations,
+                initial_time=pass1_time, pass_gap=gap_limit,
+                pinned_folga=folga_only_pins,
+            )
+
+            if result and result.get("sucesso"):
+                diag = result.get("diagnostico", {})
+                diag["pass_usado"] = "1b"
+                diag["generation_mode"] = generation_mode
+                diag["regras_relaxadas"] = ["DIAS_TRABALHO", "MIN_DIARIO"] + (["H6"] if exploratory_mode else [])
+                diag["capacidade_vs_demanda"] = capacidade_diag
+                diag["cycle_length_weeks"] = cycle_weeks
+                diag.update(phase1_diag)
+                diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
+                result["diagnostico"] = diag
+                return result
+
     # ---- Pass 2: Relax product rules to SOFT (no Phase 1 pin — let it emerge) ----
     elapsed = time.time() - t_global_start
     if elapsed < HARD_TIME_CAP_SECONDS - 5:
-        log("Passo 1 impossivel com todas as regras — relaxando meta de horas para tentar...")
+        if pinned_folga is not None:
+            log("Passo 1b impossivel — relaxando todas as regras e removendo padrão de folgas...")
+        else:
+            log("Passo 1 impossivel — relaxando regras de produto...")
 
-        pass2_relaxations = ["H10_ELASTIC", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
+        pass2_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO"]
+        if exploratory_mode:
+            pass2_relaxations.append("H6")
         result = _run_with_continuation(
             pass_num=2, relaxations=pass2_relaxations, initial_time=pass2_time, pass_gap=gap_limit,
             pinned_folga=None,  # drop Phase 1 pin in degradation
@@ -1709,7 +1806,8 @@ def solve(data: dict) -> dict:
         if result and result.get("sucesso"):
             diag = result.get("diagnostico", {})
             diag["pass_usado"] = 2
-            diag["regras_relaxadas"] = ["H10", "DIAS_TRABALHO", "MIN_DIARIO", "H6"]
+            diag["generation_mode"] = generation_mode
+            diag["regras_relaxadas"] = ["DIAS_TRABALHO", "MIN_DIARIO"] + (["H6"] if exploratory_mode else [])
             diag["capacidade_vs_demanda"] = capacidade_diag
             diag["cycle_length_weeks"] = cycle_weeks
             diag.update(phase1_diag)
@@ -1717,12 +1815,15 @@ def solve(data: dict) -> dict:
             result["diagnostico"] = diag
             return result
 
-    # ---- Pass 3: Emergency — CLT skeleton only (no Phase 1 pin) ----
+    # ---- Pass 3: Last resort fallback ----
     elapsed = time.time() - t_global_start
     if elapsed < HARD_TIME_CAP_SECONDS - 5:
-        log("Passo 2 impossivel — modo emergencia (apenas regras CLT obrigatorias)")
-
-        pass3_relaxations = ["ALL_PRODUCT_RULES"]
+        if exploratory_mode:
+            log("Passo 2 impossivel — modo exploratorio de emergencia")
+            pass3_relaxations = ["ALL_PRODUCT_RULES"]
+        else:
+            log("Passo 2 impossivel — fallback legal-first (sem relaxar regras de oficializacao)")
+            pass3_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
         result = _run_with_continuation(
             pass_num=3, relaxations=pass3_relaxations, initial_time=pass3_time, pass_gap=gap_limit,
             pinned_folga=None,
@@ -1732,11 +1833,16 @@ def solve(data: dict) -> dict:
 
     diag = result.get("diagnostico", {}) if result else {}
     diag["pass_usado"] = 3
-    diag["regras_relaxadas"] = ["H1", "H6", "H10", "DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
+    diag["generation_mode"] = generation_mode
+    diag["regras_relaxadas"] = (
+        ["H1", "H6", "H10", "DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
+        if exploratory_mode
+        else ["DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
+    )
     diag["capacidade_vs_demanda"] = capacidade_diag
     diag["cycle_length_weeks"] = cycle_weeks
     diag.update(phase1_diag)
-    diag["modo_emergencia"] = True
+    diag["modo_emergencia"] = exploratory_mode
     diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
     if result:
         result["diagnostico"] = diag

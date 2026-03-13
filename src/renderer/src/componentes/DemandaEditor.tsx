@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect, type MouseEvent } from 'react'
-import { Plus, Clock, Minus, Trash2, BarChart3, Table2, Save, MoreHorizontal } from 'lucide-react'
+import { Plus, Clock, Minus, Trash2, BarChart3, Table2, MoreHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -41,7 +41,6 @@ import type {
   Setor,
   Demanda,
   SetorHorarioSemana,
-  SalvarTimelineDiaInput,
 } from '@shared/index'
 import type { DiaSemana } from '@shared/constants'
 import { DIAS_SEMANA } from '@shared/constants'
@@ -182,7 +181,6 @@ interface DemandaEditorProps {
   demandas: Demanda[]
   horariosSemana: SetorHorarioSemana[]
   totalColaboradores: number
-  onSalvar: (dados: SalvarTimelineDiaInput[]) => Promise<void>
 }
 
 function sortByInicio(a: { hora_inicio: string }, b: { hora_inicio: string }): number {
@@ -218,11 +216,9 @@ export function DemandaEditor({
   demandas,
   horariosSemana,
   totalColaboradores,
-  onSalvar,
 }: DemandaEditorProps) {
   const [activeTab, setActiveTab] = useState<'padrao' | DiaSemana>('padrao')
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
-  const [saving, setSaving] = useState(false)
   const [operacionalPopoverOpen, setOperacionalPopoverOpen] = useState(false)
 
   const nextTempId = useRef(-1)
@@ -417,6 +413,23 @@ export function DemandaEditor({
   }, [currentConfig, displayOpenMin, totalMinutes])
 
   const maxCoverage = Math.max(...coverageData, 1)
+
+  // Total horas-pessoa demandadas na SEMANA e média por colaborador
+  const { totalHorasSemana, mediaSemanalPorColab } = useMemo(() => {
+    let total = 0
+    for (const dia of DIAS_SEMANA) {
+      const diaCfg = draft.dias[dia]
+      const segs = diaCfg.usa_padrao ? draft.padrao.segmentos : diaCfg.segmentos
+      for (const s of segs) {
+        const durMin = toMinutes(s.hora_fim) - toMinutes(s.hora_inicio)
+        if (durMin > 0) total += (durMin / 60) * s.min_pessoas
+      }
+    }
+    return {
+      totalHorasSemana: total,
+      mediaSemanalPorColab: totalColaboradores > 0 ? total / totalColaboradores : 0,
+    }
+  }, [draft, totalColaboradores])
 
   const clampSegmentosToWindow = useCallback((
     segmentos: SegmentoDraft[],
@@ -684,51 +697,6 @@ export function DemandaEditor({
   const ghostDemandas = useMemo(() => {
     return toDemandaList(currentConfig.segmentosGhost, activeTab === 'padrao' ? null : activeTab)
   }, [activeTab, currentConfig.segmentosGhost, toDemandaList])
-
-  const buildPayloadDia = useCallback((dia: DiaSemana): SalvarTimelineDiaInput => {
-    const diaCfg = draft.dias[dia]
-    const usaPadrao = diaCfg.usa_padrao
-
-    const hora_abertura = usaPadrao ? draft.padrao.hora_abertura : diaCfg.hora_abertura
-    const hora_fechamento = usaPadrao ? draft.padrao.hora_fechamento : diaCfg.hora_fechamento
-    const sourceSegs = usaPadrao ? draft.padrao.segmentos : diaCfg.segmentos
-    const safeSegs = clampSegmentosToWindow(sourceSegs, hora_abertura, hora_fechamento)
-
-    return {
-      setor_id: setor.id,
-      dia_semana: dia,
-      ativo: true,
-      usa_padrao: usaPadrao,
-      hora_abertura,
-      hora_fechamento,
-      segmentos: [...safeSegs].sort(sortByInicio).map((s) => ({
-        hora_inicio: s.hora_inicio,
-        hora_fim: s.hora_fim,
-        min_pessoas: s.min_pessoas,
-        override: s.override,
-      })),
-    }
-  }, [clampSegmentosToWindow, draft, setor.id])
-
-  const handleSalvar = async () => {
-    // Warning se cobertura acumulada excede total de colaboradores em algum slot
-    if (maxPessoas > 0) {
-      const picoAcumulado = Math.max(...coverageData, 0)
-      if (picoAcumulado > maxPessoas) {
-        toast.warning(
-          `Cobertura acumulada (${picoAcumulado}) excede o total de ${maxPessoas} colaborador${maxPessoas !== 1 ? 'es' : ''} do setor. O motor pode retornar INFEASIBLE.`,
-        )
-      }
-    }
-
-    setSaving(true)
-    try {
-      const payloads = DIAS_SEMANA.map((dia) => buildPayloadDia(dia))
-      await onSalvar(payloads)
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const diaComDivergencia = useMemo(() => {
     const map: Record<DiaSemana, boolean> = {
@@ -1197,9 +1165,16 @@ export function DemandaEditor({
           </div>
           <div className="flex items-center justify-between px-3 py-1.5 text-sm text-muted-foreground">
             <span>Cobertura acumulada por faixa</span>
-            <Badge variant="outline" className="text-xs">
-              {currentConfig.segmentosCobertura.length} faixa{currentConfig.segmentosCobertura.length !== 1 ? 's' : ''}
-            </Badge>
+            <div className="flex items-center gap-2">
+              {totalColaboradores > 0 && (
+                <span className="text-xs tabular-nums">
+                  {totalHorasSemana.toFixed(0)}h/sem ÷ {totalColaboradores} = <span className="font-semibold text-foreground">{mediaSemanalPorColab.toFixed(1)}h/pessoa</span>
+                </span>
+              )}
+              <Badge variant="outline" className="text-xs">
+                {currentConfig.segmentosCobertura.length} faixa{currentConfig.segmentosCobertura.length !== 1 ? 's' : ''}
+              </Badge>
+            </div>
           </div>
         </div>
       </TimelineShell>
@@ -1297,10 +1272,6 @@ export function DemandaEditor({
 
             <Button variant="outline" size="sm" onClick={handleNovaFaixa} disabled={!canEditCurrent}>
               <Plus className="mr-1 size-3.5" /> Nova Faixa
-            </Button>
-
-            <Button onClick={handleSalvar} size="sm" disabled={saving}>
-              <Save className="mr-1 size-3.5" /> {saving ? 'Salvando...' : 'Salvar'}
             </Button>
           </div>
         </div>

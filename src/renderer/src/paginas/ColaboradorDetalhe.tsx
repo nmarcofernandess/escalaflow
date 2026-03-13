@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
-  Save,
   Plus,
   Trash2,
   Palmtree,
@@ -58,8 +57,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/componentes/PageHeader'
-import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
-import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { SaveIndicator } from '@/componentes/SaveIndicator'
+import { useAutoSave, type AutoSaveStatus } from '@/hooks/useAutoSave'
 import { EmptyState } from '@/componentes/EmptyState'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { setoresService } from '@/servicos/setores'
@@ -132,12 +131,14 @@ function RestricaoRadio({
   onChange,
   horario,
   onHorarioChange,
+  onHorarioBlur,
   showNenhum = true,
 }: {
   value: TipoRestricao
   onChange: (v: TipoRestricao) => void
   horario: string
   onHorarioChange: (v: string) => void
+  onHorarioBlur?: () => void
   showNenhum?: boolean
 }) {
   const opcoes = [
@@ -165,6 +166,7 @@ function RestricaoRadio({
           type="time"
           value={horario}
           onChange={e => onHorarioChange(e.target.value)}
+          onBlur={onHorarioBlur}
           className="w-36"
         />
       )}
@@ -244,7 +246,8 @@ function buildRegrasDiaFormFromRegras(regras: RegraHorarioColaborador[]): Record
     diaDefaults[r.dia_semana_regra!] = {
       enabled: true,
       id: r.id,
-      tipo_restricao,
+      // Se inicio e fim ambos null, RestricaoRadio com showNenhum=false nao mostra nenhum radio selecionado
+      tipo_restricao: tipo_restricao === 'nenhum' ? 'entrada' : tipo_restricao,
       horario,
     }
   }
@@ -258,7 +261,6 @@ export function ColaboradorDetalhe() {
   const navigate = useNavigate()
 
   // Form
-  const [salvando, setSalvando] = useState(false)
   const colabForm = useForm<ColabFormInput, unknown, ColabFormData>({
     resolver: zodResolver(colabSchema),
     defaultValues: {
@@ -268,7 +270,8 @@ export function ColaboradorDetalhe() {
     },
   })
 
-  const blocker = useDirtyGuard({ isDirty: colabForm.formState.isDirty })
+  // Setor change guard
+  const [pendingSetorId, setPendingSetorId] = useState<string | null>(null)
 
   // Excecao dialog state
   const [showExcecaoDialog, setShowExcecaoDialog] = useState(false)
@@ -289,14 +292,6 @@ export function ColaboradorDetalhe() {
 
   // Derivados: regra padrao
   const regraPadrao = regrasHorario.find(r => r.dia_semana_regra === null) ?? null
-  const regraFormBaseline = useMemo(() => buildRegraFormFromRegras(regrasHorario), [regrasHorario])
-  const regrasDiaFormBaseline = useMemo(() => buildRegrasDiaFormFromRegras(regrasHorario), [regrasHorario])
-  const hasUnsavedRegraChanges = useMemo(
-    () =>
-      JSON.stringify(regraForm) !== JSON.stringify(regraFormBaseline) ||
-      JSON.stringify(regrasDiaForm) !== JSON.stringify(regrasDiaFormBaseline),
-    [regraForm, regraFormBaseline, regrasDiaForm, regrasDiaFormBaseline],
-  )
 
   // Seccao C: Excecoes por data
   const [excecoesPorData, setExcecoesPorData] = useState<RegraHorarioColaboradorExcecaoData[]>([])
@@ -386,44 +381,74 @@ export function ColaboradorDetalhe() {
     }
   }, [watchedContratoId])
 
-  const handleSalvar = async (data: ColabFormData) => {
-    setSalvando(true)
-    try {
-      const contratoId = parseInt(data.tipo_contrato_id)
-      const contratoSelecionado = contratosList.find((tc) => tc.id === contratoId)
-      const horasSemanaisEfetivas = contratoSelecionado?.horas_semanais ?? data.horas_semanais
-      const tipoTrabalhadorEfetivo = derivarTipoTrabalhadorPorContrato(contratoSelecionado?.nome)
-      const nextValues: ColabFormInput = {
-        nome: data.nome.trim(),
-        sexo: data.sexo,
-        setor_id: data.setor_id,
-        tipo_contrato_id: data.tipo_contrato_id,
-        horas_semanais: horasSemanaisEfetivas,
-        prefere_turno: data.prefere_turno,
-        evitar_dia_semana: data.evitar_dia_semana,
-        tipo_trabalhador: tipoTrabalhadorEfetivo,
-        funcao_id: data.funcao_id,
-      }
+  // Auto-save: campo individual do colaborador
+  const saveColabField = useCallback(async (fields: Record<string, unknown>) => {
+    await colaboradoresService.atualizar(colabId, fields)
+  }, [colabId])
 
-      await colaboradoresService.atualizar(colabId, {
-        nome: nextValues.nome,
-        sexo: nextValues.sexo as 'M' | 'F',
-        setor_id: parseInt(nextValues.setor_id),
+  const nomeAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = colabForm.getValues('nome').trim()
+      if (val.length < 2) throw new Error('Nome deve ter ao menos 2 caracteres')
+      await saveColabField({ nome: val })
+    }, [colabForm, saveColabField]),
+    validate: useCallback(() => colabForm.getValues('nome').trim().length >= 2, [colabForm]),
+  })
+
+  const sexoAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      await saveColabField({ sexo: colabForm.getValues('sexo') })
+    }, [colabForm, saveColabField]),
+  })
+
+  const contratoAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const contratoId = parseInt(colabForm.getValues('tipo_contrato_id'))
+      const contratoSel = contratosList.find((tc) => tc.id === contratoId)
+      const horasSemanais = contratoSel?.horas_semanais ?? colabForm.getValues('horas_semanais')
+      const tipoTrabalhador = derivarTipoTrabalhadorPorContrato(contratoSel?.nome)
+      await saveColabField({
         tipo_contrato_id: contratoId,
-        horas_semanais: horasSemanaisEfetivas,
-        prefere_turno: nextValues.prefere_turno === 'none' ? null : nextValues.prefere_turno as 'MANHA' | 'TARDE',
-        evitar_dia_semana: nextValues.evitar_dia_semana === 'none' ? null : nextValues.evitar_dia_semana as DiaSemana,
-        tipo_trabalhador: tipoTrabalhadorEfetivo,
-        funcao_id: nextValues.funcao_id === 'none' ? null : parseInt(nextValues.funcao_id),
+        horas_semanais: horasSemanais,
+        tipo_trabalhador: tipoTrabalhador,
       })
-      colabForm.reset(nextValues)
-      toast.success('Colaborador salvo')
+      colabForm.setValue('horas_semanais', horasSemanais)
+      colabForm.setValue('tipo_trabalhador', tipoTrabalhador)
+    }, [colabForm, saveColabField, contratosList]),
+  })
+
+  const funcaoAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = colabForm.getValues('funcao_id')
+      await saveColabField({ funcao_id: val === 'none' ? null : parseInt(val) })
+    }, [colabForm, saveColabField]),
+  })
+
+  const prefereTurnoAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = colabForm.getValues('prefere_turno')
+      await saveColabField({ prefere_turno: val === 'none' ? null : val })
+    }, [colabForm, saveColabField]),
+  })
+
+  const evitarDiaAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = colabForm.getValues('evitar_dia_semana')
+      await saveColabField({ evitar_dia_semana: val === 'none' ? null : val })
+    }, [colabForm, saveColabField]),
+  })
+
+  const handleConfirmSetorChange = useCallback(async () => {
+    if (!pendingSetorId) return
+    try {
+      await saveColabField({ setor_id: parseInt(pendingSetorId) })
+      colabForm.setValue('setor_id', pendingSetorId)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar colaborador')
-    } finally {
-      setSalvando(false)
+      toast.error(err instanceof Error ? err.message : 'Erro ao mover colaborador')
+      colabForm.setValue('setor_id', String(colab?.setor_id ?? ''))
     }
-  }
+    setPendingSetorId(null)
+  }, [pendingSetorId, saveColabField, colabForm, colab?.setor_id])
 
   const handleCriarExcecao = async () => {
     if (!novaExcecaoInicio || !novaExcecaoFim) return
@@ -469,74 +494,98 @@ export function ColaboradorDetalhe() {
     }
   }
 
-  // Regra de horario handlers
-  const handleSalvarRegra = async () => {
-    setRegraSalvando(true)
+  // Regra de horario: auto-save
+  const reloadRegras = useCallback(async () => {
+    const regras = await colaboradoresService.buscarRegraHorario(colabId)
+    setRegrasHorario(regras)
+    setRegraForm(buildRegraFormFromRegras(regras))
+    setRegrasDiaForm(buildRegrasDiaFormFromRegras(regras))
+  }, [colabId])
+
+  const saveRegraPadrao = useCallback(async (overrides?: Partial<typeof regraForm>) => {
+    const current = { ...regraForm, ...overrides }
+    const { inicio, fim } = restricaoParaInicioFim(current.tipo_restricao, current.horario)
+    await colaboradoresService.salvarRegraHorario({
+      colaborador_id: colabId,
+      dia_semana_regra: null as string | null,
+      ativo: true,
+      perfil_horario_id: current.perfil_horario_id === 'none' ? null : parseInt(current.perfil_horario_id),
+      inicio,
+      fim,
+      preferencia_turno_soft: current.preferencia_turno_soft === 'none' ? null : current.preferencia_turno_soft,
+      domingo_ciclo_trabalho: current.domingo_ciclo_trabalho,
+      domingo_ciclo_folga: current.domingo_ciclo_folga,
+      folga_fixa_dia_semana: current.folga_fixa_dia_semana === 'none' ? null : current.folga_fixa_dia_semana,
+      folga_variavel_dia_semana: current.folga_variavel_dia_semana === 'none' ? null : current.folga_variavel_dia_semana,
+    } as any)
+    await reloadRegras()
+  }, [colabId, regraForm, reloadRegras])
+
+  // Auto-save status (manual — sem useAutoSave que lê state stale)
+  const [regraSaveStatus, setRegraSaveStatus] = useState<AutoSaveStatus>('idle')
+  const [regraSaveError, setRegraSaveError] = useState<string | null>(null)
+  const regraSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const autoSaveRegra = useCallback(async (overrides: Partial<typeof regraForm>) => {
+    setRegraSaveStatus('saving')
+    setRegraSaveError(null)
     try {
-      // 1. Salvar regra padrao (dia_semana_regra = null)
-      const { inicio, fim } = restricaoParaInicioFim(regraForm.tipo_restricao, regraForm.horario)
-      const payload = {
-        colaborador_id: colabId,
-        dia_semana_regra: null as string | null,
-        ativo: true,
-        perfil_horario_id: regraForm.perfil_horario_id === 'none' ? null : parseInt(regraForm.perfil_horario_id),
-        inicio,
-        fim,
-        preferencia_turno_soft: regraForm.preferencia_turno_soft === 'none' ? null : regraForm.preferencia_turno_soft,
-        domingo_ciclo_trabalho: regraForm.domingo_ciclo_trabalho,
-        domingo_ciclo_folga: regraForm.domingo_ciclo_folga,
-        folga_fixa_dia_semana: regraForm.folga_fixa_dia_semana === 'none' ? null : regraForm.folga_fixa_dia_semana,
-        folga_variavel_dia_semana: regraForm.folga_variavel_dia_semana === 'none' ? null : regraForm.folga_variavel_dia_semana,
-      }
-      await colaboradoresService.salvarRegraHorario(payload as any)
-
-      // 2. Salvar/deletar regras por dia da semana
-      for (const dia of DIAS_SEMANA_OPTIONS) {
-        const diaForm = regrasDiaForm[dia.value]
-        if (diaForm.enabled) {
-          const { inicio: diaInicio, fim: diaFim } = restricaoParaInicioFim(diaForm.tipo_restricao, diaForm.horario)
-          await colaboradoresService.salvarRegraHorario({
-            colaborador_id: colabId,
-            dia_semana_regra: dia.value as any,
-            ativo: true,
-            inicio: diaInicio,
-            fim: diaFim,
-          })
-        } else if (diaForm.id) {
-          // Toggle OFF com row no DB -> deletar
-          await colaboradoresService.deletarRegraHorario(diaForm.id)
-        }
-      }
-
-      // 3. Reload
-      const regras = await colaboradoresService.buscarRegraHorario(colabId)
-      setRegrasHorario(regras)
-      setRegraForm(buildRegraFormFromRegras(regras))
-      setRegrasDiaForm(buildRegrasDiaFormFromRegras(regras))
-
-      toast.success('Regra de horario salva')
+      await saveRegraPadrao(overrides)
+      setRegraSaveStatus('saved')
+      if (regraSaveTimerRef.current) clearTimeout(regraSaveTimerRef.current)
+      regraSaveTimerRef.current = setTimeout(() => setRegraSaveStatus('idle'), 2000)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar regra')
-    } finally {
-      setRegraSalvando(false)
+      setRegraSaveStatus('error')
+      setRegraSaveError(err instanceof Error ? err.message : 'Erro ao salvar')
+      if (regraSaveTimerRef.current) clearTimeout(regraSaveTimerRef.current)
+      regraSaveTimerRef.current = setTimeout(() => { setRegraSaveStatus('idle'); setRegraSaveError(null) }, 3000)
     }
-  }
+  }, [saveRegraPadrao])
 
-  const handlePreencherDoPerfil = (perfilId: string) => {
-    setRegraForm(f => ({ ...f, perfil_horario_id: perfilId }))
+  const saveDiaRegra = useCallback(async (dia: string, overrideDiaForm?: RegraDiaForm) => {
+    const diaForm = overrideDiaForm ?? regrasDiaForm[dia]
+    if (diaForm.enabled) {
+      const { inicio, fim } = restricaoParaInicioFim(diaForm.tipo_restricao, diaForm.horario)
+      if (!inicio && !fim) {
+        if (diaForm.id) await colaboradoresService.deletarRegraHorario(diaForm.id)
+      } else {
+        await colaboradoresService.salvarRegraHorario({
+          colaborador_id: colabId,
+          dia_semana_regra: dia as any,
+          ativo: true,
+          inicio,
+          fim,
+        })
+      }
+    } else if (diaForm.id) {
+      await colaboradoresService.deletarRegraHorario(diaForm.id)
+    }
+    await reloadRegras()
+  }, [colabId, regrasDiaForm, reloadRegras])
+
+  const handlePreencherDoPerfil = async (perfilId: string) => {
     if (perfilId !== 'none') {
       const perfil = perfisHorario.find(p => p.id === parseInt(perfilId))
       if (perfil) {
         const { tipo_restricao, horario } = inicioFimParaRestricao(perfil.inicio, perfil.fim)
-        setRegraForm(f => ({
-          ...f,
+        const newForm = {
+          ...regraForm,
           perfil_horario_id: perfilId,
           tipo_restricao,
           horario,
           preferencia_turno_soft: perfil.preferencia_turno_soft ?? 'none',
-        }))
+        }
+        setRegraForm(newForm)
+        setRegraSalvando(true)
+        try { await saveRegraPadrao(newForm) } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro ao salvar regra') }
+        setRegraSalvando(false)
+        return
       }
     }
+    setRegraForm(f => ({ ...f, perfil_horario_id: perfilId }))
+    setRegraSalvando(true)
+    try { await saveRegraPadrao({ perfil_horario_id: perfilId }) } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro ao salvar regra') }
+    setRegraSalvando(false)
   }
 
   const handleSalvarExcData = async () => {
@@ -626,19 +675,6 @@ export function ColaboradorDetalhe() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => colabForm.reset()}
-              disabled={salvando || !colabForm.formState.isDirty}
-            >
-              Cancelar
-            </Button>
-            <Button size="sm" onClick={colabForm.handleSubmit(handleSalvar)} disabled={salvando}>
-              <Save className="mr-1 size-3.5" />
-              {salvando ? 'Salvando...' : 'Salvar'}
-            </Button>
           </div>
         }
       />
@@ -674,9 +710,12 @@ export function ColaboradorDetalhe() {
                       name="nome"
                       render={({ field }) => (
                         <FormItem className="col-span-2">
-                          <FormLabel>Nome completo</FormLabel>
+                          <FormLabel className="flex items-center gap-1.5">
+                            Nome completo
+                            <SaveIndicator status={nomeAutoSave.status} error={nomeAutoSave.error} />
+                          </FormLabel>
                           <FormControl>
-                            <Input {...field} />
+                            <Input {...field} onBlur={() => nomeAutoSave.trigger()} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -687,8 +726,14 @@ export function ColaboradorDetalhe() {
                       name="sexo"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Sexo</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <FormLabel className="flex items-center gap-1.5">
+                            Sexo
+                            <SaveIndicator status={sexoAutoSave.status} error={sexoAutoSave.error} />
+                          </FormLabel>
+                          <Select value={field.value} onValueChange={(val) => {
+                            field.onChange(val)
+                            sexoAutoSave.trigger()
+                          }}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Selecione" />
@@ -709,7 +754,11 @@ export function ColaboradorDetalhe() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Setor</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <Select value={field.value} onValueChange={(val) => {
+                            if (val !== field.value) {
+                              setPendingSetorId(val)
+                            }
+                          }}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue />
@@ -732,8 +781,14 @@ export function ColaboradorDetalhe() {
                       name="funcao_id"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Funcao / Posto</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <FormLabel className="flex items-center gap-1.5">
+                            Funcao / Posto
+                            <SaveIndicator status={funcaoAutoSave.status} error={funcaoAutoSave.error} />
+                          </FormLabel>
+                          <Select value={field.value} onValueChange={(val) => {
+                            field.onChange(val)
+                            funcaoAutoSave.trigger()
+                          }}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Sem funcao" />
@@ -757,8 +812,14 @@ export function ColaboradorDetalhe() {
                       name="tipo_contrato_id"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Tipo de Contrato</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <FormLabel className="flex items-center gap-1.5">
+                            Tipo de Contrato
+                            <SaveIndicator status={contratoAutoSave.status} error={contratoAutoSave.error} />
+                          </FormLabel>
+                          <Select value={field.value} onValueChange={(val) => {
+                            field.onChange(val)
+                            contratoAutoSave.trigger()
+                          }}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue />
@@ -801,8 +862,14 @@ export function ColaboradorDetalhe() {
                         name="prefere_turno"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Prefere turno</FormLabel>
-                            <Select value={field.value} onValueChange={field.onChange}>
+                            <FormLabel className="flex items-center gap-1.5">
+                              Prefere turno
+                              <SaveIndicator status={prefereTurnoAutoSave.status} error={prefereTurnoAutoSave.error} />
+                            </FormLabel>
+                            <Select value={field.value} onValueChange={(val) => {
+                              field.onChange(val)
+                              prefereTurnoAutoSave.trigger()
+                            }}>
                               <FormControl>
                                 <SelectTrigger>
                                   <SelectValue />
@@ -823,8 +890,14 @@ export function ColaboradorDetalhe() {
                         name="evitar_dia_semana"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Evitar dia da semana</FormLabel>
-                            <Select value={field.value} onValueChange={field.onChange}>
+                            <FormLabel className="flex items-center gap-1.5">
+                              Evitar dia da semana
+                              <SaveIndicator status={evitarDiaAutoSave.status} error={evitarDiaAutoSave.error} />
+                            </FormLabel>
+                            <Select value={field.value} onValueChange={(val) => {
+                              field.onChange(val)
+                              evitarDiaAutoSave.trigger()
+                            }}>
                               <FormControl>
                                 <SelectTrigger>
                                   <SelectValue />
@@ -867,24 +940,7 @@ export function ColaboradorDetalhe() {
                       <Badge variant="outline" className="text-xs">Configurado</Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setRegraForm(regraFormBaseline)
-                        setRegrasDiaForm(regrasDiaFormBaseline)
-                      }}
-                      disabled={regraSalvando || !hasUnsavedRegraChanges}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button size="sm" onClick={handleSalvarRegra} disabled={regraSalvando}>
-                      <Save className="mr-1 size-3.5" />
-                      {regraSalvando ? 'Salvando...' : 'Salvar Regra'}
-                    </Button>
-                  </div>
+                  <SaveIndicator status={regraSaveStatus} error={regraSaveError} />
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {/* Perfil de horario */}
@@ -918,9 +974,13 @@ export function ColaboradorDetalhe() {
                     <Label className="mb-2 block">Restricao de horario (hard constraint)</Label>
                     <RestricaoRadio
                       value={regraForm.tipo_restricao}
-                      onChange={v => setRegraForm(f => ({ ...f, tipo_restricao: v }))}
+                      onChange={v => {
+                        setRegraForm(f => ({ ...f, tipo_restricao: v }))
+                        autoSaveRegra({ tipo_restricao: v })
+                      }}
                       horario={regraForm.horario}
                       onHorarioChange={v => setRegraForm(f => ({ ...f, horario: v }))}
+                      onHorarioBlur={() => autoSaveRegra({ horario: regraForm.horario })}
                     />
                     <p className="mt-2 text-[0.75rem] text-muted-foreground">
                       Sem restricao = motor decide livremente. Entrada fixa = entrada no horario exato. Saida maxima = nao aloca alem deste horario.
@@ -939,6 +999,7 @@ export function ColaboradorDetalhe() {
                           className="w-16"
                           value={regraForm.domingo_ciclo_trabalho}
                           onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_trabalho: parseInt(e.target.value) || 2 }))}
+                          onBlur={e => autoSaveRegra({ domingo_ciclo_trabalho: parseInt(e.target.value) || 2 })}
                         />
                         <span className="text-xs text-muted-foreground">/</span>
                         <Input
@@ -948,6 +1009,7 @@ export function ColaboradorDetalhe() {
                           className="w-16"
                           value={regraForm.domingo_ciclo_folga}
                           onChange={e => setRegraForm(f => ({ ...f, domingo_ciclo_folga: parseInt(e.target.value) || 1 }))}
+                          onBlur={e => autoSaveRegra({ domingo_ciclo_folga: parseInt(e.target.value) || 1 })}
                         />
                       </div>
                       <p className="text-[0.7rem] text-muted-foreground">
@@ -958,7 +1020,10 @@ export function ColaboradorDetalhe() {
                       <Label className="text-xs">Folga fixa (5x2)</Label>
                       <Select
                         value={regraForm.folga_fixa_dia_semana}
-                        onValueChange={v => setRegraForm(f => ({ ...f, folga_fixa_dia_semana: v }))}
+                        onValueChange={v => {
+                          setRegraForm(f => ({ ...f, folga_fixa_dia_semana: v }))
+                          autoSaveRegra({ folga_fixa_dia_semana: v })
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -977,7 +1042,10 @@ export function ColaboradorDetalhe() {
                       <Label className="text-xs">Folga variavel (cond.)</Label>
                       <Select
                         value={regraForm.folga_variavel_dia_semana}
-                        onValueChange={v => setRegraForm(f => ({ ...f, folga_variavel_dia_semana: v }))}
+                        onValueChange={v => {
+                          setRegraForm(f => ({ ...f, folga_variavel_dia_semana: v }))
+                          autoSaveRegra({ folga_variavel_dia_semana: v })
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -999,7 +1067,10 @@ export function ColaboradorDetalhe() {
                       <Label className="text-xs">Pref. turno (regra)</Label>
                       <Select
                         value={regraForm.preferencia_turno_soft}
-                        onValueChange={v => setRegraForm(f => ({ ...f, preferencia_turno_soft: v }))}
+                        onValueChange={v => {
+                          setRegraForm(f => ({ ...f, preferencia_turno_soft: v }))
+                          autoSaveRegra({ preferencia_turno_soft: v })
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -1029,31 +1100,32 @@ export function ColaboradorDetalhe() {
                             <Switch
                               checked={diaForm.enabled}
                               onCheckedChange={(checked) => {
-                                setRegrasDiaForm(prev => ({
-                                  ...prev,
-                                  [dia.value]: {
-                                    ...prev[dia.value],
-                                    enabled: checked,
-                                    ...(checked
-                                      ? { tipo_restricao: 'entrada' as TipoRestricao }
-                                      : { tipo_restricao: 'nenhum' as TipoRestricao, horario: '' }),
-                                  },
-                                }))
+                                const newDia: RegraDiaForm = {
+                                  ...diaForm,
+                                  enabled: checked,
+                                  ...(checked
+                                    ? { tipo_restricao: 'entrada' as TipoRestricao }
+                                    : { tipo_restricao: 'nenhum' as TipoRestricao, horario: '' }),
+                                }
+                                setRegrasDiaForm(prev => ({ ...prev, [dia.value]: newDia }))
+                                saveDiaRegra(dia.value, newDia)
                               }}
                             />
                             <span className="mt-0.5 w-10 shrink-0 text-sm font-medium">{dia.value}</span>
                             {diaForm.enabled ? (
                               <RestricaoRadio
                                 value={diaForm.tipo_restricao}
-                                onChange={v => setRegrasDiaForm(prev => ({
-                                  ...prev,
-                                  [dia.value]: { ...prev[dia.value], tipo_restricao: v },
-                                }))}
+                                onChange={v => {
+                                  const newDia: RegraDiaForm = { ...diaForm, tipo_restricao: v }
+                                  setRegrasDiaForm(prev => ({ ...prev, [dia.value]: newDia }))
+                                  saveDiaRegra(dia.value, newDia)
+                                }}
                                 horario={diaForm.horario}
                                 onHorarioChange={v => setRegrasDiaForm(prev => ({
                                   ...prev,
                                   [dia.value]: { ...prev[dia.value], horario: v },
                                 }))}
+                                onHorarioBlur={() => saveDiaRegra(dia.value)}
                                 showNenhum={false}
                               />
                             ) : (
@@ -1335,14 +1407,21 @@ export function ColaboradorDetalhe() {
         </DialogContent>
       </Dialog>
 
-      <DirtyGuardDialog
-        blocker={blocker}
-        onSaveAndExit={async () => {
-          return new Promise<void>((resolve, reject) => {
-            colabForm.handleSubmit((data) => handleSalvar(data).then(resolve, reject), () => reject())()
-          })
-        }}
-      />
+      {/* Setor change confirmation dialog */}
+      <AlertDialog open={!!pendingSetorId} onOpenChange={(open) => { if (!open) setPendingSetorId(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mover colaborador?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Mover {colab?.nome} para {setoresList.find(s => String(s.id) === pendingSetorId)?.nome ?? 'outro setor'}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSetorChange}>Mover</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

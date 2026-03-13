@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto'
 import { queryOne, queryAll, execute, insertReturningId, transaction } from '../db/query'
 import { buildEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 import type {
+  GenerationMode,
   SolverInput,
   SolverOutput,
   SolverInputColab,
@@ -22,9 +23,8 @@ import type {
   SolverInputDemandaExcecaoData,
   PinnedCell,
   DiaSemana,
-  RuleConfig,
-  RuleStatus,
 } from '../../shared'
+import { buildEffectiveRulePolicy } from './rule-policy'
 
 const require = createRequire(import.meta.url)
 
@@ -37,6 +37,7 @@ export interface BuildSolverInputOptions {
   hintsEscalaId?: number
   solveMode?: SolveMode
   nivelRigor?: 'ALTO' | 'MEDIO' | 'BAIXO'
+  generationMode?: GenerationMode
   maxTimeSeconds?: number
   /** Override in-memory de regras — sobrescreve empresa+sistema apenas para esta geração */
   rulesOverride?: Record<string, string>
@@ -172,6 +173,10 @@ export async function buildSolverInput(
   pinnedCells?: PinnedCell[],
   options: BuildSolverInputOptions = {},
 ): Promise<SolverInput> {
+  const rulePolicy = await buildEffectiveRulePolicy({
+    generationMode: options.generationMode ?? 'OFFICIAL',
+    rulesOverride: options.rulesOverride,
+  })
   const overrideByColab = new Map<number, RegimeEscalaInput>(
     (options.regimesOverride ?? []).map((o) => [o.colaborador_id, o.regime_escala]),
   )
@@ -513,44 +518,12 @@ export async function buildSolverInput(
       solve_mode: options.solveMode ?? 'rapido',
       ...(options.maxTimeSeconds != null ? { max_time_seconds: options.maxTimeSeconds } : {}),
       num_workers: 8,
+      generation_mode: rulePolicy.generationMode,
+      ...(rulePolicy.adjustments.length > 0 ? { policy_adjustments: rulePolicy.adjustments } : {}),
       nivel_rigor: options.nivelRigor ?? 'ALTO',  // backward compat quando rules ausente
-      rules: await buildRulesConfig(options.rulesOverride),
+      rules: rulePolicy.solverRules,
     },
   }
-}
-
-/**
- * Lê as regras do banco (empresa merged com sistema) e aplica rulesOverride.
- * Retorna um Record<codigo, status> com o estado efetivo para esta geração.
- */
-async function buildRulesConfig(
-  rulesOverride?: Record<string, string>,
-): Promise<RuleConfig> {
-  // Verifica se a tabela existe (pode não existir em DBs muito antigos)
-  const tableCheck = await queryOne<{ c: number }>(
-    "SELECT COUNT(*)::int as c FROM information_schema.tables WHERE table_name = 'regra_definicao'"
-  )
-  const tableExists = (tableCheck?.c ?? 0) > 0
-
-  if (!tableExists) return {}
-
-  const rows = await queryAll<{ codigo: string; status_efetivo: RuleStatus }>(`
-    SELECT rd.codigo, COALESCE(re.status, rd.status_sistema) AS status_efetivo
-    FROM regra_definicao rd
-    LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
-  `)
-
-  if (rows.length === 0) return {}
-
-  const base: RuleConfig = Object.fromEntries(
-    rows.map((r) => [r.codigo, r.status_efetivo]),
-  )
-
-  // Merge: rulesOverride tem prioridade sobre empresa+sistema
-  const overrideCast = Object.fromEntries(
-    Object.entries(rulesOverride ?? {}).map(([k, v]) => [k, v as RuleStatus]),
-  )
-  return { ...base, ...overrideCast }
 }
 
 export function computeSolverScenarioHash(input: SolverInput): string {
@@ -614,6 +587,7 @@ export function computeSolverScenarioHash(input: SolverInput): string {
       .sort((a, b) => `${a.colaborador_id}|${a.data}`.localeCompare(`${b.colaborador_id}|${b.data}`)),
     demanda_excecao_data: [...(input.demanda_excecao_data ?? [])]
       .sort((a, b) => `${a.data}|${a.hora_inicio}`.localeCompare(`${b.data}|${b.hora_inicio}`)),
+    generation_mode: input.config.generation_mode ?? 'OFFICIAL',
     rules: input.config.rules
       ? Object.fromEntries(
           Object.entries(input.config.rules).sort(([a], [b]) => a.localeCompare(b)),

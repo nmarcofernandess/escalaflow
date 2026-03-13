@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Download, ExternalLink, Loader2 } from 'luci
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
@@ -75,6 +76,7 @@ function hasConteudoSetorial(conteudo: EscalaExportContent): boolean {
 }
 
 export function EscalasHub() {
+  const [cicloMode, setCicloMode] = useCicloViewMode()
   const [loadingSetores, setLoadingSetores] = useState(true)
   const [loadingMetaSetores, setLoadingMetaSetores] = useState<Set<number>>(new Set())
   const [loadingEscalas, setLoadingEscalas] = useState<Set<number>>(new Set())
@@ -598,6 +600,9 @@ export function EscalasHub() {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
+                        {selectedEscala && isExpanded && detalhe && (
+                          <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
+                        )}
                         {selectedEscala ? (
                           <>
                             <Button
@@ -646,6 +651,7 @@ export function EscalasHub() {
                             colaboradores={equipeEscala.colaboradores}
                             funcoes={equipeEscala.funcoes}
                             regrasPadrao={regrasPadrao}
+                            viewMode={cicloMode}
                           />
                           {detalhe.comparacao_demanda.length > 0 && (
                             <CoberturaChart

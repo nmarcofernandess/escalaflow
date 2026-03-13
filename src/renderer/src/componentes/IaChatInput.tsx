@@ -24,7 +24,7 @@ type ModelOption = {
 
 const ACCEPTED_MIME_TYPES = new Set([
   'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp',
-  'application/pdf', 'text/plain', 'text/markdown',
+  'application/pdf', 'text/plain', 'text/markdown', 'application/json',
 ])
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 

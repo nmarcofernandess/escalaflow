@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Save, ShieldCheck, Lock, AlertTriangle, RotateCcw, Building2, Pencil, X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ShieldCheck, Lock, AlertTriangle, RotateCcw, Building2, Pencil, X } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -25,9 +25,11 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { PageHeader } from '@/componentes/PageHeader'
+import { SaveIndicator } from '@/componentes/SaveIndicator'
 import { empresaService } from '@/servicos/empresa'
 import { regrasService } from '@/servicos/regras'
 import { useApiData } from '@/hooks/useApiData'
+import { useAutoSave } from '@/hooks/useAutoSave'
 import { toast } from 'sonner'
 import type { Empresa } from '@shared/index'
 import type { RuleDefinition, RuleStatus } from '@shared/index'
@@ -160,11 +162,10 @@ function RegraCategoriaCard({
 }
 
 export function RegrasPagina() {
-  const [salvando, setSalvando] = useState(false)
   const [salvandoRegra, setSalvandoRegra] = useState<string | null>(null)
   const [resetando, setResetando] = useState(false)
   const [deletandoRegra, setDeletandoRegra] = useState<string | null>(null)
-  const { data: empresa } = useApiData<Empresa>(() => empresaService.buscar(), [])
+  const { data: empresa, reload: reloadEmpresa } = useApiData<Empresa>(() => empresaService.buscar(), [])
   const { data: regrasData, reload: reloadRegras } = useApiData<RuleDefinition[]>(
     () => regrasService.listar(),
     [],
@@ -189,32 +190,39 @@ export function RegrasPagina() {
     }
   }, [empresa, form])
 
-  const onSubmit = async (data: RegrasFormData) => {
-    if (!empresa) return
-    setSalvando(true)
-    try {
-      const nextValues: RegrasFormData = {
-        corte_semanal: data.corte_semanal,
-        tolerancia_semanal_min: data.tolerancia_semanal_min,
-        usa_cct_intervalo_reduzido: data.usa_cct_intervalo_reduzido,
-      }
+  // Auto-save: corte_semanal
+  const corteAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = form.getValues('corte_semanal')
+      await empresaService.atualizar({ corte_semanal: val })
+      await reloadEmpresa()
+    }, [form, reloadEmpresa]),
+  })
+
+  // Auto-save: tolerancia_semanal_min
+  const toleranciaAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = Number(form.getValues('tolerancia_semanal_min'))
+      await empresaService.atualizar({ tolerancia_semanal_min: val })
+      await reloadEmpresa()
+    }, [form, reloadEmpresa]),
+    validate: useCallback(() => {
+      const num = Number(form.getValues('tolerancia_semanal_min'))
+      return !isNaN(num) && num >= 0 && num <= 120
+    }, [form]),
+  })
+
+  // Auto-save: usa_cct_intervalo_reduzido
+  const cctAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = form.getValues('usa_cct_intervalo_reduzido')
       await empresaService.atualizar({
-        nome: empresa.nome,
-        cnpj: empresa.cnpj ?? '',
-        telefone: empresa.telefone ?? '',
-        corte_semanal: nextValues.corte_semanal,
-        tolerancia_semanal_min: nextValues.tolerancia_semanal_min,
-        min_intervalo_almoco_min: nextValues.usa_cct_intervalo_reduzido ? 30 : 60,
-        usa_cct_intervalo_reduzido: nextValues.usa_cct_intervalo_reduzido,
+        usa_cct_intervalo_reduzido: val,
+        min_intervalo_almoco_min: val ? 30 : 60,
       })
-      form.reset(nextValues)
-      toast.success('Regras salvas')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
-    } finally {
-      setSalvando(false)
-    }
-  }
+      await reloadEmpresa()
+    }, [form, reloadEmpresa]),
+  })
 
   const handleRegraChange = async (codigo: string, status: string) => {
     setSalvandoRegra(codigo)
@@ -270,137 +278,136 @@ export function RegrasPagina() {
       <PageHeader
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Regras' }]}
         actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetarSistema}
-              disabled={resetando}
-            >
-              <RotateCcw className="mr-1 size-3.5" />
-              {resetando ? 'Restaurando...' : 'Restaurar Padrões'}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => form.reset()}
-              disabled={salvando || !form.formState.isDirty}
-            >
-              Cancelar
-            </Button>
-            <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={salvando}>
-              <Save className="mr-1 size-3.5" />
-              {salvando ? 'Salvando...' : 'Salvar'}
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResetarSistema}
+            disabled={resetando}
+          >
+            <RotateCcw className="mr-1 size-3.5" />
+            {resetando ? 'Restaurando...' : 'Restaurar Padrões'}
+          </Button>
         }
       />
 
       <div className="flex flex-col gap-6 p-6">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Periodo semanal</CardTitle>
-                <CardDescription>
-                  Como o sistema conta as horas da semana para cada colaborador.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                  <FormField
-                    control={form.control}
-                    name="corte_semanal"
-                    render={({ field }) => (
-                      <FormItem className="sm:w-64">
-                        <FormLabel>Semana comeca em</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="SEG_DOM">Segunda</SelectItem>
-                            <SelectItem value="TER_SEG">Terca</SelectItem>
-                            <SelectItem value="QUA_TER">Quarta</SelectItem>
-                            <SelectItem value="QUI_QUA">Quinta</SelectItem>
-                            <SelectItem value="SEX_QUI">Sexta</SelectItem>
-                            <SelectItem value="SAB_SEX">Sabado</SelectItem>
-                            <SelectItem value="DOM_SAB">Domingo</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="tolerancia_semanal_min"
-                    render={({ field }) => (
-                      <FormItem className="sm:w-48">
-                        <FormLabel>Tolerancia (minutos)</FormLabel>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Periodo semanal</CardTitle>
+              <CardDescription>
+                Como o sistema conta as horas da semana para cada colaborador.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+                <FormField
+                  control={form.control}
+                  name="corte_semanal"
+                  render={({ field }) => (
+                    <FormItem className="sm:w-64">
+                      <FormLabel className="flex items-center gap-1.5">
+                        Semana comeca em
+                        <SaveIndicator status={corteAutoSave.status} error={corteAutoSave.error} />
+                      </FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={(val) => {
+                          field.onChange(val)
+                          corteAutoSave.trigger()
+                        }}
+                      >
                         <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={120}
-                            placeholder="30"
-                            value={typeof field.value === 'number' ? field.value : ''}
-                            onChange={(e) =>
-                              field.onChange(
-                                e.target.value === '' ? '' : Number(e.target.value),
-                              )
-                            }
-                            onBlur={field.onBlur}
-                            name={field.name}
-                            ref={field.ref}
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="SEG_DOM">Segunda</SelectItem>
+                          <SelectItem value="TER_SEG">Terca</SelectItem>
+                          <SelectItem value="QUA_TER">Quarta</SelectItem>
+                          <SelectItem value="QUI_QUA">Quinta</SelectItem>
+                          <SelectItem value="SEX_QUI">Sexta</SelectItem>
+                          <SelectItem value="SAB_SEX">Sabado</SelectItem>
+                          <SelectItem value="DOM_SAB">Domingo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="tolerancia_semanal_min"
+                  render={({ field }) => (
+                    <FormItem className="sm:w-48">
+                      <FormLabel className="flex items-center gap-1.5">
+                        Tolerancia (minutos)
+                        <SaveIndicator status={toleranciaAutoSave.status} error={toleranciaAutoSave.error} />
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={120}
+                          placeholder="30"
+                          value={typeof field.value === 'number' ? field.value : ''}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value === '' ? '' : Number(e.target.value),
+                            )
+                          }
+                          onBlur={() => toleranciaAutoSave.trigger()}
+                          name={field.name}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Separator />
+
+              <div>
+                <h4 className="mb-1 text-sm font-medium">Intervalo de almoco</h4>
+                <p className="mb-4 text-sm text-muted-foreground">
+                  A CCT do comercio autoriza reducao do almoco para 30 minutos com acordo escrito.
+                </p>
+                <FormField
+                  control={form.control}
+                  name="usa_cct_intervalo_reduzido"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center gap-3 rounded-lg border p-4">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={(val) => {
+                              field.onChange(val)
+                              cctAutoSave.trigger()
+                            }}
                           />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <Separator />
-
-                <div>
-                  <h4 className="mb-1 text-sm font-medium">Intervalo de almoco</h4>
-                  <p className="mb-4 text-sm text-muted-foreground">
-                    A CCT do comercio autoriza reducao do almoco para 30 minutos com acordo escrito.
-                  </p>
-                  <FormField
-                    control={form.control}
-                    name="usa_cct_intervalo_reduzido"
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center gap-3 rounded-lg border p-4">
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <div>
-                            <FormLabel className="text-sm font-medium">
-                              Usar regra da Convencao Coletiva (CCT)
-                            </FormLabel>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {field.value
-                                ? 'Almoco minimo: 30 minutos (CCT FecomercioSP)'
-                                : 'Almoco minimo: 1 hora (CLT Art. 71)'}
-                            </p>
-                          </div>
+                        <div>
+                          <FormLabel className="flex items-center gap-1.5 text-sm font-medium">
+                            Usar regra da Convencao Coletiva (CCT)
+                            <SaveIndicator status={cctAutoSave.status} error={cctAutoSave.error} />
+                          </FormLabel>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {field.value
+                              ? 'Almoco minimo: 30 minutos (CCT FecomercioSP)'
+                              : 'Almoco minimo: 1 hora (CLT Art. 71)'}
+                          </p>
                         </div>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </form>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
         </Form>
 
         {regrasData && regrasData.length > 0 && (

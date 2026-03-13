@@ -1,7 +1,52 @@
 import { execute, queryOne, transaction } from '../db/query'
-import type { SolverOutput } from '../../shared'
+import type { EscalaCompletaV3, SolverOutput } from '../../shared'
 import type { EscalaSimulacaoConfig } from '../preflight-capacity'
 import { buildEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
+
+export async function persistirResumoAutoritativoEscala(
+  escalaId: number,
+  validacao: Pick<EscalaCompletaV3, 'indicadores' | 'comparacao_demanda'>,
+): Promise<void> {
+  const indicadores = validacao.indicadores
+  const comparacao = validacao.comparacao_demanda ?? []
+  if (!indicadores) throw new Error('Validacao sem indicadores para persistencia autoritativa')
+
+  await transaction(async () => {
+    await execute('DELETE FROM escala_comparacao_demanda WHERE escala_id = ?', escalaId)
+
+    for (const c of comparacao) {
+      await execute(
+        `
+        INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        escalaId,
+        c.data,
+        c.hora_inicio,
+        c.hora_fim,
+        c.planejado,
+        c.executado,
+        c.delta,
+        c.override ?? false,
+        c.justificativa ?? null,
+      )
+    }
+
+    await execute(
+      `
+      UPDATE escalas
+      SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?
+      WHERE id = ?
+    `,
+      indicadores.pontuacao,
+      indicadores.cobertura_percent,
+      indicadores.violacoes_hard,
+      indicadores.violacoes_soft,
+      indicadores.equilibrio,
+      escalaId,
+    )
+  })
+}
 
 export async function persistirAjusteResult(
   escalaId: number,

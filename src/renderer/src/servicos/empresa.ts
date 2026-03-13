@@ -1,9 +1,8 @@
 import { client } from './client'
 import type { Empresa, EmpresaHorarioSemana } from '@shared/index'
 
-type AtualizarEmpresaInput = Pick<
-  Empresa,
-  'nome' | 'cnpj' | 'telefone' | 'corte_semanal' | 'tolerancia_semanal_min'
+type AtualizarEmpresaInput = Partial<
+  Pick<Empresa, 'nome' | 'cnpj' | 'telefone' | 'corte_semanal' | 'tolerancia_semanal_min'>
 > & {
   min_intervalo_almoco_min?: number
   usa_cct_intervalo_reduzido?: boolean

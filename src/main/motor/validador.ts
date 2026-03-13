@@ -1,5 +1,6 @@
 import { queryOne, queryAll } from '../db/query'
 import { parseEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
+import { buildEffectiveRulePolicy } from './rule-policy'
 import type {
   EscalaCompletaV3, Alocacao, Escala, Setor, Demanda, Feriado,
   SetorHorarioSemana, Empresa, AntipatternViolacao, DecisaoMotor,
@@ -81,24 +82,8 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
 
   if (!escala) throw new Error(`Escala ${escalaId} não encontrada`)
 
-  // ── Ler regras efetivas (empresa merged com sistema) ───────────────────────
-  const rulesRows = await (async () => {
-    try {
-      const tableCheck = await queryOne<{ c: number }>(
-        "SELECT COUNT(*)::int as c FROM information_schema.tables WHERE table_name = 'regra_definicao'"
-      )
-      const tableExists = (tableCheck?.c ?? 0) > 0
-      if (!tableExists) return []
-      return await queryAll<{ codigo: string; status_efetivo: string }>(`
-        SELECT rd.codigo, COALESCE(re.status, rd.status_sistema) AS status_efetivo
-        FROM regra_definicao rd
-        LEFT JOIN regra_empresa re ON rd.codigo = re.codigo
-      `)
-    } catch {
-      return []
-    }
-  })()
-  const rules: Record<string, string> = Object.fromEntries(rulesRows.map(r => [r.codigo, r.status_efetivo]))
+  const rulePolicy = await buildEffectiveRulePolicy({ generationMode: 'OFFICIAL' })
+  const rules = rulePolicy.validatorRules
 
   const ruleIs = (codigo: string, defaultStatus = 'ON'): string => {
     return rules[codigo] ?? defaultStatus
@@ -331,6 +316,7 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     tolerancia_min: empresa.tolerancia_semanal_min ?? 0,
     empresa,
     corte_semanal: corteSemanal,
+    rules,
   }
 
   const violacoes = validarTudoV3(validarParams)

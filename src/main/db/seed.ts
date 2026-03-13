@@ -14,7 +14,7 @@ const PALETA_CORES = [
 // SEED — Dados de SISTEMA (versionado no git)
 // ============================================================================
 
-export async function seedData(): Promise<void> {
+export async function seedCoreData(): Promise<void> {
   // -- 1. Tipos de Contrato --
   // Checa por CLT 44h (não usa COUNT(*) pois migration v17 pode já ter criado Intermitente)
   const clt44 = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'CLT 44h'`)
@@ -101,6 +101,12 @@ export async function seedData(): Promise<void> {
     })
     console.log(`[SEED] ${funcoesSemCor.length} funcoes atualizadas com cor_hex`)
   }
+
+  console.log('[SEED] Seed core concluido')
+}
+
+export async function seedData(): Promise<void> {
+  await seedCoreData()
 
   // -- 6. Knowledge base seed (docs de sistema) --
   await seedKnowledgeBase()

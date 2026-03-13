@@ -22,13 +22,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
@@ -37,6 +30,7 @@ import { ResumoFolgas } from '@/componentes/ResumoFolgas'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { EscalaTimelineDiaria } from '@/componentes/EscalaTimelineDiaria'
 import { EscalaViewToggle, useEscalaViewMode } from '@/componentes/EscalaViewToggle'
+import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
 import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { StatusBadge } from '@/componentes/StatusBadge'
@@ -304,6 +298,7 @@ export function EscalaPagina() {
   }, [regrasPadrao])
 
   const [timelineViewMode, setTimelineViewMode] = useEscalaViewMode()
+  const [cicloMode, setCicloMode] = useCicloViewMode()
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [loading, setLoading] = useState(true)
   const [exportOpen, setExportOpen] = useState(false)
@@ -333,7 +328,7 @@ export function EscalaPagina() {
     return undefined
   }, [location.search])
 
-  // Load most recent escala (RASCUNHO primeiro, depois OFICIAL)
+  // Load most recent escala (a mais recente por criada_em, independente de status)
   useEffect(() => {
     void loadEscala()
   }, [setorId, escalaIdParam]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -350,17 +345,11 @@ export function EscalaPagina() {
           // Fallback para comportamento padrao quando query param estiver invalido
         }
       }
-      // Tentar rascunho primeiro
-      const rascunhos = await escalasService.listarPorSetor(setorId, { status: 'RASCUNHO' })
-      if (rascunhos.length > 0) {
-        const detail = await escalasService.buscar(rascunhos[0].id)
-        setEscalaCompleta(detail)
-        return
-      }
-      // Senão, oficial
-      const oficiais = await escalasService.listarPorSetor(setorId, { status: 'OFICIAL' })
-      if (oficiais.length > 0) {
-        const detail = await escalasService.buscar(oficiais[0].id)
+      // Buscar todas e pegar a mais recente por criada_em
+      const todas = await escalasService.listarPorSetor(setorId)
+      if (todas.length > 0) {
+        const maisRecente = [...todas].sort((a, b) => b.criada_em.localeCompare(a.criada_em))[0]
+        const detail = await escalasService.buscar(maisRecente.id)
         setEscalaCompleta(detail)
         return
       }
@@ -395,6 +384,11 @@ export function EscalaPagina() {
     return `historico:${id}`
   }, [escalaCompleta])
 
+  type EscalaTab = 'simulacao' | 'oficial' | 'historico'
+  const escalaTab: EscalaTab =
+    escalaSelecionadaValor?.startsWith('historico:') ? 'historico' :
+    (escalaSelecionadaValor as EscalaTab) ?? 'simulacao'
+
   const setoresComEscala = useMemo(() => new Set((resumoPorSetor ?? []).map((s) => s.setor_id)), [resumoPorSetor])
   const outrosSetores = useMemo(
     () => (setores ?? []).filter((s) => s.id !== setorId && setoresComEscala.has(s.id)),
@@ -408,6 +402,7 @@ export function EscalaPagina() {
     () => resolveEscalaEquipe(escalaCompleta, colaboradores ?? [], funcoes ?? []),
     [colaboradores, escalaCompleta, funcoes],
   )
+
   const domingosTrabalhadosPorColab = useMemo(() => {
     const map = new Map<number, number>()
     if (!escalaCompleta) return map
@@ -708,31 +703,64 @@ export function EscalaPagina() {
             {/* Header com info + controles */}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex flex-wrap items-center gap-3">
-                <Select
-                  value={escalaSelecionadaValor ?? ''}
-                  onValueChange={handleTrocarEscala}
-                >
-                  <SelectTrigger className="h-9 w-auto min-w-[260px] max-w-[340px]">
-                    <SelectValue placeholder="Selecionar escala" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="simulacao" disabled={!escalaRascunho}>
-                      {escalaRascunho
-                        ? `Simulacao (${formatarData(escalaRascunho.data_inicio)} — ${formatarData(escalaRascunho.data_fim)})`
-                        : 'Simulacao'}
-                    </SelectItem>
-                    <SelectItem value="oficial" disabled={!escalaOficialAtual}>
-                      {escalaOficialAtual
-                        ? `Oficial (${formatarData(escalaOficialAtual.data_inicio)} — ${formatarData(escalaOficialAtual.data_fim)})`
-                        : 'Oficial'}
-                    </SelectItem>
-                    {escalasHistorico.map((escala) => (
-                      <SelectItem key={escala.id} value={`historico:${escala.id}`}>
-                        Historico ({formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="inline-flex rounded-lg border bg-muted p-0.5">
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      escalaTab === 'simulacao'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                      !escalaRascunho && 'pointer-events-none opacity-40',
+                    )}
+                    onClick={() => handleTrocarEscala('simulacao')}
+                    disabled={!escalaRascunho}
+                  >
+                    Simulacao
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      escalaTab === 'oficial'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                      !escalaOficialAtual && 'pointer-events-none opacity-40',
+                    )}
+                    onClick={() => handleTrocarEscala('oficial')}
+                    disabled={!escalaOficialAtual}
+                  >
+                    Oficial
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                          escalaTab === 'historico'
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground',
+                          escalasHistorico.length === 0 && 'pointer-events-none opacity-40',
+                        )}
+                        disabled={escalasHistorico.length === 0}
+                      >
+                        Historico
+                        <ChevronDown className="size-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {escalasHistorico.map((escala) => (
+                        <DropdownMenuItem
+                          key={escala.id}
+                          onClick={() => handleTrocarEscala(`historico:${escala.id}`)}
+                        >
+                          {formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={escalaCompleta.escala.status as 'OFICIAL' | 'RASCUNHO'} />
                 </div>
@@ -941,10 +969,13 @@ export function EscalaPagina() {
                   <Card>
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between gap-2">
-                        <CardTitle className="text-base font-semibold">Ciclo Rotativo</CardTitle>
-                        <Badge variant="outline" className={violacoesCount > 0 ? 'border-warning/20 text-warning' : 'border-success/20 text-success'}>
-                          {violacoesCount > 0 ? `${violacoesCount} aviso(s)` : 'Sem avisos relevantes'}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base font-semibold">Ciclo Rotativo</CardTitle>
+                          <Badge variant="outline" className={violacoesCount > 0 ? 'border-warning/20 text-warning' : 'border-success/20 text-success'}>
+                            {violacoesCount > 0 ? `${violacoesCount} aviso(s)` : 'Sem avisos relevantes'}
+                          </Badge>
+                        </div>
+                        <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -954,6 +985,7 @@ export function EscalaPagina() {
                         colaboradores={equipeEscala.colaboradores}
                         funcoes={equipeEscala.funcoes}
                         regrasPadrao={regrasPadrao ?? []}
+                        viewMode={cicloMode}
                       />
                     </CardContent>
                   </Card>

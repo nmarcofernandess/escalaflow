@@ -14,7 +14,6 @@ import type { DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  Save,
   GripVertical,
   ChevronDown,
   Users,
@@ -82,16 +81,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/componentes/PageHeader'
-import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
-import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { SaveIndicator } from '@/componentes/SaveIndicator'
+import { useAutoSave } from '@/hooks/useAutoSave'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
+import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { IconPicker } from '@/componentes/IconPicker'
@@ -129,7 +136,6 @@ import {
   Funcao,
   Excecao,
   SetorHorarioSemana,
-  SalvarTimelineDiaInput,
   RegraHorarioColaborador,
   inferFolgasFromAlocacoes,
 } from '@shared/index'
@@ -341,13 +347,10 @@ export function SetorDetalhe() {
   const navigate = useNavigate()
 
   // Form
-  const [salvando, setSalvando] = useState(false)
   const setorForm = useForm<SetorFormInput, unknown, SetorFormData>({
     resolver: zodResolver(setorSchema),
     defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '', regime_escala: '5X2' },
   })
-
-  const blocker = useDirtyGuard({ isDirty: setorForm.formState.isDirty })
 
   // ─── Data loading ────────────────────────────────────────────────────
   const { data: setor, loading: loadingSetor } = useApiData<Setor>(
@@ -436,6 +439,7 @@ export function SetorDetalhe() {
   // Geracao inline — seletor unificado: simulacao | oficial | historico:${id}
   const [escalaSelecionada, setEscalaSelecionada] = useState<string>('simulacao')
   const [periodoPreset, setPeriodoPreset] = useState<EscalaPeriodoPreset>('3_MESES')
+  const [cicloMode, setCicloMode] = useCicloViewMode()
   const [gerando, setGerando] = useState(false)
   const [solverLogs, setSolverLogs] = useState<string[]>([])
   const [solverElapsed, setSolverElapsed] = useState(0)
@@ -448,7 +452,11 @@ export function SetorDetalhe() {
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
   const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
-  const [solveModeGeracao, setSolveModeGeracao] = useState<'rapido' | 'balanceado' | 'otimizado' | 'maximo'>('rapido')
+  const [solverConfigOpen, setSolverConfigOpen] = useState(false)
+  const [solverSessionConfig, setSolverSessionConfig] = useState<SolverSessionConfig>({
+    solveMode: 'rapido',
+    rulesOverride: {},
+  })
   const [exportOpen, setExportOpen] = useState(false)
   const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
     ciclo: true,
@@ -890,6 +898,17 @@ export function SetorDetalhe() {
     return escalasOrdenadas.filter((escala) => escala.status !== 'RASCUNHO' && escala.id !== oficialAtualId)
   }, [escalaOficialAtual?.id, escalasOrdenadas])
 
+  type EscalaTab = 'simulacao' | 'oficial' | 'historico'
+
+  const escalaTab: EscalaTab = escalaSelecionada.startsWith('historico:')
+    ? 'historico'
+    : (escalaSelecionada as EscalaTab)
+
+  const activeEscalaCompleta: EscalaCompletaV3 | null =
+    escalaTab === 'simulacao' ? escalaCompleta :
+    escalaTab === 'oficial' ? oficialCompleta :
+    historicoCompleta
+
   const exportColaboradoresBase = useMemo(() => {
     if (orderedColabs.length > 0) return orderedColabs
     return colaboradores ?? []
@@ -1032,33 +1051,43 @@ export function SetorDetalhe() {
   }, [carregarDetalheEscala, escalaOficialAtual, escalaSelecionada, historicoSelecionadaId, oficialCompleta?.escala.id])
 
   // ─── Handlers ────────────────────────────────────────────────────────
-  const handleSalvar = async (data: SetorFormData) => {
-    setSalvando(true)
-    try {
-      const nextValues: SetorFormInput = {
-        nome: data.nome.trim(),
-        icone: data.icone ?? null,
-        hora_abertura: data.hora_abertura,
-        hora_fechamento: data.hora_fechamento,
-        regime_escala: data.regime_escala,
-      }
-      await setoresService.atualizar(setorId, nextValues)
-      setorForm.reset(nextValues)
-      toast.success('Setor atualizado')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar setor')
-    } finally {
-      setSalvando(false)
-    }
-  }
+  // Auto-save helpers
+  const saveField = useCallback(async (fields: Partial<SetorFormInput>) => {
+    await setoresService.atualizar(setorId, fields)
+  }, [setorId])
 
-  const handleSalvarTimeline = useCallback(async (dados: SalvarTimelineDiaInput[]): Promise<void> => {
-    for (const payload of dados) {
-      await setoresService.salvarTimelineDia(payload)
-    }
-    await Promise.all([reloadDemandas(), reloadHorariosSemana()])
-    toast.success('Demanda salva')
-  }, [reloadDemandas, reloadHorariosSemana])
+  const nomeAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = setorForm.getValues('nome').trim()
+      if (!val) throw new Error('Nome e obrigatorio')
+      await saveField({ nome: val })
+    }, [setorForm, saveField]),
+    validate: useCallback(() => setorForm.getValues('nome').trim().length > 0, [setorForm]),
+  })
+
+  const iconeAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      await saveField({ icone: setorForm.getValues('icone') ?? null })
+    }, [setorForm, saveField]),
+  })
+
+  const horaAberturaAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      await saveField({ hora_abertura: setorForm.getValues('hora_abertura') })
+    }, [setorForm, saveField]),
+  })
+
+  const horaFechamentoAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      await saveField({ hora_fechamento: setorForm.getValues('hora_fechamento') })
+    }, [setorForm, saveField]),
+  })
+
+  const regimeAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      await saveField({ regime_escala: setorForm.getValues('regime_escala') })
+    }, [setorForm, saveField]),
+  })
 
   const handleSalvarExcDemanda = async () => {
     if (!excDemandaForm.data || !excDemandaForm.hora_inicio || !excDemandaForm.hora_fim) {
@@ -1135,10 +1164,15 @@ export function SetorDetalhe() {
     setSolverLogs([])
     setGerando(true)
     try {
+      const rulesOverride = Object.keys(solverSessionConfig.rulesOverride).length > 0
+        ? solverSessionConfig.rulesOverride
+        : undefined
       const result = await escalasService.gerar(setorId, {
         data_inicio: dataInicio,
         data_fim: dataFim,
-        solveMode: solveModeGeracao,
+        solveMode: solverSessionConfig.solveMode,
+        maxTimeSeconds: solverSessionConfig.maxTimeSeconds,
+        rulesOverride,
       })
       setEscalaCompleta(result)
       toast.success('Escala gerada')
@@ -1160,6 +1194,7 @@ export function SetorDetalhe() {
       const detalheOficial = await escalasService.buscar(escalaCompleta.escala.id)
       await Promise.all([reloadEscalas(), reloadRegrasPadrao()])
       setOficialCompleta(detalheOficial)
+      setEscalaSelecionada('oficial')
       toast.success('Escala oficializada')
       setEscalaCompleta(null)
     } catch (err) {
@@ -1421,14 +1456,19 @@ export function SetorDetalhe() {
     )
   }
 
-  // Auto-load rascunho existente
+  // Auto-load escala mais recente (por criada_em, independente de status)
   useEffect(() => {
-    if (!escalas?.length) return
-    const rascunho = [...escalas]
-      .filter((e) => e.status === 'RASCUNHO')
-      .sort((a, b) => b.criada_em.localeCompare(a.criada_em))[0]
-    if (rascunho && !escalaCompleta) {
-      escalasService.buscar(rascunho.id).then(setEscalaCompleta).catch(() => {})
+    if (!escalas?.length || escalaCompleta) return
+    const maisRecente = [...escalas].sort((a, b) => b.criada_em.localeCompare(a.criada_em))[0]
+    if (!maisRecente) return
+    const valor = maisRecente.status === 'RASCUNHO'
+      ? 'simulacao'
+      : maisRecente.status === 'OFICIAL'
+        ? 'oficial'
+        : `historico:${maisRecente.id}`
+    setEscalaSelecionada(valor)
+    if (maisRecente.status === 'RASCUNHO') {
+      escalasService.buscar(maisRecente.id).then(setEscalaCompleta).catch(() => {})
     }
   }, [escalas]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1630,19 +1670,6 @@ export function SetorDetalhe() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setorForm.reset()}
-              disabled={salvando || !setorForm.formState.isDirty}
-            >
-              Cancelar
-            </Button>
-            <Button size="sm" onClick={setorForm.handleSubmit(handleSalvar)} disabled={salvando}>
-              <Save className="mr-1 size-3.5" />
-              {salvando ? 'Salvando...' : 'Salvar'}
-            </Button>
           </div>
         }
       />
@@ -1662,14 +1689,20 @@ export function SetorDetalhe() {
                 name="nome"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Nome</FormLabel>
+                    <FormLabel className="flex items-center gap-1.5">
+                      Nome
+                      <SaveIndicator status={nomeAutoSave.status} error={nomeAutoSave.error} />
+                    </FormLabel>
                     <div className="flex gap-2">
                       <IconPicker
                         value={setorForm.watch('icone') ?? null}
-                        onChange={(v) => setorForm.setValue('icone', v)}
+                        onChange={(v) => {
+                          setorForm.setValue('icone', v)
+                          iconeAutoSave.trigger()
+                        }}
                       />
                       <FormControl>
-                        <Input {...field} />
+                        <Input {...field} onBlur={() => nomeAutoSave.trigger()} />
                       </FormControl>
                     </div>
                     <FormMessage />
@@ -1682,9 +1715,12 @@ export function SetorDetalhe() {
                   name="hora_abertura"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Hora de Abertura</FormLabel>
+                      <FormLabel className="flex items-center gap-1.5">
+                        Hora de Abertura
+                        <SaveIndicator status={horaAberturaAutoSave.status} error={horaAberturaAutoSave.error} />
+                      </FormLabel>
                       <FormControl>
-                        <Input type="time" {...field} />
+                        <Input type="time" {...field} onBlur={() => horaAberturaAutoSave.trigger()} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1695,9 +1731,12 @@ export function SetorDetalhe() {
                   name="hora_fechamento"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Hora de Fechamento</FormLabel>
+                      <FormLabel className="flex items-center gap-1.5">
+                        Hora de Fechamento
+                        <SaveIndicator status={horaFechamentoAutoSave.status} error={horaFechamentoAutoSave.error} />
+                      </FormLabel>
                       <FormControl>
-                        <Input type="time" {...field} />
+                        <Input type="time" {...field} onBlur={() => horaFechamentoAutoSave.trigger()} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1708,8 +1747,14 @@ export function SetorDetalhe() {
                   name="regime_escala"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Regime Padrao</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <FormLabel className="flex items-center gap-1.5">
+                        Regime Padrao
+                        <SaveIndicator status={regimeAutoSave.status} error={regimeAutoSave.error} />
+                      </FormLabel>
+                      <Select value={field.value} onValueChange={(val) => {
+                        field.onChange(val)
+                        regimeAutoSave.trigger()
+                      }}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />
@@ -2128,44 +2173,94 @@ export function SetorDetalhe() {
                   demandas={demandas ?? []}
                   horariosSemana={horariosSemana ?? []}
                   totalColaboradores={colaboradores?.length ?? 0}
-                  onSalvar={handleSalvarTimeline}
                 />
               </CardContent>
             </Card>
 
           <Card>
             <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Escala</CardTitle>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle className="text-base font-semibold">Escala</CardTitle>
-                <Select
-                  value={escalaSelecionada}
-                  onValueChange={setEscalaSelecionada}
-                >
-                  <SelectTrigger className="h-8 w-auto min-w-[240px] max-w-[320px]">
-                    <SelectValue placeholder="Selecionar escala" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="simulacao">
-                      {escalaCompleta
-                        ? `Simulacao (${formatarData(escalaCompleta.escala.data_inicio)} — ${formatarData(escalaCompleta.escala.data_fim)})`
-                        : 'Simulacao'}
-                    </SelectItem>
-                    <SelectItem value="oficial" disabled={!escalaOficialAtual}>
-                      {escalaOficialAtual
-                        ? `Oficial (${formatarData(escalaOficialAtual.data_inicio)} — ${formatarData(escalaOficialAtual.data_fim)})`
-                        : 'Oficial'}
-                    </SelectItem>
-                    {escalasHistorico.map((escala) => (
-                      <SelectItem key={escala.id} value={`historico:${escala.id}`}>
-                        Historico ({formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Tab toggle pills */}
+                <div className="inline-flex rounded-lg border bg-muted p-0.5">
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      escalaTab === 'simulacao'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                    onClick={() => setEscalaSelecionada('simulacao')}
+                  >
+                    Simulacao
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      escalaTab === 'oficial'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                      !escalaOficialAtual && 'pointer-events-none opacity-40',
+                    )}
+                    onClick={() => setEscalaSelecionada('oficial')}
+                    disabled={!escalaOficialAtual}
+                  >
+                    Oficial
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                          escalaTab === 'historico'
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground',
+                          escalasHistorico.length === 0 && 'pointer-events-none opacity-40',
+                        )}
+                        disabled={escalasHistorico.length === 0}
+                      >
+                        Historico
+                        <ChevronDown className="size-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {escalasHistorico.map((escala) => (
+                        <DropdownMenuItem
+                          key={escala.id}
+                          onClick={() => setEscalaSelecionada(`historico:${escala.id}`)}
+                        >
+                          {formatarData(escala.data_inicio)} — {formatarData(escala.data_fim)}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Action buttons (consolidated) */}
+                {activeEscalaCompleta && (
+                  <div className="flex items-center gap-2">
+                    <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => abrirModalExportacao(activeEscalaCompleta)}
+                    >
+                      Exportar
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to={`/setores/${setorId}/escala?escalaId=${activeEscalaCompleta.escala.id}&origem=${escalaTab}`}>
+                        Ver completo
+                      </Link>
+                    </Button>
+                  </div>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {escalaSelecionada === 'simulacao' && (
+              {escalaTab === 'simulacao' && (
                 <div className="space-y-4">
                   <div className="space-y-2 rounded-md border p-3">
                     <p className="text-xs font-medium text-muted-foreground">Periodo para proxima geracao</p>
@@ -2188,39 +2283,21 @@ export function SetorDetalhe() {
                         </SelectContent>
                       </Select>
 
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" size="sm" className="gap-1.5">
-                            <SlidersHorizontal className="size-3.5" />
-                            Configurar
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="start" className="w-80 space-y-3">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">Configuracao de geracao</p>
-                            <p className="text-xs text-muted-foreground">
-                              Defina a estrategia do solver para a geracao desta simulacao.
-                            </p>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Estrategia</Label>
-                            <Select
-                              value={solveModeGeracao}
-                              onValueChange={(v) => setSolveModeGeracao(v as 'rapido' | 'balanceado' | 'otimizado' | 'maximo')}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="rapido">Rapido</SelectItem>
-                                <SelectItem value="balanceado">Balanceado</SelectItem>
-                                <SelectItem value="otimizado">Otimizado</SelectItem>
-                                <SelectItem value="maximo">Maximo</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setSolverConfigOpen(true)}
+                      >
+                        <SlidersHorizontal className="size-3.5" />
+                        Configurar
+                        <span className="text-xs text-muted-foreground">
+                          {solverSessionConfig.solveMode}
+                          {Object.keys(solverSessionConfig.rulesOverride).length > 0
+                            ? ` • ${Object.keys(solverSessionConfig.rulesOverride).length} regras`
+                            : ''}
+                        </span>
+                      </Button>
 
                       <Button
                         size="sm"
@@ -2262,39 +2339,26 @@ export function SetorDetalhe() {
                   </div>
 
                   {escalaCompleta ? (
-                    <div className="space-y-3 rounded-md border p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold">Ciclo Rotativo</p>
-                          <StatusBadge status="RASCUNHO" />
-                          <Badge variant="outline" className={cn(
-                            escalaCompleta.violacoes.length > 0 ? 'border-warning/20 text-warning' : 'border-success/20 text-success',
-                          )}>
-                            {escalaCompleta.violacoes.length > 0 ? `${escalaCompleta.violacoes.length} aviso(s)` : 'Sem avisos relevantes'}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => abrirModalExportacao(escalaCompleta)}
-                          >
-                            Exportar
-                          </Button>
-                          <Button variant="outline" size="sm" asChild>
-                            <Link to={`/setores/${setorId}/escala?escalaId=${escalaCompleta.escala.id}&origem=simulacao`}>Ver completo</Link>
-                          </Button>
-                        </div>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">Ciclo Rotativo</p>
+                        <StatusBadge status="RASCUNHO" />
+                        <Badge variant="outline" className={cn(
+                          escalaCompleta.violacoes.length > 0 ? 'border-warning/20 text-warning' : 'border-success/20 text-success',
+                        )}>
+                          {escalaCompleta.violacoes.length > 0 ? `${escalaCompleta.violacoes.length} aviso(s)` : 'Sem avisos relevantes'}
+                        </Badge>
+                        {escalaCompleta.escala.criada_em && (
+                          <span className="text-xs text-muted-foreground">Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}</span>
+                        )}
                       </div>
-                      {escalaCompleta.escala.criada_em && (
-                        <p className="text-xs text-muted-foreground">Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}</p>
-                      )}
                       <EscalaCicloResumo
                         escala={escalaCompleta.escala}
                         alocacoes={escalaCompleta.alocacoes}
                         colaboradores={equipeEscalaSimulacao.colaboradores}
                         funcoes={equipeEscalaSimulacao.funcoes}
                         regrasPadrao={regrasPadrao ?? []}
+                        viewMode={cicloMode}
                       />
                       {escalaCompleta.comparacao_demanda.length > 0 && (
                         <CoberturaChart
@@ -2348,7 +2412,7 @@ export function SetorDetalhe() {
                 </div>
               )}
 
-              {escalaSelecionada === 'oficial' && (
+              {escalaTab === 'oficial' && (
                 <div className="space-y-4">
                   {!escalaOficialAtual ? (
                     <div className="rounded-lg border border-dashed px-4 py-5">
@@ -2365,34 +2429,21 @@ export function SetorDetalhe() {
                       <Loader2 className="size-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : oficialCompleta ? (
-                    <div className="space-y-3 rounded-md border p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold">Ciclo Rotativo</p>
-                          <StatusBadge status="OFICIAL" />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => abrirModalExportacao(oficialCompleta)}
-                          >
-                            Exportar
-                          </Button>
-                          <Button variant="outline" size="sm" asChild>
-                            <Link to={`/setores/${setorId}/escala?escalaId=${oficialCompleta.escala.id}&origem=oficial`}>Ver completo</Link>
-                          </Button>
-                        </div>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">Ciclo Rotativo</p>
+                        <StatusBadge status="OFICIAL" />
+                        {oficialCompleta.escala.criada_em && (
+                          <span className="text-xs text-muted-foreground">Gerado em {formatarDataHora(oficialCompleta.escala.criada_em)}</span>
+                        )}
                       </div>
-                      {oficialCompleta.escala.criada_em && (
-                        <p className="text-xs text-muted-foreground">Gerado em {formatarDataHora(oficialCompleta.escala.criada_em)}</p>
-                      )}
                       <EscalaCicloResumo
                         escala={oficialCompleta.escala}
                         alocacoes={oficialCompleta.alocacoes}
                         colaboradores={equipeEscalaOficial.colaboradores}
                         funcoes={equipeEscalaOficial.funcoes}
                         regrasPadrao={regrasPadrao ?? []}
+                        viewMode={cicloMode}
                       />
                       {oficialCompleta.comparacao_demanda.length > 0 && (
                         <CoberturaChart
@@ -2406,7 +2457,7 @@ export function SetorDetalhe() {
                 </div>
               )}
 
-              {escalaSelecionada.startsWith('historico:') && (
+              {escalaTab === 'historico' && (
                 <div className="space-y-4">
                   {escalasHistorico.length === 0 ? (
                     <div className="rounded-lg border border-dashed px-4 py-5">
@@ -2425,36 +2476,23 @@ export function SetorDetalhe() {
                           <Loader2 className="size-5 animate-spin text-muted-foreground" />
                         </div>
                       ) : historicoCompleta ? (
-                        <div className="space-y-3 rounded-md border p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold">Ciclo Rotativo</p>
-                              <Badge variant="outline" className="text-xs">
-                                {historicoCompleta.escala.status}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => abrirModalExportacao(historicoCompleta)}
-                              >
-                                Exportar
-                              </Button>
-                              <Button variant="outline" size="sm" asChild>
-                                <Link to={`/setores/${setorId}/escala?escalaId=${historicoCompleta.escala.id}&origem=historico`}>Ver completo</Link>
-                              </Button>
-                            </div>
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold">Ciclo Rotativo</p>
+                            <Badge variant="outline" className="text-xs">
+                              {historicoCompleta.escala.status}
+                            </Badge>
+                            {historicoCompleta.escala.criada_em && (
+                              <span className="text-xs text-muted-foreground">Gerado em {formatarDataHora(historicoCompleta.escala.criada_em)}</span>
+                            )}
                           </div>
-                          {historicoCompleta.escala.criada_em && (
-                            <p className="text-xs text-muted-foreground">Gerado em {formatarDataHora(historicoCompleta.escala.criada_em)}</p>
-                          )}
                           <EscalaCicloResumo
                             escala={historicoCompleta.escala}
                             alocacoes={historicoCompleta.alocacoes}
                             colaboradores={equipeEscalaHistorico.colaboradores}
                             funcoes={equipeEscalaHistorico.funcoes}
                             regrasPadrao={regrasPadrao ?? []}
+                            viewMode={cicloMode}
                           />
                         </div>
                       ) : null}
@@ -2763,14 +2801,13 @@ export function SetorDetalhe() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <DirtyGuardDialog
-        blocker={blocker}
-        onSaveAndExit={async () => {
-          return new Promise<void>((resolve, reject) => {
-            setorForm.handleSubmit((data) => handleSalvar(data).then(resolve, reject), () => reject())()
-          })
-        }}
+      <SolverConfigDrawer
+        open={solverConfigOpen}
+        onOpenChange={setSolverConfigOpen}
+        config={solverSessionConfig}
+        onConfigChange={setSolverSessionConfig}
       />
+
     </div>
   )
 }

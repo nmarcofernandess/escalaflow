@@ -78,32 +78,53 @@ O motor é um solver Python OR-Tools CP-SAT que gera escalas automaticamente.
 ### Fluxo de geração
 
 \`\`\`
-preflight → buildSolverInput → solver Python CP-SAT → persistir → RASCUNHO
+preflight → buildSolverInput → solver Python CP-SAT → persistir base → validarEscalaV3() → persistir resumo autoritativo → RASCUNHO
 \`\`\`
 
 1. **Preflight**: verifica se o setor tem colaboradores, demanda, identifica blockers
 2. **Build input**: monta JSON com empresa, colaboradores, demandas, regras, feriados, exceções
-3. **Solver**: otimiza — respeita todas as HARD constraints, minimiza penalidades SOFT
-4. **Persistir**: salva escala como RASCUNHO com alocações, indicadores e decisões
+3. **Solver**: gera alocações e diagnóstico — respeita a policy efetiva de regras e minimiza penalidades SOFT
+4. **Persistir base**: salva escala como RASCUNHO com alocações, decisões e comparação de demanda
+5. **Validador TS**: revalida a escala com a mesma policy efetiva e recalcula indicadores oficiais
+6. **Persistência autoritativa**: KPIs e cobertura oficiais salvos no banco passam a ser os do validador, não os autoindicadores do solver
+
+### OFFICIAL vs EXPLORATORY
+
+O solver tem dois modos de geração:
+
+- **\`OFFICIAL\`**: padrão. Mantém a geração legal-first. O solver pode degradar regras de produto, mas não muda silenciosamente o que bloqueia oficialização.
+- **\`EXPLORATORY\`**: ativado automaticamente quando \`rules_override\` rebaixa uma regra que está HARD na policy oficial atual. Serve para explorar cenários, não para mascarar ilegalidade.
 
 ### Degradação Graciosa (Multi-Pass)
 
-O motor usa 3 tentativas automáticas para evitar INFEASIBLE:
+No modo **\`OFFICIAL\`**, o motor usa fallback legal-first:
 
-- **Pass 1** (normal): todas as regras configuradas como HARD/SOFT/OFF
-- **Pass 2** (relaxamento): se Pass 1 falhou, relaxa H10 (meta semanal), DIAS_TRABALHO, MIN_DIARIO e H6 (almoço) para SOFT com penalidade alta
-- **Pass 3** (emergência): se Pass 2 falhou, mantém só CLT puro (H2 interjornada, H4 max diário) e tudo mais vira SOFT
+- **Pass 1**: roda com a policy efetiva da geração
+- **Pass 1b**: mantém o padrão de folgas e relaxa só \`DIAS_TRABALHO\` e \`MIN_DIARIO\`
+- **Pass 2**: remove o pin de folgas e continua relaxando só regras de produto
+- **Pass 3**: fallback oficial relaxando \`DIAS_TRABALHO\`, \`MIN_DIARIO\`, \`FOLGA_FIXA\`, \`FOLGA_VARIAVEL\` e \`TIME_WINDOW\`
 
-Regras que NUNCA relaxam (saúde/segurança CLT): H2, H4, H5, H11-H18 (aprendiz/estagiário/feriados proibidos).
+No modo **\`EXPLORATORY\`**, o solver pode explorar relaxações adicionais:
+
+- \`H1\` e \`H6\` podem ser rebaixadas se o override pedir
+- o Pass 3 pode usar \`ALL_PRODUCT_RULES\` para último recurso
+
+Pontos críticos:
+
+- **\`H10\` não é mais auto-relaxada pelo multi-pass oficial**. Se estiver SOFT, é porque a policy efetiva mandou; se estiver HARD, o solver respeita.
+- **Fonte única de verdade**: cobertura, violações e oficialização sempre seguem o **validador TypeScript**.
+- Regras que nunca relaxam no núcleo legal: \`H2\`, \`H4\`, \`H5\`, \`H11-H18\`.
 
 O campo \`diagnostico\` do resultado explica:
-- \`pass_usado\` — qual pass resolveu (1=normal, 2=relaxado, 3=emergência)
+- \`generation_mode\` — \`OFFICIAL\` ou \`EXPLORATORY\`
+- \`policy_adjustments\` — ajustes automáticos aplicados pela policy compartilhada
+- \`pass_usado\` — qual pass resolveu (\`1\`, \`1b\`, \`2\` ou \`3\`)
 - \`regras_relaxadas[]\` — quais regras foram rebaixadas
 - \`capacidade_vs_demanda\` — análise aritmética de capacidade vs demanda
-- \`modo_emergencia\` — true se Pass 3 removeu janelas de horário, folga fixa e folga variável
+- \`modo_emergencia\` — true se entrou no last resort exploratório
 - \`regras_ativas\` / \`regras_off\` — o que estava ligado no pass que resolveu
 
-Se \`pass_usado = 2 ou 3\`, informe o RH que a escala foi gerada com regras relaxadas e precisa revisão cuidadosa. Sugira contratar mais pessoal se \`capacidade_vs_demanda.ratio_cobertura_max < 1.0\`.
+Se \`generation_mode = "EXPLORATORY"\` ou \`pass_usado != 1\`, informe o RH que a escala exigiu flexibilização e precisa revisão cuidadosa. Sugira contratar mais pessoal se \`capacidade_vs_demanda.ratio_cobertura_max < 1.0\`.
 
 INFEASIBLE total (todas as 3 passes falham) só ocorre se não há colaboradores disponíveis ou há conflitos em pinned_cells.
 
@@ -119,14 +140,20 @@ RASCUNHO →[oficializar (se violacoes_hard=0)]→ OFICIAL →[arquivar]→ ARQU
 
 ### Modos de resolução (\`solve_mode\` em \`gerar_escala\`)
 
-- **\`rapido\`** (30s) — feedback rápido, resultado bom. **Padrão.**
-- **\`otimizado\`** (120s) — melhor solução possível, mais demorado. Use quando o usuário quer a melhor escala.
+- **\`rapido\`** (~45s) — feedback rápido. **Padrão.**
+- **\`balanceado\`** (~3min) — equilíbrio entre velocidade e qualidade.
+- **\`otimizado\`** (~10min) — busca solução bem melhor.
+- **\`maximo\`** (~30min) — exploração pesada, use só quando o usuário realmente quer o melhor resultado possível.
 
 IMPORTANTE: INFEASIBLE é detectado em <1s — dar mais tempo NÃO resolve. Se deu INFEASIBLE, use \`diagnosticar_infeasible\` para identificar a regra culpada.
 
 ### rules_override
 
-Parâmetro temporário em \`gerar_escala\` (ex: \`{"H1":"SOFT"}\`). Só vale pra aquela geração — não muda config permanente da empresa.
+Parâmetro temporário em \`gerar_escala\` (ex: \`{"H10":"HARD"}\` ou \`{"S_DEFICIT":"OFF"}\`). Só vale pra aquela geração — não muda config permanente da empresa.
+
+Regra prática:
+- **Endurecer ou ajustar preferências** pode continuar em \`OFFICIAL\`
+- **Rebaixar uma regra que hoje está HARD** (ex: \`{"H6":"SOFT"}\`) coloca a geração em \`EXPLORATORY\`
 
 ### diagnosticar_infeasible
 
@@ -134,7 +161,7 @@ Quando \`gerar_escala\` retorna INFEASIBLE, chame \`diagnosticar_infeasible\` pa
 - Capacidade teórica vs demanda real
 - Lista de regras que, ao desligar, resolvem o INFEASIBLE
 - Se o problema é CLT puro (falta de gente) ou excesso de regras de produto
-Use o resultado para orientar o RH: "relaxe H10 com rules_override" ou "contrate mais 1 pessoa".
+Use o resultado para orientar o RH: ajustar regra temporária (\`rules_override\`), mudar regra permanente (\`editar_regra\`), reduzir demanda ou reforçar equipe.
 
 ---
 
@@ -228,7 +255,7 @@ Engine configurável: empresa pode ligar/desligar regras editáveis.
 |------|--------|-------|
 | \`preflight\` | Checar viabilidade ANTES de gerar | \`setor_id\` + período |
 | \`preflight_completo\` | Preflight profundo (capacidade, blockers) | \`setor_id\` + período |
-| \`gerar_escala\` | Rodar o motor e salvar RASCUNHO | \`setor_id\` + período (+ \`rules_override\`) |
+| \`gerar_escala\` | Rodar o motor e salvar RASCUNHO com validação autoritativa | \`setor_id\` + período (+ \`solve_mode\` / \`rules_override\`) |
 | \`diagnosticar_escala\` | Analisar problemas de escala existente | \`escala_id\` |
 | \`ajustar_alocacao\` | Mudar status de uma pessoa num dia (TRABALHO/FOLGA) | \`escala_id\` + \`colaborador_id\` + \`data\` + \`status\` |
 | \`ajustar_horario\` | Mudar hora_inicio/hora_fim de uma alocação | \`escala_id\` + \`colaborador_id\` + \`data\` + horários |
@@ -359,6 +386,7 @@ FKs visíveis (->): \`colaboradores.setor_id->setores\`, \`colaboradores.tipo_co
 2. Se INFEASIBLE total: \`diagnosticar_infeasible({ setor_id, data_inicio, data_fim })\` → identifica exatamente quais regras causam o conflito
 3. \`explicar_violacao\` para as regras culpadas
 4. Sugerir ação: \`rules_override\` em \`gerar_escala\`, \`editar_regra\` permanente, adicionar gente, ajustar demanda, ou remover exceções
+   - Se sugerir \`rules_override\`, deixe claro quando isso tornará a geração \`EXPLORATORY\`
 5. Se \`capacidade_vs_demanda.ratio_cobertura_max < 1.0\`: informar que é matematicamente impossível cobrir toda a demanda com a equipe atual
 
 ### Importar lista de funcionários

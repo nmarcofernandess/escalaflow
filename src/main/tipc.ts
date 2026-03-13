@@ -5,10 +5,11 @@ import os from 'node:os'
 import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
 import { validarEscalaV3 } from './motor/validador'
 import { buildSolverInput, computeSolverScenarioHash, runSolver, persistirSolverResult, cancelSolver } from './motor/solver-bridge'
+import { inferGenerationModeForOverrides } from './motor/rule-policy'
 import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
 import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
-import { persistirAjusteResult } from './tipc/escalas-utils'
+import { persistirAjusteResult, persistirResumoAutoritativoEscala } from './tipc/escalas-utils'
 import { atualizarEscalaEquipeSnapshot } from './escala-equipe-snapshot'
 import { deletarFuncao, salvarDetalheFuncao } from './funcoes-service'
 import type {
@@ -58,7 +59,7 @@ function mimeToExt(mime: string): string {
   const map: Record<string, string> = {
     'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif',
     'image/webp': '.webp', 'image/bmp': '.bmp', 'application/pdf': '.pdf',
-    'text/plain': '.txt', 'text/markdown': '.md',
+    'text/plain': '.txt', 'text/markdown': '.md', 'application/json': '.json',
   }
   return map[mime] || '.bin'
 }
@@ -289,24 +290,29 @@ const empresaBuscar = t.procedure
   })
 
 const empresaAtualizar = t.procedure
-  .input<{ nome: string; cnpj: string; telefone: string; corte_semanal: string; tolerancia_semanal_min: number; min_intervalo_almoco_min?: number; usa_cct_intervalo_reduzido?: boolean }>()
+  .input<{ nome?: string; cnpj?: string; telefone?: string; corte_semanal?: string; tolerancia_semanal_min?: number; min_intervalo_almoco_min?: number; usa_cct_intervalo_reduzido?: boolean }>()
   .action(async ({ input }) => {
     const empresa = await queryOne<{ id: number }>('SELECT id FROM empresa LIMIT 1')
 
     if (empresa) {
-      await execute(`UPDATE empresa SET nome = ?, cnpj = ?, telefone = ?, corte_semanal = ?, tolerancia_semanal_min = ?,
-        min_intervalo_almoco_min = ?, usa_cct_intervalo_reduzido = ? WHERE id = ?`,
-          input.nome, input.cnpj, input.telefone, input.corte_semanal, input.tolerancia_semanal_min,
-          input.min_intervalo_almoco_min ?? 60,
-          input.usa_cct_intervalo_reduzido !== false,
-          empresa.id
-        )
+      const fields: string[] = []
+      const values: unknown[] = []
+      if (input.nome !== undefined) { fields.push('nome = ?'); values.push(input.nome) }
+      if (input.cnpj !== undefined) { fields.push('cnpj = ?'); values.push(input.cnpj) }
+      if (input.telefone !== undefined) { fields.push('telefone = ?'); values.push(input.telefone) }
+      if (input.corte_semanal !== undefined) { fields.push('corte_semanal = ?'); values.push(input.corte_semanal) }
+      if (input.tolerancia_semanal_min !== undefined) { fields.push('tolerancia_semanal_min = ?'); values.push(input.tolerancia_semanal_min) }
+      if (input.min_intervalo_almoco_min !== undefined) { fields.push('min_intervalo_almoco_min = ?'); values.push(input.min_intervalo_almoco_min) }
+      if (input.usa_cct_intervalo_reduzido !== undefined) { fields.push('usa_cct_intervalo_reduzido = ?'); values.push(input.usa_cct_intervalo_reduzido) }
+      if (fields.length > 0) {
+        await execute(`UPDATE empresa SET ${fields.join(', ')} WHERE id = ?`, ...values, empresa.id)
+      }
     } else {
       await execute(`INSERT INTO empresa (nome, cnpj, telefone, corte_semanal, tolerancia_semanal_min, min_intervalo_almoco_min, usa_cct_intervalo_reduzido)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          input.nome, input.cnpj, input.telefone, input.corte_semanal, input.tolerancia_semanal_min,
-          input.min_intervalo_almoco_min ?? 60,
-          input.usa_cct_intervalo_reduzido !== false
+          input.nome ?? '', input.cnpj ?? '', input.telefone ?? '',
+          input.corte_semanal ?? 'SEG_DOM', input.tolerancia_semanal_min ?? 0,
+          input.min_intervalo_almoco_min ?? 60, input.usa_cct_intervalo_reduzido !== false
         )
     }
 
@@ -986,6 +992,10 @@ const escalasBuscar = t.procedure
     const hasSnapshot = snapshotDecisoes.length > 0 || snapshotComparacao.length > 0
     if (!hasSnapshot) return base
 
+    // Use decisoes from snapshot (solver has rich explanations),
+    // but comparacao_demanda ALWAYS from validador TS (consistent with indicadores).
+    // The Python snapshot comparacao is stale — it was computed at solve time and
+    // may diverge from the TS validador's grid/calculation, causing KPI vs chart mismatch.
     return {
       ...base,
       escala,
@@ -998,16 +1008,7 @@ const escalasBuscar = t.procedure
         razao: d.razao,
         alternativas_tentadas: d.alternativas_tentadas ?? 0,
       })),
-      comparacao_demanda: snapshotComparacao.map((c) => ({
-        data: c.data,
-        hora_inicio: c.hora_inicio,
-        hora_fim: c.hora_fim,
-        planejado: c.planejado,
-        executado: c.executado,
-        delta: c.delta,
-        override: Boolean(c.override),
-        justificativa: c.justificativa ?? undefined,
-      })),
+      // comparacao_demanda: from base (validarEscalaV3) — same source as indicadores
     }
   })
 
@@ -1149,6 +1150,7 @@ const escalasAjustar = t.procedure
       {
         regimesOverride: cfg.regimes_override,
         hintsEscalaId: escalaId,
+        generationMode: 'OFFICIAL',
       },
     )
     const inputHash = computeSolverScenarioHash(solverInput)
@@ -1177,6 +1179,7 @@ const escalasAjustar = t.procedure
     await persistirAjusteResult(escalaId, solverResult, ind, decisoes, comparacao, inputHash, cfg)
 
     const validacao = await validarEscalaV3(escalaId)
+    await persistirResumoAutoritativoEscala(escalaId, validacao)
     return {
       ...validacao,
       diagnostico: solverResult.diagnostico,
@@ -1227,10 +1230,14 @@ const escalasGerar = t.procedure
     sendLog('Montando modelo...')
 
     // Build input e chamar solver Python (agora com solveMode + rulesOverride)
+    const generationMode = await inferGenerationModeForOverrides(
+      input.rules_override as Record<string, string> | undefined,
+    )
     const solverInput = await buildSolverInput(setorId, input.data_inicio, input.data_fim, undefined, {
       regimesOverride,
       solveMode: input.solve_mode,
       maxTimeSeconds: input.max_time_seconds,
+      generationMode,
       rulesOverride: input.rules_override as Record<string, string> | undefined,
     })
     const inputHash = computeSolverScenarioHash(solverInput)
@@ -1260,6 +1267,7 @@ const escalasGerar = t.procedure
     )
 
     const validacao = await validarEscalaV3(escalaId)
+    await persistirResumoAutoritativoEscala(escalaId, validacao)
     return {
       ...validacao,
       diagnostico: solverResult.diagnostico,
@@ -2881,7 +2889,7 @@ const iaChatLerArquivo = t.procedure
     const result = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
       filters: [
-        { name: 'Imagens e Documentos', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf', 'txt', 'md'] },
+        { name: 'Imagens e Documentos', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf', 'txt', 'md', 'json'] },
       ],
     })
     if (result.canceled || result.filePaths.length === 0) return null
@@ -2893,6 +2901,7 @@ const iaChatLerArquivo = t.procedure
       '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
       '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
       '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
+      '.json': 'application/json',
     }
     const mime = mimeMap[ext] || 'application/octet-stream'
     const id = crypto.randomUUID()

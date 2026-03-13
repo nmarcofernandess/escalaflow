@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Settings, Save, Clock } from 'lucide-react'
+import { Settings, Clock } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -16,10 +15,11 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { PageHeader } from '@/componentes/PageHeader'
-import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
-import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { SaveIndicator } from '@/componentes/SaveIndicator'
 import { empresaService } from '@/servicos/empresa'
 import { useApiData } from '@/hooks/useApiData'
+import { useAutoSave } from '@/hooks/useAutoSave'
+import type { AutoSaveStatus } from '@/hooks/useAutoSave'
 import { toast } from 'sonner'
 import type { Empresa, EmpresaHorarioSemana } from '@shared/index'
 
@@ -43,14 +43,14 @@ const DIAS_SEMANA = [
 ]
 
 export function EmpresaConfig() {
-  const { data: empresa, loading } = useApiData<Empresa>(() => empresaService.buscar(), [])
+  const { data: empresa, loading, reload: reloadEmpresa } = useApiData<Empresa>(() => empresaService.buscar(), [])
   const { data: horariosApi, reload: reloadHorarios } = useApiData<EmpresaHorarioSemana[]>(
     () => empresaService.listarHorarios(),
     []
   )
 
-  const [salvando, setSalvando] = useState(false)
   const [horarios, setHorarios] = useState<EmpresaHorarioSemana[]>([])
+  const [horarioStatus, setHorarioStatus] = useState<Record<string, AutoSaveStatus>>({})
 
   useEffect(() => {
     if (horariosApi && horariosApi.length > 0) {
@@ -73,20 +73,6 @@ export function EmpresaConfig() {
     defaultValues: { nome: '', cnpj: '', telefone: '' },
   })
 
-  const horariosDirty = horariosApi
-    ? horarios.length !== horariosApi.length ||
-      horarios.some((h) => {
-        const api = horariosApi.find((x) => x.dia_semana === h.dia_semana)
-        if (!api) return true
-        return (
-          h.ativo !== api.ativo ||
-          h.hora_abertura !== api.hora_abertura ||
-          h.hora_fechamento !== api.hora_fechamento
-        )
-      })
-    : false
-  const blocker = useDirtyGuard({ isDirty: form.formState.isDirty || !!horariosDirty })
-
   useEffect(() => {
     if (empresa) {
       form.reset({
@@ -97,53 +83,73 @@ export function EmpresaConfig() {
     }
   }, [empresa, form])
 
-  const onSubmit = async (data: EmpresaFormData) => {
-    setSalvando(true)
-    try {
-      const nextValues: EmpresaFormInput = {
-        nome: data.nome.trim(),
-        cnpj: data.cnpj.trim(),
-        telefone: data.telefone.trim(),
-      }
-      const updated = await empresaService.atualizar({
-        ...nextValues,
-        corte_semanal: empresa?.corte_semanal ?? 'SEG_DOM',
-        tolerancia_semanal_min: empresa?.tolerancia_semanal_min ?? 0,
-      })
+  // Auto-save: nome
+  const nomeAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      const val = form.getValues('nome').trim()
+      if (!val) throw new Error('Nome e obrigatorio')
+      const updated = await empresaService.atualizar({ nome: val })
       if (updated?.nome) {
-        window.dispatchEvent(
-          new CustomEvent('empresa:atualizada', {
-            detail: { nome: updated.nome },
-          }),
-        )
+        window.dispatchEvent(new CustomEvent('empresa:atualizada', { detail: { nome: updated.nome } }))
       }
-      form.reset(nextValues)
-      for (const h of horarios) {
-        await empresaService.atualizarHorario({
-          dia_semana: h.dia_semana,
-          ativo: h.ativo,
-          hora_abertura: h.hora_abertura,
-          hora_fechamento: h.hora_fechamento,
-        })
-      }
+      await reloadEmpresa()
+    }, [form, reloadEmpresa]),
+    validate: useCallback(() => form.getValues('nome').trim().length > 0, [form]),
+  })
+
+  // Auto-save: cnpj
+  const cnpjAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      await empresaService.atualizar({ cnpj: form.getValues('cnpj').trim() })
+      await reloadEmpresa()
+    }, [form, reloadEmpresa]),
+  })
+
+  // Auto-save: telefone
+  const telefoneAutoSave = useAutoSave({
+    saveFn: useCallback(async () => {
+      await empresaService.atualizar({ telefone: form.getValues('telefone').trim() })
+      await reloadEmpresa()
+    }, [form, reloadEmpresa]),
+  })
+
+  // Auto-save horarios
+  const saveHorario = useCallback(async (dia_semana: string) => {
+    const h = horarios.find((x) => x.dia_semana === dia_semana)
+    if (!h) return
+    setHorarioStatus((prev) => ({ ...prev, [dia_semana]: 'saving' }))
+    try {
+      await empresaService.atualizarHorario({
+        dia_semana: h.dia_semana,
+        ativo: h.ativo,
+        hora_abertura: h.hora_abertura,
+        hora_fechamento: h.hora_fechamento,
+      })
       await reloadHorarios()
-      toast.success('Dados da empresa salvos')
+      setHorarioStatus((prev) => ({ ...prev, [dia_semana]: 'saved' }))
+      setTimeout(() => setHorarioStatus((prev) => ({ ...prev, [dia_semana]: 'idle' })), 2000)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
-    } finally {
-      setSalvando(false)
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar horario')
+      setHorarioStatus((prev) => ({ ...prev, [dia_semana]: 'error' }))
+      setTimeout(() => setHorarioStatus((prev) => ({ ...prev, [dia_semana]: 'idle' })), 3000)
     }
-  }
+  }, [horarios, reloadHorarios])
 
-  const handleHorarioAtivo = (dia_semana: string, ativo: boolean) => {
+  const handleHorarioAtivo = useCallback((dia_semana: string, ativo: boolean) => {
     setHorarios((prev) => prev.map((h) => (h.dia_semana === dia_semana ? { ...h, ativo } : h)))
-  }
+    // Save after state update via effect
+    setTimeout(() => saveHorario(dia_semana), 0)
+  }, [saveHorario])
 
-  const handleHorarioInput = (dia_semana: string, field: 'hora_abertura' | 'hora_fechamento', value: string) => {
+  const handleHorarioInput = useCallback((dia_semana: string, field: 'hora_abertura' | 'hora_fechamento', value: string) => {
     setHorarios((prev) =>
       prev.map((h) => (h.dia_semana === dia_semana ? { ...h, [field]: value } : h))
     )
-  }
+  }, [])
+
+  const handleHorarioBlur = useCallback((dia_semana: string) => {
+    saveHorario(dia_semana)
+  }, [saveHorario])
 
   if (loading) {
     return (
@@ -160,98 +166,85 @@ export function EmpresaConfig() {
     <div className="flex flex-1 flex-col">
       <PageHeader
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Empresa' }]}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                form.reset(
-                  empresa ? { nome: empresa.nome, cnpj: empresa.cnpj ?? '', telefone: empresa.telefone ?? '' } : { nome: '', cnpj: '', telefone: '' }
-                )
-                if (horariosApi && horariosApi.length > 0) setHorarios(horariosApi)
-                else if (horariosApi && horariosApi.length === 0)
-                  setHorarios(
-                    DIAS_SEMANA.map(({ key }) => ({
-                      id: 0,
-                      dia_semana: key as EmpresaHorarioSemana['dia_semana'],
-                      ativo: key !== 'DOM',
-                      hora_abertura: '08:00',
-                      hora_fechamento: '18:00',
-                    }))
-                  )
-              }}
-              disabled={salvando || (!form.formState.isDirty && !horariosDirty)}
-            >
-              Cancelar
-            </Button>
-            <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={salvando}>
-              <Save className="mr-1 size-3.5" />
-              {salvando ? 'Salvando...' : 'Salvar'}
-            </Button>
-          </div>
-        }
       />
 
       <div className="flex flex-col gap-6 p-6">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Settings className="size-4" />
-                  Dados da Empresa
-                </CardTitle>
-                <CardDescription>
-                  Informacoes exibidas nos relatorios e exportacoes de escala.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Settings className="size-4" />
+                Dados da Empresa
+              </CardTitle>
+              <CardDescription>
+                Informacoes exibidas nos relatorios e exportacoes de escala.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <FormField
+                control={form.control}
+                name="nome"
+                render={({ field }) => (
+                  <FormItem className="max-w-md">
+                    <FormLabel className="flex items-center gap-1.5">
+                      Nome
+                      <SaveIndicator status={nomeAutoSave.status} error={nomeAutoSave.error} />
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Ex: Supermercado Fernandes"
+                        {...field}
+                        onBlur={() => nomeAutoSave.trigger()}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
                 <FormField
                   control={form.control}
-                  name="nome"
+                  name="cnpj"
                   render={({ field }) => (
-                    <FormItem className="max-w-md">
-                      <FormLabel>Nome</FormLabel>
+                    <FormItem className="sm:w-56">
+                      <FormLabel className="flex items-center gap-1.5">
+                        CNPJ
+                        <SaveIndicator status={cnpjAutoSave.status} error={cnpjAutoSave.error} />
+                      </FormLabel>
                       <FormControl>
-                        <Input placeholder="Ex: Supermercado Fernandes" {...field} />
+                        <Input
+                          placeholder="00.000.000/0000-00"
+                          {...field}
+                          onBlur={() => cnpjAutoSave.trigger()}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                  <FormField
-                    control={form.control}
-                    name="cnpj"
-                    render={({ field }) => (
-                      <FormItem className="sm:w-56">
-                        <FormLabel>CNPJ</FormLabel>
-                        <FormControl>
-                          <Input placeholder="00.000.000/0000-00" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="telefone"
-                    render={({ field }) => (
-                      <FormItem className="sm:w-56">
-                        <FormLabel>Telefone / Contato</FormLabel>
-                        <FormControl>
-                          <Input placeholder="(00) 00000-0000" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </form>
+                <FormField
+                  control={form.control}
+                  name="telefone"
+                  render={({ field }) => (
+                    <FormItem className="sm:w-56">
+                      <FormLabel className="flex items-center gap-1.5">
+                        Telefone / Contato
+                        <SaveIndicator status={telefoneAutoSave.status} error={telefoneAutoSave.error} />
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="(00) 00000-0000"
+                          {...field}
+                          onBlur={() => telefoneAutoSave.trigger()}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
         </Form>
 
         <Card>
@@ -282,13 +275,17 @@ export function EmpresaConfig() {
                         checked={h.ativo}
                         onCheckedChange={(val) => handleHorarioAtivo(key, val)}
                       />
-                      <span className="w-32 shrink-0 text-sm font-medium">{label}</span>
+                      <span className="w-32 shrink-0 text-sm font-medium flex items-center gap-1.5">
+                        {label}
+                        <SaveIndicator status={horarioStatus[key] ?? 'idle'} />
+                      </span>
                       <div className="flex items-center gap-2">
                         <Input
                           type="time"
                           value={h.hora_abertura}
                           disabled={!h.ativo}
                           onChange={(e) => handleHorarioInput(key, 'hora_abertura', e.target.value)}
+                          onBlur={() => handleHorarioBlur(key)}
                           className="w-32"
                         />
                         <span className="text-sm text-muted-foreground">ate</span>
@@ -297,6 +294,7 @@ export function EmpresaConfig() {
                           value={h.hora_fechamento}
                           disabled={!h.ativo}
                           onChange={(e) => handleHorarioInput(key, 'hora_fechamento', e.target.value)}
+                          onBlur={() => handleHorarioBlur(key)}
                           className="w-32"
                         />
                       </div>
@@ -311,18 +309,6 @@ export function EmpresaConfig() {
           </CardContent>
         </Card>
       </div>
-
-      <DirtyGuardDialog
-        blocker={blocker}
-        onSaveAndExit={async () => {
-          return new Promise<void>((resolve, reject) => {
-            form.handleSubmit(
-              (data) => onSubmit(data).then(resolve, reject),
-              () => reject()
-            )()
-          })
-        }}
-      />
     </div>
   )
 }

@@ -2,6 +2,8 @@ import { queryOne, queryAll, execute, insertReturningId, transaction } from '../
 import { minutesBetween as minutesBetweenUtil } from '../date-utils'
 import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride } from '../preflight-capacity'
 import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenarioHash } from '../motor/solver-bridge'
+import { inferGenerationModeForOverrides } from '../motor/rule-policy'
+import { persistirResumoAutoritativoEscala } from '../tipc/escalas-utils'
 import { salvarDetalheFuncao, deletarFuncao } from '../funcoes-service'
 import { textoResumoCobertura, textoResumoViolacoesHard, textoResumoViolacoesSoft } from '../../shared/resumo-user'
 import { coreAlerts } from './discovery'
@@ -239,8 +241,8 @@ const GerarEscalaSchema = z.object({
   setor_id: z.number().int().positive().describe('ID do setor. Use o contexto automático injetado pelo sistema.'),
   data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial da escala no formato YYYY-MM-DD.'),
   data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final da escala no formato YYYY-MM-DD.'),
-  solve_mode: z.enum(['rapido', 'otimizado']).optional().describe('Modo de resolução: "rapido" (30s, bom) ou "otimizado" (120s, melhor possível). Padrão: rapido.'),
-  rules_override: z.record(z.string(), z.string()).optional().describe('Overrides opcionais de regras (codigo -> status), ex: {"H1":"SOFT"}')
+  solve_mode: z.enum(['rapido', 'balanceado', 'otimizado', 'maximo']).optional().describe('Modo de resolução: "rapido" (~45s), "balanceado" (~3min), "otimizado" (~10min) ou "maximo" (~30min). Padrão: rapido.'),
+  rules_override: z.record(z.string(), z.string()).optional().describe('Overrides temporários de regras (codigo -> status). Endurecer regra mantém geração OFFICIAL; relaxar regra que hoje está HARD torna a geração EXPLORATORY. Ex: {"H10":"HARD"} ou {"H6":"SOFT"}')
 })
 
 // ajustar_alocacao
@@ -498,7 +500,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'diagnosticar_infeasible',
-        description: 'Investiga POR QUE uma geração de escala deu INFEASIBLE. Roda o solver múltiplas vezes desligando regras relaxáveis uma a uma para identificar qual combinação causa o conflito. Use após gerar_escala retornar INFEASIBLE. Retorna capacidade vs demanda e a lista de regras culpadas.',
+        description: 'Investiga POR QUE uma geração de escala deu INFEASIBLE. Roda o solver múltiplas vezes em modo exploratório desligando regras editáveis críticas uma a uma para identificar qual combinação causa o conflito. Use após gerar_escala retornar INFEASIBLE. Retorna capacidade vs demanda e a lista de regras culpadas.',
         parameters: toJsonSchema(DiagnosticarInfeasibleSchema)
     },
     {
@@ -1331,7 +1333,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { setor_id, data_inicio, data_fim } = args
 
         try {
-            // Regras relaxáveis (HARD product rules que podem causar INFEASIBLE)
+            // Regras editáveis críticas testadas em modo exploratório para isolamento de causa
             const RELAXABLE_RULES = ['H1', 'H6', 'H10', 'DIAS_TRABALHO', 'MIN_DIARIO'] as const
 
             // 1. Capacidade vs demanda
@@ -1365,6 +1367,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 const override: Record<string, string> = { [regra]: 'OFF' }
                 const testInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
                     solveMode: 'rapido',
+                    generationMode: 'EXPLORATORY',
                     maxTimeSeconds: 10,
                     rulesOverride: override,
                 })
@@ -1382,6 +1385,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             for (const r of RELAXABLE_RULES) allOff[r] = 'OFF'
             const baseInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
                 solveMode: 'rapido',
+                generationMode: 'EXPLORATORY',
                 maxTimeSeconds: 10,
                 rulesOverride: allOff,
             })
@@ -1411,7 +1415,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 regras_que_resolvem_ao_desligar: regrasQueResolvem,
                 regras_que_nao_resolvem_ao_desligar: regrasQueNaoResolvem,
                 diagnostico_resumido: regrasQueResolvem.length > 0
-                    ? `Desligar ${regrasQueResolvem.join(' + ')} resolve o INFEASIBLE. Considere usar rules_override em gerar_escala ou ajustar a configuração dessas regras.`
+                    ? `Desligar ${regrasQueResolvem.join(' + ')} resolve o INFEASIBLE. Considere usar rules_override em gerar_escala ou ajustar a configuração dessas regras. Se rebaixar uma regra que hoje está HARD, a geração ficará EXPLORATORY.`
                     : baseResult.sucesso
                         ? 'Nenhuma regra individual resolve sozinha, mas desligar todas as product rules resolve. É uma combinação de múltiplas regras apertadas.'
                         : 'INFEASIBLE é causado por falta de capacidade (CLT). Aumente colaboradores, reduza demanda ou encurte o período.',
@@ -2098,11 +2102,20 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const { setor_id, data_inicio, data_fim, solve_mode, rules_override } = args
 
         try {
+            const generationMode = await inferGenerationModeForOverrides(rules_override)
             const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
                 solveMode: solve_mode ?? 'rapido',
+                generationMode,
                 rulesOverride: rules_override,
             })
-            const timeoutMs = (solve_mode === 'otimizado') ? 180_000 : 60_000
+            const solverMode = solve_mode ?? 'rapido'
+            const timeoutMsByMode: Record<typeof solverMode, number> = {
+                rapido: 60_000,
+                balanceado: 240_000,
+                otimizado: 720_000,
+                maximo: 1_920_000,
+            }
+            const timeoutMs = timeoutMsByMode[solverMode]
             const solverResult = await runSolver(solverInput, timeoutMs)
 
             if (!solverResult.sucesso || !solverResult.alocacoes || !solverResult.indicadores) {
@@ -2132,9 +2145,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
 
             const escalaId = await persistirSolverResult(setor_id, data_inicio, data_fim, solverResult)
+            const validacao = await validarEscalaV3(escalaId)
+            await persistirResumoAutoritativoEscala(escalaId, validacao)
 
             // --- Revisão pós-geração: agregar dados que o solver já calcula ---
-            const deficits = (solverResult.comparacao_demanda ?? [])
+            const deficits = (validacao.comparacao_demanda ?? [])
                 .filter(s => s.delta < 0)
                 .sort((a, b) => a.delta - b.delta)
                 .slice(0, 10)
@@ -2173,7 +2188,17 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 dias_periodo: new Set(alocacoes.map(a => a.data)).size,
             }
 
-            const ind = solverResult.indicadores
+            const ind = validacao.indicadores
+            if (!ind) {
+              return toolError(
+                'GERAR_ESCALA_VALIDACAO_SEM_INDICADORES',
+                `Escala ${escalaId} foi gerada, mas a validação autoritativa não retornou indicadores.`,
+                {
+                  correction: 'Tente diagnosticar a escala recém-gerada para recalcular os indicadores.',
+                  meta: { tool_kind: 'action', action: 'generate-schedule', escala_id: escalaId }
+                }
+              )
+            }
             const coberturaResumo = textoResumoCobertura(ind.cobertura_percent, ind.cobertura_efetiva_percent ?? ind.cobertura_percent)
             const resumo_user = {
                 cobertura: coberturaResumo.principal,
@@ -2188,11 +2213,11 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 sucesso: true,
                 escala_id: escalaId,
                 solver_status: solverResult.status,
-                indicadores: solverResult.indicadores,
-                violacoes_hard: solverResult.indicadores.violacoes_hard,
-                violacoes_soft: solverResult.indicadores.violacoes_soft,
-                cobertura_percent: solverResult.indicadores.cobertura_percent,
-                pontuacao: solverResult.indicadores.pontuacao,
+                indicadores: ind,
+                violacoes_hard: ind.violacoes_hard,
+                violacoes_soft: ind.violacoes_soft,
+                cobertura_percent: ind.cobertura_percent,
+                pontuacao: ind.pontuacao,
                 diagnostico: solverResult.diagnostico,
                 revisao,
                 resumo_user,
@@ -2205,6 +2230,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   setor_id,
                   data_inicio,
                   data_fim,
+                  generation_mode: generationMode,
                   solver_status: solverResult.status,
                 }
               }

@@ -604,6 +604,14 @@ export interface SolverInputDemandaExcecaoData {
 // ============================================================================
 
 export type RuleStatus = 'HARD' | 'SOFT' | 'OFF' | 'ON'
+export type GenerationMode = 'OFFICIAL' | 'EXPLORATORY'
+
+export interface RulePolicyAdjustment {
+  codigo: string
+  from: RuleStatus | null
+  to: RuleStatus
+  reason: string
+}
 
 export interface RuleDefinition {
   codigo: string
@@ -649,6 +657,8 @@ export interface SolverInput {
     max_time_seconds?: number
     num_workers: number
     solve_mode?: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
+    generation_mode?: GenerationMode
+    policy_adjustments?: RulePolicyAdjustment[]
     nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'  // backward compat
     rules?: RuleConfig                           // v6: granular, substitui nivel_rigor quando presente
   }
@@ -678,11 +688,13 @@ export interface DiagnosticoSolver {
   solve_time_ms: number
   regras_ativas: string[]
   regras_off: string[]
+  generation_mode?: GenerationMode
+  policy_adjustments?: RulePolicyAdjustment[]
   motivo_infeasible?: string
   num_colaboradores: number
   num_dias: number
-  /** Graceful degradation: which pass solved (1=normal, 2=relaxed product rules, 3=CLT skeleton) */
-  pass_usado?: 1 | 2 | 3
+  /** Graceful degradation: which pass solved (1=normal, 1b=folgas fixadas + horas flexiveis, 2=product fallback, 3=last resort) */
+  pass_usado?: 1 | '1b' | 2 | 3
   /** Which rules were relaxed in the successful pass */
   regras_relaxadas?: string[]
   /** Pre-solve capacity analysis */
