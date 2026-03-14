@@ -47,6 +47,7 @@ export interface Setor {
   hora_fechamento: string
   regime_escala: RegimeEscala
   ativo: boolean
+  simulacao_config_json?: string | null
 }
 
 export interface EmpresaHorarioSemana {

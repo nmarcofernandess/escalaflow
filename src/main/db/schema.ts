@@ -775,6 +775,9 @@ async function migrateSchema(): Promise<void> {
 
   // --- v24: configuracao_backup (Maquina do Tempo) ---
   await execute(`INSERT INTO configuracao_backup (id) VALUES (1) ON CONFLICT DO NOTHING`)
+
+  // --- v25: simulacao_config_json por setor ---
+  await addColumnIfMissing('setores', 'simulacao_config_json', 'TEXT')
 }
 
 // ============================================================================

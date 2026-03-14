@@ -21,6 +21,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { useApiData } from '@/hooks/useApiData'
 import { regrasService } from '@/servicos/regras'
+import type { EscalaPeriodoPreset } from '@/lib/escala-periodo-preset'
 import type { RuleDefinition, RuleStatus, RuleConfig } from '@shared/index'
 
 export interface SolverSessionConfig {
@@ -34,6 +35,8 @@ interface SolverConfigDrawerProps {
   onOpenChange: (v: boolean) => void
   config: SolverSessionConfig
   onConfigChange: (c: SolverSessionConfig) => void
+  periodoPreset: EscalaPeriodoPreset
+  onPeriodoPresetChange: (preset: EscalaPeriodoPreset) => void
 }
 
 export function SolverConfigDrawer({
@@ -41,6 +44,8 @@ export function SolverConfigDrawer({
   onOpenChange,
   config,
   onConfigChange,
+  periodoPreset,
+  onPeriodoPresetChange,
 }: SolverConfigDrawerProps) {
   const { data: regrasData } = useApiData<RuleDefinition[]>(
     () => regrasService.listar(),
@@ -49,15 +54,18 @@ export function SolverConfigDrawer({
 
   const [localOverride, setLocalOverride] = useState<RuleConfig>(config.rulesOverride)
   const [solveMode, setSolveMode] = useState(config.solveMode)
+  const [localPeriodoPreset, setLocalPeriodoPreset] = useState<EscalaPeriodoPreset>(periodoPreset)
 
   useEffect(() => {
     if (!open) return
     setLocalOverride(config.rulesOverride)
     setSolveMode(config.solveMode)
-  }, [config, open])
+    setLocalPeriodoPreset(periodoPreset)
+  }, [config, open, periodoPreset])
 
   const handleSave = () => {
     onConfigChange({ ...config, solveMode, rulesOverride: localOverride })
+    onPeriodoPresetChange(localPeriodoPreset)
     onOpenChange(false)
   }
 
@@ -214,6 +222,33 @@ export function SolverConfigDrawer({
 
         <ScrollArea className="flex-1">
           <div className="px-6 py-4 space-y-6">
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Periodo
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="solver-periodo-preset">Quantidade de meses</Label>
+                <Select
+                  value={localPeriodoPreset}
+                  onValueChange={(value) => setLocalPeriodoPreset(value as EscalaPeriodoPreset)}
+                >
+                  <SelectTrigger id="solver-periodo-preset" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="3_MESES">3 meses</SelectItem>
+                    <SelectItem value="6_MESES">6 meses</SelectItem>
+                    <SelectItem value="1_ANO">1 ano</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Define o periodo da proxima geracao e do preview exibido nesta aba.
+                </p>
+              </div>
+            </div>
+
+            <Separator />
+
             {/* Estrategia */}
             <div className="space-y-3">
               <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">

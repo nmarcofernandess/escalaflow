@@ -9,48 +9,18 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { PageHeader } from '@/componentes/PageHeader'
 import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
+import { SimuladorCicloGrid } from '@/componentes/SimuladorCicloGrid'
 import {
   gerarCicloFase1,
   sugerirK,
   type SimulaCicloFase1Input,
   type SimulaCicloOutput,
-  type DiaStatus,
 } from '@shared/simula-ciclo'
 import { cn } from '@/lib/utils'
 
-const DIAS_ORDEM = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM'] as const
-const DIAS_CURTOS: Record<(typeof DIAS_ORDEM)[number], string> = {
-  SEG: 'Seg',
-  TER: 'Ter',
-  QUA: 'Qua',
-  QUI: 'Qui',
-  SEX: 'Sex',
-  SAB: 'Sab',
-  DOM: 'Dom',
-}
-
 const DEFAULT_N = 5
-const DEFAULT_K = 2
-
-/** Classes alinhadas ao EscalaCicloResumo: T, FF, FV, DT, DF */
-const CELULA_CLASSES: Record<string, string> = {
-  T: 'bg-success/10 text-success font-medium',
-  F: 'bg-slate-200 text-slate-700 font-semibold dark:bg-slate-700 dark:text-slate-200',
-  FF: 'bg-slate-200 text-slate-700 font-semibold dark:bg-slate-700 dark:text-slate-200',
-  FV: 'bg-warning/10 text-warning font-semibold',
-  DT: 'bg-warning/10 text-warning font-semibold ring-1 ring-inset ring-warning/40',
-  DF: 'bg-blue-100 text-blue-700 font-semibold ring-1 ring-inset ring-blue-400 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-600',
-}
 
 export function SimulaCicloPagina() {
   const kSugerido = useMemo(() => sugerirK(DEFAULT_N, 7), [])
@@ -115,30 +85,6 @@ export function SimulaCicloPagina() {
     setRawK(String(k))
     setSelectedWeek(0)
   }, [])
-
-  // Modo tabela: só H semanas (ciclo repete); modo resumo: todas
-  const semanasCount = resultado.sucesso ? resultado.cobertura_dia.length : 0
-  const semanasTabela = resultado.sucesso && resultado.ciclo_semanas > 0 ? resultado.ciclo_semanas : 1
-  const selectedWeekClamped =
-    cicloMode === 'tabela'
-      ? Math.min(selectedWeek, Math.max(0, semanasTabela - 1))
-      : Math.min(selectedWeek, Math.max(0, semanasCount - 1))
-
-  const resolveSimbolo = useCallback(
-    (
-      status: DiaStatus,
-      dIdx: number,
-      row: { folga_fixa_dia: number; folga_variavel_dia: number | null },
-    ): string => {
-      const isDomingo = dIdx === 6
-      if (status === 'T') return isDomingo ? 'DT' : 'T'
-      if (isDomingo) return 'DF'
-      if (dIdx === row.folga_variavel_dia) return 'FV'
-      if (dIdx === row.folga_fixa_dia) return 'FF'
-      return 'F'
-    },
-    [],
-  )
 
   return (
     <div className="flex flex-1 flex-col">
@@ -294,266 +240,16 @@ export function SimulaCicloPagina() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Controles: toggle + S1/S2 + info */}
                 <div className="flex flex-wrap items-center gap-3">
                   <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
-                  {cicloMode === 'tabela' && semanasTabela > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {Array.from({ length: semanasTabela }, (_, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          className={cn(
-                            'h-8 min-w-10 rounded-md border px-2 text-xs font-medium transition-colors',
-                            idx === selectedWeekClamped
-                              ? 'bg-secondary text-secondary-foreground'
-                              : 'bg-background text-foreground hover:bg-muted',
-                          )}
-                          onClick={() => setSelectedWeek(idx)}
-                        >
-                          S{idx + 1}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
-
-                {cicloMode === 'tabela' ? (
-                  /* Modo semana: uma semana por vez */
-                  <div className="overflow-x-auto rounded-md border print-colors">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/30">
-                          <TableHead className="w-[100px]">Posto</TableHead>
-                          <TableHead className="w-[70px] text-center">Variável</TableHead>
-                          <TableHead className="w-[60px] text-center">Fixo</TableHead>
-                          {DIAS_ORDEM.map((dia) => (
-                            <TableHead
-                              key={dia}
-                              className={cn(
-                                'w-[54px] text-center',
-                                dia === 'DOM' && 'font-semibold text-warning',
-                              )}
-                            >
-                              {dia}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {resultado.grid.map((row, pIdx) => {
-                          const sem = row.semanas[selectedWeekClamped]
-                          if (!sem) return null
-                          return (
-                            <TableRow key={pIdx} className="hover:bg-muted/20">
-                              <TableCell className="font-medium">{row.posto}</TableCell>
-                              <TableCell className="text-center text-xs text-muted-foreground">
-                                {row.folga_variavel_dia != null ? DIAS_CURTOS[DIAS_ORDEM[row.folga_variavel_dia]] : '-'}
-                              </TableCell>
-                              <TableCell className="text-center text-xs text-muted-foreground">
-                                {DIAS_CURTOS[DIAS_ORDEM[row.folga_fixa_dia]]}
-                              </TableCell>
-                              {sem.dias.map((status, dIdx) => {
-                                const simbolo = resolveSimbolo(status, dIdx, row)
-                                const hasViolation = sem.consecutivos_max > 6
-                                const sigla = simbolo === 'DT' ? 'T' : simbolo === 'DF' ? 'F' : simbolo
-                                return (
-                                  <TableCell
-                                    key={dIdx}
-                                    className={cn(
-                                      'text-center text-sm select-none',
-                                      CELULA_CLASSES[simbolo] ?? CELULA_CLASSES.F,
-                                      hasViolation && 'ring-1 ring-red-500',
-                                    )}
-                                    title={simbolo === 'DT' ? 'Dom trabalhado' : simbolo === 'DF' ? 'Dom folga' : simbolo === 'FV' ? 'Folga variável' : simbolo === 'FF' ? 'Folga fixa' : 'Trabalha'}
-                                  >
-                                    {sigla}
-                                  </TableCell>
-                                )
-                              })}
-                            </TableRow>
-                          )
-                        })}
-                        <TableRow className="border-t-2 bg-muted/20">
-                          <TableCell className="font-medium text-blue-600 dark:text-blue-400">COBERTURA</TableCell>
-                          <TableCell colSpan={2} />
-                          {resultado.cobertura_dia[selectedWeekClamped]?.cobertura.map((val, dIdx) => (
-                            <TableCell
-                              key={dIdx}
-                              className={cn(
-                                'text-center text-sm font-bold',
-                                dIdx === 6 ? (val >= K ? 'text-blue-600 dark:text-blue-400' : 'text-red-500') : 'text-muted-foreground',
-                              )}
-                            >
-                              {val}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : (
-                  /* Modo resumo: ciclo completo (todas as semanas) */
-                  <div className="overflow-x-auto rounded-md border print-colors">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/30">
-                          <TableHead className="sticky left-0 z-20 w-[100px] min-w-[100px] bg-muted">Posto</TableHead>
-                          <TableHead className="sticky left-[100px] z-20 w-[70px] min-w-[70px] border-r bg-muted text-center text-xs">Variável</TableHead>
-                          <TableHead className="sticky left-[170px] z-20 w-[60px] min-w-[60px] border-r bg-muted text-center text-xs">Fixo</TableHead>
-                          {resultado.cobertura_dia.map((_, wIdx) => {
-                            const totalSemanas = resultado.cobertura_dia.length
-                            const isCycleEnd =
-                              resultado.ciclo_semanas > 0 &&
-                              (wIdx + 1) % resultado.ciclo_semanas === 0 &&
-                              wIdx < totalSemanas - 1
-                            return (
-                              <TableHead
-                                key={wIdx}
-                                colSpan={7}
-                                className={cn(
-                                  'text-center text-xs font-semibold',
-                                  isCycleEnd && 'border-r-2 border-r-purple-400 dark:border-r-purple-500',
-                                )}
-                              >
-                                S{wIdx + 1}
-                              </TableHead>
-                            )
-                          })}
-                        </TableRow>
-                        <TableRow className="bg-muted/30">
-                          <TableHead className="sticky left-0 z-20 w-[100px] min-w-[100px] bg-muted" />
-                          <TableHead className="sticky left-[100px] z-20 w-[70px] min-w-[70px] border-r bg-muted" />
-                          <TableHead className="sticky left-[170px] z-20 w-[60px] min-w-[60px] border-r bg-muted" />
-                          {resultado.cobertura_dia.map((_, wIdx) =>
-                            DIAS_ORDEM.map((dia, dIdx) => {
-                              const isLastDay = dIdx === 6
-                              const totalSemanas = resultado.cobertura_dia.length
-                              const isCycleEnd =
-                                resultado.ciclo_semanas > 0 &&
-                                (wIdx + 1) % resultado.ciclo_semanas === 0 &&
-                                wIdx < totalSemanas - 1
-                              return (
-                                <TableHead
-                                  key={`${wIdx}-${dia}`}
-                                  className={cn(
-                                    'w-9 min-w-[36px] px-0 text-center text-[10px] font-medium',
-                                    dia === 'DOM' && 'font-semibold text-warning',
-                                    isLastDay && isCycleEnd && 'border-r-2 border-r-purple-400 dark:border-r-purple-500',
-                                    isLastDay && !isCycleEnd && wIdx < totalSemanas - 1 && 'border-r',
-                                  )}
-                                >
-                                  {dia[0]}
-                                </TableHead>
-                              )
-                            }),
-                          )}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {resultado.grid.map((row, pIdx) => (
-                          <TableRow key={pIdx} className="hover:bg-muted/20">
-                            <TableCell className="sticky left-0 z-10 w-[100px] min-w-[100px] truncate bg-background font-medium">
-                              {row.posto}
-                            </TableCell>
-                            <TableCell className="sticky left-[100px] z-10 w-[70px] min-w-[70px] border-r bg-background text-center text-xs text-muted-foreground">
-                              {row.folga_variavel_dia != null ? DIAS_CURTOS[DIAS_ORDEM[row.folga_variavel_dia]] : '-'}
-                            </TableCell>
-                            <TableCell className="sticky left-[170px] z-10 w-[60px] min-w-[60px] border-r bg-background text-center text-xs text-muted-foreground">
-                              {DIAS_CURTOS[DIAS_ORDEM[row.folga_fixa_dia]]}
-                            </TableCell>
-                            {row.semanas.flatMap((sem, wIdx) =>
-                              sem.dias.map((status, dIdx) => {
-                                const simbolo = resolveSimbolo(status, dIdx, row)
-                                const hasViolation = sem.consecutivos_max > 6
-                                const isLastDay = dIdx === 6
-                                const totalSemanas = resultado.cobertura_dia.length
-                                const isCycleEnd =
-                                  resultado.ciclo_semanas > 0 &&
-                                  (wIdx + 1) % resultado.ciclo_semanas === 0 &&
-                                  wIdx < totalSemanas - 1
-                                const sigla = simbolo === 'DT' ? 'T' : simbolo === 'DF' ? 'F' : simbolo
-                                return (
-                                  <TableCell
-                                    key={`${wIdx}-${dIdx}`}
-                                    className={cn(
-                                      'w-9 min-w-[36px] px-0 py-1 text-center text-xs select-none',
-                                      CELULA_CLASSES[simbolo] ?? CELULA_CLASSES.F,
-                                      hasViolation && 'ring-1 ring-red-500',
-                                      isLastDay && isCycleEnd && 'border-r-2 border-r-purple-400 dark:border-r-purple-500',
-                                      isLastDay && !isCycleEnd && wIdx < totalSemanas - 1 && 'border-r',
-                                    )}
-                                    title={simbolo === 'DT' ? 'Dom trabalhado' : simbolo === 'DF' ? 'Dom folga' : simbolo === 'FV' ? 'Folga variável' : simbolo === 'FF' ? 'Folga fixa' : 'Trabalha'}
-                                  >
-                                    {sigla}
-                                  </TableCell>
-                                )
-                              }),
-                            )}
-                          </TableRow>
-                        ))}
-                        <TableRow className="border-t-2 bg-muted/20">
-                          <TableCell className="sticky left-0 z-10 w-[100px] min-w-[100px] truncate bg-muted font-medium text-blue-600 dark:text-blue-400">
-                            COBERTURA
-                          </TableCell>
-                          <TableCell colSpan={2} className="sticky left-[100px] z-10 border-r bg-muted" />
-                          {resultado.cobertura_dia.flatMap((cob, wIdx) =>
-                            cob.cobertura.map((val, dIdx) => {
-                              const isLastDay = dIdx === 6
-                              const totalSemanas = resultado.cobertura_dia.length
-                              const isCycleEnd =
-                                resultado.ciclo_semanas > 0 &&
-                                (wIdx + 1) % resultado.ciclo_semanas === 0 &&
-                                wIdx < totalSemanas - 1
-                              return (
-                                <TableCell
-                                  key={`${wIdx}-${dIdx}`}
-                                  className={cn(
-                                    'w-9 min-w-[36px] px-0 py-1 text-center text-xs font-bold',
-                                    dIdx === 6 ? (val >= K ? 'text-blue-600 dark:text-blue-400' : 'text-red-500') : 'text-muted-foreground',
-                                    isLastDay && isCycleEnd && 'border-r-2 border-r-purple-400 dark:border-r-purple-500',
-                                    isLastDay && !isCycleEnd && wIdx < totalSemanas - 1 && 'border-r',
-                                  )}
-                                >
-                                  {val}
-                                </TableCell>
-                              )
-                            }),
-                          )}
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-
-                {/* Legenda */}
-                <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-muted-foreground">
-                  {(['T', 'FF', 'FV', 'DT', 'DF'] as const).map((simbolo) => (
-                    <span key={simbolo} className="inline-flex items-center gap-1.5">
-                      <span
-                        className={cn(
-                          'flex size-4 items-center justify-center rounded-sm text-[7px] font-bold',
-                          CELULA_CLASSES[simbolo],
-                        )}
-                      >
-                        {simbolo === 'DT' ? 'T' : simbolo === 'DF' ? 'F' : simbolo}
-                      </span>
-                      <span>
-                        {simbolo === 'T' && 'Trabalho'}
-                        {simbolo === 'FF' && 'Folga fixa'}
-                        {simbolo === 'FV' && 'Folga variável'}
-                        {simbolo === 'DT' && 'Dom trabalhado'}
-                        {simbolo === 'DF' && 'Dom folga'}
-                      </span>
-                    </span>
-                  ))}
-                  {cicloMode === 'resumo' && resultado.ciclo_semanas > 0 && (
-                    <span className="inline-flex items-center gap-1.5 border-l border-border pl-4">
-                      <span className="h-3 w-0.5 rounded-full bg-purple-400 dark:bg-purple-500" />
-                      <span>Fim do ciclo</span>
-                    </span>
-                  )}
-                </div>
+                <SimuladorCicloGrid
+                  resultado={resultado}
+                  viewMode={cicloMode}
+                  selectedWeek={selectedWeek}
+                  onSelectedWeekChange={setSelectedWeek}
+                  domingoTarget={K}
+                />
               </CardContent>
             </Card>
 

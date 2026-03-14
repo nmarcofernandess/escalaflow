@@ -22,11 +22,14 @@ import type {
   SetorResumo,
   AlertaDashboard,
   DiaSemana,
+  SetorSimulacaoConfig,
   SalvarDetalheFuncaoRequest,
   SnapshotTrigger,
 } from '../shared'
 import {
   inferFolgasFromAlocacoes,
+  stringifySetorSimulacaoConfig,
+  normalizeSetorSimulacaoConfig,
   type FolgaInferenceAlocacao,
 } from '../shared'
 
@@ -526,6 +529,18 @@ const setoresAtualizar = t.procedure
     }
 
     return await queryOne('SELECT * FROM setores WHERE id = ?', input.id)
+  })
+
+const setoresSalvarSimulacaoConfig = t.procedure
+  .input<{ setor_id: number; config: SetorSimulacaoConfig }>()
+  .action(async ({ input }) => {
+    const configJson = stringifySetorSimulacaoConfig(normalizeSetorSimulacaoConfig(input.config))
+    await execute(
+      'UPDATE setores SET simulacao_config_json = ? WHERE id = ?',
+      configJson,
+      input.setor_id,
+    )
+    return await queryOne('SELECT * FROM setores WHERE id = ?', input.setor_id)
   })
 
 const setoresDeletar = t.procedure
@@ -3891,6 +3906,7 @@ export const router = {
   'setores.buscar': setoresBuscar,
   'setores.criar': setoresCriar,
   'setores.atualizar': setoresAtualizar,
+  'setores.salvarSimulacaoConfig': setoresSalvarSimulacaoConfig,
   'setores.deletar': setoresDeletar,
   'setores.listarDemandas': setoresListarDemandas,
   'setores.criarDemanda': setoresCriarDemanda,

@@ -35,8 +35,10 @@ import {
   CircleAlert,
   Save,
   Check,
+  AlertTriangle,
+  Info,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -98,7 +100,8 @@ import { PageHeader } from '@/componentes/PageHeader'
 import type { DemandaEditorRef, SemanaDraft } from '@/componentes/DemandaEditor'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
-import { gerarCicloFase1, converterNivel1ParaEscala, sugerirK } from '@shared/simula-ciclo'
+import { SimuladorCicloGrid } from '@/componentes/SimuladorCicloGrid'
+import { gerarCicloFase1, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
@@ -140,6 +143,9 @@ import {
   Excecao,
   SetorHorarioSemana,
   RegraHorarioColaborador,
+  normalizeSetorSimulacaoConfig,
+  type SetorSimulacaoConfig,
+  type SetorSimulacaoMode,
 } from '@shared/index'
 
 function PrecondicaoItem({
@@ -342,6 +348,19 @@ const setorSchema = z.object({
 type SetorFormInput = z.input<typeof setorSchema>
 type SetorFormData = z.output<typeof setorSchema>
 
+const PREVIEW_DIAS_UTEIS: Exclude<DiaSemana, 'DOM'>[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
+const DEFAULT_SIMULACAO_LIVRE_N = 5
+
+function diaSemanaParaIdxPreview(dia: DiaSemana | null | undefined): number | null {
+  if (!dia || dia === 'DOM') return null
+  return PREVIEW_DIAS_UTEIS.indexOf(dia)
+}
+
+function idxPreviewParaDiaSemana(idx: number | null | undefined): Exclude<DiaSemana, 'DOM'> | null {
+  if (idx == null) return null
+  return PREVIEW_DIAS_UTEIS[idx] ?? null
+}
+
 // ─── Main Component ────────────────────────────────────────────────────
 export function SetorDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -356,7 +375,7 @@ export function SetorDetalhe() {
   })
 
   // ─── Data loading ────────────────────────────────────────────────────
-  const { data: setor, loading: loadingSetor } = useApiData<Setor>(
+  const { data: setor, loading: loadingSetor, reload: reloadSetor } = useApiData<Setor>(
     () => setoresService.buscar(setorId),
     [setorId],
   )
@@ -449,6 +468,7 @@ export function SetorDetalhe() {
   const [escalaSelecionada, setEscalaSelecionada] = useState<string>('simulacao')
   const [periodoPreset, setPeriodoPreset] = useState<EscalaPeriodoPreset>('3_MESES')
   const [cicloMode, setCicloMode] = useCicloViewMode()
+  const [previewSelectedWeek, setPreviewSelectedWeek] = useState(0)
   const [gerando, setGerando] = useState(false)
   const [solverLogs, setSolverLogs] = useState<string[]>([])
   const [solverElapsed, setSolverElapsed] = useState(0)
@@ -466,10 +486,11 @@ export function SetorDetalhe() {
     solveMode: 'rapido',
     rulesOverride: {},
   })
-  // Preview Nivel 1: F/V editadas localmente
-  const [folgasEditadas, setFolgasEditadas] = useState<Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>>(new Map())
-  const [manualEditado, setManualEditado] = useState(false)
-  const [ultimoPadraoGerado, setUltimoPadraoGerado] = useState<Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }> | null>(null)
+  const [simulacaoConfigDraft, setSimulacaoConfigDraft] = useState<SetorSimulacaoConfig | null>(null)
+  const [rawLivreN, setRawLivreN] = useState(String(DEFAULT_SIMULACAO_LIVRE_N))
+  const [rawLivreK, setRawLivreK] = useState(String(sugerirK(DEFAULT_SIMULACAO_LIVRE_N, 7)))
+  const [simulacaoConfigSaving, setSimulacaoConfigSaving] = useState(false)
+  const [folgasSetorEditadas, setFolgasSetorEditadas] = useState<Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>>(new Map())
 
   const [exportOpen, setExportOpen] = useState(false)
   const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
@@ -921,90 +942,224 @@ export function SetorDetalhe() {
     [exportColaboradoresBase, exportDetalhe, postosOrdenados],
   )
 
-  // Preview Nivel 1: grid T/F instantaneo antes de rodar solver
-  const previewNivel1 = useMemo(() => {
-    if (escalaCompleta || carregandoTabEscala || loadingEscalas || loadingRegrasPadrao) return null
-    if (setor?.regime_escala !== '5X2') return null
-    if (!funcoesList.length || !orderedColabs.length) return null
+  const simulacaoPreviewMeses = useMemo(() => {
+    if (periodoPreset === '6_MESES') return 6
+    if (periodoPreset === '1_ANO') return 12
+    return 3
+  }, [periodoPreset])
 
-    const colaboradoresBloqueados = new Set<number>()
-    const postosElegiveis = funcoesList
-      .filter(f => f.ativo)
-      .sort((a, b) => a.ordem - b.ordem)
-      .map(f => {
-        const titular = orderedColabs.find(c => c.funcao_id === f.id)
-        if (!titular) return null
+  const simulacaoConfigBase = useMemo(
+    () => normalizeSetorSimulacaoConfig(setor?.simulacao_config_json, { hasActivePostos: postosAtivos.length > 0 }),
+    [postosAtivos.length, setor?.simulacao_config_json],
+  )
 
-        const editada = folgasEditadas.get(titular.id)
-        const regra = regrasMap.get(titular.id)
-        const regraGerada = ultimoPadraoGerado?.get(titular.id)
-        const folgaFixaAtual = editada?.fixa ?? regraGerada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
-        const foraDoModelo = (titular.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE' || folgaFixaAtual === 'DOM'
-        if (foraDoModelo) {
-          colaboradoresBloqueados.add(titular.id)
-          return null
-        }
+  useEffect(() => {
+    setSimulacaoConfigDraft(simulacaoConfigBase)
+    setRawLivreN(String(simulacaoConfigBase.livre.n))
+    setRawLivreK(String(simulacaoConfigBase.livre.k))
+  }, [simulacaoConfigBase])
 
-        return { funcao: f, titular }
-      })
-      .filter(Boolean) as Array<{ funcao: typeof funcoesList[0]; titular: typeof orderedColabs[0] }>
+  const simulacaoConfig = simulacaoConfigDraft ?? simulacaoConfigBase
 
-    if (postosElegiveis.length < 2) return null
+  const persistirSimulacaoConfig = useCallback(async (next: SetorSimulacaoConfig) => {
+    setSimulacaoConfigSaving(true)
+    try {
+      await setoresService.salvarSimulacaoConfig(setorId, next)
+    } catch (err) {
+      toast.error(mapError(err) || 'Erro ao salvar configuracao da simulacao')
+      reloadSetor()
+    } finally {
+      setSimulacaoConfigSaving(false)
+    }
+  }, [reloadSetor, setorId])
 
-    const N = postosElegiveis.length
-    const DIAS_IDX: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
-    const kDom = Math.max(0, ...(demandas ?? [])
-      .filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
-      .map(d => d.min_pessoas))
-    const K = kDom > 0 ? kDom : sugerirK(N)
+  const atualizarSimulacaoConfig = useCallback((updater: (prev: SetorSimulacaoConfig) => SetorSimulacaoConfig) => {
+    setSimulacaoConfigDraft((prev) => {
+      const base = prev ?? simulacaoConfigBase
+      const next = normalizeSetorSimulacaoConfig(updater(base), { hasActivePostos: postosAtivos.length > 0 })
+      void persistirSimulacaoConfig(next)
+      return next
+    })
+  }, [persistirSimulacaoConfig, postosAtivos.length, simulacaoConfigBase])
 
-    const folgasForcadas = postosElegiveis.map(p => {
-      const editada = folgasEditadas.get(p.titular.id)
-      const regraGerada = ultimoPadraoGerado?.get(p.titular.id)
-      const regra = regrasMap.get(p.titular.id)
-      const fixa = editada?.fixa ?? regraGerada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
-      const variavel = editada?.variavel ?? regraGerada?.variavel ?? regra?.folga_variavel_dia_semana ?? null
+  const demandaDomingoSetor = useMemo(
+    () => Math.max(
+      0,
+      ...((demandas ?? [])
+        .filter((demanda) => demanda.dia_semana === 'DOM' || demanda.dia_semana === null)
+        .map((demanda) => demanda.min_pessoas)),
+    ),
+    [demandas],
+  )
+
+  const setorSimulacaoInfo = useMemo(() => {
+    const N = postosAtivos.length
+    if (N < 1) {
       return {
-        folga_fixa_dia: fixa ? DIAS_IDX.indexOf(fixa) : null,
-        folga_variavel_dia: variavel ? DIAS_IDX.indexOf(variavel as DiaSemana) : null,
+        n: 0,
+        k: 0,
+        origemN: 'N = 0 postos ativos.',
+        origemK: 'Sem postos ativos: cadastre postos ou use o modo Livre.',
+      }
+    }
+
+    if (demandaDomingoSetor > 0) {
+      return {
+        n: N,
+        k: demandaDomingoSetor,
+        origemN: `N pelo setor: ${N} posto(s) ativo(s).`,
+        origemK: `K pelo setor: pico de demanda em DOM/padrao = ${demandaDomingoSetor}.`,
+      }
+    }
+
+    const sugerido = sugerirK(N, 7)
+    return {
+      n: N,
+      k: sugerido,
+      origemN: `N pelo setor: ${N} posto(s) ativo(s).`,
+      origemK: `Sem demanda DOM/padrao cadastrada: usando K sugerido ${sugerido}.`,
+    }
+  }, [demandaDomingoSetor, postosAtivos.length])
+
+  const modoSimulacaoEfetivo: SetorSimulacaoMode = simulacaoConfig.mode
+
+  const previewLivreFolgas = useMemo(
+    () => Array.from({ length: simulacaoConfig.livre.n }, (_, idx) => simulacaoConfig.livre.folgas_forcadas[idx] ?? { fixa: null, variavel: null }),
+    [simulacaoConfig.livre.folgas_forcadas, simulacaoConfig.livre.n],
+  )
+
+  const previewSetorRows = useMemo(() => {
+    return postosAtivos.map((funcao) => {
+      const titular = ocupanteMap.get(funcao.id) ?? null
+      const regra = titular ? regrasMap.get(titular.id) ?? null : null
+      const editada = folgasSetorEditadas.get(funcao.id)
+      const fixaAtual = editada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
+      const variavelAtual = editada?.variavel ?? regra?.folga_variavel_dia_semana ?? null
+      const bloqueio =
+        titular && (titular.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE'
+          ? 'Intermitente'
+          : fixaAtual === 'DOM'
+            ? 'Folga fixa em DOM'
+            : null
+
+      return {
+        funcao,
+        titular,
+        bloqueio,
+        folgaForcada: {
+          folga_fixa_dia: bloqueio ? null : diaSemanaParaIdxPreview(fixaAtual),
+          folga_variavel_dia: bloqueio ? null : diaSemanaParaIdxPreview(variavelAtual),
+        },
       }
     })
+  }, [folgasSetorEditadas, ocupanteMap, postosAtivos, regrasMap])
 
-    const output = gerarCicloFase1({
-      num_postos: N,
-      trabalham_domingo: K,
-      preflight: true,
-      folgas_forcadas: folgasForcadas.some(f => f.folga_fixa_dia != null || f.folga_variavel_dia != null)
-        ? folgasForcadas
-        : undefined,
+  const rascunhoAtual = useMemo(
+    () => escalasOrdenadas.find((escala) => escala.status === 'RASCUNHO') ?? null,
+    [escalasOrdenadas],
+  )
+
+  const carregandoPreviewSimulacao = (
+    loadingSetor ||
+    loadingEscalas ||
+    loadingRegrasPadrao ||
+    Boolean(
+      escalaTab === 'simulacao' &&
+      rascunhoAtual &&
+      (
+        carregandoTabEscala ||
+        !escalaCompleta ||
+        escalaCompleta.escala.id !== rascunhoAtual.id
+      )
+    )
+  )
+
+  const simulacaoPreview = useMemo(() => {
+    const resultadoErro = (erro: string, sugestao?: string): SimulaCicloOutput => ({
+      sucesso: false,
+      erro,
+      sugestao,
+      grid: [],
+      cobertura_dia: [],
+      ciclo_semanas: 0,
+      stats: {
+        folgas_por_pessoa_semana: 0,
+        cobertura_min: 0,
+        cobertura_max: 0,
+        h1_violacoes: 0,
+        domingos_consecutivos_max: 0,
+        sem_TT: false,
+        sem_H1_violation: false,
+      },
     })
 
-    if (!output.sucesso) return null
-    const convertido = converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao)
-    const regrasPreviewMap = new Map<number, RegraHorarioColaborador>()
-    for (const regra of regrasPadrao ?? []) {
-      regrasPreviewMap.set(regra.colaborador_id, regra)
-    }
-    for (const regra of convertido.regras) {
-      const atual = regrasPreviewMap.get(regra.colaborador_id)
-      regrasPreviewMap.set(regra.colaborador_id, atual
-        ? {
-            ...atual,
-            folga_fixa_dia_semana: regra.folga_fixa_dia_semana,
-            folga_variavel_dia_semana: regra.folga_variavel_dia_semana,
-          }
-        : regra)
-    }
+    const effectiveN = modoSimulacaoEfetivo === 'SETOR' ? setorSimulacaoInfo.n : simulacaoConfig.livre.n
+    const effectiveK = modoSimulacaoEfetivo === 'SETOR' ? setorSimulacaoInfo.k : simulacaoConfig.livre.k
+    const rowLabels = modoSimulacaoEfetivo === 'SETOR'
+      ? previewSetorRows.map((row) => row.funcao.apelido)
+      : Array.from({ length: simulacaoConfig.livre.n }, (_, idx) => `Pessoa ${idx + 1}`)
+    const blockedRows = modoSimulacaoEfetivo === 'SETOR'
+      ? previewSetorRows.flatMap((row, idx) => row.bloqueio ? [idx] : [])
+      : []
+
+    const folgasForcadas = modoSimulacaoEfetivo === 'SETOR'
+      ? previewSetorRows.map((row) => row.folgaForcada)
+      : previewLivreFolgas.map((folga) => ({
+          folga_fixa_dia: diaSemanaParaIdxPreview(folga.fixa),
+          folga_variavel_dia: diaSemanaParaIdxPreview(folga.variavel),
+        }))
+
+    const resultado = modoSimulacaoEfetivo === 'SETOR' && setor?.regime_escala !== '5X2'
+      ? resultadoErro(
+          'Preview Nível 1 disponível apenas para setores 5x2.',
+          'Mude para o modo Livre para explorar o ciclo ou gere a escala real pelo solver.',
+        )
+      : gerarCicloFase1({
+          num_postos: effectiveN,
+          trabalham_domingo: effectiveK,
+          num_meses: simulacaoPreviewMeses,
+          preflight: true,
+          folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null)
+            ? folgasForcadas
+            : undefined,
+        })
+
+    const savePadrao = modoSimulacaoEfetivo === 'SETOR' && resultado.sucesso
+      ? previewSetorRows.flatMap((row, idx) => {
+          if (!row.titular || row.bloqueio) return []
+          const previewRow = resultado.grid[idx]
+          if (!previewRow) return []
+          return [{
+            colaborador_id: row.titular.id,
+            folga_fixa_dia_semana: idxPreviewParaDiaSemana(previewRow.folga_fixa_dia),
+            folga_variavel_dia_semana: idxPreviewParaDiaSemana(previewRow.folga_variavel_dia),
+          }]
+        })
+      : []
+
+    const pinnedRows = modoSimulacaoEfetivo === 'SETOR' && resultado.sucesso
+      ? previewSetorRows.flatMap((row, idx) => row.titular && !row.bloqueio ? [{ rowIndex: idx, colaboradorId: row.titular.id }] : [])
+      : []
 
     return {
-      ...convertido,
-      regras: [...regrasPreviewMap.values()],
-      stats: output.stats,
-      ciclo_semanas: output.ciclo_semanas,
-      colaboradoresBloqueados: [...colaboradoresBloqueados],
+      mode: modoSimulacaoEfetivo,
+      effectiveN,
+      effectiveK,
+      rowLabels,
+      blockedRows,
+      resultado,
+      origemN: modoSimulacaoEfetivo === 'SETOR'
+        ? setorSimulacaoInfo.origemN
+        : `N livre salvo neste setor: ${simulacaoConfig.livre.n}.`,
+      origemK: modoSimulacaoEfetivo === 'SETOR'
+        ? setorSimulacaoInfo.origemK
+        : `K livre salvo neste setor: ${simulacaoConfig.livre.k}.`,
+      savePadrao,
+      pinnedRows,
+      foraDoPreview: previewSetorRows.filter((row) => row.bloqueio).length,
+      semTitular: previewSetorRows.filter((row) => !row.titular).length,
     }
-  }, [escalaCompleta, carregandoTabEscala, loadingEscalas, loadingRegrasPadrao, setor, funcoesList, orderedColabs,
-      demandas, regrasPadrao, regrasMap, folgasEditadas, ultimoPadraoGerado, periodoGeracao, setorId])
+  }, [modoSimulacaoEfetivo, previewLivreFolgas, previewSetorRows, setor?.regime_escala, setorSimulacaoInfo, simulacaoConfig.livre.k, simulacaoConfig.livre.n, simulacaoPreviewMeses])
 
   // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -1024,9 +1179,8 @@ export function SetorDetalhe() {
   }, [periodoPreset, inicioSemanaEscala])
 
   useEffect(() => {
-    if (!regrasPadrao) return
-    setUltimoPadraoGerado(null)
-  }, [regrasPadrao])
+    setPreviewSelectedWeek(0)
+  }, [cicloMode, modoSimulacaoEfetivo, simulacaoPreview.effectiveK, simulacaoPreview.effectiveN])
 
   // Fallback: se oficial sumir, volta para simulacao
   useEffect(() => {
@@ -1239,8 +1393,114 @@ export function SetorDetalhe() {
     }
   }
 
+  const handleMudarModoSimulacao = useCallback((mode: SetorSimulacaoMode) => {
+    if (mode === simulacaoConfig.mode) return
+    setPreviewSelectedWeek(0)
+    if (mode === 'LIVRE') {
+      setRawLivreN(String(simulacaoConfig.livre.n))
+      setRawLivreK(String(simulacaoConfig.livre.k))
+    }
+    atualizarSimulacaoConfig((prev) => ({ ...prev, mode }))
+  }, [atualizarSimulacaoConfig, simulacaoConfig.livre.k, simulacaoConfig.livre.n, simulacaoConfig.mode])
+
+  const handleLivreNChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    setRawLivreN(raw)
+    if (raw === '') return
+    const val = parseInt(raw, 10)
+    if (Number.isNaN(val) || val < 1) return
+    const nextN = Math.max(1, Math.min(val, 99))
+    const nextK = sugerirK(nextN, 7)
+    setRawLivreN(String(nextN))
+    setRawLivreK(String(nextK))
+    atualizarSimulacaoConfig((prev) => ({
+      ...prev,
+      livre: {
+        n: nextN,
+        k: nextK,
+        folgas_forcadas: prev.livre.folgas_forcadas.slice(0, nextN),
+      },
+    }))
+  }, [atualizarSimulacaoConfig])
+
+  const handleLivreKChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    setRawLivreK(raw)
+    if (raw === '') return
+    const val = parseInt(raw, 10)
+    if (Number.isNaN(val) || val < 0) return
+    const nextK = Math.max(0, Math.min(val, simulacaoConfig.livre.n))
+    setRawLivreK(String(nextK))
+    atualizarSimulacaoConfig((prev) => ({
+      ...prev,
+      livre: {
+        ...prev.livre,
+        k: nextK,
+      },
+    }))
+  }, [atualizarSimulacaoConfig, simulacaoConfig.livre.n])
+
+  const handleResetarSimulacao = useCallback(() => {
+    setPreviewSelectedWeek(0)
+    if (simulacaoPreview.mode === 'LIVRE') {
+      const nextK = sugerirK(DEFAULT_SIMULACAO_LIVRE_N, 7)
+      setRawLivreN(String(DEFAULT_SIMULACAO_LIVRE_N))
+      setRawLivreK(String(nextK))
+      atualizarSimulacaoConfig((prev) => ({
+        ...prev,
+        livre: {
+          n: DEFAULT_SIMULACAO_LIVRE_N,
+          k: nextK,
+          folgas_forcadas: [],
+        },
+      }))
+      return
+    }
+
+    setFolgasSetorEditadas(new Map())
+  }, [atualizarSimulacaoConfig, simulacaoPreview.mode])
+
+  const handlePreviewFolgaChange = useCallback((rowIndex: number, field: 'fixa' | 'variavel', value: DiaSemana | null) => {
+    if (simulacaoPreview.mode === 'LIVRE') {
+      const nextFolgas = Array.from(
+        { length: simulacaoConfig.livre.n },
+        (_, idx) => simulacaoConfig.livre.folgas_forcadas[idx] ?? { fixa: null, variavel: null },
+      )
+      const current = nextFolgas[rowIndex] ?? { fixa: null, variavel: null }
+      nextFolgas[rowIndex] = {
+        ...current,
+        [field]: value,
+      }
+      atualizarSimulacaoConfig((prev) => ({
+        ...prev,
+        livre: {
+          ...prev.livre,
+          folgas_forcadas: nextFolgas,
+        },
+      }))
+      return
+    }
+
+    const row = previewSetorRows[rowIndex]
+    if (!row) return
+    setFolgasSetorEditadas((prev) => {
+      const next = new Map(prev)
+      const current = next.get(row.funcao.id) ?? { fixa: null, variavel: null }
+      next.set(row.funcao.id, {
+        ...current,
+        [field]: value,
+      })
+      return next
+    })
+  }, [atualizarSimulacaoConfig, previewSetorRows, simulacaoConfig.livre.folgas_forcadas, simulacaoConfig.livre.n, simulacaoPreview.mode])
+
   // ─── Geracao inline ──────────────────────────────────────────────────
   const handleGerar = async () => {
+    if (simulacaoPreview.mode !== 'SETOR') {
+      toast.error('Para gerar escala, ative "Usar setor".')
+      return
+    }
+
     const dataInicio = periodoGeracao.data_inicio
     const dataFim = periodoGeracao.data_fim
     if (!dataInicio || !dataFim) {
@@ -1278,26 +1538,13 @@ export function SetorDetalhe() {
     setSolverLogs([])
     setGerando(true)
     try {
-      // Salvar F/V do preview no banco (force) antes do solver
-      if (previewNivel1) {
-        const padrao = previewNivel1.regras.map(r => ({
-          colaborador_id: r.colaborador_id,
-          folga_fixa_dia_semana: r.folga_fixa_dia_semana,
-          folga_variavel_dia_semana: r.folga_variavel_dia_semana,
-        }))
-        await colaboradoresService.salvarPadraoFolgas(padrao, true)
-        setUltimoPadraoGerado(new Map(
-          padrao.map((item) => [item.colaborador_id, {
-            fixa: item.folga_fixa_dia_semana,
-            variavel: item.folga_variavel_dia_semana,
-          }]),
-        ))
-        reloadRegrasPadrao()
+      if (simulacaoPreview.resultado.sucesso && simulacaoPreview.savePadrao.length > 0) {
+        await colaboradoresService.salvarPadraoFolgas(simulacaoPreview.savePadrao, true)
+        await reloadRegrasPadrao()
       }
 
-      // Montar pinned_folga_externo do preview (T/F → band 0/3)
       let pinnedFolgaExterno: Array<{ c: number; d: number; band: number }> | undefined
-      if (previewNivel1) {
+      if (simulacaoPreview.resultado.sucesso && simulacaoPreview.pinnedRows.length > 0) {
         const colabOrdenados = [...(colaboradores ?? [])]
           .sort((a, b) => b.rank - a.rank)
         const colabIdToIdx = new Map(colabOrdenados.map((c, i) => [c.id, i]))
@@ -1311,14 +1558,36 @@ export function SetorDetalhe() {
           cursor.setDate(cursor.getDate() + 1)
         }
 
-        pinnedFolgaExterno = previewNivel1.alocacoes
-          .filter(a => colabIdToIdx.has(a.colaborador_id))
-          .map(a => ({
-            c: colabIdToIdx.get(a.colaborador_id)!,
-            d: datasMap.get(a.data) ?? -1,
-            band: a.status === 'TRABALHO' ? 3 : 0,
-          }))
-          .filter(p => p.d >= 0)
+        pinnedFolgaExterno = simulacaoPreview.pinnedRows.flatMap(({ rowIndex, colaboradorId }) => {
+          const row = simulacaoPreview.resultado.grid[rowIndex]
+          const solverColabIdx = colabIdToIdx.get(colaboradorId)
+          if (!row || solverColabIdx == null) return []
+
+          const pins: Array<{ c: number; d: number; band: number }> = []
+          const cursor = new Date(`${dataInicio}T00:00:00`)
+          let weekIdx = 0
+          let dayIdx = 0
+
+          while (cursor.toISOString().slice(0, 10) <= dataFim) {
+            const semana = row.semanas[weekIdx]
+            if (semana && dayIdx < semana.dias.length) {
+              pins.push({
+                c: solverColabIdx,
+                d: datasMap.get(cursor.toISOString().slice(0, 10)) ?? -1,
+                band: semana.dias[dayIdx] === 'T' ? 3 : 0,
+              })
+            }
+
+            dayIdx++
+            if (dayIdx >= 7) {
+              dayIdx = 0
+              weekIdx++
+            }
+            cursor.setDate(cursor.getDate() + 1)
+          }
+
+          return pins.filter((pin) => pin.d >= 0)
+        })
       }
 
       const rulesOverride = Object.keys(solverSessionConfig.rulesOverride).length > 0
@@ -1333,8 +1602,7 @@ export function SetorDetalhe() {
         pinnedFolgaExterno,
       })
       setEscalaCompleta(result)
-      setFolgasEditadas(new Map())
-      setManualEditado(false)
+      setFolgasSetorEditadas(new Map())
       reloadEscalas()
       toast.success('Escala gerada')
     } catch (err) {
@@ -2431,73 +2699,141 @@ export function SetorDetalhe() {
             <CardContent className="space-y-4">
               {escalaTab === 'simulacao' && (
                 <div className="space-y-4">
-                  <div className="space-y-2 rounded-md border p-3">
-                    <p className="text-xs font-medium text-muted-foreground">Periodo para proxima geracao</p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Select value={periodoPreset} onValueChange={(value) => setPeriodoPreset(value as EscalaPeriodoPreset)}>
-                        <SelectTrigger className="h-8 w-auto min-w-[220px] max-w-[280px]">
-                          <span>{getPresetLabel(periodoPreset)}</span>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(['3_MESES', '6_MESES', '1_ANO'] as const).map((p) => {
-                            return (
-                              <SelectItem key={p} value={p}>
-                                <span>{getPresetLabel(p)}</span>
-                              </SelectItem>
-                            )
-                          })}
-                        </SelectContent>
-                      </Select>
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Simulador de Ciclo</CardTitle>
+                      <CardDescription>
+                        Mesmo motor do Dashboard: use o setor real ou entre em modo livre para brincar antes de cadastrar tudo.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Modo</p>
+                          <div className="inline-flex rounded-lg border bg-muted/30 p-1">
+                            {([
+                              { value: 'SETOR' as const, label: 'Usar setor' },
+                              { value: 'LIVRE' as const, label: 'Livre' },
+                            ]).map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={cn(
+                                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                                  simulacaoPreview.mode === option.value
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground',
+                                )}
+                                onClick={() => handleMudarModoSimulacao(option.value)}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => setSolverConfigOpen(true)}
-                      >
-                        <SlidersHorizontal className="size-3.5" />
-                        Configurar
-                      </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {simulacaoConfigSaving && (
+                            <Badge variant="outline" className="text-xs">Salvando simulacao...</Badge>
+                          )}
+                          <Button variant="outline" size="sm" onClick={handleResetarSimulacao}>
+                            <RotateCcw className="mr-1 size-3.5" />
+                            Resetar
+                          </Button>
+                        </div>
+                      </div>
 
-                      <Button
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={handleGerar}
-                        disabled={
-                          gerando ||
-                          isPreviewMode ||
-                          !empresa ||
-                          (tiposContrato?.length ?? 0) === 0 ||
-                          (orderedColabs?.length ?? 0) === 0
-                        }
-                        title={
-                          !empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0
-                            ? 'Complete os itens em "Antes de gerar" abaixo'
-                            : undefined
-                        }
-                      >
-                        {gerando ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : escalaCompleta ? (
-                          <RotateCcw className="size-3.5" />
-                        ) : (
-                          <Play className="size-3.5" />
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="setor-simulacao-n">Pessoas no preview</Label>
+                          <Input
+                            id="setor-simulacao-n"
+                            type="number"
+                            min={1}
+                            max={99}
+                            value={simulacaoPreview.mode === 'SETOR' ? String(simulacaoPreview.effectiveN) : rawLivreN}
+                            onChange={handleLivreNChange}
+                            disabled={simulacaoPreview.mode === 'SETOR'}
+                            className="w-full max-w-[220px]"
+                          />
+                          <p className="text-xs text-muted-foreground">{simulacaoPreview.origemN}</p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label htmlFor="setor-simulacao-k">Trabalham domingo</Label>
+                          <Input
+                            id="setor-simulacao-k"
+                            type="number"
+                            min={0}
+                            max={Math.max(simulacaoPreview.effectiveN, 0)}
+                            value={simulacaoPreview.mode === 'SETOR' ? String(simulacaoPreview.effectiveK) : rawLivreK}
+                            onChange={handleLivreKChange}
+                            disabled={simulacaoPreview.mode === 'SETOR'}
+                            className="w-full max-w-[220px]"
+                          />
+                          <p className="text-xs text-muted-foreground">{simulacaoPreview.origemK}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => setSolverConfigOpen(true)}
+                          title={`Periodo atual: ${getPresetLabel(periodoPreset)}`}
+                        >
+                          <SlidersHorizontal className="size-3.5" />
+                          Configurar
+                        </Button>
+
+                        <Badge variant="outline" className="text-xs">
+                          {getPresetLabel(periodoPreset)}
+                        </Badge>
+
+                        <Button
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={handleGerar}
+                          disabled={
+                            gerando ||
+                            isPreviewMode ||
+                            simulacaoPreview.mode !== 'SETOR' ||
+                            !empresa ||
+                            (tiposContrato?.length ?? 0) === 0 ||
+                            (orderedColabs?.length ?? 0) === 0
+                          }
+                          title={
+                            simulacaoPreview.mode !== 'SETOR'
+                              ? 'Para gerar escala, ative "Usar setor".'
+                              : !empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0
+                                ? 'Complete os itens em "Antes de gerar" abaixo'
+                                : undefined
+                          }
+                        >
+                          {gerando ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : escalaCompleta ? (
+                            <RotateCcw className="size-3.5" />
+                          ) : (
+                            <Play className="size-3.5" />
+                          )}
+                          {escalaCompleta ? 'Regerar' : 'Gerar Escala'}
+                        </Button>
+
+                        {escalaCompleta && (
+                          <>
+                            <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando || isPreviewMode}>
+                              {oficializando ? 'Oficializando...' : 'Oficializar'}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando || isPreviewMode}>
+                              {descartando ? 'Descartando...' : 'Descartar'}
+                            </Button>
+                          </>
                         )}
-                        {escalaCompleta ? 'Regerar' : 'Gerar Escala'}
-                      </Button>
-
-                      {escalaCompleta && (
-                        <>
-                          <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando || isPreviewMode}>
-                            {oficializando ? 'Oficializando...' : 'Oficializar'}
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando || isPreviewMode}>
-                            {descartando ? 'Descartando...' : 'Descartar'}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   {escalaCompleta ? (
                     <div className="space-y-3">
@@ -2529,65 +2865,158 @@ export function SetorDetalhe() {
                         />
                       )}
                     </div>
-                  ) : previewNivel1 ? (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold">Preview do Ciclo</p>
-                        <Badge variant="outline" className="text-xs">Nivel 1 — sem horarios</Badge>
-                        {previewNivel1.colaboradoresBloqueados.length > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            {previewNivel1.colaboradoresBloqueados.length} fora do preview
-                          </Badge>
-                        )}
-                        {previewNivel1.stats.sem_TT === false && (
-                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">TT detectado</Badge>
-                        )}
-                        {previewNivel1.stats.sem_H1_violation === false && (
-                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">H1 violado</Badge>
-                        )}
-                        {manualEditado && (
-                          <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs"
-                            onClick={() => { setFolgasEditadas(new Map()); setManualEditado(false) }}>
-                            <RotateCcw className="size-3" /> Recalcular
-                          </Button>
-                        )}
-                      </div>
-                      <EscalaCicloResumo
-                        escala={previewNivel1.escala}
-                        alocacoes={previewNivel1.alocacoes}
-                        colaboradores={orderedColabs}
-                        funcoes={funcoesList}
-                        regrasPadrao={previewNivel1.regras}
-                        folgaBloqueadaColabIds={previewNivel1.colaboradoresBloqueados}
-                        allowDomingoNaFolgaFixa={false}
-                        onFolgaChange={(colabId, field, value) => {
-                          setFolgasEditadas(prev => {
-                            const next = new Map(prev)
-                            const current = next.get(colabId) ?? { fixa: null, variavel: null }
-                            if (field === 'folga_fixa_dia_semana') current.fixa = value
-                            else current.variavel = value as Exclude<DiaSemana, 'DOM'> | null
-                            next.set(colabId, current)
-                            return next
-                          })
-                          setManualEditado(true)
-                        }}
-                        viewMode={cicloMode}
-                      />
+                  ) : carregandoPreviewSimulacao ? (
+                    <div className="flex items-center justify-center rounded-lg border py-10">
+                      <Loader2 className="size-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : (
-                    <div className="space-y-4 rounded-lg border border-dashed px-4 py-5">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {setor?.regime_escala === '6X1'
-                            ? 'Preview disponivel apenas para setores 5x2. Use Gerar Escala.'
-                            : funcoesList.length > 0 && orderedColabs.length > 0
-                              ? 'Preview indisponivel com a equipe/demanda atuais. Em 5x2, o domingo precisa caber em ate metade da equipe elegivel.'
-                              : 'Configure postos e demandas para ver o preview do ciclo.'}
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">
+                          {simulacaoPreview.mode === 'SETOR' ? 'Preview do Setor' : 'Preview Livre'}
                         </p>
+                        <Badge variant="outline" className="text-xs">Nivel 1 — sem horarios</Badge>
+                        {simulacaoPreview.mode === 'LIVRE' && (
+                          <Badge variant="outline" className="text-xs">Nao gera escala</Badge>
+                        )}
+                        {simulacaoPreview.foraDoPreview > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {simulacaoPreview.foraDoPreview} fora do preview 5x2
+                          </Badge>
+                        )}
+                        {simulacaoPreview.semTitular > 0 && simulacaoPreview.mode === 'SETOR' && (
+                          <Badge variant="outline" className="text-xs">
+                            {simulacaoPreview.semTitular} posto(s) sem titular
+                          </Badge>
+                        )}
+                        {simulacaoPreview.resultado.sucesso && simulacaoPreview.resultado.stats.sem_TT === false && (
+                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">TT detectado</Badge>
+                        )}
+                        {simulacaoPreview.resultado.sucesso && simulacaoPreview.resultado.stats.sem_H1_violation === false && (
+                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">H1 violado</Badge>
+                        )}
                       </div>
+                      {!simulacaoPreview.resultado.sucesso ? (
+                        <Card className="border-red-500/30">
+                          <CardContent className="flex items-start gap-3 pt-6">
+                            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-400" />
+                            <div>
+                              <p className="font-medium text-red-400">{simulacaoPreview.resultado.erro}</p>
+                              {simulacaoPreview.resultado.sugestao && (
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {simulacaoPreview.resultado.sugestao}
+                                </p>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div className="rounded-lg border p-3">
+                              <p className="text-xs text-muted-foreground">Ciclo</p>
+                              <p className="mt-0.5 text-lg font-semibold tabular-nums">
+                                {simulacaoPreview.resultado.ciclo_semanas}{' '}
+                                <span className="text-sm font-normal text-muted-foreground">
+                                  semana{simulacaoPreview.resultado.ciclo_semanas > 1 ? 's' : ''}
+                                </span>
+                              </p>
+                            </div>
+                            <div
+                              className={cn(
+                                'rounded-lg border p-3',
+                                simulacaoPreview.resultado.stats.sem_TT ? 'border-emerald-500/30' : 'border-amber-500/30',
+                              )}
+                            >
+                              <p className="text-xs text-muted-foreground">Domingos seguidos</p>
+                              <p
+                                className={cn(
+                                  'mt-0.5 text-lg font-semibold',
+                                  simulacaoPreview.resultado.stats.sem_TT ? 'text-emerald-500' : 'text-amber-500',
+                                )}
+                              >
+                                {simulacaoPreview.resultado.stats.sem_TT
+                                  ? 'Nenhum'
+                                  : `Até ${simulacaoPreview.resultado.stats.domingos_consecutivos_max}`}
+                              </p>
+                            </div>
+                            <div
+                              className={cn(
+                                'rounded-lg border p-3',
+                                simulacaoPreview.resultado.stats.sem_H1_violation ? 'border-emerald-500/30' : 'border-red-500/30',
+                              )}
+                            >
+                              <p className="text-xs text-muted-foreground">Dias consecutivos</p>
+                              <p
+                                className={cn(
+                                  'mt-0.5 text-lg font-semibold',
+                                  simulacaoPreview.resultado.stats.sem_H1_violation ? 'text-emerald-500' : 'text-red-500',
+                                )}
+                              >
+                                {simulacaoPreview.resultado.stats.h1_violacoes === 0
+                                  ? 'Até 6'
+                                  : `${simulacaoPreview.resultado.stats.h1_violacoes} reparos`}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border p-3">
+                              <p className="text-xs text-muted-foreground">Cobertura diária</p>
+                              <p className="mt-0.5 text-lg font-semibold tabular-nums">
+                                {simulacaoPreview.resultado.stats.cobertura_min}
+                                <span className="text-sm font-normal text-muted-foreground"> a </span>
+                                {simulacaoPreview.resultado.stats.cobertura_max}
+                                <span className="ml-1 text-sm font-normal text-muted-foreground">pessoas</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-base">Ciclo Rotativo</CardTitle>
+                              <CardDescription>
+                                Preview instantaneo do padrao T/F antes do solver, no mesmo estilo do simulador do Dashboard.
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
+                              </div>
+                              <SimuladorCicloGrid
+                                resultado={simulacaoPreview.resultado}
+                                viewMode={cicloMode}
+                                selectedWeek={previewSelectedWeek}
+                                onSelectedWeekChange={setPreviewSelectedWeek}
+                                rowLabels={simulacaoPreview.rowLabels}
+                                blockedRows={simulacaoPreview.blockedRows}
+                                onFolgaChange={handlePreviewFolgaChange}
+                                allowDomingoNaFixa={false}
+                                domingoTarget={simulacaoPreview.effectiveK}
+                              />
+                            </CardContent>
+                          </Card>
+                        </>
+                      )}
+
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Info className="size-4 shrink-0" />
+                        <span>
+                          {simulacaoPreview.mode === 'SETOR'
+                            ? 'No modo Usar setor, o preview herda N/K do setor e usa seeds reais quando existe titular.'
+                            : 'No modo Livre, este preview e salvo por setor so para exploracao. Ele nao alimenta o solver.'}
+                        </span>
+                      </div>
+
+                      {simulacaoPreview.mode === 'SETOR' && postosAtivos.length === 0 && (
+                        <div className="rounded-md border border-dashed px-4 py-4">
+                          <p className="text-sm font-medium">Sem postos ativos no setor.</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            O simulador continua disponivel. Use o modo Livre para explorar agora ou cadastre postos acima.
+                          </p>
+                        </div>
+                      )}
+
                       {(!empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0 || (demandas?.length ?? 0) === 0) && (
                         <div className="rounded-md border bg-muted/30 px-3 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             Antes de gerar
                           </p>
                           <ul className="space-y-1.5 text-sm">
@@ -3015,6 +3444,8 @@ export function SetorDetalhe() {
         onOpenChange={setSolverConfigOpen}
         config={solverSessionConfig}
         onConfigChange={setSolverSessionConfig}
+        periodoPreset={periodoPreset}
+        onPeriodoPresetChange={setPeriodoPreset}
       />
 
     </div>

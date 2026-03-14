@@ -4,6 +4,7 @@ import type {
   Demanda,
   DemandaExcecaoData,
   SetorHorarioSemana,
+  SetorSimulacaoConfig,
   SalvarTimelineDiaInput,
   SalvarTimelineDiaOutput,
 } from '@shared/index'
@@ -20,6 +21,9 @@ export const setoresService = {
 
   atualizar: (id: number, data: Partial<Setor>) =>
     client['setores.atualizar']({ id, ...data }) as Promise<Setor>,
+
+  salvarSimulacaoConfig: (setorId: number, config: SetorSimulacaoConfig) =>
+    client['setores.salvarSimulacaoConfig']({ setor_id: setorId, config }) as Promise<Setor>,
 
   deletar: (id: number) =>
     client['setores.deletar']({ id }) as Promise<void>,
