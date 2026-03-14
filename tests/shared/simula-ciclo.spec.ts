@@ -94,3 +94,63 @@ describe('gerarCicloFase1', () => {
     }
   })
 })
+
+describe('gerarCicloFase1 com demanda_por_dia', () => {
+  it('distribui folgas nos dias com menos demanda', () => {
+    // SEG=1 (baixa), TER=1 (baixa), QUA=3 (alta), QUI=3, SEX=4 (pico), SAB=2, DOM=2
+    const result = gerarCicloFase1({
+      num_postos: 5,
+      trabalham_domingo: 2,
+      demanda_por_dia: [1, 1, 3, 3, 4, 2, 2],
+    })
+
+    expect(result.sucesso).toBe(true)
+
+    const folgasPorDia = [0, 0, 0, 0, 0, 0]
+    for (const row of result.grid) {
+      for (const semana of row.semanas) {
+        for (let d = 0; d < 6; d++) {
+          if (semana.dias[d] === 'F') folgasPorDia[d]++
+        }
+      }
+    }
+
+    // More folgas on low-demand days than high-demand
+    expect(folgasPorDia[0] + folgasPorDia[1]).toBeGreaterThan(folgasPorDia[4])
+
+    // Coverage balance: folgas SPREAD across days
+    for (const cob of result.cobertura_dia) {
+      const weekdayCov = cob.cobertura.slice(0, 6)
+      const cobMax = Math.max(...weekdayCov)
+      const cobMin = Math.min(...weekdayCov)
+      expect(cobMax - cobMin).toBeLessThanOrEqual(3)
+    }
+  })
+
+  it('funciona sem demanda_por_dia (fallback p%6)', () => {
+    const result = gerarCicloFase1({
+      num_postos: 5,
+      trabalham_domingo: 2,
+    })
+    expect(result.sucesso).toBe(true)
+    expect(result.stats.h1_violacoes).toBe(0)
+  })
+
+  it('demanda_por_dia com folgas_forcadas respeita forcadas', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 1,
+      demanda_por_dia: [1, 1, 3, 3, 4, 2, 1],
+      folgas_forcadas: [
+        { folga_fixa_dia: 2, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    for (const semana of result.grid[0].semanas) {
+      expect(semana.dias[2]).toBe('F')
+    }
+  })
+})

@@ -29,6 +29,8 @@ export interface SimulaCicloFase1Input {
     /** Se true, pessoa tem folga fixa no domingo — todos domingos F, fora da rotacao */
     folga_fixa_dom?: boolean
   }>
+  /** Demanda por dia da semana [SEG, TER, QUA, QUI, SEX, SAB, DOM]. Se fornecido, folgas sao distribuidas nos dias com mais sobra de cobertura. */
+  demanda_por_dia?: number[]
 }
 
 export interface SimulaCicloSemana {
@@ -275,12 +277,40 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
   }
 
   // --- Step 2: Folgas semanais 5x2 (2 por semana) ---
+  const hasDemanda = input.demanda_por_dia && input.demanda_por_dia.length >= 6
+
+  // Track folgas assigned per weekday (for demand-aware spreading)
+  const folgaCount = [0, 0, 0, 0, 0, 0] // SEG-SAB
+
+  // Pick best folga day considering demand surplus AND already-assigned folgas
+  const pickBestFolgaDay = (demanda: number[], exclude: number | null): number => {
+    let bestDay = 0
+    let bestScore = -Infinity
+    for (let d = 0; d < 6; d++) {
+      if (d === exclude) continue
+      const score = (N - (demanda[d] ?? 0)) - folgaCount[d]
+      if (score > bestScore) {
+        bestScore = score
+        bestDay = d
+      }
+    }
+    return bestDay
+  }
+
   for (let p = 0; p < N; p++) {
     const forcada = input.folgas_forcadas?.[p]
     const isFixaDom = forcada?.folga_fixa_dom === true
-    const base1 = forcada?.folga_fixa_dia ?? (p % 6)
+
+    const base1 = forcada?.folga_fixa_dia
+      ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, null) : (p % 6))
+    folgaCount[base1]++
+
     // folga_fixa_dom: variable loses meaning, use a second fixed weekday
-    const base2 = isFixaDom ? null : (forcada?.folga_variavel_dia ?? ((p + 3) % 6))
+    const base2 = isFixaDom ? null
+      : (forcada?.folga_variavel_dia
+        ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, base1) : ((p + 3) % 6)))
+    if (base2 != null) folgaCount[base2]++
+
     for (let w = 0; w < weeks; w++) {
       const sundayOff = grid[p][w * 7 + 6] === 'F'
       if (sundayOff) {
