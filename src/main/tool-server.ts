@@ -38,6 +38,10 @@ export function startToolServer() {
         const result = await executeTool(name, args ?? {})
         return json(res, result)
       }
+      if (req.method === 'GET' && req.url === '/instructions') {
+        const { buildMcpInstructions } = await import('./ia/system-prompt')
+        return json(res, { instructions: buildMcpInstructions() })
+      }
       json(res, { status: 'error', message: 'Not found' }, 404)
     } catch (err) {
       json(res, { status: 'error', message: String(err) }, 500)

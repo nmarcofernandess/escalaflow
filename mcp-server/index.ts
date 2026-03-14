@@ -31,11 +31,22 @@ const tools = await toolsRes.json() as Array<{
 
 console.error(`[escalaflow-mcp] ${tools.length} tools registradas`)
 
+// Busca instructions de dominio (CLT, motor, entidades, workflows)
+let instructions = ''
+try {
+  const instrRes = await fetch(`${TOOL_URL}/instructions`)
+  const data = await instrRes.json() as { instructions: string }
+  instructions = data.instructions
+  console.error(`[escalaflow-mcp] Instructions carregadas (${instructions.length} chars)`)
+} catch {
+  console.error('[escalaflow-mcp] Aviso: instructions nao carregadas — tools funcionam sem contexto de dominio')
+}
+
 // ==================== MCP SERVER ====================
 
 const server = new Server(
   { name: 'escalaflow', version: '1.0.0' },
-  { capabilities: { tools: {} } },
+  { capabilities: { tools: {} }, instructions },
 )
 
 // tools/list — retorna catalogo com inputSchema (JSON Schema raw)
