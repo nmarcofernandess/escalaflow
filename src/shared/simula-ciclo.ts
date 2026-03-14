@@ -26,6 +26,8 @@ export interface SimulaCicloFase1Input {
   folgas_forcadas?: Array<{
     folga_fixa_dia: number | null    // 0-5 (SEG-SAB) ou null
     folga_variavel_dia: number | null
+    /** Se true, pessoa tem folga fixa no domingo — todos domingos F, fora da rotacao */
+    folga_fixa_dom?: boolean
   }>
 }
 
@@ -263,11 +265,22 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     }
   }
 
+  // --- Step 1 postprocess: folga_fixa_dom overrides — all Sundays F ---
+  for (let p = 0; p < N; p++) {
+    if (input.folgas_forcadas?.[p]?.folga_fixa_dom) {
+      for (let w = 0; w < weeks; w++) {
+        grid[p][w * 7 + 6] = 'F'
+      }
+    }
+  }
+
   // --- Step 2: Folgas semanais 5x2 (2 por semana) ---
   for (let p = 0; p < N; p++) {
     const forcada = input.folgas_forcadas?.[p]
+    const isFixaDom = forcada?.folga_fixa_dom === true
     const base1 = forcada?.folga_fixa_dia ?? (p % 6)
-    const base2 = forcada?.folga_variavel_dia ?? ((p + 3) % 6)
+    // folga_fixa_dom: variable loses meaning, use a second fixed weekday
+    const base2 = isFixaDom ? null : (forcada?.folga_variavel_dia ?? ((p + 3) % 6))
     for (let w = 0; w < weeks; w++) {
       const sundayOff = grid[p][w * 7 + 6] === 'F'
       if (sundayOff) {
@@ -276,7 +289,7 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
       } else {
         // Trabalhou DOM → folga no dia fixo + variável (mesma semana)
         grid[p][w * 7 + base1] = 'F'
-        grid[p][w * 7 + base2] = 'F'
+        if (base2 != null) grid[p][w * 7 + base2] = 'F'
       }
     }
   }
