@@ -64,6 +64,15 @@
   - Avisos de operacao tem `origem='operacao'`
   - Avisos de escala (validador) podem ter `origem='escala'` no futuro
 
+### Preview do Ciclo — visibilidade condicional (BUG REPORTADO PELO MARCO)
+- **Problema:** Preview mostra grid mesmo com F/V pendentes ou dados insuficientes, dando falsa impressao de que esta ok
+- **Onde:** SetorDetalhe.tsx ~linha 2780: `previewNivel1 ? (` renderiza sem checar se dados estao completos
+- **Regra do Marco:** "Deve ficar so o que temos certeza. Neste caso, e nada."
+- **O que falta (CLAUDE C):**
+  - Condicionar renderizacao do preview: se `derivados.avisos` tem algum com `nivel='erro'` → NAO mostrar grid, mostrar os avisos
+  - Se "X pendente(s) F/V" → mostrar aviso "Configure as folgas primeiro" em vez do grid
+  - Ref: ANALYST doc secoes 3, 24, 26 (preflight, o que TS valida, solver is blind)
+
 ## Conflitos entre dominios
 (nenhum)
 

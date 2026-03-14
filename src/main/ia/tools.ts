@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { queryOne, queryAll, execute, insertReturningId, transaction } from '../db/query'
 import { minutesBetween as minutesBetweenUtil } from '../date-utils'
 import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride } from '../preflight-capacity'
@@ -87,6 +88,18 @@ function toolTruncated<T extends Record<string, any>>(
 
 function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+// ---------------------------------------------------------------------------
+// Broadcast de invalidação — notifica renderer que dados mudaram (via IA tools)
+// ---------------------------------------------------------------------------
+const requireElectron = createRequire(import.meta.url)
+const { BrowserWindow } = requireElectron('electron') as typeof import('electron')
+
+function broadcastInvalidation(entidades: string[], setor_id?: number) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('data:invalidated', { entidades, setor_id })
+  }
 }
 
 const HORA_HHMM_REGEX = /^\d{2}:\d{2}$/
@@ -191,10 +204,7 @@ const CriarColaboradorSchema = z.object({
   setor_id: z.number().int().positive().describe('ID do setor. Use o contexto automático injetado pelo sistema.'),
   tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato. Contexto automático disponibiliza contratos. Default: CLT 44h (id=1).'),
   sexo: z.enum(['M', 'F']).optional().describe('Sexo do colaborador: "M" ou "F".'),
-  data_nascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Data de nascimento no formato YYYY-MM-DD.'),
   tipo_trabalhador: z.string().optional().describe('Tipo de trabalhador (ex: CLT, estagiario, intermitente).'),
-  hora_inicio_min: z.string().optional().describe('Horário mínimo de início permitido (HH:MM).'),
-  hora_fim_max: z.string().optional().describe('Horário máximo de término permitido (HH:MM).'),
   ativo: z.boolean().optional().describe('true = ativo, false = inativo.')
 })
 
@@ -614,7 +624,7 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   colaboradores: new Set([
     'id', 'nome', 'setor_id', 'tipo_contrato_id', 'sexo', 'ativo', 'rank',
     'prefere_turno', 'evitar_dia_semana', 'horas_semanais', 'tipo_trabalhador',
-    'data_nascimento', 'hora_inicio_min', 'hora_fim_max'
+    'funcao_id'
   ]),
   setores: new Set([
     'id', 'nome', 'icone', 'hora_abertura', 'hora_fechamento', 'regime_escala', 'ativo'
@@ -1016,16 +1026,7 @@ async function applyColaboradorDefaults(
     setor?: { hora_abertura?: string; hora_fechamento?: string } | null
 ): Promise<Record<string, any>> {
     if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1
-    if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'regular'
-    if (!dados.data_nascimento) {
-        const age = Math.floor(Math.random() * 16) + 25
-        const year = new Date().getFullYear() - age
-        dados.data_nascimento = `${year}-01-01`
-    }
-    if (setor) {
-        if (!dados.hora_inicio_min && setor.hora_abertura) dados.hora_inicio_min = setor.hora_abertura
-        if (!dados.hora_fim_max && setor.hora_fechamento) dados.hora_fim_max = setor.hora_fechamento
-    }
+    if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'CLT'
     if (dados.ativo === undefined) dados.ativo = true
     return dados
 }
@@ -1577,6 +1578,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               ? `Titular atual: ${view.titular_nome}.`
               : 'Sem titular: posto está na reserva de postos.'
 
+            broadcastInvalidation(['postos', 'colaboradores'])
             return toolOk(
               {
                 sucesso: true,
@@ -1750,6 +1752,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     : null,
                 })
                 const view = await getPostoToolView(posto.id)
+                broadcastInvalidation([entidade])
                 return toolOk(
                   {
                     sucesso: true,
@@ -1779,12 +1782,18 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
         }
 
-        const keys = Object.keys(dados)
+        // Filtrar campos invalidos antes do INSERT (IA pode hallucinar campos como data_nascimento)
+        const camposValidos = CAMPOS_VALIDOS[entidade]
+        const dadosFiltrados = camposValidos
+            ? Object.fromEntries(Object.entries(dados).filter(([k]) => camposValidos.has(k)))
+            : dados
+        const keys = Object.keys(dadosFiltrados)
         const placeholders = keys.map(() => '?').join(', ')
-        const values = Object.values(dados)
+        const values = Object.values(dadosFiltrados)
 
         try {
             const newId = await insertReturningId(`INSERT INTO ${entidade} (${keys.join(', ')}) VALUES (${placeholders})`, ...values)
+            broadcastInvalidation([entidade])
             return toolOk(
               {
                 sucesso: true,
@@ -1890,6 +1899,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     : titularAtualId,
                 })
                 const view = await getPostoToolView(posto.id)
+                broadcastInvalidation([entidade])
                 return toolOk(
                   {
                     sucesso: true,
@@ -1925,6 +1935,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         try {
             const res = await execute(`UPDATE ${entidade} SET ${sets} WHERE id = ?`, ...values)
+            broadcastInvalidation([entidade])
             return toolOk(
               {
                 sucesso: true,
@@ -1988,6 +1999,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 }
 
                 await deletarFuncao(id)
+                broadcastInvalidation([entidade])
                 return toolOk(
                   {
                     sucesso: true,
@@ -2017,6 +2029,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
 
+            broadcastInvalidation([entidade])
             return toolOk(
               {
                 sucesso: true,
@@ -2080,6 +2093,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         await execute(`INSERT INTO regra_empresa (codigo, status) VALUES (?, ?) ON CONFLICT(codigo) DO UPDATE SET status = excluded.status`, codigo, status)
+        broadcastInvalidation(['regras'])
         return toolOk(
           {
             sucesso: true,
@@ -2211,6 +2225,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 qualidade: ind.pontuacao,
             }
 
+            broadcastInvalidation(['escalas'])
             return toolOk(
               {
                 sucesso: true,
@@ -2292,6 +2307,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 'UPDATE alocacoes SET status = ? WHERE escala_id = ? AND colaborador_id = ? AND data = ?',
                 status, escala_id, colaborador_id, data
             )
+            broadcastInvalidation(['escalas'])
             return toolOk(
               {
                 sucesso: true,
@@ -2374,6 +2390,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             status, hora_inicio, hora_fim, minutos, escala_id, colaborador_id, data
           )
 
+          broadcastInvalidation(['escalas'])
           return toolOk(
             {
               sucesso: true,
@@ -2452,6 +2469,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
 
         await execute("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?", escala_id)
+        broadcastInvalidation(['escalas'])
         return toolOk(
           {
             sucesso: true,
@@ -2730,11 +2748,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         const idsCriados: number[] = []
         try {
+            const camposValidosLote = CAMPOS_VALIDOS[entidade]
             await transaction(async () => {
               for (const { dados, indice } of validados) {
-                  const keys = Object.keys(dados)
+                  // Filtrar campos invalidos (IA pode hallucinar campos como data_nascimento)
+                  const dadosLimpos = camposValidosLote
+                      ? Object.fromEntries(Object.entries(dados).filter(([k]) => camposValidosLote.has(k)))
+                      : dados
+                  const keys = Object.keys(dadosLimpos)
                   const placeholders = keys.map(() => '?').join(', ')
-                  const values = Object.values(dados)
+                  const values = Object.values(dadosLimpos)
                   let newId: number
                   try {
                     newId = await insertReturningId(
@@ -2773,6 +2796,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             )
         }
 
+        broadcastInvalidation([entidade])
         return toolOk(
           {
             sucesso: true,
@@ -2930,6 +2954,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           const regra = diaSemana === null
             ? await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', colaborador_id)
             : await queryOne<Record<string, any>>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', colaborador_id, diaSemana)
+          broadcastInvalidation(['regras_padrao'])
           return toolOk(
             {
               sucesso: true,
@@ -3036,6 +3061,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
             const registro = await queryOne<Record<string, any>>('SELECT * FROM demandas_excecao_data WHERE id = ?', newId)
 
+            broadcastInvalidation(['demandas'])
             return toolOk(
               {
                 sucesso: true,
@@ -3142,6 +3168,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               colaborador_id, data
             )
 
+            broadcastInvalidation(['regras_padrao'])
             return toolOk(
               {
                 sucesso: true,
@@ -3285,6 +3312,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
             await execute('DELETE FROM regra_empresa')
 
+            broadcastInvalidation(['regras'])
             return toolOk(
               {
                 sucesso: true,
@@ -3359,6 +3387,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 values.push(id)
                 await execute(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`, ...values)
                 const updated = await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
+                broadcastInvalidation(['tipos_contrato'])
                 return toolOk(
                   { perfil: updated, operacao: 'atualizado' },
                   { summary: `Perfil ${id} atualizado.`, meta: { tool_kind: 'action' } }
@@ -3373,6 +3402,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   VALUES (?, ?, ?, ?, ?, ?)
                 `, tipo_contrato_id, nome, inicio ?? null, fim ?? null, preferencia_turno_soft ?? null, ordem ?? 0)
                 const created = await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', newId)
+                broadcastInvalidation(['tipos_contrato'])
                 return toolOk(
                   { perfil: created, operacao: 'criado' },
                   { summary: `Perfil "${nome}" criado para contrato ${tipo_contrato_id}.`, meta: { tool_kind: 'action' } }
@@ -3395,6 +3425,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
             }
             await execute('DELETE FROM contrato_perfis_horario WHERE id = ?', id)
+            broadcastInvalidation(['tipos_contrato'])
             return toolOk(
               { sucesso: true, perfil_removido: existing.nome },
               { summary: `Perfil "${existing.nome}" removido.`, meta: { tool_kind: 'action' } }
@@ -3422,6 +3453,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   WHERE dia_semana = ?
                 `, diaAtivo, hora_abertura ?? '08:00', hora_fechamento ?? '22:00', dia_semana)
                 const result = await queryOne('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?', dia_semana)
+                broadcastInvalidation(['empresa', 'horario_semana'])
                 return toolOk(
                   { horario: result, nivel: 'empresa', operacao: 'atualizado' },
                   { summary: `Horário da empresa para ${dia_semana}: ${diaAtivo ? `${hora_abertura}–${hora_fechamento}` : 'FECHADO'}.`, meta: { tool_kind: 'action' } }
@@ -3445,6 +3477,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     hora_fechamento = excluded.hora_fechamento
                 `, setor_id, dia_semana, diaAtivo, usa_padrao ?? false, hora_abertura ?? '08:00', hora_fechamento ?? '22:00')
                 const result = await queryOne('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?', setor_id, dia_semana)
+                broadcastInvalidation(['empresa', 'horario_semana'])
                 return toolOk(
                   { horario: result, nivel: 'setor', setor_nome: setor.nome, operacao: 'upsert' },
                   { summary: `Horário do ${setor.nome} para ${dia_semana}: ${diaAtivo ? (usa_padrao ? 'herda empresa' : `${hora_abertura}–${hora_fechamento}`) : 'FECHADO'}.`, meta: { tool_kind: 'action' } }
