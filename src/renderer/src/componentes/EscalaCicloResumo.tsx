@@ -166,7 +166,11 @@ function FolgaSelect({
         {DIAS_ORDEM
           .filter((dia) => {
             if (field === 'folga_variavel_dia_semana') return dia !== 'DOM'
-            return allowDomingoNaFolgaFixa || dia !== 'DOM'
+            if (!allowDomingoNaFolgaFixa && dia === 'DOM') return false
+            // Impedir fixa == variavel (mesmo dia)
+            const outroCampo = field === 'folga_fixa_dia_semana' ? inf?.variavel : inf?.fixa
+            if (outroCampo && outroCampo === dia) return false
+            return true
           })
           .map((dia) => (
             <SelectItem key={dia} value={dia} className="text-xs">{DIAS_CURTOS[dia]}</SelectItem>
@@ -439,8 +443,11 @@ export function EscalaCicloResumo({
     }
     if (alloc.status === 'INDISPONIVEL') return 'I'
 
-    // Folga — domingo gets DF, otherwise check fixed vs variable
-    if (dia === 'DOM') return 'DF'
+    // Folga — domingo: FF se folga_fixa=DOM, senao DF (ciclo)
+    if (dia === 'DOM') {
+      const inf = inferredFolgas.get(colab.id)
+      return inf?.fixa === 'DOM' ? 'FF' : 'DF'
+    }
     const inf = inferredFolgas.get(colab.id)
     // Classificar: FF so se dia bate com fixa, FV so se bate com variavel
     if (inf?.fixa && inf.fixa === dia) return 'FF'

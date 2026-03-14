@@ -382,6 +382,7 @@ export function SetorDetalhe() {
   const horariosSemana = useAppDataStore((s) => s.horarioSemana)
   const colaboradores = useAppDataStore((s) => s.colaboradores)
   const escalas = useAppDataStore((s) => s.escalas)
+  const derivados = useAppDataStore((s) => s.derivados)
   const tiposContrato = useAppDataStore((s) => s.tiposContrato)
   const funcoes = useAppDataStore((s) => s.postos)
   const excecoesAtivas = useAppDataStore((s) => s.excecoes)
@@ -951,19 +952,27 @@ export function SetorDetalhe() {
       const regra = regrasPadrao?.find(r => r.colaborador_id === p.titular.id)
       const fixa = regra?.folga_fixa_dia_semana ?? null
       const variavel = regra?.folga_variavel_dia_semana ?? null
+      const isFixaDom = fixa === 'DOM'
       return {
-        folga_fixa_dia: fixa ? DIAS_IDX.indexOf(fixa) : null,
+        // DOM nao existe em DIAS_IDX (0-5=SEG-SAB) → indexOf retornaria -1 → bug
+        // Quando fixa=DOM, usa folga_fixa_dom=true em vez de indice
+        folga_fixa_dia: fixa && !isFixaDom ? DIAS_IDX.indexOf(fixa) : null,
         folga_variavel_dia: variavel ? DIAS_IDX.indexOf(variavel as DiaSemana) : null,
+        folga_fixa_dom: isFixaDom,
       }
     })
+
+    const hasForcadas = folgasForcadas.some(f =>
+      f.folga_fixa_dia != null || f.folga_variavel_dia != null || f.folga_fixa_dom
+    )
 
     const output = gerarCicloFase1({
       num_postos: N,
       trabalham_domingo: K,
       num_meses: simulacaoPreviewMeses,
       preflight: true,
-      folgas_forcadas: folgasForcadas.some(f => f.folga_fixa_dia != null || f.folga_variavel_dia != null)
-        ? folgasForcadas : undefined,
+      folgas_forcadas: hasForcadas ? folgasForcadas : undefined,
+      demanda_por_dia: derivados?.demandaPorDia,
     })
 
     if (!output.sucesso) return null
