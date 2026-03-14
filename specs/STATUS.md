@@ -1,6 +1,6 @@
 # STATUS — Painel Unico de Escala
 
-> Atualizado: 2026-03-14 22:00
+> Atualizado: 2026-03-15 00:30
 > Warlog: `specs/WARLOG_PAINEL_UNICO.md`
 > Spec base: `docs/ANALYST_PAINEL_UNICO_ESCALA.md`
 
@@ -18,7 +18,7 @@
 ---
 
 ## Em andamento
-- [CLAUDE A] A8-A10: migracao de paginas useApiData → useAppData
+(nada — A11/A12 sao P2, podem esperar)
 
 ## Concluido
 - [CLAUDE A] A1: AppDataStore globais ✅
@@ -28,13 +28,20 @@
 - [CLAUDE A] A5: IPC invalidacao em tools.ts — 21 tools com broadcast ✅
 - [CLAUDE A] A6: Listener global em App.tsx — recebe e invalida store ✅
 - [CLAUDE A] A7: `useAppData()` hook seletor tipado ✅
+- [CLAUDE A] A8: SetorDetalhe migrado — 10 useApiData → store, 17 reloads removidos ✅
+- [CLAUDE A] A9: EscalaPagina migrada — 9 useApiData → store ✅
+- [CLAUDE A] A10: ColaboradorLista parcial (2/4 hooks migrados). Dashboard e EscalasHub sem useApiData do store ✅
 - [CLAUDE B] B1: Fix folga_fixa=DOM no solver — 4 guards (XOR, ciclo hard, ciclo soft, dom_max) ✅
 - [CLAUDE B] B2: Fix folga_fixa=DOM na bridge — zero ciclo, null variavel ✅
 - [CLAUDE B] B3: Fix folga_fixa=DOM no TS — folga_fixa_dom flag + 4 unit tests ✅
+- [CLAUDE B] B4: autoFolgaInteligente — demanda_por_dia no TS, folgas nos dias com mais sobra + folgaCount spreading ✅
+- [CLAUDE B] B5: CANCELADA — postos fixos, cobertura por substituicao (decisao Marco) ✅
+- [CLAUDE B] B6: Guard funcao_id=null — filtrado na bridge, sem posto = sem escala ✅
+- [CLAUDE B] B7: Guard tipo_trabalhador — derivado do contrato na bridge com NFD normalization ✅
+- [CLAUDE B] B8+B9: Toast INFEASIBLE com "Analisar com IA" — abre chat pra diagnostico ✅
 
 ## Decisoes pendentes (PRECISA DO MARCO)
 - C1: Layout do painel unico — prototipo necessario ANTES de codar
-- B4: autoFolgaInteligente — qual heuristica usar
 - C7: Diff validar/solucionar — contrato de componente
 
 ## Conflitos entre dominios
