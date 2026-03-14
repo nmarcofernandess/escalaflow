@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "escalaflow": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["tsx", "mcp-server/index.ts"],
+      "cwd": "/Users/marcofernandes/escalaflow"
+    }
+  }
+}
