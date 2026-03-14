@@ -23,7 +23,7 @@ import {
   Trash2,
   Wifi,
   WifiOff,
-  History,
+  ChevronDown,
   Terminal,
   Copy,
   ClipboardCheck,
@@ -58,7 +58,12 @@ import type {
   IaOpenRouterFreeModelsTestResult,
 } from '@shared/types'
 import { IaModelCatalogPicker } from '@/componentes/IaModelCatalogPicker'
-import { TimeMachineModal } from '../componentes/TimeMachineModal'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 type IaProviderConfigForm = {
   token?: string
@@ -264,8 +269,8 @@ export function ConfiguracoesPagina() {
   const [backupConfig, setBackupConfig] = useState<{
     pasta: string | null; pasta_padrao: string; ativo: boolean; ultimo_backup: string | null
   } | null>(null)
-  const [timeMachineOpen, setTimeMachineOpen] = useState(false)
   const [backupNowLoading, setBackupNowLoading] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
 
   useEffect(() => {
@@ -286,7 +291,7 @@ export function ConfiguracoesPagina() {
   async function handleBackupNow() {
     setBackupNowLoading(true)
     try {
-      const result = await window.electron.ipcRenderer.invoke('backup.snapshots.criar', { trigger: 'manual' }) as any
+      const result = await window.electron.ipcRenderer.invoke('backup.snapshots.criar', { trigger: 'manual', light: true }) as any
       if (result) {
         toast.success('Backup criado!', { description: `${result.meta.registros} registros salvos` })
         const config = await window.electron.ipcRenderer.invoke('backup.config.obter') as typeof backupConfig
@@ -298,6 +303,20 @@ export function ConfiguracoesPagina() {
       toast.error('Erro ao criar backup', { description: (err as Error).message })
     } finally {
       setBackupNowLoading(false)
+    }
+  }
+
+  async function handleExportarCompleto() {
+    setExportLoading(true)
+    try {
+      const result = await window.electron.ipcRenderer.invoke('dados.exportar') as { filepath: string; tamanho_mb: number } | null
+      if (result) {
+        toast.success('Backup completo exportado!', { description: `${result.tamanho_mb} MB` })
+      }
+    } catch (err) {
+      toast.error('Erro ao exportar', { description: (err as Error).message })
+    } finally {
+      setExportLoading(false)
     }
   }
 
@@ -999,27 +1018,33 @@ export function ConfiguracoesPagina() {
             )}
 
             <div className="flex flex-wrap gap-2 border-t pt-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBackupNow}
-                disabled={backupNowLoading}
-              >
-                {backupNowLoading ? (
-                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                ) : (
-                  <Save className="mr-1.5 size-3.5" />
-                )}
-                {backupNowLoading ? 'Salvando...' : 'Backup Agora'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setTimeMachineOpen(true)}
-              >
-                <History className="mr-1.5 size-3.5" />
-                Maquina do Tempo
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={backupNowLoading || exportLoading}
+                  >
+                    {(backupNowLoading || exportLoading) ? (
+                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    ) : (
+                      <Save className="mr-1.5 size-3.5" />
+                    )}
+                    {backupNowLoading ? 'Salvando...' : exportLoading ? 'Exportando...' : 'Backup'}
+                    <ChevronDown className="ml-1.5 size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={handleBackupNow}>
+                    <Save className="mr-2 size-4" />
+                    Backup Agora
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportarCompleto}>
+                    <Download className="mr-2 size-4" />
+                    Backup Completo...
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 size="sm"
                 variant="outline"
@@ -1039,8 +1064,6 @@ export function ConfiguracoesPagina() {
 
         {/* Claude Code MCP */}
         <ClaudeCodeCard />
-
-        <TimeMachineModal open={timeMachineOpen} onOpenChange={setTimeMachineOpen} />
 
         {/* Assistente IA e IA Local — sempre visíveis */}
         <Card>

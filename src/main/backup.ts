@@ -56,16 +56,32 @@ export function getDefaultBackupDir(userData: string): string {
 }
 
 export async function getBackupConfig(): Promise<ConfiguracaoBackup> {
-  const row = await queryOne<ConfiguracaoBackup & { id: number }>(
-    'SELECT * FROM configuracao_backup WHERE id = 1',
-  )
-  return {
-    pasta: row?.pasta ?? null,
-    ativo: row?.ativo ?? true,
-    backup_ao_fechar: row?.backup_ao_fechar ?? true,
-    intervalo_horas: row?.intervalo_horas ?? 24,
-    max_snapshots: row?.max_snapshots ?? 30,
-    ultimo_backup: row?.ultimo_backup ?? null,
+  try {
+    const row = await queryOne<ConfiguracaoBackup & { id: number }>(
+      'SELECT * FROM configuracao_backup WHERE id = 1',
+    )
+    return {
+      pasta: row?.pasta ?? null,
+      ativo: row?.ativo ?? true,
+      backup_ao_fechar: row?.backup_ao_fechar ?? true,
+      intervalo_horas: row?.intervalo_horas ?? 24,
+      max_snapshots: row?.max_snapshots ?? 30,
+      ultimo_backup: row?.ultimo_backup ?? null,
+    }
+  } catch {
+    // Table might not exist yet — ensure it does
+    await execDDL(`CREATE TABLE IF NOT EXISTS configuracao_backup (
+      id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      pasta TEXT,
+      ativo BOOLEAN NOT NULL DEFAULT TRUE,
+      backup_ao_fechar BOOLEAN NOT NULL DEFAULT TRUE,
+      intervalo_horas INTEGER NOT NULL DEFAULT 24,
+      max_snapshots INTEGER NOT NULL DEFAULT 30,
+      ultimo_backup TIMESTAMPTZ,
+      atualizado_em TIMESTAMPTZ DEFAULT NOW()
+    )`)
+    await execute('INSERT INTO configuracao_backup (id) VALUES (1) ON CONFLICT DO NOTHING')
+    return { pasta: null, ativo: true, backup_ao_fechar: true, intervalo_horas: 24, max_snapshots: 30, ultimo_backup: null }
   }
 }
 
@@ -186,10 +202,36 @@ export async function importFromData(
 
 // ─── Core functions ──────────────────────────────────────────
 
+/** Categorias a EXCLUIR no modo light (backup rapido sem IA stuff) */
+const LIGHT_EXCLUDE: (keyof typeof BACKUP_CATEGORIAS)[] = ['conversas', 'conhecimento']
+
+/** Monta ZIP com as categorias selecionadas. Retorna { zip, totalTabelas, totalRegistros } */
+async function buildBackupZip(options?: { light?: boolean }): Promise<{ zip: AdmZip; totalTabelas: number; totalRegistros: number }> {
+  const zip = new AdmZip()
+  let totalRegistros = 0
+  let totalTabelas = 0
+
+  for (const [categoria, tables] of Object.entries(BACKUP_CATEGORIAS)) {
+    if (options?.light && LIGHT_EXCLUDE.includes(categoria as keyof typeof BACKUP_CATEGORIAS)) continue
+    for (const table of tables) {
+      try {
+        const rows = await queryAll<Record<string, unknown>>(`SELECT * FROM ${table}`)
+        if (rows.length === 0) continue
+        zip.addFile(`${categoria}/${table}.json`, Buffer.from(JSON.stringify(rows), 'utf-8'))
+        totalTabelas++
+        totalRegistros += rows.length
+      } catch { /* table might not exist yet */ }
+    }
+  }
+
+  return { zip, totalTabelas, totalRegistros }
+}
+
 export async function createSnapshot(
   trigger: SnapshotTrigger,
   userData: string,
   appVersion?: string,
+  options?: { light?: boolean },
 ): Promise<SnapshotInfo | null> {
   if (snapshotInProgress) {
     log('Snapshot already in progress, skipping')
@@ -201,21 +243,7 @@ export async function createSnapshot(
     const dir = await getBackupDir(userData)
     fs.mkdirSync(dir, { recursive: true })
 
-    const zip = new AdmZip()
-    let totalRegistros = 0
-    let totalTabelas = 0
-
-    for (const [categoria, tables] of Object.entries(BACKUP_CATEGORIAS)) {
-      for (const table of tables) {
-        try {
-          const rows = await queryAll<Record<string, unknown>>(`SELECT * FROM ${table}`)
-          if (rows.length === 0) continue
-          zip.addFile(`${categoria}/${table}.json`, Buffer.from(JSON.stringify(rows), 'utf-8'))
-          totalTabelas++
-          totalRegistros += rows.length
-        } catch { /* table might not exist yet */ }
-      }
-    }
+    const { zip, totalTabelas, totalRegistros } = await buildBackupZip(options)
 
     const now = new Date()
     const meta: SnapshotMeta = {
@@ -240,7 +268,7 @@ export async function createSnapshot(
     )
 
     const stat = fs.statSync(filepath)
-    log(`Created: ${filename} (${trigger}, ${totalRegistros} records, ${(stat.size / 1024).toFixed(0)}KB)`)
+    log(`Created: ${filename} (${trigger}${options?.light ? ' light' : ''}, ${totalRegistros} records, ${(stat.size / 1024).toFixed(0)}KB)`)
 
     const config = await getBackupConfig()
     await cleanupSnapshots(config.max_snapshots, userData)
@@ -256,6 +284,30 @@ export async function createSnapshot(
   } finally {
     snapshotInProgress = false
   }
+}
+
+/** Exporta backup completo para destino escolhido pelo usuario (Save Dialog) */
+export async function createExportZip(
+  destino: string,
+  appVersion?: string,
+): Promise<{ filepath: string; tamanho_mb: number }> {
+  const { zip, totalTabelas, totalRegistros } = await buildBackupZip()
+
+  const meta: SnapshotMeta = {
+    app: 'escalaflow',
+    versao: appVersion ?? '0.0.0',
+    criado_em: new Date().toISOString(),
+    trigger: 'manual',
+    tabelas: totalTabelas,
+    registros: totalRegistros,
+  }
+  zip.addFile('_meta.json', Buffer.from(JSON.stringify(meta, null, 2), 'utf-8'))
+
+  zip.writeZip(destino)
+  const stat = fs.statSync(destino)
+  log(`Exported: ${destino} (${totalRegistros} records, ${(stat.size / 1024).toFixed(0)}KB)`)
+
+  return { filepath: destino, tamanho_mb: +(stat.size / 1024 / 1024).toFixed(2) }
 }
 
 export async function listSnapshots(userData: string): Promise<SnapshotInfo[]> {

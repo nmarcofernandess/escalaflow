@@ -3416,12 +3416,12 @@ const backupSnapshotsListar = t.procedure.action(async () => {
 })
 
 const backupSnapshotsCriar = t.procedure
-  .input<{ trigger?: string }>()
+  .input<{ trigger?: string; light?: boolean }>()
   .action(async ({ input }) => {
     try {
       const { createSnapshot } = await import('./backup')
       const trigger = (input?.trigger ?? 'manual') as SnapshotTrigger
-      const result = await createSnapshot(trigger, app.getPath('userData'), app.getVersion())
+      const result = await createSnapshot(trigger, app.getPath('userData'), app.getVersion(), { light: input?.light })
       console.log('[BACKUP-IPC] criar:', result?.filename ?? 'null (in progress)')
       return result
     } catch (err) {
@@ -3444,6 +3444,20 @@ const backupSnapshotsDeletar = t.procedure
     await deleteSnapshot(input.filename, app.getPath('userData'))
     return { ok: true }
   })
+
+const dadosExportar = t.procedure.action(async (): Promise<{ filepath: string; tamanho_mb: number } | null> => {
+  const win = BrowserWindow.getFocusedWindow()
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('Z', '')
+  const opts = {
+    defaultPath: `escalaflow-backup-completo-${ts}.zip`,
+    filters: [{ name: 'EscalaFlow Backup', extensions: ['zip'] }],
+  }
+  const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+  if (result.canceled || !result.filePath) return null
+
+  const { createExportZip } = await import('./backup')
+  return createExportZip(result.filePath, app.getVersion())
+})
 
 const backupPastaEscolher = t.procedure.action(async () => {
   const win = BrowserWindow.getFocusedWindow()
@@ -3997,6 +4011,7 @@ export const router = {
   'knowledge.graphData': knowledgeGraphData,
   'knowledge.graphExplore': knowledgeGraphExplore,
   // Backup / Restore
+  'dados.exportar': dadosExportar,
   'dados.importar': dadosImportar,
   'backup.config.obter': backupConfigObter,
   'backup.config.salvar': backupConfigSalvar,
