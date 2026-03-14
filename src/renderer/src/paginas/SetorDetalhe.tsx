@@ -113,7 +113,7 @@ import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { funcoesService } from '@/servicos/funcoes'
-import { useAppDataStore } from '@/store/appDataStore'
+import { useAppDataStore, type AvisoEscala } from '@/store/appDataStore'
 import { useIaStore } from '@/store/iaStore'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { formatarData, formatarDataHora, mapError } from '@/lib/formatadores'
@@ -440,6 +440,11 @@ export function SetorDetalhe() {
   const [gerando, setGerando] = useState(false)
   const [solverLogs, setSolverLogs] = useState<string[]>([])
   const [solverElapsed, setSolverElapsed] = useState(0)
+
+  // B8: Avisos de operacao (preflight blockers, solver errors) — persistem na pagina
+  // CONECTOR PARA CLAUDE C: renderizar estes avisos na area de avisos do setor
+  // e tambem na EscalaPagina (ver todos). Separados dos avisos por pessoa.
+  const [avisosOperacao, setAvisosOperacao] = useState<AvisoEscala[]>([])
   const solverScrollRef = useRef<HTMLDivElement>(null)
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [oficialCompleta, setOficialCompleta] = useState<EscalaCompletaV3 | null>(null)
@@ -1550,9 +1555,18 @@ export function SetorDetalhe() {
     }
 
     // Preflight
+    setAvisosOperacao([]) // limpa avisos anteriores
     try {
       const preflight = await escalasService.preflight(setorId, { data_inicio: dataInicio, data_fim: dataFim })
       if (!preflight.ok) {
+        const blockerAvisos: AvisoEscala[] = preflight.blockers.map((b, i) => ({
+          id: `preflight_${i}`,
+          nivel: 'erro' as const,
+          titulo: b.mensagem,
+          detalhe: b.detalhe ?? undefined,
+          origem: 'operacao' as const,
+        }))
+        setAvisosOperacao(blockerAvisos)
         const msg = preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao'
         toastInfeasible(msg, () => useIaStore.getState().setAberto(true))
         return
@@ -1588,6 +1602,22 @@ export function SetorDetalhe() {
       } catch { /* not structured JSON, fall through */ }
 
       if (parsed) {
+        const solverAvisos: AvisoEscala[] = [{
+          id: 'solver_infeasible',
+          nivel: 'erro' as const,
+          titulo: parsed.mensagem,
+          detalhe: parsed.diagnostico_resumido ?? undefined,
+          origem: 'operacao' as const,
+        }]
+        if (parsed.sugestoes?.length) {
+          parsed.sugestoes.forEach((s, i) => solverAvisos.push({
+            id: `solver_sugestao_${i}`,
+            nivel: 'aviso' as const,
+            titulo: s,
+            origem: 'operacao' as const,
+          }))
+        }
+        setAvisosOperacao(solverAvisos)
         toastInfeasible(parsed.mensagem, () => useIaStore.getState().setAberto(true))
       } else if (!rawMsg.includes('cancelado') && !rawMsg.includes('SIGTERM') && !rawMsg.includes('killed')) {
         toastErroGeracaoEscala(err)

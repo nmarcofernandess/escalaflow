@@ -51,6 +51,19 @@
 ## Decisoes pendentes (PRECISA DO MARCO)
 - C7: Diff validar/solucionar — contrato de componente (UX do Sheet bottom ja aprovada)
 
+## Conectores prontos (CLAUDE C pode ligar)
+
+### Avisos de operacao (preflight + solver) → area de avisos na UI
+- **State:** `avisosOperacao: AvisoEscala[]` em SetorDetalhe.tsx (useState, ja populado)
+- **Populado por:** preflight blockers (cada blocker vira AvisoEscala com origem='operacao') + solver INFEASIBLE (erro + sugestoes)
+- **Interface:** `AvisoEscala` em `appDataStore.ts` — campo `origem?: 'setor' | 'operacao' | 'escala'`
+- **O que falta (CLAUDE C):**
+  - Renderizar `avisosOperacao` na area de avisos do SetorDetalhe (separado dos avisos por pessoa)
+  - Renderizar na EscalaPagina (ver todos) como section separada
+  - Avisos de setor (`derivados.avisos`) ja tem `origem='setor'` (default)
+  - Avisos de operacao tem `origem='operacao'`
+  - Avisos de escala (validador) podem ter `origem='escala'` no futuro
+
 ## Conflitos entre dominios
 (nenhum)
 
