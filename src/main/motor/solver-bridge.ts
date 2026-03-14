@@ -495,10 +495,15 @@ export async function buildSolverInput(
   // v22: Ciclo domingo calculado automaticamente (tenta 1/2 → 1/1 → 2/1)
   const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRows, regraGroupByColab)
   for (const c of colaboradores) {
-    if (c.tipo_trabalhador !== 'INTERMITENTE') {
-      c.domingo_ciclo_trabalho = cicloTrabalho
-      c.domingo_ciclo_folga = cicloFolga
+    if (c.tipo_trabalhador === 'INTERMITENTE') continue
+    if (c.folga_fixa_dia_semana === 'DOM') {
+      c.domingo_ciclo_trabalho = 0
+      c.domingo_ciclo_folga = 1
+      c.folga_variavel_dia_semana = null
+      continue
     }
+    c.domingo_ciclo_trabalho = cicloTrabalho
+    c.domingo_ciclo_folga = cicloFolga
   }
 
   // Warm-start hints: reuse last schedule solution for same setor+period.
