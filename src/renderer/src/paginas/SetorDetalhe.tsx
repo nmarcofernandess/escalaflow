@@ -1553,7 +1553,8 @@ export function SetorDetalhe() {
     try {
       const preflight = await escalasService.preflight(setorId, { data_inicio: dataInicio, data_fim: dataFim })
       if (!preflight.ok) {
-        toastErroGeracaoEscala(new Error(preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao'))
+        const msg = preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao'
+        toastInfeasible(msg, () => useIaStore.getState().setAberto(true))
         return
       }
     } catch (err) {
