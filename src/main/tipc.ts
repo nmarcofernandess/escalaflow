@@ -1,5 +1,7 @@
 import { writeFile, rm } from 'node:fs/promises'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
@@ -12,6 +14,7 @@ import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride, parseEscal
 import { persistirAjusteResult, persistirResumoAutoritativoEscala } from './tipc/escalas-utils'
 import { atualizarEscalaEquipeSnapshot } from './escala-equipe-snapshot'
 import { deletarFuncao, salvarDetalheFuncao } from './funcoes-service'
+import { resolveMcpPath, isMcpSource } from './mcp-path'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
@@ -39,6 +42,7 @@ const { tipc } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/mai
 
 const t = tipc.create()
 const { dialog, BrowserWindow, app } = electron
+const execFileAsync = promisify(execFile)
 
 // =============================================================================
 // ANEXOS — persistência em disco
@@ -3882,6 +3886,61 @@ const knowledgeGraphExplore = t.procedure
   })
 
 // =============================================================================
+// MCP
+// =============================================================================
+
+const mcpPath = t.procedure.action(async () => {
+  try {
+    const resolved = resolveMcpPath()
+    const isSource = isMcpSource(resolved)
+    return { path: resolved, isSource }
+  } catch (err) {
+    return { path: null, isSource: false, error: String(err) }
+  }
+})
+
+const mcpConnectClaudeCode = t.procedure.action(async () => {
+  try {
+    const resolved = resolveMcpPath()
+    const isSource = isMcpSource(resolved)
+
+    const args = ['mcp', 'add', 'escalaflow', '--transport', 'stdio', '--scope', 'user', '--']
+    if (isSource) {
+      args.push('npx', 'tsx', resolved)
+    } else {
+      args.push(resolved)
+    }
+
+    await execFileAsync('claude', args, { timeout: 15_000 })
+    return { success: true, message: 'Conectado! Reinicie o Claude Code pra ativar.' }
+  } catch (err: any) {
+    const msg = err?.message ?? String(err)
+    if (msg.includes('ENOENT') || msg.includes('not found')) {
+      return { success: false, message: 'Claude Code nao encontrado. Instale em https://claude.ai/download' }
+    }
+    return { success: false, message: `Erro: ${msg}` }
+  }
+})
+
+const mcpConfigJson = t.procedure.action(async () => {
+  try {
+    const resolved = resolveMcpPath()
+    const isSource = isMcpSource(resolved)
+
+    const config: Record<string, unknown> = {
+      mcpServers: {
+        escalaflow: isSource
+          ? { command: 'npx', args: ['tsx', resolved] }
+          : { command: resolved }
+      }
+    }
+    return { json: JSON.stringify(config, null, 2) }
+  } catch (err) {
+    return { json: null, error: String(err) }
+  }
+})
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -4045,6 +4104,10 @@ export const router = {
   'backup.snapshots.restaurarPreRestore': backupSnapshotsRestaurarPreRestore,
   'backup.snapshots.deletar': backupSnapshotsDeletar,
   'backup.pasta.escolher': backupPastaEscolher,
+  // MCP
+  'mcp.path': mcpPath,
+  'mcp.connectClaudeCode': mcpConnectClaudeCode,
+  'mcp.configJson': mcpConfigJson,
 }
 
 export type Router = typeof router
