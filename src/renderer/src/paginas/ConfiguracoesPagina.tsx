@@ -168,63 +168,60 @@ function buildIaFormValues(iaConfig?: any) {
   }
 }
 
-const MCP_COMMAND = 'claude mcp add escalaflow --transport stdio --scope user -- npx tsx /Users/marcofernandes/escalaflow/mcp-server/index.ts'
+function McpCard() {
+  const [connecting, setConnecting] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
 
-function ClaudeCodeCard() {
-  const [copied, setCopied] = useState(false)
+  async function handleConnect() {
+    setConnecting(true)
+    setStatus(null)
+    try {
+      const result = await window.electron.ipcRenderer.invoke('mcp.connectClaudeCode') as { success: boolean; message: string }
+      setStatus(result.message)
+    } catch (err) {
+      setStatus(`Erro: ${err}`)
+    } finally {
+      setConnecting(false)
+    }
+  }
 
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(MCP_COMMAND)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  async function handleCopyConfig() {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('mcp.configJson') as { json: string | null; error?: string }
+      if (result.json) {
+        await navigator.clipboard.writeText(result.json)
+        setStatus('Config copiado! Cole no config da sua IA.')
+      } else {
+        setStatus(result.error ?? 'Erro ao gerar config')
+      }
+    } catch (err) {
+      setStatus(`Erro: ${err}`)
+    }
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Terminal className="size-4" />
-          Claude Code
+        <CardTitle className="flex items-center gap-2">
+          <Terminal className="h-5 w-5" />
+          Controle via Terminal
         </CardTitle>
         <CardDescription>
-          Use o Claude Code pra operar o EscalaFlow pelo terminal — mesmas tools da IA do app, com poder extra
+          Use qualquer IA com MCP pra operar o EscalaFlow direto do terminal. O app precisa estar aberto.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <div className="text-sm font-medium">Como configurar</div>
-          <div className="text-xs text-muted-foreground">
-            Abra o terminal, cole o comando abaixo e reinicie o Claude Code. So precisa fazer uma vez.
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2">
-          <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            {MCP_COMMAND}
-          </code>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 px-2 text-xs"
-            onClick={handleCopy}
-          >
-            {copied ? (
-              <>
-                <ClipboardCheck className="mr-1 size-3.5 text-green-500" />
-                Copiado
-              </>
-            ) : (
-              <>
-                <Copy className="mr-1 size-3.5" />
-                Copiar
-              </>
-            )}
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex gap-2">
+          <Button onClick={handleConnect} disabled={connecting} variant="default" size="sm">
+            {connecting ? 'Conectando...' : 'Conectar Claude Code'}
+          </Button>
+          <Button onClick={handleCopyConfig} variant="outline" size="sm">
+            Copiar Config MCP
           </Button>
         </div>
-
-        <div className="text-xs text-muted-foreground">
-          <strong>Requisito:</strong> o EscalaFlow precisa estar aberto pra o Claude Code funcionar com as tools.
-        </div>
+        {status && (
+          <p className="text-sm text-muted-foreground">{status}</p>
+        )}
       </CardContent>
     </Card>
   )
@@ -1079,7 +1076,7 @@ export function ConfiguracoesPagina() {
         </Card>
 
         {/* Claude Code MCP */}
-        <ClaudeCodeCard />
+        <McpCard />
 
         {/* Assistente IA e IA Local — sempre visíveis */}
         <Card>
