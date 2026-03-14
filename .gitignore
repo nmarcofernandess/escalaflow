@@ -93,3 +93,4 @@ dist-mac-verify/
 src/main/db/seed-local.ts
 src/main/db/seed2.ts
 .devtools
+.superpowers/
