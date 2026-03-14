@@ -7,6 +7,7 @@ import electron from 'electron'
 import { createTables } from './db/schema'
 import { seedData, seedLocalData } from './db/seed'
 import { initDb, closeDb } from './db/pglite'
+import { startToolServer, stopToolServer } from './tool-server'
 import pkg from 'electron-updater'
 const { autoUpdater } = pkg
 
@@ -19,6 +20,8 @@ process.on('uncaughtException', (err: Error) => {
 })
 
 let mainWindow: import('electron').BrowserWindow | null = null
+let isQuitting = false
+let backupTimer: ReturnType<typeof setInterval> | null = null
 const require = createRequire(import.meta.url)
 
 // --- Auto-Update ---
@@ -260,6 +263,7 @@ async function bootstrap(): Promise<void> {
   await createTables()
   await seedData()
   await seedLocalData()
+  startToolServer()
 
   const { app, BrowserWindow, shell, ipcMain, Menu } = electron
 
@@ -298,6 +302,24 @@ async function bootstrap(): Promise<void> {
     createWindow(app, BrowserWindow, shell)
     setupAutoUpdater(ipcMain, app)
 
+    // Auto-backup timer — check every hour if a periodic backup is due
+    backupTimer = setInterval(async () => {
+      try {
+        const { getBackupConfig, createSnapshot } = await import('./backup')
+        const config = await getBackupConfig()
+        if (!config.ativo || config.intervalo_horas === 0) return
+
+        const last = config.ultimo_backup ? new Date(config.ultimo_backup) : null
+        const hoursAgo = last ? (Date.now() - last.getTime()) / 3600000 : Infinity
+
+        if (hoursAgo >= config.intervalo_horas) {
+          await createSnapshot('auto_intervalo', app.getPath('userData'), app.getVersion())
+        }
+      } catch (err) {
+        console.error('[BACKUP] Falha no auto-backup intervalo:', err)
+      }
+    }, 3600000)
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow(app, BrowserWindow, shell)
@@ -311,9 +333,30 @@ async function bootstrap(): Promise<void> {
     }
   })
 
-  app.on('before-quit', () => {
+  app.on('before-quit', async (e) => {
+    if (isQuitting) return
+    e.preventDefault()
+    isQuitting = true
+
+    // 1. Stop timer to prevent race condition
+    if (backupTimer) clearInterval(backupTimer)
+
+    // 2. Auto-backup (DB still open)
+    try {
+      const { getBackupConfig, createSnapshot } = await import('./backup')
+      const config = await getBackupConfig()
+      if (config.ativo && config.backup_ao_fechar) {
+        await createSnapshot('auto_close', app.getPath('userData'), app.getVersion())
+      }
+    } catch (err) {
+      console.error('[BACKUP] Falha no auto-backup ao fechar:', err)
+    }
+
+    // 3. Cleanup (AFTER snapshot)
+    stopToolServer()
     void import('./ia/local-llm').then(m => m.unloadModel()).catch(() => {})
     void closeDb().catch(() => {})
+    app.quit()
   })
 }
 
