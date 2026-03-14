@@ -1,0 +1,73 @@
+import { AlertTriangle, Info, Lightbulb } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+
+export interface Aviso {
+  id: string
+  nivel: 'error' | 'warning' | 'info'
+  titulo: string
+  descricao: string
+}
+
+interface AvisosSectionProps {
+  avisos: Aviso[]
+  onPedirSugestao?: () => void
+}
+
+const NIVEL_CONFIG = {
+  error: {
+    icon: AlertTriangle,
+    card: 'border bg-rose-500/10 border-rose-500/20 text-rose-500',
+    icon_class: 'text-rose-500',
+  },
+  warning: {
+    icon: AlertTriangle,
+    card: 'border bg-yellow-500/10 border-yellow-500/20 text-yellow-500',
+    icon_class: 'text-yellow-500',
+  },
+  info: {
+    icon: Info,
+    card: 'border bg-indigo-500/10 border-indigo-500/20 text-indigo-400',
+    icon_class: 'text-indigo-400',
+  },
+} as const
+
+export function AvisosSection({ avisos, onPedirSugestao }: AvisosSectionProps) {
+  if (avisos.length === 0) return null
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="text-sm font-semibold text-muted-foreground">
+          Avisos ({avisos.length})
+        </span>
+        <div className="flex-1" />
+        {onPedirSugestao && (
+          <Button variant="outline" size="sm" onClick={onPedirSugestao}>
+            <Lightbulb className="size-4" />
+            Pedir sugestao
+          </Button>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        {avisos.map(aviso => {
+          const config = NIVEL_CONFIG[aviso.nivel]
+          const Icon = config.icon
+          return (
+            <div
+              key={aviso.id}
+              className={cn('flex items-start gap-2.5 rounded-md px-4 py-3', config.card)}
+            >
+              <Icon className={cn('mt-0.5 size-4 shrink-0', config.icon_class)} />
+              <div className="flex-1">
+                <p className="text-sm font-semibold">{aviso.titulo}</p>
+                <p className="text-[13px] opacity-80">{aviso.descricao}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
