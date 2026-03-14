@@ -195,7 +195,7 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
       <div class="rot-row"><span class="rot-label">Folga fixa:</span> ${regra.folga_fixa_dia_semana ? `<span class="badge-f">[F]</span> ${DIA_LABEL[regra.folga_fixa_dia_semana] ?? regra.folga_fixa_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
       <div class="rot-row"><span class="rot-label">Folga variavel:</span> ${regra.folga_variavel_dia_semana ? `<span class="badge-v">(V)</span> ${DIA_LABEL[regra.folga_variavel_dia_semana] ?? regra.folga_variavel_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
       <div class="rot-row"><span class="rot-label">Domingos trabalhados:</span> ${domTrabalhados} / ${domTotal}</div>
-      ${regra.folga_variavel_dia_semana ? '<p class="rot-note">(V) ativa quando trabalhou domingo na semana anterior</p>' : ''}
+      ${regra.folga_variavel_dia_semana ? '<p class="rot-note">(V) ativa quando trabalhou domingo nesta semana</p>' : ''}
     </div>`
   }
 

@@ -23,6 +23,7 @@ import type {
   AlertaDashboard,
   DiaSemana,
   SalvarDetalheFuncaoRequest,
+  SnapshotTrigger,
 } from '../shared'
 import {
   inferFolgasFromAlocacoes,
@@ -269,8 +270,8 @@ async function autoDefinirFolgasPendentesPosOficializacao(escalaId: number, seto
 
     await execute(
       `INSERT INTO colaborador_regra_horario
-        (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana, folga_variavel_dia_semana)
-       VALUES (?, NULL, TRUE, NULL, NULL, NULL, NULL, 2, 1, ?, ?)`,
+        (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana)
+       VALUES (?, NULL, TRUE, NULL, NULL, NULL, NULL, ?, ?)`,
       colaborador.id,
       nextFolgaFixa,
       nextFolgaVariavel,
@@ -1208,6 +1209,7 @@ const escalasGerar = t.procedure
     solve_mode?: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
     max_time_seconds?: number
     rules_override?: Record<string, string>
+    pinned_folga_externo?: Array<{ c: number; d: number; band: number }>
   }>()
   .action(async ({ input }): Promise<EscalaCompletaV3> => {
     const setorId = input.setor_id
@@ -1239,6 +1241,7 @@ const escalasGerar = t.procedure
       maxTimeSeconds: input.max_time_seconds,
       generationMode,
       rulesOverride: input.rules_override as Record<string, string> | undefined,
+      pinnedFolgaExterno: input.pinned_folga_externo,
     })
     const inputHash = computeSolverScenarioHash(solverInput)
     const solverResult = await runSolver(solverInput, undefined, sendLog)
@@ -1462,9 +1465,9 @@ const exportBatchHTML = t.procedure
       throw new Error('Nenhum arquivo fornecido para exportacao em lote')
     }
 
-    const result = await dialog.showOpenDialog({
-      properties: ['openDirectory', 'createDirectory'],
-    })
+    const win = BrowserWindow.getFocusedWindow()
+    const opts = { properties: ['openDirectory' as const, 'createDirectory' as const] }
+    const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
 
     if (result.canceled || !result.filePaths[0]) return null
 
@@ -1638,6 +1641,7 @@ const setoresSalvarTimelineDia = t.procedure
     segmentos: Array<{ hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }>
   }>()
   .action(async ({ input }) => {
+    const GRID = 15 // grid 15min ponta a ponta
     const toMin = (hhmm: string): number => {
       const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm)
       if (!m) throw new Error(`Horario invalido: "${hhmm}"`)
@@ -1654,12 +1658,12 @@ const setoresSalvarTimelineDia = t.procedure
     if (aberturaMin >= fechamentoMin) {
       throw new Error('Horario invalido: abertura deve ser menor que fechamento')
     }
-    if (aberturaMin % 30 !== 0 || fechamentoMin % 30 !== 0) {
-      throw new Error('Horario de abertura/fechamento deve respeitar grid de 30min')
+    if (aberturaMin % GRID !== 0 || fechamentoMin % GRID !== 0) {
+      throw new Error(`Horario de abertura/fechamento deve respeitar grid de ${GRID}min`)
     }
     const duracaoJanela = fechamentoMin - aberturaMin
-    if (duracaoJanela % 30 !== 0) {
-      throw new Error('Janela diaria deve ser multipla de 30 minutos')
+    if (duracaoJanela % GRID !== 0) {
+      throw new Error(`Janela diaria deve ser multipla de ${GRID} minutos`)
     }
 
     const setor = await queryOne<{ id: number }>('SELECT id FROM setores WHERE id = ?', input.setor_id)
@@ -1683,8 +1687,8 @@ const setoresSalvarTimelineDia = t.procedure
       if (!Number.isInteger(seg.min_pessoas) || seg.min_pessoas < 1) {
         throw new Error(`Segmento ${idx + 1}: min_pessoas invalido`)
       }
-      if (inicio % 30 !== 0 || fim % 30 !== 0) {
-        throw new Error(`Segmento ${idx + 1}: horarios devem respeitar grid de 30min`)
+      if (inicio % GRID !== 0 || fim % GRID !== 0) {
+        throw new Error(`Segmento ${idx + 1}: horarios devem respeitar grid de ${GRID}min`)
       }
       if (inicio >= fim) {
         throw new Error(`Segmento ${idx + 1}: hora_inicio deve ser menor que hora_fim`)
@@ -1701,7 +1705,7 @@ const setoresSalvarTimelineDia = t.procedure
       }
     })
 
-    const slotsTotal = input.ativo ? Math.max(0, duracaoJanela / 30) : 0
+    const slotsTotal = input.ativo ? Math.max(0, duracaoJanela / GRID) : 0
     let slotsOverlapDetectados = 0
     let slotsPreenchidosComPiso = 0
 
@@ -1715,8 +1719,8 @@ const setoresSalvarTimelineDia = t.procedure
       }))
 
       for (const seg of parsedSegments) {
-        const startIdx = Math.floor((seg.inicio - aberturaMin) / 30)
-        const endIdx = Math.floor((seg.fim - aberturaMin) / 30)
+        const startIdx = Math.floor((seg.inicio - aberturaMin) / GRID)
+        const endIdx = Math.floor((seg.fim - aberturaMin) / GRID)
 
         for (let idx = startIdx; idx < endIdx; idx++) {
           const slot = slotState[idx]
@@ -1741,8 +1745,8 @@ const setoresSalvarTimelineDia = t.procedure
           if (slot.pessoas === segPeople && slot.override === segOverride) continue
 
           normalizados.push({
-            hora_inicio: toHHMM(aberturaMin + segStartIdx * 30),
-            hora_fim: toHHMM(aberturaMin + idx * 30),
+            hora_inicio: toHHMM(aberturaMin + segStartIdx * GRID),
+            hora_fim: toHHMM(aberturaMin + idx * GRID),
             min_pessoas: segPeople,
             override: segOverride,
           })
@@ -1752,7 +1756,7 @@ const setoresSalvarTimelineDia = t.procedure
         }
 
         normalizados.push({
-          hora_inicio: toHHMM(aberturaMin + segStartIdx * 30),
+          hora_inicio: toHHMM(aberturaMin + segStartIdx * GRID),
           hora_fim: toHHMM(fechamentoMin),
           min_pessoas: segPeople,
           override: segOverride,
@@ -1810,6 +1814,16 @@ const setoresSalvarTimelineDia = t.procedure
         slots_sem_demanda: slotsPreenchidosComPiso,
       },
     }
+  })
+
+/** Limpa demandas padrao (dia_semana IS NULL) — chamado pelo autosave do DemandaEditor
+ *  quando os 7 dias sao salvos individualmente, as entradas NULL ficam orfas e
+ *  causariam double-counting no solver (que soma null + dia-especifica).
+ */
+const setoresLimparPadraoDemandas = t.procedure
+  .input<{ setor_id: number }>()
+  .action(async ({ input }) => {
+    await execute('DELETE FROM demandas WHERE setor_id = ? AND dia_semana IS NULL', input.setor_id)
   })
 
 // =============================================================================
@@ -1882,8 +1896,6 @@ const colaboradoresSalvarRegraHorario = t.procedure
     inicio?: string | null
     fim?: string | null
     preferencia_turno_soft?: string | null
-    domingo_ciclo_trabalho?: number
-    domingo_ciclo_folga?: number
     folga_fixa_dia_semana?: string | null
     folga_variavel_dia_semana?: string | null
   }>()
@@ -1891,7 +1903,6 @@ const colaboradoresSalvarRegraHorario = t.procedure
     const diaSemana = input.dia_semana_regra ?? null
     const isDiaEspecifico = diaSemana !== null
 
-    // Buscar existente com match exato de dia_semana_regra (NULL-safe)
     const existe = diaSemana === null
       ? await queryOne<{
         id: number
@@ -1900,8 +1911,6 @@ const colaboradoresSalvarRegraHorario = t.procedure
         inicio: string | null
         fim: string | null
         preferencia_turno_soft: string | null
-        domingo_ciclo_trabalho: number
-        domingo_ciclo_folga: number
         folga_fixa_dia_semana: string | null
         folga_variavel_dia_semana: string | null
       }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', input.colaborador_id)
@@ -1912,8 +1921,6 @@ const colaboradoresSalvarRegraHorario = t.procedure
         inicio: string | null
         fim: string | null
         preferencia_turno_soft: string | null
-        domingo_ciclo_trabalho: number
-        domingo_ciclo_folga: number
         folga_fixa_dia_semana: string | null
         folga_variavel_dia_semana: string | null
       }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', input.colaborador_id, diaSemana)
@@ -1934,17 +1941,6 @@ const colaboradoresSalvarRegraHorario = t.procedure
       ? (input.preferencia_turno_soft ?? null)
       : (existe?.preferencia_turno_soft ?? null)
 
-    // Regras de dia específico não carregam campos de ciclo/folga no schema.
-    const domCicloTrabalho = isDiaEspecifico
-      ? 2
-      : (hasOwnField(input, 'domingo_ciclo_trabalho')
-          ? (input.domingo_ciclo_trabalho ?? 2)
-          : (existe?.domingo_ciclo_trabalho ?? 2))
-    const domCicloFolga = isDiaEspecifico
-      ? 1
-      : (hasOwnField(input, 'domingo_ciclo_folga')
-          ? (input.domingo_ciclo_folga ?? 1)
-          : (existe?.domingo_ciclo_folga ?? 1))
     const folgaFixa = isDiaEspecifico
       ? null
       : (hasOwnField(input, 'folga_fixa_dia_semana')
@@ -1963,8 +1959,6 @@ const colaboradoresSalvarRegraHorario = t.procedure
           perfil_horario_id = ?,
           inicio = ?, fim = ?,
           preferencia_turno_soft = ?,
-          domingo_ciclo_trabalho = ?,
-          domingo_ciclo_folga = ?,
           folga_fixa_dia_semana = ?,
           folga_variavel_dia_semana = ?
         WHERE id = ?
@@ -1973,8 +1967,6 @@ const colaboradoresSalvarRegraHorario = t.procedure
         perfilHorarioId,
         inicio, fim,
         preferenciaTurnoSoft,
-        domCicloTrabalho,
-        domCicloFolga,
         folgaFixa,
         folgaVariavel,
         existe.id
@@ -1983,8 +1975,8 @@ const colaboradoresSalvarRegraHorario = t.procedure
     } else {
       const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario
-          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana, folga_variavel_dia_semana)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         input.colaborador_id,
         diaSemana,
@@ -1992,13 +1984,48 @@ const colaboradoresSalvarRegraHorario = t.procedure
         perfilHorarioId,
         inicio, fim,
         preferenciaTurnoSoft,
-        domCicloTrabalho,
-        domCicloFolga,
         folgaFixa,
         folgaVariavel,
       )
       return await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', id)
     }
+  })
+
+const colaboradoresSalvarPadraoFolgas = t.procedure
+  .input<{
+    padrao: Array<{
+      colaborador_id: number
+      folga_fixa_dia_semana: string | null
+      folga_variavel_dia_semana: string | null
+    }>
+    force?: boolean
+  }>()
+  .action(async ({ input }) => {
+    const force = input.force ?? false
+    await transaction(async () => {
+      for (const item of input.padrao) {
+        const existe = await queryOne<{ id: number; folga_fixa_dia_semana: string | null; folga_variavel_dia_semana: string | null }>(
+          'SELECT id, folga_fixa_dia_semana, folga_variavel_dia_semana FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL',
+          item.colaborador_id,
+        )
+        if (existe) {
+          // force=true: sobrescreve. force=false: só preenche NULL.
+          const newFixa = force ? item.folga_fixa_dia_semana : (existe.folga_fixa_dia_semana ?? item.folga_fixa_dia_semana)
+          const newVar = force ? item.folga_variavel_dia_semana : (existe.folga_variavel_dia_semana ?? item.folga_variavel_dia_semana)
+          await execute(
+            'UPDATE colaborador_regra_horario SET folga_fixa_dia_semana = ?, folga_variavel_dia_semana = ? WHERE id = ?',
+            newFixa, newVar, existe.id,
+          )
+        } else {
+          await execute(
+            `INSERT INTO colaborador_regra_horario (colaborador_id, dia_semana_regra, ativo, folga_fixa_dia_semana, folga_variavel_dia_semana)
+             VALUES (?, NULL, TRUE, ?, ?)`,
+            item.colaborador_id, item.folga_fixa_dia_semana, item.folga_variavel_dia_semana,
+          )
+        }
+      }
+    })
+    return { ok: true, count: input.padrao.length }
   })
 
 const colaboradoresDeletarRegraHorario = t.procedure
@@ -3320,230 +3347,113 @@ const regrasResetarRegra = t.procedure
   })
 
 // =============================================================================
-// BACKUP / RESTORE (2 handlers)
+// BACKUP / RESTORE (1 handler — importar de arquivo externo)
 // =============================================================================
 
-// Tabelas agrupadas por categoria para backup seletivo
-// Estrutura do ZIP:
-//   _meta.json
-//   cadastros/empresa.json, cadastros/setores.json, ...
-//   conhecimento/ia_memorias.json, conhecimento/knowledge_chunks.json, ...
-//   conversas/ia_conversas.json, conversas/ia_mensagens.json
-
-const BACKUP_CATEGORIAS = {
-  cadastros: [
-    'empresa', 'tipos_contrato', 'setores', 'demandas', 'colaboradores',
-    'excecoes', 'escalas', 'alocacoes', 'funcoes', 'feriados',
-    'setor_horario_semana', 'empresa_horario_semana', 'contrato_perfis_horario',
-    'colaborador_regra_horario', 'colaborador_regra_horario_excecao_data',
-    'demandas_excecao_data', 'escala_ciclo_modelos', 'escala_ciclo_itens',
-    'escala_decisoes', 'escala_comparacao_demanda', 'configuracao_ia', 'regra_empresa',
-  ],
-  conhecimento: [
-    'ia_memorias', 'knowledge_sources', 'knowledge_chunks',
-    'knowledge_entities', 'knowledge_relations',
-  ],
-  conversas: [
-    'ia_conversas', 'ia_mensagens',
-  ],
-} as const
-
-// Ordem de import (pais antes de filhas por FK)
-const IMPORT_ORDER = [
-  'empresa', 'tipos_contrato', 'setores', 'funcoes', 'contrato_perfis_horario',
-  'colaboradores', 'demandas', 'excecoes', 'setor_horario_semana', 'empresa_horario_semana',
-  'colaborador_regra_horario', 'colaborador_regra_horario_excecao_data',
-  'demandas_excecao_data', 'feriados', 'escalas', 'alocacoes',
-  'escala_decisoes', 'escala_comparacao_demanda', 'escala_ciclo_modelos', 'escala_ciclo_itens',
-  'configuracao_ia', 'regra_empresa',
-  'ia_memorias', 'knowledge_sources', 'knowledge_chunks', 'knowledge_entities', 'knowledge_relations',
-  'ia_conversas', 'ia_mensagens',
-] as const
-
-type BackupOpcoes = {
-  incluir_cadastros?: boolean
-  incluir_conhecimento?: boolean
-  incluir_historico_chat?: boolean
-}
-
-const dadosExportar = t.procedure
-  .input<BackupOpcoes>()
-  .action(async ({ input }): Promise<{ filepath: string; tamanho_mb: number } | null> => {
-  const AdmZip = (await import('adm-zip')).default
-
-  const incluir = {
-    cadastros: input?.incluir_cadastros !== false,
-    conhecimento: input?.incluir_conhecimento !== false,
-    conversas: input?.incluir_historico_chat !== false,
-  }
-
-  const categoriasAtivas = Object.entries(incluir)
-    .filter(([, v]) => v)
-    .map(([k]) => k as keyof typeof BACKUP_CATEGORIAS)
-
-  if (categoriasAtivas.length === 0) return null
-
-  const now = new Date()
-  const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
-  const result = await dialog.showSaveDialog({
-    defaultPath: `escalaflow-backup-${ts}.zip`,
-    filters: [{ name: 'EscalaFlow Backup', extensions: ['zip'] }],
-  })
-
-  if (result.canceled || !result.filePath) return null
-
-  const zip = new AdmZip()
-  let totalTabelas = 0
-  let totalRegistros = 0
-
-  for (const categoria of categoriasAtivas) {
-    const tables = BACKUP_CATEGORIAS[categoria]
-    for (const table of tables) {
-      try {
-        const rows = await queryAll(`SELECT * FROM ${table}`)
-        if (rows.length > 0) {
-          zip.addFile(
-            `${categoria}/${table}.json`,
-            Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'),
-          )
-          totalTabelas++
-          totalRegistros += rows.length
-        }
-      } catch {
-        // tabela pode não existir em DBs antigos — ignora
-      }
-    }
-  }
-
-  // Metadata no root do zip
-  const meta = {
-    app: 'escalaflow',
-    versao: app.getVersion(),
-    criado_em: now.toISOString(),
-    tabelas: totalTabelas,
-    registros: totalRegistros,
-    categorias: incluir,
-  }
-  zip.addFile('_meta.json', Buffer.from(JSON.stringify(meta, null, 2), 'utf-8'))
-
-  zip.writeZip(result.filePath)
-
-  const stats = await import('node:fs/promises').then(fs => fs.stat(result.filePath))
-  const tamanhoMb = Math.round((stats.size / 1024 / 1024) * 100) / 100
-
-  return { filepath: result.filePath, tamanho_mb: tamanhoMb }
-})
-
 const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; registros: number; categorias: string[] } | null> => {
-  const result = await dialog.showOpenDialog({
+  const win = BrowserWindow.getFocusedWindow()
+  const opts = {
     filters: [
       { name: 'EscalaFlow Backup', extensions: ['zip'] },
       { name: 'JSON (legado)', extensions: ['json'] },
     ],
-    properties: ['openFile'],
-  })
-
+    properties: ['openFile' as const],
+  }
+  const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
   if (result.canceled || !result.filePaths[0]) return null
 
-  const filePath = result.filePaths[0]
+  const { parseBackupFile, importFromData } = await import('./backup')
+  const { dados } = parseBackupFile(result.filePaths[0])
+  const imported = await importFromData(dados)
+  return { ...imported, categorias: Object.keys(dados).length > 0 ? ['backup'] : [] }
+})
 
-  // Detecta formato: ZIP ou JSON legado
-  const isZip = filePath.toLowerCase().endsWith('.zip')
+// =============================================================================
+// BACKUP AUTOMATICO — Maquina do Tempo (7 handlers)
+// =============================================================================
 
-  // Parseia o backup — normaliza ambos formatos pra { dados: Record<table, rows[]>, categorias: string[] }
-  let dados: Record<string, unknown[]> = {}
-  let categorias: string[] = []
+const backupConfigObter = t.procedure.action(async () => {
+  const { getBackupConfig, getDefaultBackupDir } = await import('./backup')
+  const config = await getBackupConfig()
+  const pasta_padrao = getDefaultBackupDir(app.getPath('userData'))
+  return { ...config, pasta_padrao }
+})
 
-  if (isZip) {
-    const AdmZip = (await import('adm-zip')).default
-    const zip = new AdmZip(filePath)
-    const entries = zip.getEntries()
+const backupConfigSalvar = t.procedure
+  .input<{ pasta?: string | null; ativo?: boolean; backup_ao_fechar?: boolean; intervalo_horas?: number; max_snapshots?: number }>()
+  .action(async ({ input }) => {
+    const sets: string[] = []
+    const vals: unknown[] = []
+    let idx = 1
 
-    // Valida meta
-    const metaEntry = entries.find(e => e.entryName === '_meta.json')
-    if (!metaEntry) throw new Error('Arquivo ZIP invalido. Nenhum _meta.json encontrado.')
-    const meta = JSON.parse(metaEntry.getData().toString('utf-8'))
-    if (meta?.app !== 'escalaflow') throw new Error('Arquivo de backup invalido. Selecione um backup do EscalaFlow.')
+    if (input.pasta !== undefined) { sets.push(`pasta = $${idx++}`); vals.push(input.pasta) }
+    if (input.ativo !== undefined) { sets.push(`ativo = $${idx++}`); vals.push(input.ativo) }
+    if (input.backup_ao_fechar !== undefined) { sets.push(`backup_ao_fechar = $${idx++}`); vals.push(input.backup_ao_fechar) }
+    if (input.intervalo_horas !== undefined) { sets.push(`intervalo_horas = $${idx++}`); vals.push(input.intervalo_horas) }
+    if (input.max_snapshots !== undefined) { sets.push(`max_snapshots = $${idx++}`); vals.push(input.max_snapshots) }
 
-    // Lê cada JSON dentro das pastas
-    for (const entry of entries) {
-      if (entry.isDirectory || entry.entryName === '_meta.json') continue
-      const parts = entry.entryName.split('/')
-      if (parts.length !== 2) continue
-      const [categoria, filename] = parts
-      const table = filename.replace('.json', '')
-      if (!categorias.includes(categoria)) categorias.push(categoria)
-      try {
-        const rows = JSON.parse(entry.getData().toString('utf-8'))
-        if (Array.isArray(rows)) dados[table] = rows
-      } catch {
-        // arquivo corrompido dentro do zip — ignora
-      }
-    }
-  } else {
-    // JSON legado
-    const raw = readFileSync(filePath, 'utf-8')
-    const backup = JSON.parse(raw) as { _meta?: { app?: string }; dados?: Record<string, unknown[]> }
-    if (!backup?._meta?.app || backup._meta.app !== 'escalaflow') {
-      throw new Error('Arquivo de backup invalido. Selecione um arquivo exportado pelo EscalaFlow.')
-    }
-    if (!backup.dados || typeof backup.dados !== 'object') {
-      throw new Error('Arquivo de backup corrompido. Nenhum dado encontrado.')
-    }
-    dados = backup.dados
-    categorias = ['legado']
-  }
-
-  if (Object.keys(dados).length === 0) {
-    throw new Error('Nenhuma tabela encontrada no backup.')
-  }
-
-  let totalTabelas = 0
-  let totalRegistros = 0
-
-  return await transaction(async () => {
-    await execDDL('SET session_replication_role = \'replica\'')
-
-    try {
-      // Só limpa tabelas presentes no backup
-      const backupTables = new Set(Object.keys(dados))
-      for (let i = IMPORT_ORDER.length - 1; i >= 0; i--) {
-        const table = IMPORT_ORDER[i]
-        if (!backupTables.has(table)) continue
-        try {
-          await execute(`DELETE FROM ${table}`)
-        } catch {
-          // tabela pode não existir
-        }
-      }
-
-      // Insere na ordem certa (pais antes de filhas)
-      for (const table of IMPORT_ORDER) {
-        const rows = dados[table]
-        if (!rows || !Array.isArray(rows) || rows.length === 0) continue
-
-        const sample = rows[0] as Record<string, unknown>
-        const columns = Object.keys(sample)
-        const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ')
-
-        for (const row of rows) {
-          const r = row as Record<string, unknown>
-          const values = columns.map((col) => r[col] ?? null)
-          await execute(
-            `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
-            ...values,
-          )
-        }
-
-        totalTabelas++
-        totalRegistros += rows.length
-      }
-    } finally {
-      await execDDL('SET session_replication_role = \'origin\'')
+    if (sets.length > 0) {
+      sets.push('atualizado_em = NOW()')
+      await execute(`UPDATE configuracao_backup SET ${sets.join(', ')} WHERE id = 1`, ...vals)
     }
 
-    return { tabelas: totalTabelas, registros: totalRegistros, categorias }
+    const { getBackupConfig, getDefaultBackupDir } = await import('./backup')
+    const config = await getBackupConfig()
+    const pasta_padrao = getDefaultBackupDir(app.getPath('userData'))
+    return { ...config, pasta_padrao }
   })
+
+const backupSnapshotsListar = t.procedure.action(async () => {
+  try {
+    const { listSnapshots } = await import('./backup')
+    const result = await listSnapshots(app.getPath('userData'))
+    console.log('[BACKUP-IPC] listar:', result.length, 'snapshots')
+    return result
+  } catch (err) {
+    console.error('[BACKUP-IPC] listar error:', err)
+    return []
+  }
+})
+
+const backupSnapshotsCriar = t.procedure
+  .input<{ trigger?: string }>()
+  .action(async ({ input }) => {
+    try {
+      const { createSnapshot } = await import('./backup')
+      const trigger = (input?.trigger ?? 'manual') as SnapshotTrigger
+      const result = await createSnapshot(trigger, app.getPath('userData'), app.getVersion())
+      console.log('[BACKUP-IPC] criar:', result?.filename ?? 'null (in progress)')
+      return result
+    } catch (err) {
+      console.error('[BACKUP-IPC] criar error:', err)
+      throw err
+    }
+  })
+
+const backupSnapshotsRestaurar = t.procedure
+  .input<{ filename: string }>()
+  .action(async ({ input }) => {
+    const { restoreSnapshot } = await import('./backup')
+    return restoreSnapshot(input.filename, app.getPath('userData'), app.getVersion())
+  })
+
+const backupSnapshotsDeletar = t.procedure
+  .input<{ filename: string }>()
+  .action(async ({ input }) => {
+    const { deleteSnapshot } = await import('./backup')
+    await deleteSnapshot(input.filename, app.getPath('userData'))
+    return { ok: true }
+  })
+
+const backupPastaEscolher = t.procedure.action(async () => {
+  const win = BrowserWindow.getFocusedWindow()
+  const opts = {
+    properties: ['openDirectory' as const, 'createDirectory' as const],
+    title: 'Escolher pasta para backups',
+  }
+  const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+  if (result.canceled || !result.filePaths[0]) return null
+  return result.filePaths[0]
 })
 
 // =============================================================================
@@ -3659,12 +3569,12 @@ const knowledgeStats = t.procedure.action(async () => {
 })
 
 const knowledgeEscolherArquivo = t.procedure.action(async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [
-      { name: 'Documentos', extensions: ['md', 'txt', 'pdf'] }
-    ]
-  })
+  const win = BrowserWindow.getFocusedWindow()
+  const opts = {
+    properties: ['openFile' as const],
+    filters: [{ name: 'Documentos', extensions: ['md', 'txt', 'pdf'] }],
+  }
+  const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
   if (result.canceled || !result.filePaths.length) return null
   return result.filePaths[0]
 })
@@ -3968,6 +3878,7 @@ export const router = {
   'setores.listarHorarioSemana': setoresListarHorarioSemana,
   'setores.upsertHorarioSemana': setoresUpsertHorarioSemana,
   'setores.salvarTimelineDia': setoresSalvarTimelineDia,
+  'setores.limparPadraoDemandas': setoresLimparPadraoDemandas,
   'setores.listarDemandasExcecaoData': setoresListarDemandasExcecaoData,
   'setores.salvarDemandaExcecaoData': setoresSalvarDemandaExcecaoData,
   'setores.deletarDemandaExcecaoData': setoresDeletarDemandaExcecaoData,
@@ -3993,6 +3904,7 @@ export const router = {
   'colaboradores.listarRegrasPadraoSetor': colaboradoresListarRegrasPadraoSetor,
   'colaboradores.buscarRegraHorario': colaboradoresBuscarRegraHorario,
   'colaboradores.salvarRegraHorario': colaboradoresSalvarRegraHorario,
+  'colaboradores.salvarPadraoFolgas': colaboradoresSalvarPadraoFolgas,
   'colaboradores.deletarRegraHorario': colaboradoresDeletarRegraHorario,
   'colaboradores.listarRegrasExcecaoData': colaboradoresListarRegrasExcecaoData,
   'colaboradores.upsertRegraExcecaoData': colaboradoresUpsertRegraExcecaoData,
@@ -4085,8 +3997,14 @@ export const router = {
   'knowledge.graphData': knowledgeGraphData,
   'knowledge.graphExplore': knowledgeGraphExplore,
   // Backup / Restore
-  'dados.exportar': dadosExportar,
   'dados.importar': dadosImportar,
+  'backup.config.obter': backupConfigObter,
+  'backup.config.salvar': backupConfigSalvar,
+  'backup.snapshots.listar': backupSnapshotsListar,
+  'backup.snapshots.criar': backupSnapshotsCriar,
+  'backup.snapshots.restaurar': backupSnapshotsRestaurar,
+  'backup.snapshots.deletar': backupSnapshotsDeletar,
+  'backup.pasta.escolher': backupPastaEscolher,
 }
 
 export type Router = typeof router

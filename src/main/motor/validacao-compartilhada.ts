@@ -26,7 +26,7 @@ export interface ColabMotor {
   id: number
   nome: string
   sexo: 'M' | 'F'
-  tipo_trabalhador: string                // 'CLT' | 'ESTAGIARIO' | 'APRENDIZ' | 'INTERMITENTE'
+  tipo_trabalhador: string                // 'CLT' | 'ESTAGIARIO' | 'INTERMITENTE'
   horas_semanais: number
   dias_trabalho: number
   max_minutos_dia: number
@@ -136,10 +136,6 @@ export function calcMetaDiariaMin(horas_semanais: number, dias_trabalho: number)
 }
 
 // ─── Novos helpers v3 ────────────────────────────────────────────────────────
-
-export function isAprendiz(c: ColabMotor): boolean {
-  return c.tipo_trabalhador === 'APRENDIZ'
-}
 
 export function isEstagiario(c: ColabMotor): boolean {
   return c.tipo_trabalhador === 'ESTAGIARIO'
@@ -415,20 +411,21 @@ export function checkH2b(
 }
 
 /**
- * H3 — RODIZIO_DOMINGO (v3.1: rebaixado para SOFT)
+ * H3 — RODIZIO_DOMINGO
  * Mulher: max 1 domingo consecutivo trabalhado (Art. 386 CLT).
  * Homem: max 2 domingos consecutivos (Lei 10.101/2000).
  * Usa lookback.domConsec para checar continuidade de escala anterior.
  *
- * v3.1 PRD: H3 deixa de ser HARD e vira indicador SOFT.
- * O solver Python agora usa add_domingo_ciclo_soft() com peso 3000.
- * Este checker reporta como SOFT para o dashboard, nao bloqueia oficializacao.
+ * A severidade efetiva vem da policy:
+ * HARD => bloqueia para ambos os sexos
+ * SOFT => reporta para ambos como indicador
  */
 export function checkH3(
   c: ColabMotor,
   domingos: string[],
   mapa: Map<string, CelulaMotor>,
-  lookback: LookbackV3
+  lookback: LookbackV3,
+  severidade: 'HARD' | 'SOFT' = 'SOFT',
 ): Violacao[] {
   const violacoes: Violacao[] = []
   const maxConsec = CLT.MAX_DOMINGOS_CONSECUTIVOS[c.sexo]
@@ -443,13 +440,13 @@ export function checkH3(
       if (consec > maxConsec) {
         const descricao = c.sexo === 'F'
           ? `máximo 1 domingo consecutivo para mulheres (Art. 386 CLT)`
-          : `máximo 2 domingos consecutivos para homens (Lei 10.101/2000)`
+          : `máximo 2 domingos consecutivos para homens (convenção/jurisprudência)`
         violacoes.push({
-          severidade: 'SOFT',
+          severidade,
           regra: 'H3_RODIZIO_DOMINGO',
           colaborador_id: c.id,
           colaborador_nome: c.nome,
-          mensagem: `${c.nome} trabalhou ${consec} domingos consecutivos (${descricao}) — indicador de justiça dominical`,
+          mensagem: `${c.nome} trabalhou ${consec} domingos consecutivos (${descricao}) — limite configurado de domingos consecutivos foi excedido`,
           data,
         })
       }
@@ -697,6 +694,7 @@ export function checkH10(
   severidade: 'HARD' | 'SOFT' = 'SOFT',
 ): Violacao[] {
   if (semana.length === 0) return []
+  if (c.horas_semanais === 0) return [] // Intermitente sem meta semanal
 
   let somaMin = 0
   let diasDisponiveis = 0
@@ -737,142 +735,7 @@ export function checkH10(
   return []
 }
 
-// ─── Checkers HARD H11-H20 (aprendiz, estagiário, feriados, almoço) ──────────
-
-/**
- * H11 — APRENDIZ_DOMINGO
- * Aprendiz não pode trabalhar aos domingos (Art. 432 CLT).
- */
-export function checkH11(
-  c: ColabMotor,
-  data: string,
-  cel: CelulaMotor
-): Violacao[] {
-  if (!isAprendiz(c)) return []
-  if (!isDomingo(data)) return []
-  if (cel.status !== 'TRABALHO') return []
-
-  return [{
-    severidade: 'HARD',
-    regra: 'H11_APRENDIZ_DOMINGO',
-    colaborador_id: c.id,
-    colaborador_nome: c.nome,
-    mensagem: `Aprendiz ${c.nome} não pode trabalhar aos domingos (CLT Art. 432) — ${data} é domingo`,
-    data,
-  }]
-}
-
-/**
- * H12 — APRENDIZ_FERIADO
- * Aprendiz não pode trabalhar em feriados (Art. 432 CLT).
- */
-export function checkH12(
-  c: ColabMotor,
-  data: string,
-  cel: CelulaMotor,
-  feriados: Feriado[]
-): Violacao[] {
-  if (!isAprendiz(c)) return []
-  if (cel.status !== 'TRABALHO') return []
-
-  const eFeriado = feriados.some(f => f.data === data)
-  if (!eFeriado) return []
-
-  const feriado = feriados.find(f => f.data === data)
-  const nomeFeriado = feriado?.nome ?? 'feriado'
-
-  return [{
-    severidade: 'HARD',
-    regra: 'H12_APRENDIZ_FERIADO',
-    colaborador_id: c.id,
-    colaborador_nome: c.nome,
-    mensagem: `Aprendiz ${c.nome} não pode trabalhar em feriados (CLT Art. 432) — ${data} é ${nomeFeriado}`,
-    data,
-  }]
-}
-
-/**
- * H13 — APRENDIZ_NOTURNO
- * Aprendiz não pode trabalhar no período noturno entre 22:00 e 05:00 (Art. 404 CLT).
- * Verifica: hora_fim > 22:00 OU hora_inicio < 05:00 OU hora_inicio >= 22:00.
- */
-export function checkH13(
-  c: ColabMotor,
-  cel: CelulaMotor,
-  data: string
-): Violacao[] {
-  if (!isAprendiz(c)) return []
-  if (cel.status !== 'TRABALHO') return []
-  if (cel.hora_inicio === null || cel.hora_fim === null) return []
-
-  const inicioMin = timeToMin(cel.hora_inicio)
-  const fimMin = timeToMin(cel.hora_fim)
-  const noturnoInicioMin = timeToMin(CLT.APRENDIZ_HORARIO_NOTURNO_INICIO) // 22:00 = 1320
-  const noturnoFimMin = timeToMin(CLT.APRENDIZ_HORARIO_NOTURNO_FIM)       // 05:00 = 300
-
-  const entraNoNoturno =
-    fimMin > noturnoInicioMin ||   // turno termina após 22:00
-    inicioMin < noturnoFimMin ||   // turno começa antes das 05:00
-    inicioMin >= noturnoInicioMin  // turno começa às 22:00 ou depois
-
-  if (!entraNoNoturno) return []
-
-  return [{
-    severidade: 'HARD',
-    regra: 'H13_APRENDIZ_NOTURNO',
-    colaborador_id: c.id,
-    colaborador_nome: c.nome,
-    mensagem: `Aprendiz ${c.nome} não pode trabalhar no horário noturno (${CLT.APRENDIZ_HORARIO_NOTURNO_INICIO}–${CLT.APRENDIZ_HORARIO_NOTURNO_FIM}) em ${data} — turno ${cel.hora_inicio}–${cel.hora_fim} viola Art. 404 CLT`,
-    data,
-  }]
-}
-
-/**
- * H14 — APRENDIZ_HORA_EXTRA
- * Aprendiz não pode fazer hora extra: max 6h/dia (360min) e 30h/semana (1800min) (Art. 432 CLT).
- */
-export function checkH14(
-  c: ColabMotor,
-  semana: string[],
-  mapa: Map<string, CelulaMotor>
-): Violacao[] {
-  if (!isAprendiz(c)) return []
-
-  const violacoes: Violacao[] = []
-  let somaSemanal = 0
-
-  for (const data of semana) {
-    const cel = mapa.get(data)
-    if (!cel || cel.status !== 'TRABALHO') continue
-
-    somaSemanal += cel.minutos_trabalho
-
-    if (cel.minutos_trabalho > CLT.APRENDIZ_MAX_JORNADA_MIN) {
-      violacoes.push({
-        severidade: 'HARD',
-        regra: 'H14_APRENDIZ_HORA_EXTRA',
-        colaborador_id: c.id,
-        colaborador_nome: c.nome,
-        mensagem: `Aprendiz ${c.nome} tem ${Math.floor(cel.minutos_trabalho / 60)}h${cel.minutos_trabalho % 60}min em ${data} — máximo permitido é ${Math.floor(CLT.APRENDIZ_MAX_JORNADA_MIN / 60)}h/dia (Art. 432 CLT)`,
-        data,
-      })
-    }
-  }
-
-  if (somaSemanal > CLT.APRENDIZ_MAX_SEMANAL_MIN) {
-    const semanaRef = semana[0] ?? null
-    violacoes.push({
-      severidade: 'HARD',
-      regra: 'H14_APRENDIZ_HORA_EXTRA',
-      colaborador_id: c.id,
-      colaborador_nome: c.nome,
-      mensagem: `Aprendiz ${c.nome} tem ${Math.floor(somaSemanal / 60)}h${somaSemanal % 60}min na semana de ${semanaRef} — máximo permitido é ${Math.floor(CLT.APRENDIZ_MAX_SEMANAL_MIN / 60)}h/semana (Art. 432 CLT)`,
-      data: semanaRef,
-    })
-  }
-
-  return violacoes
-}
+// ─── Checkers HARD H15-H20 (estagiário, feriados, almoço) ───────────────────
 
 /**
  * H15 — ESTAGIARIO_JORNADA
@@ -1229,8 +1092,9 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
     // H2b — DSR interjornada (por colaborador)
     violacoes.push(...checkH2b(c, diasOrdered))
 
-    if ((rules?.H3 ?? 'SOFT') !== 'OFF') {
-      violacoes.push(...checkH3(c, domingos, mapa, lb))
+    const h3Severity = resolveRuleSeverity(rules, 'H3_DOM_MAX_CONSEC', 'HARD')
+    if (h3Severity) {
+      violacoes.push(...checkH3(c, domingos, mapa, lb, h3Severity))
     }
 
     // H4 — max jornada diária (por colaborador, itera internamente)
@@ -1260,15 +1124,6 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
       // H9 — max saída e volta (max 2 blocos por dia)
       violacoes.push(...checkH9(cel, c, data))
 
-      // H11 — aprendiz nunca domingo
-      violacoes.push(...checkH11(c, data, cel))
-
-      // H12 — aprendiz nunca feriado
-      violacoes.push(...checkH12(c, data, cel, feriados))
-
-      // H13 — aprendiz nunca noturno (22h-5h)
-      violacoes.push(...checkH13(c, cel, data))
-
       // H20 — almoço nunca na 1ª ou última hora
       violacoes.push(...checkH20(cel, c, data))
     }
@@ -1286,9 +1141,6 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
       if (h10Severity) {
         violacoes.push(...checkH10(c, semana, mapaSemana, tolerancia_min, empresa, h10Severity))
       }
-
-      // H14 — aprendiz hora extra (diário + semanal)
-      violacoes.push(...checkH14(c, semana, mapaSemana))
 
       // H15 — estagiário jornada (diário + semanal)
       violacoes.push(...checkH15(c, semana, mapaSemana))

@@ -83,7 +83,7 @@ const novoColabSchema = z.object({
   sexo: z.string().min(1, 'Selecione o sexo'),
   setor_id: z.string().min(1, 'Selecione o setor'),
   tipo_contrato_id: z.string().min(1, 'Selecione o tipo de contrato'),
-  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'APRENDIZ', 'INTERMITENTE']),
+  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'INTERMITENTE']),
   funcao_id: z.string(),
   perfil_horario_id: z.string(),
 })
@@ -772,7 +772,6 @@ export function ColaboradorLista() {
                       <SelectContent>
                         <SelectItem value="CLT">CLT</SelectItem>
                         <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
-                        <SelectItem value="APRENDIZ">Aprendiz</SelectItem>
                         <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
                       </SelectContent>
                     </Select>

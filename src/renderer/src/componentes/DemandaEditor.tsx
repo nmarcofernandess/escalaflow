@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect, type MouseEvent } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, useImperativeHandle, forwardRef, type MouseEvent } from 'react'
 import { Plus, Clock, Minus, Trash2, BarChart3, Table2, MoreHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -181,7 +181,19 @@ interface DemandaEditorProps {
   demandas: Demanda[]
   horariosSemana: SetorHorarioSemana[]
   totalColaboradores: number
+  onDirtyChange?: (dirty: boolean) => void
 }
+
+export interface DemandaEditorRef {
+  /** Retorna o draft completo (padrao + 7 dias) para persistência */
+  getDraft: () => SemanaDraft
+  /** True se houve qualquer mutação desde o último load/markClean */
+  isDirty: () => boolean
+  /** Marca como limpo (chamar após salvar com sucesso) */
+  markClean: () => void
+}
+
+export type { SemanaDraft, DiaDraft, PadraoDraft, SegmentoDraft }
 
 function sortByInicio(a: { hora_inicio: string }, b: { hora_inicio: string }): number {
   return toMinutes(a.hora_inicio) - toMinutes(b.hora_inicio)
@@ -211,17 +223,26 @@ function toDemanda(seg: SegmentoDraft, setorId: number, dia: DiaSemana | null): 
   }
 }
 
-export function DemandaEditor({
+export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(function DemandaEditor({
   setor,
   demandas,
   horariosSemana,
   totalColaboradores,
-}: DemandaEditorProps) {
+  onDirtyChange,
+}, ref) {
   const [activeTab, setActiveTab] = useState<'padrao' | DiaSemana>('padrao')
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
   const [operacionalPopoverOpen, setOperacionalPopoverOpen] = useState(false)
 
   const nextTempId = useRef(-1)
+  const dirtyRef = useRef(false)
+
+  const markDirty = useCallback(() => {
+    if (!dirtyRef.current) {
+      dirtyRef.current = true
+      onDirtyChange?.(true)
+    }
+  }, [onDirtyChange])
 
   const snapshotKey = useMemo(() => {
     const d = demandas
@@ -270,11 +291,16 @@ export function DemandaEditor({
       horarioMap.set(h.dia_semana, h)
     }
 
+    // Infere padrao: prefere dia_semana=null, senão primeiro dia usa_padrao, senão primeiro com segmentos
+    const firstUsaPadraoDia = DIAS_SEMANA.find((d) => {
+      const h = horarioMap.get(d)
+      return (h?.usa_padrao ?? true) && byDia[d].length > 0
+    })
     const padraoSegmentosBaseRaw =
       padraoLegado.length > 0
         ? [...padraoLegado].sort(sortByInicio)
-        : byDia.SEG.length > 0
-          ? cloneSegmentos(byDia.SEG, nextTempId)
+        : firstUsaPadraoDia
+          ? cloneSegmentos(byDia[firstUsaPadraoDia], nextTempId)
           : (() => {
               const firstComSegmento = DIAS_SEMANA.find((dia) => byDia[dia].length > 0)
               if (firstComSegmento) return cloneSegmentos(byDia[firstComSegmento], nextTempId)
@@ -346,7 +372,19 @@ export function DemandaEditor({
 
   useEffect(() => {
     setDraft(buildInitialDraft())
-  }, [snapshotKey, buildInitialDraft])
+    dirtyRef.current = false
+    onDirtyChange?.(false)
+  }, [snapshotKey, buildInitialDraft, onDirtyChange])
+
+  // ─── Ref imperativo para o pai (SetorDetalhe) consumir ────────────
+  useImperativeHandle(ref, () => ({
+    getDraft: () => draft,
+    isDirty: () => dirtyRef.current,
+    markClean: () => {
+      dirtyRef.current = false
+      onDirtyChange?.(false)
+    },
+  }), [draft, onDirtyChange])
 
   const currentConfig = useMemo(() => {
     if (activeTab === 'padrao') {
@@ -464,6 +502,7 @@ export function DemandaEditor({
   }, [])
 
   const setDiaUsePadrao = useCallback((dia: DiaSemana, usarPadrao: boolean) => {
+    markDirty()
     setDraft((prev) => {
       const atual = prev.dias[dia]
       if (usarPadrao) {
@@ -517,6 +556,7 @@ export function DemandaEditor({
     const nextAbertura = minutesToTime(normalizedWindow.startMin)
     const nextFechamento = minutesToTime(normalizedWindow.endMin)
 
+    markDirty()
     setDraft((prev) => {
       if (activeTab === 'padrao') {
         return {
@@ -549,6 +589,7 @@ export function DemandaEditor({
   }, [activeTab, clampSegmentosToWindow, displayOpenMin, displayCloseMin])
 
   const updateEditableSegmentos = useCallback((updater: (list: SegmentoDraft[]) => SegmentoDraft[]) => {
+    markDirty()
     setDraft((prev) => {
       if (activeTab === 'padrao') {
         return {
@@ -592,6 +633,7 @@ export function DemandaEditor({
       : Math.max(operationalOpenMin, Math.floor((operationalCloseMin - snappedDuration) / DEMANDA_SNAP_MINUTES) * DEMANDA_SNAP_MINUTES)
     const endPoint = Math.min(midPoint + snappedDuration, operationalCloseMin)
 
+    markDirty()
     setDraft((prev) => {
       const novoSegmento: SegmentoDraft = {
         id: nextTempId.current--,
@@ -1291,4 +1333,4 @@ export function DemandaEditor({
       </Tabs>
     </div>
   )
-}
+})

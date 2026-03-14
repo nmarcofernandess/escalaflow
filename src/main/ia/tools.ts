@@ -180,8 +180,6 @@ const SalvarRegraHorarioColaboradorSchema = z.object({
   fim: z.string().regex(HORA_HHMM_REGEX).nullable().optional()
     .describe('Horário máximo de saída (HH:MM). Motor não aloca além. NULL = motor livre.'),
   preferencia_turno_soft: z.string().nullable().optional().describe('Preferência soft de turno (ex: MANHA/TARDE/NOITE, conforme convenção local).'),
-  domingo_ciclo_trabalho: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de trabalho no ciclo (só na regra padrão).'),
-  domingo_ciclo_folga: z.number().int().min(0).max(10).optional().describe('Quantidade de domingos seguidos de folga no ciclo (só na regra padrão).'),
   folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover (só na regra padrão).'),
   folga_variavel_dia_semana: z.enum(['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']).nullable().optional()
     .describe('Dia da 2a folga semanal (SEG..SAB, nunca DOM). Se trabalhou domingo, folga neste dia na semana seguinte. NULL para remover. Só na regra padrão.'),
@@ -194,7 +192,7 @@ const CriarColaboradorSchema = z.object({
   tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato. Contexto automático disponibiliza contratos. Default: CLT 44h (id=1).'),
   sexo: z.enum(['M', 'F']).optional().describe('Sexo do colaborador: "M" ou "F".'),
   data_nascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Data de nascimento no formato YYYY-MM-DD.'),
-  tipo_trabalhador: z.string().optional().describe('Tipo de trabalhador (ex: regular, aprendiz, estagiario).'),
+  tipo_trabalhador: z.string().optional().describe('Tipo de trabalhador (ex: CLT, estagiario, intermitente).'),
   hora_inicio_min: z.string().optional().describe('Horário mínimo de início permitido (HH:MM).'),
   hora_fim_max: z.string().optional().describe('Horário máximo de término permitido (HH:MM).'),
   ativo: z.boolean().optional().describe('true = ativo, false = inativo.')
@@ -420,6 +418,8 @@ const RemoverMemoriaSchema = z.object({
   id: z.number().int().positive().describe('ID da memória a remover.'),
 })
 
+const FazerBackupSchema = z.object({})
+
 // ==================== IA_TOOLS (Gemini API Format) ====================
 
 export const IA_TOOLS = [
@@ -455,7 +455,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'editar_regra',
-        description: 'Altera o status de uma regra do motor OR-Tools. Apenas regras marcadas como editavel=1 podem ser alteradas. Regras fixas por lei (H2, H4, H5, H11-H18) são imutáveis.',
+        description: 'Altera o status de uma regra do motor OR-Tools. Apenas regras marcadas como editavel=1 podem ser alteradas. Regras fixas por lei (H2, H4, H5, H15-H18) são imutáveis.',
         parameters: toJsonSchema(EditarRegraSchema)
     },
     {
@@ -592,6 +592,11 @@ export const IA_TOOLS = [
         name: 'remover_memoria',
         description: 'Remove uma memória do RH por id. Use quando o usuário diz "esquece que...", "remove aquela anotação sobre...".',
         parameters: toJsonSchema(RemoverMemoriaSchema)
+    },
+    {
+        name: 'fazer_backup',
+        description: 'Cria um snapshot (backup) do estado atual do sistema. Use quando o RH pedir para fazer backup ou salvar o estado.',
+        parameters: toJsonSchema(FazerBackupSchema)
     }
 ]
 
@@ -669,8 +674,7 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   ]),
   colaborador_regra_horario: new Set([
     'colaborador_id', 'dia_semana_regra', 'inicio', 'fim',
-    'folga_fixa_dia_semana', 'folga_variavel_dia_semana', 'domingo_ciclo_trabalho',
-    'domingo_ciclo_folga', 'perfil_horario_id', 'ativo'
+    'folga_fixa_dia_semana', 'folga_variavel_dia_semana', 'perfil_horario_id', 'ativo'
   ]),
 }
 
@@ -864,6 +868,7 @@ export const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   salvar_memoria: SalvarMemoriaSchema,
   listar_memorias: ListarMemoriasSchema,
   remover_memoria: RemoverMemoriaSchema,
+  fazer_backup: FazerBackupSchema,
 }
 
 const DICIONARIO_VIOLACOES: Record<string, string> = {
@@ -874,11 +879,9 @@ const DICIONARIO_VIOLACOES: Record<string, string> = {
     'H5': 'Limite de horas extras semanais (CLT Art. 59). Regra FIXA por lei.',
     'H6': 'Horas semanais abaixo do mínimo do contrato. O colaborador está sendo escalado com menos horas do que previsto em seu contrato de trabalho.',
     'H10': 'Janela de horário do colaborador violada. O turno atribuído está fora da janela permitida (início mínimo/máximo ou fim mínimo/máximo configurados na regra individual do colaborador).',
-    'H11': 'Menor aprendiz trabalhando em domingo ou feriado proibido. Vedado pelo ECA Art. 67.',
-    'H12': 'Menor aprendiz em período noturno (entre 22h e 5h). Vedado pelo ECA Art. 67.',
     'H13': 'Estagiário excedendo limite de 6h/dia ou 30h/semana. Vedado pela Lei 11.788/2008.',
     'H14': 'Trabalho em feriado proibido por CCT. Os dias 25/12 (Natal) e 01/01 (Ano Novo) são hard-blocked por CCT FecomercioSP × FECOMERCIARIOS. Nenhum colaborador pode trabalhar nesses dias.',
-    'H15': 'Restrição de tipo de trabalhador especial (regime diferenciado, noturno ou aprendiz).',
+    'H15': 'Restrição de tipo de trabalhador especial (regime diferenciado).',
     'H16': 'Restrição de jornada para tipo de contrato com limite especial.',
     'H17': 'Restrição de hora extra para tipo de trabalhador não elegível a horas extras.',
     'H18': 'Restrição de feriado para tipo de trabalhador com proteção legal adicional.',
@@ -2801,8 +2804,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           inicio,
           fim,
           preferencia_turno_soft,
-          domingo_ciclo_trabalho,
-          domingo_ciclo_folga,
           folga_fixa_dia_semana,
           folga_variavel_dia_semana,
         } = args
@@ -2847,8 +2848,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               inicio: string | null
               fim: string | null
               preferencia_turno_soft: string | null
-              domingo_ciclo_trabalho: number
-              domingo_ciclo_folga: number
               folga_fixa_dia_semana: string | null
               folga_variavel_dia_semana: string | null
             }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', colaborador_id)
@@ -2859,8 +2858,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               inicio: string | null
               fim: string | null
               preferencia_turno_soft: string | null
-              domingo_ciclo_trabalho: number
-              domingo_ciclo_folga: number
               folga_fixa_dia_semana: string | null
               folga_variavel_dia_semana: string | null
             }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', colaborador_id, diaSemana)
@@ -2881,17 +2878,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             ? (preferencia_turno_soft ?? null)
             : (existe?.preferencia_turno_soft ?? null)
 
-          // Regras de dia específico não carregam campos de ciclo/folga no schema.
-          const domCicloTrabalho = isDiaEspecifico
-            ? 2
-            : (hasOwnField(args, 'domingo_ciclo_trabalho')
-                ? (domingo_ciclo_trabalho ?? 2)
-                : (existe?.domingo_ciclo_trabalho ?? 2))
-          const domCicloFolga = isDiaEspecifico
-            ? 1
-            : (hasOwnField(args, 'domingo_ciclo_folga')
-                ? (domingo_ciclo_folga ?? 1)
-                : (existe?.domingo_ciclo_folga ?? 1))
           const folgaFixa = isDiaEspecifico
             ? null
             : (hasOwnField(args, 'folga_fixa_dia_semana')
@@ -2910,8 +2896,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 perfil_horario_id = ?,
                 inicio = ?, fim = ?,
                 preferencia_turno_soft = ?,
-                domingo_ciclo_trabalho = ?,
-                domingo_ciclo_folga = ?,
                 folga_fixa_dia_semana = ?,
                 folga_variavel_dia_semana = ?
               WHERE id = ?
@@ -2921,8 +2905,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               nextInicio,
               nextFim,
               nextPreferenciaTurnoSoft,
-              domCicloTrabalho,
-              domCicloFolga,
               folgaFixa,
               folgaVariavel,
               existe.id,
@@ -2930,8 +2912,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           } else {
             await execute(`
               INSERT INTO colaborador_regra_horario
-                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, domingo_ciclo_trabalho, domingo_ciclo_folga, folga_fixa_dia_semana, folga_variavel_dia_semana)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
               colaborador_id,
               diaSemana,
@@ -2940,8 +2922,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               nextInicio,
               nextFim,
               nextPreferenciaTurnoSoft,
-              domCicloTrabalho,
-              domCicloFolga,
               folgaFixa,
               folgaVariavel,
             )
@@ -3671,6 +3651,25 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             return toolError('REMOVER_MEMORIA_FALHOU', `Erro ao remover memória: ${e.message}`, {
                 correction: 'Tente novamente.',
                 meta: { tool_kind: 'memoria' }
+            })
+        }
+    }
+
+    if (name === 'fazer_backup') {
+        try {
+            const { createSnapshot } = await import('../backup')
+            const electron = await import('electron')
+            const info = await createSnapshot('ia', electron.default.app.getPath('userData'), electron.default.app.getVersion())
+            if (!info) return toolError('BACKUP_IN_PROGRESS', 'Backup ja em andamento, tente novamente em alguns segundos')
+            return toolOk({
+                mensagem: 'Backup criado com sucesso',
+                criado_em: info.meta.criado_em,
+                tamanho_kb: Math.round(info.tamanho_bytes / 1024),
+                total_registros: info.meta.registros,
+            })
+        } catch (e: any) {
+            return toolError('BACKUP_FALHOU', `Erro ao criar backup: ${e.message}`, {
+                correction: 'Tente novamente.',
             })
         }
     }

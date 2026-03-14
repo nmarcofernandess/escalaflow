@@ -234,8 +234,6 @@ export interface RegraHorarioColaborador {
   inicio: string | null           // HH:MM — entrada fixa
   fim: string | null              // HH:MM — saida maxima
   preferencia_turno_soft: Turno | null
-  domingo_ciclo_trabalho: number  // default 2 (só na regra padrão)
-  domingo_ciclo_folga: number     // default 1 (só na regra padrão)
   folga_fixa_dia_semana: DiaSemana | null  // só na regra padrão
   folga_variavel_dia_semana: DiaSemana | null  // só na regra padrão (SEG-SAB, condicional ao domingo)
 }
@@ -970,4 +968,32 @@ export interface IaCapabilities {
   can_use_cloud_llm_features: boolean
   reason?: 'configure_provider' | 'configure_cloud_token' | 'download_local_model'
   message: string
+}
+
+// ─── Backup / Maquina do Tempo ────────────────────────────────
+
+export interface ConfiguracaoBackup {
+  pasta: string | null
+  ativo: boolean
+  backup_ao_fechar: boolean
+  intervalo_horas: number
+  max_snapshots: number
+  ultimo_backup: string | null
+}
+
+export type SnapshotTrigger = 'auto_close' | 'auto_intervalo' | 'manual' | 'ia' | 'auto_pre_restore'
+
+export interface SnapshotMeta {
+  app: string
+  versao: string
+  criado_em: string
+  trigger: SnapshotTrigger
+  tabelas: number
+  registros: number
+}
+
+export interface SnapshotInfo {
+  filename: string
+  meta: SnapshotMeta
+  tamanho_bytes: number
 }

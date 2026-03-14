@@ -22,6 +22,7 @@ import { ConfiguracoesPagina } from './paginas/ConfiguracoesPagina'
 import { RegrasPagina } from './paginas/RegrasPagina'
 import { MemoriaPagina } from './paginas/MemoriaPagina'
 import { IaPagina } from './paginas/IaPagina'
+import { SimulaCicloPagina } from './paginas/SimulaCicloPagina'
 import { NaoEncontrado } from './paginas/NaoEncontrado'
 
 function AppLayout() {
@@ -89,6 +90,7 @@ export const router = createHashRouter([
       { path: '/setores/:id', element: <SetorDetalhe /> },
       { path: '/setores/:id/escala', element: <EscalaPagina /> },
       { path: '/escalas', element: <EscalasHub /> },
+      { path: '/simula-ciclo', element: <SimulaCicloPagina /> },
       { path: '/colaboradores', element: <ColaboradorLista /> },
       { path: '/colaboradores/:id', element: <ColaboradorDetalhe /> },
       { path: '/tipos-contrato', element: <ContratoLista /> },

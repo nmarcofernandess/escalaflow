@@ -37,6 +37,7 @@ from constraints import (
     add_demand_soft,
     add_dias_trabalho,
     add_dias_trabalho_soft_penalty,
+    add_dom_max_consecutivo,
     add_domingo_ciclo_hard,
     add_domingo_ciclo_soft,
     add_folga_fixa_5x2,
@@ -53,10 +54,6 @@ from constraints import (
     add_min_headcount_per_day,
     add_h10_meta_semanal,
     add_h10_meta_semanal_elastic,
-    add_h11_aprendiz_domingo,
-    add_h12_aprendiz_feriado,
-    add_h13_aprendiz_noturno,
-    add_h14_aprendiz_hora_extra,
     add_h15_estagiario_jornada,
     add_h16_estagiario_hora_extra,
     add_h17_h18_feriado_proibido,
@@ -100,11 +97,11 @@ DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
 def compute_cycle_length_weeks(colabs: List[dict], demand_by_slot: DaySlotDemand, days: List[str]) -> int:
     """Compute cycle length in weeks: N / gcd(N, D).
 
-    N = number of CLT workers (non-ESTAGIARIO/APRENDIZ)
+    N = number of workers eligible for sunday cycle (excludes INTERMITENTE)
     D = max sunday demand (peak headcount target on any sunday slot)
     """
     N = sum(1 for c in colabs
-            if c.get("tipo_trabalhador", "CLT") not in ("ESTAGIARIO", "APRENDIZ"))
+            if c.get("tipo_trabalhador", "CLT") not in ("INTERMITENTE",))
     if N <= 0:
         return 1
 
@@ -127,7 +124,7 @@ def compute_cycle_length_weeks(colabs: List[dict], demand_by_slot: DaySlotDemand
 def _compute_cycle_weeks_fast(colabs: List[dict], demand_list: List[dict]) -> int:
     """Lightweight cycle computation for diagnostico (no demand_by_slot needed)."""
     N = sum(1 for c in colabs
-            if c.get("tipo_trabalhador", "CLT") not in ("ESTAGIARIO", "APRENDIZ"))
+            if c.get("tipo_trabalhador", "CLT") not in ("INTERMITENTE",))
     if N <= 0:
         return 1
     D = max(
@@ -364,6 +361,10 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
     if C == 0 or D == 0:
         return None
 
+    config = data.get("config", {})
+    rules = config.get("rules", {})
+    h3_status = rules.get("H3_DOM_MAX_CONSEC", "HARD")
+
     # Compute grid info for half-demand
     empresa = data["empresa"]
     grid_min = int(empresa.get("grid_minutos", 30))
@@ -424,6 +425,10 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
 
     # HARD: domingo ciclo
     add_domingo_ciclo_hard(model, works_day, colabs, C, sunday_indices, blocked_days)
+
+    # H3: max domingos consecutivos (mulher=1, homem=2) — policy-driven.
+    if h3_status == "HARD":
+        add_dom_max_consecutivo(model, works_day, colabs, C, sunday_indices, blocked_days)
 
     # HARD: band demand coverage (morning/afternoon halves)
     morning_demand, afternoon_demand = _compute_half_demand(
@@ -546,23 +551,19 @@ def _compute_blocked_days(
                 if exc_start <= day <= exc_end:
                     blocked_days[c].add(d)
 
-    # H11: Apprentice never Sunday
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            for d in sunday_indices:
-                blocked_days[c].add(d)
-
-    # H12: Apprentice never holiday (any holiday, not just prohibited)
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            for d in holiday_all_indices:
-                blocked_days[c].add(d)
-
-    # Estagiario/Aprendiz — blocked from sundays
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") in ("ESTAGIARIO", "APRENDIZ"):
-            for d in sunday_indices:
-                blocked_days[c].add(d)
+    # Folga fixa from regras_colaborador_dia — only INTERMITENTE
+    # CLT folga_fixa is handled by add_folga_fixa_5x2 / add_colaborador_time_window_hard
+    # Adding CLT folga_fixa to blocked_days would reduce available in add_dias_trabalho
+    # and cause the solver to schedule fewer days than regime_days (validator violation)
+    regras_dia = data.get("regras_colaborador_dia", [])
+    day_to_d = {day: d for d, day in enumerate(days)}
+    for regra in regras_dia:
+        if regra.get("folga_fixa", False):
+            c = colab_id_to_c.get(regra.get("colaborador_id"))
+            d = day_to_d.get(regra.get("data"))
+            if c is not None and d is not None:
+                if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+                    blocked_days[c].add(d)
 
     return blocked_days, sunday_indices, holiday_all_indices, holiday_prohibited_indices
 
@@ -829,6 +830,14 @@ def build_model(
             return 'ON'
         return default
 
+    # H3: Max domingos consecutivos — policy-driven.
+    # SOFT ainda nao tem penalidade dedicada; nesse modo a hard constraint fica desligada.
+    h3_status = rule_is('H3_DOM_MAX_CONSEC', 'HARD')
+    if h3_status == 'HARD' and "ALL_PRODUCT_RULES" not in relax:
+        add_dom_max_consecutivo(model, works_day, colabs, C, sunday_indices, blocked_days)
+    elif h3_status == 'SOFT':
+        pass
+
     obj_terms_list: list = []  # penalties das versoes SOFT das HARD rules
 
     # ---------------------------------------------------------------
@@ -847,7 +856,7 @@ def build_model(
 
     # H2: ALWAYS HARD (safety — CLT Art. 66)
     add_h2_interjornada(model, work, C, D, S, grid_min=grid_min)
-    # v4: H3 removido como hard — substitudo por domingo_ciclo_soft abaixo
+    # H3 hard/soft is resolved above via h3_status.
     # H4: ALWAYS HARD (safety — CLT Art. 59)
     add_h4_max_jornada_diaria(model, work, colabs, C, D, S, grid_min)
     # H5: ALWAYS HARD (exceptions are physical absence)
@@ -943,11 +952,7 @@ def build_model(
             weight=h10_weight,
         )
 
-    # CLT constraints that NEVER relax (aprendiz, estagiario, feriados proibidos)
-    add_h11_aprendiz_domingo(model, works_day, colabs, C, sunday_indices)
-    add_h12_aprendiz_feriado(model, works_day, colabs, C, holiday_all_indices)
-    add_h13_aprendiz_noturno(model, work, colabs, C, D, S, base_h, grid_min)
-    add_h14_aprendiz_hora_extra(model, weekly_minutes_by_colab, colabs, C, week_chunks)
+    # CLT constraints that NEVER relax (estagiario, feriados proibidos)
     add_h15_estagiario_jornada(
         model,
         work,
@@ -1699,34 +1704,49 @@ def solve(data: dict) -> dict:
         return best_result if best_result else {"sucesso": False, "status": "TIMEOUT"}
 
     # ---- Phase 1: Folga Pattern (lightweight model) ----
-    phase1_budget = min(15, total_budget * 0.15)  # max 15s, 15% of budget
-    log("Calculando padrao de folgas...")
-
-    phase1_result = solve_folga_pattern(data, budget_s=phase1_budget)
-
-    pinned_folga = None
-    phase1_diag: dict = {}
-    if phase1_result and phase1_result["status"] == "OK":
-        pinned_folga = phase1_result["pattern"]
-        # Count band distribution
+    # Check for external pinned_folga (from Nível 1 simulation)
+    external_pinned = config.get("pinned_folga_externo")
+    if external_pinned and isinstance(external_pinned, list):
+        pinned_folga = {(item["c"], item["d"]): item["band"] for item in external_pinned}
         band_counts = {0: 0, 1: 0, 2: 0, 3: 0}
         for v in pinned_folga.values():
             band_counts[v] = band_counts.get(v, 0) + 1
         phase1_diag = {
-            "phase1_status": "OK",
-            "phase1_solve_time_ms": phase1_result["time_ms"],
-            "phase1_cycle_days": phase1_result.get("cycle_days", 0),
+            "phase1_status": "EXTERNAL",
             "phase1_bands_pinned": {
                 "off": band_counts[0], "manha": band_counts[1],
                 "tarde": band_counts[2], "integral": band_counts[3],
             },
         }
-        cycle_d = phase1_result.get('cycle_days', 0)
-        cycle_w = cycle_d // 7 if cycle_d else '?'
-        log(f"Padrao de folgas definido em {phase1_result['time_ms']/1000:.1f}s — ciclo de {cycle_w} semanas")
+        log(f"Padrao de folgas EXTERNO recebido: {sum(1 for v in pinned_folga.values() if v == 0)} dias OFF")
     else:
-        phase1_diag = {"phase1_status": "INFEASIBLE" if phase1_result is None else "SKIPPED"}
-        log("Padrao de folgas nao encontrado — usando distribuicao automatica")
+        phase1_budget = min(15, total_budget * 0.15)  # max 15s, 15% of budget
+        log("Calculando padrao de folgas...")
+
+        phase1_result = solve_folga_pattern(data, budget_s=phase1_budget)
+
+        pinned_folga = None
+        phase1_diag = {}
+        if phase1_result and phase1_result["status"] == "OK":
+            pinned_folga = phase1_result["pattern"]
+            band_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+            for v in pinned_folga.values():
+                band_counts[v] = band_counts.get(v, 0) + 1
+            phase1_diag = {
+                "phase1_status": "OK",
+                "phase1_solve_time_ms": phase1_result["time_ms"],
+                "phase1_cycle_days": phase1_result.get("cycle_days", 0),
+                "phase1_bands_pinned": {
+                    "off": band_counts[0], "manha": band_counts[1],
+                    "tarde": band_counts[2], "integral": band_counts[3],
+                },
+            }
+            cycle_d = phase1_result.get('cycle_days', 0)
+            cycle_w = cycle_d // 7 if cycle_d else '?'
+            log(f"Padrao de folgas definido em {phase1_result['time_ms']/1000:.1f}s — ciclo de {cycle_w} semanas")
+        else:
+            phase1_diag = {"phase1_status": "INFEASIBLE" if phase1_result is None else "SKIPPED"}
+            log("Padrao de folgas nao encontrado — usando distribuicao automatica")
 
     # ---- Pass 1: Normal (with Phase 1 folga pinned) ----
     result = _run_with_continuation(

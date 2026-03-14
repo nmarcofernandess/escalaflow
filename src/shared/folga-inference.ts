@@ -68,13 +68,15 @@ function detectVariableFromWorkedSunday(
     if (diaSemanaFromIso(aloc.data) !== 'DOM') continue
 
     const sunday = isoDateToUtcDate(aloc.data)
-    for (let offset = 1; offset <= 6; offset += 1) {
-      const next = new Date(sunday)
-      next.setUTCDate(sunday.getUTCDate() + offset)
-      const nextIso = utcDateToIso(next)
-      if (statusByDate.get(nextIso) !== 'FOLGA') continue
+    // Same-week: olhar dias ANTES do domingo (offset -6..-1)
+    for (let offset = -6; offset <= -1; offset += 1) {
+      const prev = new Date(sunday)
+      prev.setUTCDate(sunday.getUTCDate() + offset)
+      const prevIso = utcDateToIso(prev)
+      if (!statusByDate.has(prevIso)) continue // dia fora do periodo
+      if (statusByDate.get(prevIso) !== 'FOLGA') continue
 
-      const day = diaSemanaFromIso(nextIso)
+      const day = diaSemanaFromIso(prevIso)
       if (day === 'DOM' || day === fixedDay) continue
 
       countByDay.set(day, (countByDay.get(day) ?? 0) + 1)

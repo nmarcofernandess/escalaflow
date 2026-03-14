@@ -34,7 +34,10 @@ StartVars = Dict[Tuple[int, int], cp_model.IntVar]          # (c, d)   -> first 
 
 def _resolve_regime_days(colab: dict) -> int:
     """Resolve weekly work days from DB value."""
-    return int(colab.get("dias_trabalho", 6) or 6)
+    val = colab.get("dias_trabalho")
+    if val is None:
+        return 6
+    return int(val)
 
 
 def _prorata_weekly(value_per_week: int, days_in_chunk: int) -> int:
@@ -449,8 +452,10 @@ def add_dias_trabalho(
     Partial weeks are prorated and capped by available days.
     """
     for c in range(C):
-        blocked = blocked_days.get(c, set()) if blocked_days else set()
         regime_days = _resolve_regime_days(colabs[c])
+        if regime_days == 0:
+            continue  # Intermitente sem dias ativos — skip
+        blocked = blocked_days.get(c, set()) if blocked_days else set()
 
         for chunk in week_chunks:
             available_days = [d for d in chunk if d not in blocked]
@@ -570,85 +575,6 @@ def add_h5_excecoes(
             if exc_start <= day <= exc_end:
                 for s in range(S):
                     model.add(work[c, d, s] == 0)
-
-
-def add_h11_aprendiz_domingo(
-    model: cp_model.CpModel,
-    works_day: WorksDay,
-    colabs: List[dict],
-    C: int,
-    sunday_indices: List[int],
-) -> None:
-    """H11: Aprendiz nunca domingo. Art. 432 CLT."""
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            for d in sunday_indices:
-                model.add(works_day[c, d] == 0)
-
-
-def add_h12_aprendiz_feriado(
-    model: cp_model.CpModel,
-    works_day: WorksDay,
-    colabs: List[dict],
-    C: int,
-    holiday_indices: List[int],
-) -> None:
-    """H12: Aprendiz nunca feriado. Art. 432 CLT."""
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            for d in holiday_indices:
-                model.add(works_day[c, d] == 0)
-
-
-def add_h13_aprendiz_noturno(
-    model: cp_model.CpModel,
-    work: SlotGrid,
-    colabs: List[dict],
-    C: int,
-    D: int,
-    S: int,
-    base_h: int,
-    grid_min: int,
-) -> None:
-    """H13: Aprendiz nunca noturno (22h-5h). Art. 404 CLT.
-
-    For typical 08:00-20:00 operating windows, this emits zero constraints.
-    Included for safety if operating window ever extends beyond 20:00.
-    """
-    base_min = base_h * 60
-    night_slots = []
-    for s in range(S):
-        slot_start = base_min + s * grid_min
-        if slot_start >= 22 * 60:
-            night_slots.append(s)
-
-    if not night_slots:
-        return
-
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            for d in range(D):
-                for s in night_slots:
-                    model.add(work[c, d, s] == 0)
-
-
-def add_h14_aprendiz_hora_extra(
-    model: cp_model.CpModel,
-    weekly_minutes_by_colab: List[List[cp_model.IntVar]],
-    colabs: List[dict],
-    C: int,
-    week_chunks: List[List[int]],
-) -> None:
-    """H14: Aprendiz nunca hora extra. Art. 432 CLT.
-
-    Each weekly chunk must not exceed prorated target (zero upper tolerance).
-    """
-    for c in range(C):
-        if colabs[c].get("tipo_trabalhador") == "APRENDIZ":
-            target_week_min = int(colabs[c]["horas_semanais"]) * 60
-            for w_idx, wm in enumerate(weekly_minutes_by_colab[c]):
-                prorated_target = _prorata_weekly(target_week_min, len(week_chunks[w_idx]))
-                model.add(wm <= prorated_target)
 
 
 def add_h15_estagiario_jornada(
@@ -796,6 +722,8 @@ def add_domingo_ciclo_soft(
         return penalties
 
     for c in range(C):
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+            continue
         N = int(colabs[c].get("domingo_ciclo_trabalho", 2))
         M = int(colabs[c].get("domingo_ciclo_folga", 1))
         window = N + M
@@ -1016,21 +944,21 @@ def add_folga_variavel_condicional(
 ) -> None:
     """Folga variavel condicional: XOR entre domingo e dia variavel.
 
-    Se trabalhou domingo(semana N) -> folga no dia_var(semana N+1).
-    Se nao trabalhou domingo(semana N) -> trabalha no dia_var(semana N+1).
+    Se trabalhou domingo(semana N) -> folga no dia_var(da mesma semana).
+    Se nao trabalhou domingo(semana N) -> trabalha no dia_var(da mesma semana).
 
     Constraint: works_day[c, dom_idx] + works_day[c, var_idx] == 1
 
     So emite quando AMBOS indices estao dentro do periodo.
-    Semana 1 sem domingo anterior: sem constraint = solver livre.
+    Dias variaveis antes do inicio do periodo: sem constraint = solver livre.
     """
     DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
 
     from datetime import date as dt_date
     day_labels = [DAY_LABELS[dt_date.fromisoformat(day).weekday()] for day in days]
 
-    # Offset do DOM ate o dia variavel na proxima semana (SEG-SAB)
-    OFFSET = {"SEG": 1, "TER": 2, "QUA": 3, "QUI": 4, "SEX": 5, "SAB": 6}
+    # Offset do DOM ate o dia variavel na mesma semana (SEG-SAB)
+    OFFSET = {"SEG": -6, "TER": -5, "QUA": -4, "QUI": -3, "SEX": -2, "SAB": -1}
 
     for c in range(C):
         var_day = colabs[c].get("folga_variavel_dia_semana")
@@ -1045,9 +973,39 @@ def add_folga_variavel_condicional(
             if day_labels[d] != "DOM":
                 continue
             var_idx = d + offset
-            if var_idx < D:
+            if 0 <= var_idx < D:
                 # XOR: trabalha_dom + trabalha_var == 1
                 model.add(works_day[c, d] + works_day[c, var_idx] == 1)
+
+
+def add_dom_max_consecutivo(
+    model: cp_model.CpModel,
+    works_day: WorksDay,
+    colabs: List[dict],
+    C: int,
+    sunday_indices: List[int],
+    blocked_days: Dict[int, set],
+) -> None:
+    """HARD: max domingos consecutivos trabalhados.
+
+    Mulher (sexo='F'): max 1 (Art. 386 CLT).
+    Homem (sexo='M'): max 2 (convencao/jurisprudencia).
+
+    Constraint: sliding window of max+1 sundays, sum <= max.
+    """
+    if not sunday_indices:
+        return
+
+    for c in range(C):
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+            continue
+        sexo = colabs[c].get("sexo", "M")
+        max_consec = 1 if sexo == "F" else 2
+        available_suns = [d for d in sunday_indices if d not in blocked_days.get(c, set())]
+        window = max_consec + 1
+        for i in range(len(available_suns) - window + 1):
+            suns = available_suns[i : i + window]
+            model.add(sum(works_day[c, d] for d in suns) <= max_consec)
 
 
 # ===================================================================
@@ -1137,6 +1095,8 @@ def add_domingo_ciclo_hard(
         return
 
     for c in range(C):
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+            continue
         N = int(colabs[c].get("domingo_ciclo_trabalho", 2))
         M = int(colabs[c].get("domingo_ciclo_folga", 1))
         window = N + M
@@ -1288,6 +1248,8 @@ def add_dias_trabalho_soft_penalty(
     """DIAS_TRABALHO SOFT: penaliza desvio do numero esperado de dias/semana."""
     for c in range(C):
         regime_days = _resolve_regime_days(colabs[c])
+        if regime_days == 0:
+            continue  # Intermitente sem dias ativos — skip
         for chunk in week_chunks:
             available = [d for d in chunk if d not in blocked_days.get(c, set())]
             if not available:

@@ -21,10 +21,6 @@ export const CLT = {
   FOLGA_COMPENSATORIA_DOM_DIAS: 7,          // Lei 605/1949
   ESTAGIARIO_MAX_JORNADA_MIN: 360,          // 6h/dia — Lei 11.788 Art. 10
   ESTAGIARIO_MAX_SEMANAL_MIN: 1800,         // 30h/sem
-  APRENDIZ_MAX_JORNADA_MIN: 360,            // 6h/dia
-  APRENDIZ_MAX_SEMANAL_MIN: 1800,           // 30h/sem
-  APRENDIZ_HORARIO_NOTURNO_INICIO: '22:00',
-  APRENDIZ_HORARIO_NOTURNO_FIM: '05:00',
   GRID_MINUTOS: 15,
   MAX_COMPENSACAO_DIA_MIN: 585,             // 9h45 (compensacao CLT 44h/36h)
   COMPENSACAO_CONTRATOS: ['CLT 44h', 'CLT 36h'] as readonly string[],
@@ -104,7 +100,7 @@ export const SEVERIDADES = ['HARD', 'SOFT'] as const
 export type Severidade = (typeof SEVERIDADES)[number]
 
 // --- Tipos de trabalhador (v3) ---
-export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'APRENDIZ', 'INTERMITENTE'] as const
+export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'INTERMITENTE'] as const
 export type TipoTrabalhador = (typeof TIPOS_TRABALHADOR)[number]
 
 // --- Regimes de escala por contrato ---

@@ -18,6 +18,7 @@ import {
   HelpCircle,
   Info,
   Palette,
+  Zap,
 } from 'lucide-react'
 import logoIcon from '@/assets/logo.png'
 import {
@@ -56,6 +57,7 @@ const mainNav = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard },
   { label: 'Setores', to: '/setores', icon: Building2 },
   { label: 'Escalas', to: '/escalas', icon: CalendarDays },
+  { label: 'Simular Ciclos', to: '/simula-ciclo', icon: Zap },
   { label: 'Colaboradores', to: '/colaboradores', icon: Users },
   { label: 'Assistente IA', to: '/ia', icon: BrainCircuit },
   { label: 'Memoria', to: '/memoria', icon: Database },

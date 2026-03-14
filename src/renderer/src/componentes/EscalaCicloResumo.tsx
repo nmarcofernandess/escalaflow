@@ -151,9 +151,11 @@ function FolgaSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="__none__" className="text-xs">-</SelectItem>
-        {DIAS_ORDEM.map((dia) => (
-          <SelectItem key={dia} value={dia} className="text-xs">{DIAS_CURTOS[dia]}</SelectItem>
-        ))}
+        {DIAS_ORDEM
+          .filter(dia => field === 'folga_fixa_dia_semana' || dia !== 'DOM')
+          .map((dia) => (
+            <SelectItem key={dia} value={dia} className="text-xs">{DIAS_CURTOS[dia]}</SelectItem>
+          ))}
       </SelectContent>
     </Select>
   )
@@ -330,7 +332,10 @@ export function EscalaCicloResumo({
 
   const week = weeks[selectedWeek] ?? makeEmptyWeek()
 
-  // Inferir folga fixa vs variavel pelo padrao do ciclo
+  // Inferir folga fixa vs variavel: 3 cenarios
+  // 1) Ambos definidos na regra → usar direto
+  // 2) So fixa definida → fixa da regra, variavel null
+  // 3) Nenhum → inferir do padrao de alocacoes
   const inferredFolgas = useMemo(() => {
     const cicloWeeks = weeks.slice(0, Math.max(1, periodoCiclo))
     const map = new Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>()
@@ -340,6 +345,8 @@ export function EscalaCicloResumo({
       const colabId = row.titular.id
 
       const regra = regrasMap.get(colabId)
+
+      // Caso 1: ambos definidos explicitamente
       if (regra?.folga_fixa_dia_semana && regra?.folga_variavel_dia_semana) {
         map.set(colabId, {
           fixa: regra.folga_fixa_dia_semana,
@@ -348,6 +355,16 @@ export function EscalaCicloResumo({
         continue
       }
 
+      // Caso 2: so fixa definida (variavel nao configurada)
+      if (regra?.folga_fixa_dia_semana) {
+        map.set(colabId, {
+          fixa: regra.folga_fixa_dia_semana,
+          variavel: null,
+        })
+        continue
+      }
+
+      // Caso 3: nenhum definido — inferir do padrao de alocacoes
       const folgaCount = new Map<DiaSemana, number>()
       for (const w of cicloWeeks) {
         for (const dia of DIAS_ORDEM) {
@@ -365,14 +382,14 @@ export function EscalaCicloResumo({
         continue
       }
 
-      const sorted = [...folgaCount.entries()].sort((a, b) => b[1] - a[1])
-      const fixaDia = sorted[0][0]
+      // Dia com mais folgas = fixa, segundo = variavel
+      const sorted = [...folgaCount.entries()]
+        .filter(([dia]) => dia !== 'DOM') // domingo nao e fixa nem variavel
+        .sort((a, b) => b[1] - a[1])
+      const fixaDia = sorted[0]?.[0] ?? null
       const variavelDia = sorted.length > 1 ? sorted[1][0] : null
 
-      map.set(colabId, {
-        fixa: regra?.folga_fixa_dia_semana ?? fixaDia,
-        variavel: regra?.folga_variavel_dia_semana ?? variavelDia,
-      })
+      map.set(colabId, { fixa: fixaDia, variavel: variavelDia })
     }
 
     return map
@@ -402,7 +419,10 @@ export function EscalaCicloResumo({
     // Folga — domingo gets DF, otherwise check fixed vs variable
     if (dia === 'DOM') return 'DF'
     const inf = inferredFolgas.get(colab.id)
-    if (inf?.variavel === dia) return 'FV'
+    // Classificar: FF so se dia bate com fixa, FV so se bate com variavel
+    if (inf?.fixa && inf.fixa === dia) return 'FF'
+    if (inf?.variavel && inf.variavel === dia) return 'FV'
+    // Folga nao classificada — default FF
     return 'FF'
   }
 

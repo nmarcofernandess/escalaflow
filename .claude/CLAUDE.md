@@ -619,44 +619,55 @@ msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })  // ← PROIBIDO
 
 ---
 
-## Backup e Restauração
+## Backup e Restauracao (Sistema Unificado ZIP)
 
-O sistema exporta/importa dados como **ZIP compactado** com estrutura de pastas por categoria:
+Sistema unico de backup: formato ZIP organizado por categorias, com auto-backup + Maquina do Tempo.
+
+### Formato ZIP
 
 ```
-escalaflow-backup-20260224_1530.zip
-├── _meta.json                    ← versão, data, contagem, categorias incluídas
-├── cadastros/                    ← empresa, setores, colaboradores, escalas, regras…
+escalaflow-backup-2026-03-13T14-30-00-000.zip
+├── _meta.json                    ← versao, data, trigger, contagem
+├── cadastros/                    ← empresa, setores, colaboradores, escalas, regras...
 │   ├── empresa.json
 │   ├── colaboradores.json
 │   └── ...
-├── conhecimento/                 ← memórias IA, knowledge sources/chunks/entities/relations
+├── conhecimento/                 ← memorias IA, knowledge sources/chunks/entities/relations
 │   ├── ia_memorias.json
 │   └── ...
-└── conversas/                    ← histórico de chats IA
-    ├── ia_conversas.json
-    └── ia_mensagens.json
+├── conversas/                    ← historico de chats IA
+│   ├── ia_conversas.json
+│   └── ia_mensagens.json
+└── config/                       ← configuracao_backup
+    └── configuracao_backup.json
 ```
 
-### Categorias (3 toggles na UI)
+### Fluxos
 
-| Categoria | Default | Tabelas |
-|-----------|---------|---------|
-| Cadastros e escalas | ON | 22 tabelas operacionais (empresa → regra_empresa) |
-| Conhecimento e memórias | ON | ia_memorias, knowledge_sources/chunks/entities/relations |
-| Histórico de conversas | OFF | ia_conversas, ia_mensagens |
+| Acao | O que acontece |
+|------|----------------|
+| **Backup Agora** | `createSnapshot('manual')` → ZIP na pasta configurada |
+| **Auto-backup fechar** | `createSnapshot('auto_close')` → ZIP automatico |
+| **Auto-backup intervalo** | `createSnapshot('auto_intervalo')` → ZIP periodico |
+| **IA "faz backup"** | `createSnapshot('ia')` → ZIP via tool |
+| **Maquina do Tempo** | `listSnapshots()` → lista ZIPs + JSONs legados → `restoreSnapshot()` |
+| **Importar** | File picker → `parseBackupFile()` + `importFromData()` (ZIP ou JSON legado) |
 
 ### Retrocompatibilidade
 
-O import aceita `.zip` (novo) e `.json` (legado). Ao importar, **só deleta tabelas presentes no backup** — categorias não incluídas permanecem intactas.
+- `listSnapshots()` le tanto `escalaflow-backup-*.zip` quanto `snapshot-*.json` antigos
+- `parseBackupFile()` aceita ZIP, JSON flat (snapshot) e JSON nested (export legado com `.dados`)
+- Import com transaction safety (`session_replication_role = 'replica'`)
 
 ### Arquivos chave
 
 | Arquivo | Papel |
 |---------|-------|
-| `src/main/tipc.ts` → `dadosExportar` | Gera ZIP via `adm-zip`, categorias seletivas |
-| `src/main/tipc.ts` → `dadosImportar` | Lê ZIP ou JSON legado, import com FK ordering |
-| `ConfiguracoesPagina.tsx` → card "Backup" | 3 Switches + botões exportar/importar |
+| `src/main/backup.ts` | Fonte unica: `BACKUP_CATEGORIAS`, `IMPORT_ORDER`, create/list/restore/parse/import |
+| `src/main/tipc.ts` → `dadosImportar` | File picker → delega pra `parseBackupFile` + `importFromData` |
+| `src/main/tipc.ts` → 7 handlers `backup.*` | Config, listar, criar, restaurar, deletar, pasta |
+| `ConfiguracoesPagina.tsx` | UI: toggle auto-backup, pasta, botoes |
+| `TimeMachineModal.tsx` | UI: navega/restaura snapshots |
 
 ---
 

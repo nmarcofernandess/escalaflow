@@ -32,6 +32,8 @@ import {
   Terminal,
   CheckCircle2,
   CircleAlert,
+  Save,
+  Check,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -92,10 +94,10 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/componentes/PageHeader'
-import { SaveIndicator } from '@/componentes/SaveIndicator'
-import { useAutoSave } from '@/hooks/useAutoSave'
+import type { DemandaEditorRef, SemanaDraft } from '@/componentes/DemandaEditor'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { gerarCicloFase1, converterNivel1ParaEscala, sugerirK } from '@shared/simula-ciclo'
 import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
@@ -412,6 +414,12 @@ export function SetorDetalhe() {
     return 'SEG'
   }, [empresa?.corte_semanal])
 
+  // ─── Save & Dirty ────────────────────────────────────────────────────
+  const demandaEditorRef = useRef<DemandaEditorRef>(null)
+  const [demandaDirty, setDemandaDirty] = useState(false)
+  const [salvandoTudo, setSalvandoTudo] = useState(false)
+  const isDirty = setorForm.formState.isDirty || demandaDirty
+
   // ─── State ───────────────────────────────────────────────────────────
   const [showPostoDialog, setShowPostoDialog] = useState(false)
   const [postoDialogMode, setPostoDialogMode] = useState<'create' | 'edit'>('create')
@@ -457,6 +465,10 @@ export function SetorDetalhe() {
     solveMode: 'rapido',
     rulesOverride: {},
   })
+  // Preview Nivel 1: F/V editadas localmente
+  const [folgasEditadas, setFolgasEditadas] = useState<Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>>(new Map())
+  const [manualEditado, setManualEditado] = useState(false)
+
   const [exportOpen, setExportOpen] = useState(false)
   const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
     ciclo: true,
@@ -934,6 +946,61 @@ export function SetorDetalhe() {
     [exportColaboradoresBase, exportDetalhe, postosOrdenados],
   )
 
+  // Preview Nivel 1: grid T/F instantaneo antes de rodar solver
+  const previewNivel1 = useMemo(() => {
+    if (escalaCompleta || carregandoTabEscala) return null
+    if (setor?.regime_escala !== '5X2') return null
+    if (!funcoesList.length || !orderedColabs.length) return null
+
+    const postosElegiveis = funcoesList
+      .filter(f => f.ativo)
+      .sort((a, b) => a.ordem - b.ordem)
+      .map(f => {
+        const titular = orderedColabs.find(c => c.funcao_id === f.id)
+        return titular && (titular.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE'
+          ? { funcao: f, titular }
+          : null
+      })
+      .filter(Boolean) as Array<{ funcao: typeof funcoesList[0]; titular: typeof orderedColabs[0] }>
+
+    if (postosElegiveis.length < 2) return null
+
+    const N = postosElegiveis.length
+    const DIAS_IDX: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
+    const kDom = Math.max(0, ...(demandas ?? [])
+      .filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
+      .map(d => d.min_pessoas))
+    const K = kDom > 0 ? kDom : sugerirK(N)
+
+    const folgasForcadas = postosElegiveis.map(p => {
+      const editada = folgasEditadas.get(p.titular.id)
+      const regra = regrasPadrao?.find(r => r.colaborador_id === p.titular.id)
+      const fixa = editada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
+      const variavel = editada?.variavel ?? regra?.folga_variavel_dia_semana ?? null
+      return {
+        folga_fixa_dia: fixa ? DIAS_IDX.indexOf(fixa) : null,
+        folga_variavel_dia: variavel ? DIAS_IDX.indexOf(variavel as DiaSemana) : null,
+      }
+    })
+
+    const output = gerarCicloFase1({
+      num_postos: N,
+      trabalham_domingo: K,
+      preflight: true,
+      folgas_forcadas: folgasForcadas.some(f => f.folga_fixa_dia != null || f.folga_variavel_dia != null)
+        ? folgasForcadas
+        : undefined,
+    })
+
+    if (!output.sucesso) return null
+    return {
+      ...converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao),
+      stats: output.stats,
+      ciclo_semanas: output.ciclo_semanas,
+    }
+  }, [escalaCompleta, carregandoTabEscala, setor, funcoesList, orderedColabs,
+      demandas, regrasPadrao, folgasEditadas, periodoGeracao, setorId])
+
   // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
     if (setor) {
@@ -1051,43 +1118,70 @@ export function SetorDetalhe() {
   }, [carregarDetalheEscala, escalaOficialAtual, escalaSelecionada, historicoSelecionadaId, oficialCompleta?.escala.id])
 
   // ─── Handlers ────────────────────────────────────────────────────────
-  // Auto-save helpers
-  const saveField = useCallback(async (fields: Partial<SetorFormInput>) => {
-    await setoresService.atualizar(setorId, fields)
+  // ─── Salvar tudo (form + demandas) ──────────────────────────────────
+  const salvarDemandas = useCallback(async (draft: SemanaDraft) => {
+    // Limpa entradas dia_semana=null (padrao legado) para evitar double-counting no solver
+    await setoresService.limparPadraoDemandas(setorId)
+    for (const dia of DIAS_SEMANA) {
+      const dd = draft.dias[dia]
+      const usaPadrao = dd.usa_padrao
+      await setoresService.salvarTimelineDia({
+        setor_id: setorId,
+        dia_semana: dia,
+        ativo: dd.ativo,
+        usa_padrao: usaPadrao,
+        hora_abertura: usaPadrao ? draft.padrao.hora_abertura : dd.hora_abertura,
+        hora_fechamento: usaPadrao ? draft.padrao.hora_fechamento : dd.hora_fechamento,
+        segmentos: (usaPadrao ? draft.padrao.segmentos : dd.segmentos).map((s) => ({
+          hora_inicio: s.hora_inicio,
+          hora_fim: s.hora_fim,
+          min_pessoas: s.min_pessoas,
+          override: s.override,
+        })),
+      })
+    }
   }, [setorId])
 
-  const nomeAutoSave = useAutoSave({
-    saveFn: useCallback(async () => {
-      const val = setorForm.getValues('nome').trim()
-      if (!val) throw new Error('Nome e obrigatorio')
-      await saveField({ nome: val })
-    }, [setorForm, saveField]),
-    validate: useCallback(() => setorForm.getValues('nome').trim().length > 0, [setorForm]),
-  })
+  const handleSalvarTudo = useCallback(async () => {
+    const formData = setorForm.getValues()
+    const nome = formData.nome.trim()
+    if (!nome) {
+      toast.error('Nome do setor e obrigatorio')
+      return
+    }
+    setSalvandoTudo(true)
+    try {
+      // 1. Salva form do setor
+      await setoresService.atualizar(setorId, {
+        nome,
+        icone: formData.icone ?? null,
+        hora_abertura: formData.hora_abertura,
+        hora_fechamento: formData.hora_fechamento,
+        regime_escala: formData.regime_escala,
+      })
+      // 2. Salva demandas (7 dias)
+      const draft = demandaEditorRef.current?.getDraft()
+      if (draft) {
+        await salvarDemandas(draft)
+        demandaEditorRef.current?.markClean()
+      }
+      // Marca form como clean
+      setorForm.reset(formData)
+      toast.success('Setor salvo')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally {
+      setSalvandoTudo(false)
+    }
+  }, [setorId, setorForm, salvarDemandas])
 
-  const iconeAutoSave = useAutoSave({
-    saveFn: useCallback(async () => {
-      await saveField({ icone: setorForm.getValues('icone') ?? null })
-    }, [setorForm, saveField]),
-  })
-
-  const horaAberturaAutoSave = useAutoSave({
-    saveFn: useCallback(async () => {
-      await saveField({ hora_abertura: setorForm.getValues('hora_abertura') })
-    }, [setorForm, saveField]),
-  })
-
-  const horaFechamentoAutoSave = useAutoSave({
-    saveFn: useCallback(async () => {
-      await saveField({ hora_fechamento: setorForm.getValues('hora_fechamento') })
-    }, [setorForm, saveField]),
-  })
-
-  const regimeAutoSave = useAutoSave({
-    saveFn: useCallback(async () => {
-      await saveField({ regime_escala: setorForm.getValues('regime_escala') })
-    }, [setorForm, saveField]),
-  })
+  // ─── Protecao: aviso ao fechar app com alteracoes ──────────────────
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   const handleSalvarExcDemanda = async () => {
     if (!excDemandaForm.data || !excDemandaForm.hora_inicio || !excDemandaForm.hora_fim) {
@@ -1148,6 +1242,16 @@ export function SetorDetalhe() {
       return
     }
 
+    // Salva tudo antes de gerar (garante que demandas estao no banco)
+    if (isDirty) {
+      try {
+        await handleSalvarTudo()
+      } catch {
+        toast.error('Erro ao salvar antes de gerar. Tente salvar manualmente.')
+        return
+      }
+    }
+
     // Preflight silencioso
     try {
       const preflight = await escalasService.preflight(setorId, { data_inicio: dataInicio, data_fim: dataFim })
@@ -1164,6 +1268,43 @@ export function SetorDetalhe() {
     setSolverLogs([])
     setGerando(true)
     try {
+      // Salvar F/V do preview no banco (force) antes do solver
+      if (previewNivel1) {
+        const padrao = previewNivel1.regras.map(r => ({
+          colaborador_id: r.colaborador_id,
+          folga_fixa_dia_semana: r.folga_fixa_dia_semana,
+          folga_variavel_dia_semana: r.folga_variavel_dia_semana,
+        }))
+        await colaboradoresService.salvarPadraoFolgas(padrao, true)
+      }
+
+      // Montar pinned_folga_externo do preview (T/F → band 0/3)
+      let pinnedFolgaExterno: Array<{ c: number; d: number; band: number }> | undefined
+      if (previewNivel1) {
+        const colabOrdenados = [...orderedColabs]
+          .filter(c => (c.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
+          .sort((a, b) => b.rank - a.rank)
+        const colabIdToIdx = new Map(colabOrdenados.map((c, i) => [c.id, i]))
+
+        const startDate = new Date(`${dataInicio}T00:00:00`)
+        const datasMap = new Map<string, number>()
+        const cursor = new Date(startDate)
+        let dIdx = 0
+        while (cursor.toISOString().slice(0, 10) <= dataFim) {
+          datasMap.set(cursor.toISOString().slice(0, 10), dIdx++)
+          cursor.setDate(cursor.getDate() + 1)
+        }
+
+        pinnedFolgaExterno = previewNivel1.alocacoes
+          .filter(a => colabIdToIdx.has(a.colaborador_id))
+          .map(a => ({
+            c: colabIdToIdx.get(a.colaborador_id)!,
+            d: datasMap.get(a.data) ?? -1,
+            band: a.status === 'TRABALHO' ? 3 : 0,
+          }))
+          .filter(p => p.d >= 0)
+      }
+
       const rulesOverride = Object.keys(solverSessionConfig.rulesOverride).length > 0
         ? solverSessionConfig.rulesOverride
         : undefined
@@ -1173,8 +1314,11 @@ export function SetorDetalhe() {
         solveMode: solverSessionConfig.solveMode,
         maxTimeSeconds: solverSessionConfig.maxTimeSeconds,
         rulesOverride,
+        pinnedFolgaExterno,
       })
       setEscalaCompleta(result)
+      setFolgasEditadas(new Map())
+      setManualEditado(false)
       toast.success('Escala gerada')
     } catch (err) {
       const msg = mapError(err) || 'Nao foi possivel gerar a escala.'
@@ -1649,6 +1793,21 @@ export function SetorDetalhe() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              variant={isDirty ? 'default' : 'outline'}
+              size="sm"
+              onClick={handleSalvarTudo}
+              disabled={salvandoTudo}
+            >
+              {salvandoTudo ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" />
+              ) : isDirty ? (
+                <Save className="mr-1 size-3.5" />
+              ) : (
+                <Check className="mr-1 size-3.5" />
+              )}
+              {salvandoTudo ? 'Salvando...' : isDirty ? 'Salvar' : 'Salvo'}
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5">
@@ -1689,20 +1848,16 @@ export function SetorDetalhe() {
                 name="nome"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="flex items-center gap-1.5">
-                      Nome
-                      <SaveIndicator status={nomeAutoSave.status} error={nomeAutoSave.error} />
-                    </FormLabel>
+                    <FormLabel>Nome</FormLabel>
                     <div className="flex gap-2">
                       <IconPicker
                         value={setorForm.watch('icone') ?? null}
                         onChange={(v) => {
-                          setorForm.setValue('icone', v)
-                          iconeAutoSave.trigger()
+                          setorForm.setValue('icone', v, { shouldDirty: true })
                         }}
                       />
                       <FormControl>
-                        <Input {...field} onBlur={() => nomeAutoSave.trigger()} />
+                        <Input {...field} />
                       </FormControl>
                     </div>
                     <FormMessage />
@@ -1715,12 +1870,9 @@ export function SetorDetalhe() {
                   name="hora_abertura"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        Hora de Abertura
-                        <SaveIndicator status={horaAberturaAutoSave.status} error={horaAberturaAutoSave.error} />
-                      </FormLabel>
+                      <FormLabel>Hora de Abertura</FormLabel>
                       <FormControl>
-                        <Input type="time" {...field} onBlur={() => horaAberturaAutoSave.trigger()} />
+                        <Input type="time" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1731,12 +1883,9 @@ export function SetorDetalhe() {
                   name="hora_fechamento"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        Hora de Fechamento
-                        <SaveIndicator status={horaFechamentoAutoSave.status} error={horaFechamentoAutoSave.error} />
-                      </FormLabel>
+                      <FormLabel>Hora de Fechamento</FormLabel>
                       <FormControl>
-                        <Input type="time" {...field} onBlur={() => horaFechamentoAutoSave.trigger()} />
+                        <Input type="time" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1747,14 +1896,8 @@ export function SetorDetalhe() {
                   name="regime_escala"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        Regime Padrao
-                        <SaveIndicator status={regimeAutoSave.status} error={regimeAutoSave.error} />
-                      </FormLabel>
-                      <Select value={field.value} onValueChange={(val) => {
-                        field.onChange(val)
-                        regimeAutoSave.trigger()
-                      }}>
+                      <FormLabel>Regime Padrao</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />
@@ -2169,10 +2312,12 @@ export function SetorDetalhe() {
               </CardHeader>
               <CardContent>
                 <DemandaEditor
+                  ref={demandaEditorRef}
                   setor={setor}
                   demandas={demandas ?? []}
                   horariosSemana={horariosSemana ?? []}
                   totalColaboradores={colaboradores?.length ?? 0}
+                  onDirtyChange={setDemandaDirty}
                 />
               </CardContent>
             </Card>
@@ -2267,16 +2412,13 @@ export function SetorDetalhe() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Select value={periodoPreset} onValueChange={(value) => setPeriodoPreset(value as EscalaPeriodoPreset)}>
                         <SelectTrigger className="h-8 w-auto min-w-[220px] max-w-[280px]">
-                          <span className="tabular-nums">
-                            {getPresetLabel(periodoPreset)}: {formatarData(periodoGeracao.data_inicio)} — {formatarData(periodoGeracao.data_fim)}
-                          </span>
+                          <span>{getPresetLabel(periodoPreset)}</span>
                         </SelectTrigger>
                         <SelectContent>
                           {(['3_MESES', '6_MESES', '1_ANO'] as const).map((p) => {
-                            const r = resolvePresetRange(p, new Date(), inicioSemanaEscala)
                             return (
                               <SelectItem key={p} value={p}>
-                                <span className="tabular-nums">{getPresetLabel(p)}: {formatarData(r.data_inicio)} — {formatarData(r.data_fim)}</span>
+                                <span>{getPresetLabel(p)}</span>
                               </SelectItem>
                             )
                           })}
@@ -2291,12 +2433,6 @@ export function SetorDetalhe() {
                       >
                         <SlidersHorizontal className="size-3.5" />
                         Configurar
-                        <span className="text-xs text-muted-foreground">
-                          {solverSessionConfig.solveMode}
-                          {Object.keys(solverSessionConfig.rulesOverride).length > 0
-                            ? ` • ${Object.keys(solverSessionConfig.rulesOverride).length} regras`
-                            : ''}
-                        </span>
                       </Button>
 
                       <Button
@@ -2368,12 +2504,51 @@ export function SetorDetalhe() {
                         />
                       )}
                     </div>
+                  ) : previewNivel1 ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">Preview do Ciclo</p>
+                        <Badge variant="outline" className="text-xs">Nivel 1 — sem horarios</Badge>
+                        {previewNivel1.stats.sem_TT === false && (
+                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">TT detectado</Badge>
+                        )}
+                        {previewNivel1.stats.sem_H1_violation === false && (
+                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">H1 violado</Badge>
+                        )}
+                        {manualEditado && (
+                          <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs"
+                            onClick={() => { setFolgasEditadas(new Map()); setManualEditado(false) }}>
+                            <RotateCcw className="size-3" /> Recalcular
+                          </Button>
+                        )}
+                      </div>
+                      <EscalaCicloResumo
+                        escala={previewNivel1.escala}
+                        alocacoes={previewNivel1.alocacoes}
+                        colaboradores={orderedColabs}
+                        funcoes={funcoesList}
+                        regrasPadrao={previewNivel1.regras}
+                        onFolgaChange={(colabId, field, value) => {
+                          setFolgasEditadas(prev => {
+                            const next = new Map(prev)
+                            const current = next.get(colabId) ?? { fixa: null, variavel: null }
+                            if (field === 'folga_fixa_dia_semana') current.fixa = value
+                            else current.variavel = value as Exclude<DiaSemana, 'DOM'> | null
+                            next.set(colabId, current)
+                            return next
+                          })
+                          setManualEditado(true)
+                        }}
+                        viewMode={cicloMode}
+                      />
+                    </div>
                   ) : (
                     <div className="space-y-4 rounded-lg border border-dashed px-4 py-5">
                       <div>
-                        <p className="text-sm font-medium text-foreground">Nenhuma simulacao gerada</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Selecione o periodo e clique em <strong>Gerar Escala</strong>.
+                        <p className="text-sm font-medium text-foreground">
+                          {setor?.regime_escala === '6X1'
+                            ? 'Preview disponivel apenas para setores 5x2. Use Gerar Escala.'
+                            : 'Configure postos e demandas para ver o preview do ciclo.'}
                         </p>
                       </div>
                       {(!empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0 || (demandas?.length ?? 0) === 0) && (

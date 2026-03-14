@@ -759,7 +759,40 @@ async function migrateSchema(): Promise<void> {
 
   // --- v21: tolerancia_semanal_min default 30 → 0 ---
   await execute(`UPDATE empresa SET tolerancia_semanal_min = 0 WHERE tolerancia_semanal_min = 30`)
+
+  // --- v22: Ciclo domingo automatico — remove config manual ---
+  // Bridge agora calcula ciclo a partir de demanda do setor + N elegiveis.
+  // Colunas ficam no schema (backward compat) mas nullable e ignoradas.
+  await execDDL(`ALTER TABLE colaborador_regra_horario ALTER COLUMN domingo_ciclo_trabalho DROP NOT NULL`)
+  await execDDL(`ALTER TABLE colaborador_regra_horario ALTER COLUMN domingo_ciclo_trabalho SET DEFAULT NULL`)
+  await execDDL(`ALTER TABLE colaborador_regra_horario ALTER COLUMN domingo_ciclo_folga DROP NOT NULL`)
+  await execDDL(`ALTER TABLE colaborador_regra_horario ALTER COLUMN domingo_ciclo_folga SET DEFAULT NULL`)
+  await execute(`UPDATE colaborador_regra_horario SET domingo_ciclo_trabalho = NULL, domingo_ciclo_folga = NULL`)
+
+  // --- v23: Remove regras H11-H14 (APRENDIZ) — tipo nao existe no negocio ---
+  await execute(`DELETE FROM regra_empresa WHERE codigo IN ('H11','H12','H13','H14')`)
+  await execute(`DELETE FROM regra_definicao WHERE codigo IN ('H11','H12','H13','H14')`)
+
+  // --- v24: configuracao_backup (Maquina do Tempo) ---
+  await execute(`INSERT INTO configuracao_backup (id) VALUES (1) ON CONFLICT DO NOTHING`)
 }
+
+// ============================================================================
+// Backup / Maquina do Tempo
+// ============================================================================
+
+const DDL_CONFIGURACAO_BACKUP = `
+CREATE TABLE IF NOT EXISTS configuracao_backup (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  pasta TEXT,
+  ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  backup_ao_fechar BOOLEAN NOT NULL DEFAULT TRUE,
+  intervalo_horas INTEGER NOT NULL DEFAULT 24,
+  max_snapshots INTEGER NOT NULL DEFAULT 30,
+  ultimo_backup TIMESTAMPTZ,
+  atualizado_em TIMESTAMPTZ DEFAULT NOW()
+);
+`
 
 // ============================================================================
 // Entry point
@@ -774,6 +807,7 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_V6_REGRAS)
   await execDDL(DDL_V8_MEMORIAS)
   await execDDL(DDL_V7_KNOWLEDGE)
+  await execDDL(DDL_CONFIGURACAO_BACKUP)
   await migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v20 + regime por setor + contratos protegidos)')
+  console.log('[DB] Tabelas criadas com sucesso (v24 + backup automatico)')
 }

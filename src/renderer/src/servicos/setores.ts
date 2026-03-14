@@ -53,6 +53,9 @@ export const setoresService = {
   salvarTimelineDia: (data: SalvarTimelineDiaInput) =>
     client['setores.salvarTimelineDia'](data as any) as Promise<SalvarTimelineDiaOutput>,
 
+  limparPadraoDemandas: (setorId: number) =>
+    client['setores.limparPadraoDemandas']({ setor_id: setorId }) as Promise<void>,
+
   // --- Demandas Excecao por Data ---
   listarDemandasExcecaoData: (setorId: number, dataInicio?: string, dataFim?: string) =>
     client['setores.listarDemandasExcecaoData']({ setor_id: setorId, data_inicio: dataInicio, data_fim: dataFim } as any) as Promise<DemandaExcecaoData[]>,

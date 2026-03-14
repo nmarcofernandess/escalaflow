@@ -52,12 +52,25 @@ export const colaboradoresService = {
     inicio?: string | null
     fim?: string | null
     preferencia_turno_soft?: string | null
-    domingo_ciclo_trabalho?: number
-    domingo_ciclo_folga?: number
     folga_fixa_dia_semana?: string | null
     folga_variavel_dia_semana?: string | null
   }) =>
     client['colaboradores.salvarRegraHorario'](data as any) as Promise<RegraHorarioColaborador>,
+
+  salvarPadraoFolgas: (padrao: Array<{
+    colaborador_id: number
+    folga_fixa_dia_semana: DiaSemana | null
+    folga_variavel_dia_semana: DiaSemana | null
+  }>, force?: boolean) => {
+    return client['colaboradores.salvarPadraoFolgas']({
+      padrao: padrao.map(p => ({
+        colaborador_id: p.colaborador_id,
+        folga_fixa_dia_semana: p.folga_fixa_dia_semana,
+        folga_variavel_dia_semana: p.folga_variavel_dia_semana,
+      })),
+      force,
+    }) as Promise<{ ok: boolean; count: number }>
+  },
 
   deletarRegraHorario: (id: number) =>
     client['colaboradores.deletarRegraHorario']({ id }) as Promise<void>,

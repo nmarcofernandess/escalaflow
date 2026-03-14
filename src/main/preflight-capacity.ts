@@ -73,7 +73,7 @@ export function enrichPreflightWithCapacityChecks(
     demandByDay.set(day, active)
   }
 
-  const TIPOS_BLOQUEADOS_DOMINGO = new Set(['ESTAGIARIO', 'APRENDIZ'])
+  const TIPOS_BLOQUEADOS_DOMINGO = new Set<string>([])
   function bloqueadoDomingo(c: (typeof input.colaboradores)[number]): boolean {
     if (TIPOS_BLOQUEADOS_DOMINGO.has(c.tipo_trabalhador)) return true
     if (c.domingo_ciclo_trabalho != null && c.domingo_ciclo_trabalho <= 0) return true

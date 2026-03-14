@@ -93,6 +93,23 @@ export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuari
     const alertaLines = await _alertasProativos(contexto.setor_id)
     if (alertaLines) sections.push(alertaLines)
 
+    // ─── Alerta de backup desatualizado ──────────────────────────────
+    try {
+        const backupConfig = await queryOne<{ ultimo_backup: string | null }>('SELECT ultimo_backup FROM configuracao_backup WHERE id = 1')
+        if (backupConfig) {
+            const last = backupConfig.ultimo_backup ? new Date(backupConfig.ultimo_backup) : null
+            const daysAgo = last ? Math.floor((Date.now() - last.getTime()) / 86400000) : null
+
+            if (!last) {
+                sections.push('\n### Alerta: Backup')
+                sections.push('- O sistema NUNCA fez backup. Sugira ao RH fazer um backup (tool fazer_backup).')
+            } else if (daysAgo !== null && daysAgo > 7) {
+                sections.push('\n### Alerta: Backup')
+                sections.push(`- O ultimo backup foi ha ${daysAgo} dias. Sugira ao RH fazer um backup.`)
+            }
+        }
+    } catch { /* table might not exist yet */ }
+
     // ─── Stats Knowledge Base ────────────────────────────────────────
     const knowledgeStats = await _statsKnowledge()
     if (knowledgeStats) sections.push(knowledgeStats)

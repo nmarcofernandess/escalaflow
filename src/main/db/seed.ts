@@ -102,6 +102,13 @@ export async function seedCoreData(): Promise<void> {
     console.log(`[SEED] ${funcoesSemCor.length} funcoes atualizadas com cor_hex`)
   }
 
+  // Configuracao backup (Maquina do Tempo) — default row
+  const backupConfig = await queryOne<{ id: number }>('SELECT id FROM configuracao_backup WHERE id = 1')
+  if (!backupConfig) {
+    await execute('INSERT INTO configuracao_backup (id) VALUES (1) ON CONFLICT DO NOTHING')
+    console.log('[SEED] Configuracao backup criada (auto-backup ativo)')
+  }
+
   console.log('[SEED] Seed core concluido')
 }
 
@@ -244,22 +251,16 @@ export async function seedLocalData(): Promise<void> {
 // ============================================================================
 
 async function seedRegrasDefinicao(): Promise<void> {
-  const countRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM regra_definicao')
-  if ((countRow?.count ?? 0) > 0) return
-
   const regras: [string, string, string, string, string, boolean, string | null, number][] = [
     // -- CLT --
     ['H1', 'Maximo 6 dias consecutivos', 'Nenhum colaborador pode trabalhar mais de 6 dias seguidos sem folga (CLT Art. 67).', 'CLT', 'HARD', true, 'Desligar pode afetar o controle da meta semanal de horas.', 1],
     ['H2', 'Descanso minimo de 11h entre jornadas', 'Intervalo minimo obrigatorio de 11 horas entre o fim de uma jornada e o inicio da proxima (CLT Art. 66).', 'CLT', 'HARD', false, null, 2],
+    ['H3_DOM_MAX_CONSEC', 'Max domingos consecutivos', 'Mulher: max 1 (Art. 386 CLT). Homem: max 2 (convencao). Impede TT (trabalho-trabalho) em domingos.', 'CLT', 'HARD', true, 'Desligar pode permitir domingos consecutivos acima do limite por sexo.', 8],
     ['H4', 'Jornada maxima diaria de 10h', 'Nenhuma jornada pode ultrapassar 10 horas por dia incluindo hora extra (CLT Art. 59).', 'CLT', 'HARD', false, null, 3],
     ['H5', 'Ferias, atestados e bloqueios', 'Colaboradores em ferias, atestado ou bloqueio cadastrado nao recebem alocacao de trabalho.', 'CLT', 'HARD', false, null, 4],
     ['H6', 'Human blocks — almoco e estrutura de jornada', 'Garante que cada jornada tenha intervalo de almoco e estrutura minima de blocos (CLT Art. 71).', 'CLT', 'HARD', true, 'Sem human blocks, o motor pode gerar jornadas sem intervalo de almoco.', 5],
     ['H10', 'Meta semanal de horas', 'Cada colaborador deve atingir a meta semanal de horas conforme seu contrato (CLT Art. 58).', 'CLT', 'HARD', true, 'Desligar H10 quebra todo o calculo de horas semanais.', 6],
-    ['H11', 'Aprendiz — nunca domingo', 'Menor aprendiz nao pode trabalhar aos domingos (CLT Art. 405).', 'CLT', 'HARD', false, null, 7],
-    ['H12', 'Aprendiz — nunca feriado', 'Menor aprendiz nao pode trabalhar em feriados (CLT Art. 405).', 'CLT', 'HARD', false, null, 8],
-    ['H13', 'Aprendiz — nunca noturno (22h-5h)', 'Menor aprendiz nao pode trabalhar no periodo noturno entre 22h e 5h (CLT Art. 404).', 'CLT', 'HARD', false, null, 9],
-    ['H14', 'Aprendiz — nunca hora extra', 'Menor aprendiz nao pode realizar horas extras (CLT Art. 432).', 'CLT', 'HARD', false, null, 10],
-    ['H15', 'Estagiario — max 6h/dia e 30h/sem', 'Estagiario tem jornada maxima de 6h/dia e 30h/semana (Lei 11.788/2008 Art. 10).', 'CLT', 'HARD', false, null, 11],
+    ['H15', 'Estagiario — max 6h/dia e 30h/sem', 'Estagiario tem jornada maxima de 6h/dia e 30h/semana (Lei 11.788/2008 Art. 10).', 'CLT', 'HARD', false, null, 7],
     ['H16', 'Estagiario — nunca hora extra', 'Estagiario nao pode realizar horas extras.', 'CLT', 'HARD', false, null, 12],
     ['H17', 'Feriado proibido — 25/12 (Natal)', 'Trabalho proibido em 25 de dezembro conforme CCT FecomercioSP.', 'CLT', 'HARD', false, null, 13],
     ['H18', 'Feriado proibido — 01/01 (Ano Novo)', 'Trabalho proibido em 1 de janeiro conforme CCT FecomercioSP.', 'CLT', 'HARD', false, null, 14],
@@ -291,16 +292,20 @@ async function seedRegrasDefinicao(): Promise<void> {
     ['AP16', 'Junior sozinho em slot de alta demanda', 'Colaborador junior (rank 0) escalonado sem apoio em horario de pico.', 'ANTIPATTERN', 'ON', true, null, 212],
   ]
 
+  let inserted = 0
   await transaction(async () => {
     for (const r of regras) {
-      await execute(
+      const result = await execute(
         'INSERT INTO regra_definicao (codigo, nome, descricao, categoria, status_sistema, editavel, aviso_dependencia, ordem) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING',
         ...r,
       )
+      inserted += result.changes
     }
   })
 
-  console.log(`[SEED] ${regras.length} regras do motor criadas (16 CLT + 7 SOFT + 12 ANTIPATTERN)`)
+  if (inserted > 0) {
+    console.log(`[SEED] ${inserted} regra(s) do motor inserida(s) no catalogo`)
+  }
 }
 
 // ============================================================================

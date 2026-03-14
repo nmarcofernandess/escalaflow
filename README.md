@@ -52,10 +52,14 @@ App desktop offline para geração automática de escalas de trabalho em superme
 
 ```bash
 npm install    # instala dependências
-npm run dev    # abre o app Electron com hot reload
+npm run dev    # abre o app Electron com hot reload (sem reset de banco)
 ```
 
 O banco PGlite (Postgres WASM) é criado automaticamente no primeiro run com seed de contratos CLT, feriados nacionais, perfis horário e 35 regras do motor.
+
+> **Regra de ouro (dev):** o banco de desenvolvimento é tratado como fonte de verdade.  
+> `npm run dev` e os CLIs **nunca devem resetar ou reseedar o banco automaticamente**.  
+> Qualquer reset/seed só acontece via comandos explícitos (`db:reset`, `db:seed*`, scripts de testes).
 
 ---
 
@@ -73,7 +77,9 @@ O banco PGlite (Postgres WASM) é criado automaticamente no primeiro run com see
 
 ```bash
 # Desenvolvimento
-npm run dev              # dev com hot reload
+npm run dev              # dev com hot reload (usa o banco atual, sem reset)
+npm run dev:seed1        # dev usando dataset seed1 (SEED_DATASET=seed1)
+npm run dev:seed2        # dev usando dataset seed2 (SEED_DATASET=seed2)
 npm run build            # build de produção
 npm run clean            # rm -rf out tmp .vite
 npm run clean:dev        # clean + dev
@@ -91,8 +97,8 @@ npm run test:ia:live     # Smoke test IA com API real
 npm run ia:chat          # CLI interativo para testar IA
 
 # Motor — CLI dev (principal ferramenta de debug)
-npm run solver:cli -- list                           # lista setores
-npm run solver:cli -- 2                              # roda setor 2 (1 semana)
+npm run solver:cli -- list                           # lista setores (usa banco atual)
+npm run solver:cli -- 2                              # roda setor 2 (1 semana, banco atual)
 npm run solver:cli -- 2 2026-03-02 2026-03-08        # periodo especifico
 npm run solver:cli -- 1 2026-03-02 2026-04-26        # 8 semanas
 npm run solver:cli -- 2 --mode otimizado             # solver com mais tempo
@@ -105,7 +111,8 @@ npm run solver:test:parity # teste de paridade CLI solver real ↔ validador TS
 npm run solver:build     # compila binario Python (PyInstaller)
 
 # Banco
-npm run db:reset         # deleta e recria banco
+npm run db:reset         # deleta e recria banco (usar só quando explicitamente pedido)
+# (futuros scripts db:seed* devem ser sempre opt-in e nunca acoplados a dev/CLI)
 
 # Distribuição (local)
 npm run dist:mac         # gera .dmg (macOS)

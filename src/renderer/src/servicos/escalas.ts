@@ -19,6 +19,7 @@ export const escalasService = {
       solveMode?: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
       maxTimeSeconds?: number
       rulesOverride?: RuleConfig
+      pinnedFolgaExterno?: Array<{ c: number; d: number; band: number }>
     },
   ) =>
     client['escalas.gerar']({
@@ -29,6 +30,7 @@ export const escalasService = {
       solve_mode: data.solveMode,
       max_time_seconds: data.maxTimeSeconds,
       rules_override: data.rulesOverride,
+      pinned_folga_externo: data.pinnedFolgaExterno,
     }) as Promise<EscalaCompletaV3>,
 
   preflight: (

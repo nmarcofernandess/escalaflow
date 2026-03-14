@@ -325,6 +325,7 @@ export function EscalaGrid({
                                   return regra?.folga_variavel_dia_semana === DIAS_SEMANA_CURTO[dow] ? 'opacity-60' : ''
                                 })())}>
                                   {(() => {
+                                    if (colab.tipo_trabalhador === 'INTERMITENTE') return '—'
                                     const regra = regrasMap?.get(colab.id)
                                     const sigla = DIAS_SEMANA_CURTO[dow]
                                     if (regra?.folga_fixa_dia_semana === sigla) return 'F'

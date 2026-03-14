@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guia curto para qualquer sessao futura que mexa no motor de escalas.
+Guia curto para qualquer sessao futura que mexa no motor de escalas e no banco de desenvolvimento.
 
 ## Regra de ouro
 
@@ -24,6 +24,21 @@ npm run solver:test:parity
 npx vitest run tests/main/rule-policy.spec.ts
 npm run solver:test
 ```
+
+## Banco de desenvolvimento — regra para dev & CLI
+
+- **Banco de dev é fonte de verdade.** Trate o PGlite local como estado do usuário, não como fixture descartável.
+- **Nao acople reset/seed a comandos de dev.**
+  - `npm run dev` **nunca** deve chamar `db:reset` ou rodar seed automaticamente.
+  - CLIs (`npm run solver:cli`, scripts em `scripts/*.ts`) devem usar **sempre o banco atual**, a menos que o usuario peça o contrario.
+- **Reset/seed so com comando explicito:**
+  - `npm run db:reset` (e futuros `db:seed*`) so podem ser usados quando o usuario pedir ou quando a spec disser explicitamente para criar um banco novo.
+  - Se precisar de cenarios com seed especifico para testes, use combinacoes explicitas tipo `npm run db:reset && npm run db:seed2` em vez de embutir isso em `dev` ou em CLI.
+- **Padrao desejado para a IA:**
+  - Quando sugerir como rodar algo, prefira:
+    - `npm run dev` (usa banco atual)
+    - `npm run solver:cli -- …` (usa banco atual)
+  - So sugira `db:reset`/`db:seed*` se o contexto falar em "recriar do zero", "limpar banco" ou se o humano pedir claramente.
 
 ## Quando isso e obrigatorio
 

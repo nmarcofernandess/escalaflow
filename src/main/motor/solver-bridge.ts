@@ -41,6 +41,8 @@ export interface BuildSolverInputOptions {
   maxTimeSeconds?: number
   /** Override in-memory de regras — sobrescreve empresa+sistema apenas para esta geração */
   rulesOverride?: Record<string, string>
+  /** Padrão de folgas externo (da simulação Nível 1). Se fornecido, solver pula Phase 1. */
+  pinnedFolgaExterno?: Array<{ c: number; d: number; band: number }>
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +162,41 @@ function resolvePythonCmd(): string {
   console.warn('[solver-bridge] Nenhum Python com ortools encontrado. Usando python3 do PATH.')
   _cachedPythonCmd = 'python3'
   return 'python3'
+}
+
+// ---------------------------------------------------------------------------
+// Calculo automatico do ciclo domingo
+// ---------------------------------------------------------------------------
+
+function calcularCicloDomingo(
+  demandaRows: { dia_semana: string | null; min_pessoas: number }[],
+  colabRows: { id: number; tipo_trabalhador: string | null }[],
+  regraGroupByColab: Map<number, { padrao: { folga_fixa_dia_semana: string | null } | null; dias: Map<string, unknown> }>,
+): { cicloTrabalho: number; cicloFolga: number } {
+  // null = todos os dias (inclui domingo). Consistente com preflight-capacity.ts:70
+  const domDemandas = demandaRows.filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
+  const dDom = domDemandas.length > 0 ? Math.max(...domDemandas.map(d => d.min_pessoas)) : 0
+
+  const nDom = colabRows.filter(c => {
+    if ((c.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE') return false
+    const group = regraGroupByColab.get(c.id)
+    if (group?.padrao?.folga_fixa_dia_semana === 'DOM') return false
+    return true
+  }).length
+
+  if (dDom === 0 || nDom === 0) return { cicloTrabalho: 0, cicloFolga: 1 }
+
+  // Strict > (not >=) to ensure slack — exact equality means zero room for maneuver
+  if (nDom * (1 / 3) > dDom) return { cicloTrabalho: 1, cicloFolga: 2 }
+  if (nDom * (1 / 2) > dDom) return { cicloTrabalho: 1, cicloFolga: 1 }
+  if (nDom * (2 / 3) > dDom) return { cicloTrabalho: 2, cicloFolga: 1 }
+  if (nDom * (3 / 4) > dDom) return { cicloTrabalho: 3, cicloFolga: 1 }
+  // Fallback: >= allows exact match as last resort
+  if (nDom * (1 / 3) >= dDom) return { cicloTrabalho: 1, cicloFolga: 2 }
+  if (nDom * (1 / 2) >= dDom) return { cicloTrabalho: 1, cicloFolga: 1 }
+  if (nDom * (2 / 3) >= dDom) return { cicloTrabalho: 2, cicloFolga: 1 }
+  if (nDom * (3 / 4) >= dDom) return { cicloTrabalho: 3, cicloFolga: 1 }
+  return { cicloTrabalho: nDom, cicloFolga: 0 }
 }
 
 // ---------------------------------------------------------------------------
@@ -299,7 +336,6 @@ export async function buildSolverInput(
     dia_semana_regra: string | null;
     inicio: string | null; fim: string | null;
     preferencia_turno_soft: string | null;
-    domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
     folga_fixa_dia_semana: string | null;
     folga_variavel_dia_semana: string | null;
     p_inicio: string | null; p_fim: string | null;
@@ -309,7 +345,7 @@ export async function buildSolverInput(
     SELECT r.colaborador_id, r.ativo, r.perfil_horario_id,
            r.dia_semana_regra,
            r.inicio, r.fim,
-           r.preferencia_turno_soft, r.domingo_ciclo_trabalho, r.domingo_ciclo_folga,
+           r.preferencia_turno_soft,
            r.folga_fixa_dia_semana, r.folga_variavel_dia_semana,
            p.inicio AS p_inicio, p.fim AS p_fim,
            p.preferencia_turno_soft AS p_preferencia_turno_soft
@@ -374,9 +410,13 @@ export async function buildSolverInput(
         const diaSemana = DIAS_SEMANA_MAP[d.getDay() === 0 ? 6 : d.getDay() - 1]
 
         const excecaoData = excecaoDataMap.get(`${colab.id}|${isoDate}`)
+        const isIntermitente = (colab.tipo_trabalhador || 'CLT') === 'INTERMITENTE'
 
         // Precedencia: excecao_data > regra_dia_especifico > regra_padrao > perfil_contrato > sem regra
-        const regra = group?.dias.get(diaSemana) ?? group?.padrao ?? null
+        // Intermitente: só dia_especifico conta (padrão não define disponibilidade)
+        const regra = isIntermitente
+          ? (group?.dias.get(diaSemana) ?? null)
+          : (group?.dias.get(diaSemana) ?? group?.padrao ?? null)
 
         // v16: Resolve 2 campos (inicio, fim) e traduz para 4 campos que o Python espera
         let efetivo_inicio: string | null = null
@@ -395,10 +435,14 @@ export async function buildSolverInput(
           efetivo_inicio = regra.inicio ?? regra.p_inicio
           efetivo_fim = regra.fim ?? regra.p_fim
           pref_turno = regra.preferencia_turno_soft ?? regra.p_preferencia_turno_soft
+        } else if (isIntermitente) {
+          // Intermitente sem regra pro dia = bloqueado (não escalado)
+          folga_fixa = true
         }
 
         // Folga fixa: usar regra padrão (campo nível-colaborador, não nível-dia)
-        if (group?.padrao?.folga_fixa_dia_semana && group.padrao.folga_fixa_dia_semana === diaSemana) {
+        // Não se aplica a intermitente (não tem conceito de folga fixa CLT)
+        if (!isIntermitente && group?.padrao?.folga_fixa_dia_semana && group.padrao.folga_fixa_dia_semana === diaSemana) {
           folga_fixa = true
         }
 
@@ -430,12 +474,30 @@ export async function buildSolverInput(
 
   // Enriquecer colaboradores com dados de regra padrão (campos nível-colaborador)
   for (const c of colaboradores) {
-    const padrao = regraGroupByColab.get(c.id)?.padrao
+    const group = regraGroupByColab.get(c.id)
+    const padrao = group?.padrao
     if (padrao) {
-      c.domingo_ciclo_trabalho = padrao.domingo_ciclo_trabalho
-      c.domingo_ciclo_folga = padrao.domingo_ciclo_folga
       c.folga_fixa_dia_semana = (padrao.folga_fixa_dia_semana as DiaSemana | null) ?? null
       c.folga_variavel_dia_semana = (padrao.folga_variavel_dia_semana as DiaSemana | null) ?? null
+    }
+
+    // Intermitente: dias_trabalho = quantidade de dias com toggle ON
+    // Evita INFEASIBLE: add_dias_trabalho usa dias_trabalho pra calcular target,
+    // mas blocked_days não inclui folga_fixa de regras_colaborador_dia
+    if (c.tipo_trabalhador === 'INTERMITENTE') {
+      c.dias_trabalho = group?.dias.size ?? 0
+      if (c.dias_trabalho === 0) {
+        console.warn(`[solver-bridge] Intermitente ${c.nome} (id=${c.id}) tem 0 dias ativos`)
+      }
+    }
+  }
+
+  // v22: Ciclo domingo calculado automaticamente (tenta 1/2 → 1/1 → 2/1)
+  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRows, regraGroupByColab)
+  for (const c of colaboradores) {
+    if (c.tipo_trabalhador !== 'INTERMITENTE') {
+      c.domingo_ciclo_trabalho = cicloTrabalho
+      c.domingo_ciclo_folga = cicloFolga
     }
   }
 
@@ -522,6 +584,7 @@ export async function buildSolverInput(
       ...(rulePolicy.adjustments.length > 0 ? { policy_adjustments: rulePolicy.adjustments } : {}),
       nivel_rigor: options.nivelRigor ?? 'ALTO',  // backward compat quando rules ausente
       rules: rulePolicy.solverRules,
+      ...(options.pinnedFolgaExterno ? { pinned_folga_externo: options.pinnedFolgaExterno } : {}),
     },
   }
 }
