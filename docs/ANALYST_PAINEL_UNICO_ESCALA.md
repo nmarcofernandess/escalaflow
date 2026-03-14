@@ -2213,4 +2213,56 @@ Isso explica a confusao do Marco.
 
 ---
 
+---
+
+## 28. BUG: INTERMITENTE TRATADO COMO CLT (tipo_trabalhador errado)
+
+### 28.1 O problema
+
+O Manoel no seed-local tem:
+```
+contrato = 'Intermitente'     ← tipo_contrato (tabela tipos_contrato)
+tipo_trabalhador = 'CLT'      ← campo na tabela colaboradores (!!!)
+```
+
+O solver le `tipo_trabalhador` do colaborador (NAO o nome do contrato).
+Como `tipo_trabalhador = 'CLT'`, Manoel e tratado como CLT normal:
+- Recebe folga fixa/variavel
+- Entra no ciclo domingo
+- 5x2 (5 dias trabalho)
+- Nao tem blocked_days (trabalha todos os dias)
+
+Resultado: Manoel aparece trabalhando SEG-SAB como qualquer CLT.
+
+### 28.2 Onde o solver checa
+
+```
+solver-bridge.ts:413 → isIntermitente = (colab.tipo_trabalhador || 'CLT') === 'INTERMITENTE'
+solver-bridge.ts:487 → if (c.tipo_trabalhador === 'INTERMITENTE')
+solver-bridge.ts:498 → if (c.tipo_trabalhador !== 'INTERMITENTE')
+```
+
+Todas checam `tipo_trabalhador`, nao o contrato. Se o campo e 'CLT', nenhum
+guard ativa. Manoel vira CLT normal.
+
+### 28.3 E bug de dados, mas o sistema deveria prevenir
+
+Se o contrato se chama 'Intermitente', o `tipo_trabalhador` DEVERIA ser
+'INTERMITENTE' automaticamente. O sistema nao deveria permitir contrato
+'Intermitente' com tipo_trabalhador 'CLT'.
+
+Opcoes de fix:
+A) Corrigir no seed-local (trocar 'CLT' por 'INTERMITENTE')
+B) Corrigir no banco real (UPDATE colaboradores SET tipo_trabalhador...)
+C) Adicionar guard: se contrato.nome contém 'Intermitente', forçar tipo_trabalhador
+D) No solver-bridge: checar AMBOS (tipo_trabalhador OU contrato.nome)
+
+### 28.4 No banco real do Marco
+
+Precisa verificar: Manoel no banco de dev tem tipo_trabalhador='CLT' ou 'INTERMITENTE'?
+Se 'CLT' → bug ativo no banco real tambem.
+Se 'INTERMITENTE' → bug so no seed-local.
+
+---
+
 *Doc em construcao — Marco ainda esta na surra. Proximo input vai complementar.*
