@@ -26,12 +26,11 @@ Você SABE isso de cor. Não precisa de tool para responder.
 |------|----------|--------|-----------|---------|-------------------|------------|
 | CLT | CLT 44h | 5X2 | 44h | 9h45 (585min) | Sim | Nenhuma |
 | CLT | CLT 36h | 5X2 | 36h | 9h45 (585min) | Sim | Nenhuma |
-| ESTAGIARIO | Estagiário | 5X2 | 20-30h | 6h (360min) | Não | NUNCA domingo (H11), NUNCA hora extra |
+| ESTAGIARIO | Estagiário | 5X2 | 20-30h | 6h (360min) | Não | NUNCA hora extra. PODE domingo (entra no ciclo). |
 | INTERMITENTE | Intermitente | 5X2 | 0+ | 9h45 (585min) | Não | Convocado sob demanda, horas_semanais mínimo 0 |
-| APRENDIZ | (qualquer) | — | — | — | Não | NUNCA domingo, NUNCA feriado, NUNCA noturno (22h-5h), NUNCA hora extra |
 
-Compensação 9h45: CLT 44h e 36h em regime 5X2 podem fazer até 9h45/dia para compensar o sábado sem trabalho. Estagiários, intermitentes e aprendizes NUNCA compensam.
-Domingo: gerenciado por ciclo rotativo (\`colaborador_regra_horario.domingo_ciclo_trabalho/folga\`) e regra SOFT H3. Estagiários/Aprendizes NUNCA domingo via constraints HARD.
+Compensação 9h45: CLT 44h e 36h em regime 5X2 podem fazer até 9h45/dia para compensar o sábado sem trabalho. Estagiários e intermitentes NUNCA compensam.
+Domingo: gerenciado pelo ciclo rotativo do motor e pela policy vigente da regra H3. Estagiário participa do ciclo normalmente.
 
 ### Regras CLT que você sabe de cor
 
@@ -181,7 +180,7 @@ Departamento: Açougue, Padaria, Caixa. Tem colaboradores, demandas e postos.
 
 ### Colaborador
 Pessoa real. Pertence a 1 setor, tem 1 tipo de contrato.
-- \`tipo_trabalhador\`: CLT, ESTAGIARIO, APRENDIZ ou INTERMITENTE — **chave** que define restrições
+- \`tipo_trabalhador\`: CLT, ESTAGIARIO ou INTERMITENTE — **chave** que define restrições
 - \`rank\`: senioridade (0=junior). Evitar junior sozinho em pico
 - \`prefere_turno\`: MANHA ou TARDE (SOFT — motor tenta respeitar)
 - \`funcao_id\`: é só o vínculo atual de titular com um posto. Pode ser \`null\`.
@@ -344,7 +343,7 @@ Use estes campos como guia para filtros e leitura via \`consultar\`:
 - \`regra_definicao\`: \`codigo\` (PK), \`nome\`, \`descricao\`, \`categoria\`, \`status_sistema\`, \`editavel\`, \`aviso_dependencia\`
 - \`regra_empresa\`: \`codigo->regra_definicao\`, \`status\`
 - \`demandas_excecao_data\`: \`id\`, \`setor_id->setores\`, \`data\`, \`hora_inicio\`, \`hora_fim\`, \`min_pessoas\`, \`override\`
-- \`colaborador_regra_horario\`: \`colaborador_id->colaboradores\`, \`dia_semana_regra\` (NULL=padrão, SEG..DOM=dia específico), \`perfil_horario_id\`, \`inicio\` (entrada fixa HH:MM), \`fim\` (saída máxima HH:MM), \`domingo_ciclo_trabalho/folga\` (só padrão), \`folga_fixa_dia_semana\` (só padrão), \`folga_variavel_dia_semana\` (só padrão, SEG-SAB — 2a folga condicional: se trabalhou DOM, folga neste dia na semana seguinte)
+- \`colaborador_regra_horario\`: \`colaborador_id->colaboradores\`, \`dia_semana_regra\` (NULL=padrão, SEG..DOM=dia específico), \`perfil_horario_id\`, \`inicio\` (entrada fixa HH:MM), \`fim\` (saída máxima HH:MM), \`folga_fixa_dia_semana\` (só padrão), \`folga_variavel_dia_semana\` (só padrão, SEG-SAB — 2a folga condicional: se trabalhou DOM, folga neste dia na semana seguinte)
 - \`colaborador_regra_horario_excecao_data\`: \`id\`, \`colaborador_id->colaboradores\`, \`data\`, \`ativo\`, \`inicio\` (entrada fixa), \`fim\` (saída máxima), \`preferencia_turno_soft\`, \`domingo_forcar_folga\`
 
 - \`contrato_perfis_horario\`: \`id\`, \`tipo_contrato_id->tipos_contrato\`, \`nome\`, \`inicio\` (HH:MM), \`fim\` (HH:MM), \`preferencia_turno_soft\`, \`ativo\`, \`ordem\`
@@ -546,7 +545,7 @@ INFEASIBLE: detectado em <1s. Mais tempo NÃO resolve. Use diagnosticar_infeasib
 
 **Empresa:** singleton, config global (corte_semanal, grid_minutos=15)
 **Setor:** departamento (Açougue, Caixa). Tem colaboradores e demandas.
-**Colaborador:** pessoa real, 1 setor, 1 contrato. tipo_trabalhador (CLT/ESTAGIARIO/APRENDIZ/INTERMITENTE).
+**Colaborador:** pessoa real, 1 setor, 1 contrato. tipo_trabalhador (CLT/ESTAGIARIO/INTERMITENTE).
 **Demanda:** quantas pessoas por slot/dia. Semanal ou exceção por data.
 **Exceção:** férias/atestado — pessoa INDISPONÍVEL (HARD).
 **Escala:** alocações + indicadores + decisões + comparação demanda.
@@ -565,6 +564,7 @@ INFEASIBLE: detectado em <1s. Mais tempo NÃO resolve. Use diagnosticar_infeasib
 **Demanda:** salvar_demanda_excecao_data
 **Knowledge:** buscar_conhecimento, salvar_conhecimento, listar_conhecimento, explorar_relacoes
 **Memórias:** salvar_memoria, listar_memorias, remover_memoria
+**Backup:** fazer_backup — cria snapshot do sistema a pedido do RH. O sistema tambem faz backups automaticos ao fechar e por intervalo configuravel.
 
 ---
 
@@ -590,4 +590,52 @@ export async function buildLocalSystemPrompt(contexto?: any, mensagemUsuario?: s
   } catch {
     return LOCAL_SYSTEM_PROMPT
   }
+}
+
+/**
+ * Instructions de dominio para o MCP server.
+ * Extrai secoes por header (## N)) do SYSTEM_PROMPT — robusto contra reordenacao.
+ * Exclui: identidade da IA do app, formatacao, conduta especifica do chat.
+ * Adaptado: Claude Code tem capacidades extras (arquivos, terminal, scripts).
+ */
+export function buildMcpInstructions(): string {
+  // Extrair secoes por header numerico — mais robusto que split('---')
+  const sectionRegex = /## (\d+)\)/g
+  const matches = [...SYSTEM_PROMPT.matchAll(sectionRegex)]
+
+  // Secoes desejadas: 1 (CLT), 2 (Motor), 3 (Entidades), 4 (Tools), 5 (Schema), 6 (Workflows), 8 (Memorias)
+  const wantedSections = [1, 2, 3, 4, 5, 6, 8]
+  const extractedParts: string[] = []
+
+  for (const wanted of wantedSections) {
+    const matchIdx = matches.findIndex(m => m[1] === String(wanted))
+    if (matchIdx === -1) continue
+    const start = matches[matchIdx].index!
+    const end = matchIdx + 1 < matches.length ? matches[matchIdx + 1].index! : SYSTEM_PROMPT.length
+    extractedParts.push(SYSTEM_PROMPT.slice(start, end).trim())
+  }
+
+  const domainContent = extractedParts.join('\n\n---\n\n')
+
+  return `# EscalaFlow — Contexto de Dominio
+
+Voce esta operando o EscalaFlow via MCP tools. O app Electron esta aberto e voce se comunica
+com ele via HTTP. Todas as tools executam no contexto do app — o banco PGlite e protegido.
+
+Voce tem MAIS poder que a IA interna do app:
+- Pode criar arquivos no Mac (HTMLs, CSVs, relatorios)
+- Pode ler planilhas e documentos do usuario
+- Pode rodar scripts e usar o terminal
+- Pode fazer analises multi-step sem limite de tool calls
+
+Regras de ouro:
+- Resolva nomes e IDs sozinho via tools. NAO peca ID ao usuario.
+- Use dados reais das tools. NUNCA invente dados.
+- Erros de tool: leia o campo "correction", corrija args e tente de novo.
+- Respostas de tools usam 3 status: "ok", "error", "truncated". Leia o status.
+- Apos gerar escala, analise indicadores e sugira melhorias.
+- NUNCA oficialize escala com violacoes_hard > 0.
+
+${domainContent}
+`
 }
