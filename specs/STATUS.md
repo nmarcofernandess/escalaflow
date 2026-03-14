@@ -1,6 +1,6 @@
 # STATUS — Painel Unico de Escala
 
-> Atualizado: 2026-03-15 00:30
+> Atualizado: 2026-03-15 01:00
 > Warlog: `specs/WARLOG_PAINEL_UNICO.md`
 > Spec base: `docs/ANALYST_PAINEL_UNICO_ESCALA.md`
 
@@ -39,10 +39,17 @@
 - [CLAUDE B] B6: Guard funcao_id=null — filtrado na bridge, sem posto = sem escala ✅
 - [CLAUDE B] B7: Guard tipo_trabalhador — derivado do contrato na bridge com NFD normalization ✅
 - [CLAUDE B] B8+B9: Toast INFEASIBLE com "Analisar com IA" — abre chat pra diagnostico ✅
+- [CLAUDE C] C1: Prototipo CicloGrid unificado APROVADO pelo Marco ✅
+  - View unica (morte do toggle Tabela/Resumo e botoes S1/S2)
+  - Nome+Posto empilhados, Var/Fixo sticky, scroll horizontal
+  - Header S1/S2/S3 sem fundo + dias com fundo
+  - COBERTURA/DEMANDA como X/Y (1 linha so)
+  - Sugestao via Sheet bottom (drawer de baixo)
+  - Pos-solver = quadradinhos (horarios so em Ver Completo)
+  - Prototipo: `specs/prototipos/ciclo-grid-final.html`
 
 ## Decisoes pendentes (PRECISA DO MARCO)
-- C1: Layout do painel unico — prototipo necessario ANTES de codar
-- C7: Diff validar/solucionar — contrato de componente
+- C7: Diff validar/solucionar — contrato de componente (UX do Sheet bottom ja aprovada)
 
 ## Conflitos entre dominios
 (nenhum)
