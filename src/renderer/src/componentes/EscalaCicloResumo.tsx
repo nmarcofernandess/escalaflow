@@ -313,7 +313,7 @@ export function EscalaCicloResumo({
 
   const periodoCiclo = useMemo(() => {
     if (weeks.length === 0) return 0
-    const totalPostos = rows.filter(r => r.titular != null).length
+    const totalPostos = rows.filter(r => r.titular != null && (r.titular.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE').length
     if (totalPostos <= 0) return weeks.length
 
     const sundayWorkers = weeks

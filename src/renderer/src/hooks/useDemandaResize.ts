@@ -111,7 +111,6 @@ export function useDemandaResize({
     e.preventDefault()
     e.stopPropagation()
 
-    const rect = containerEl.getBoundingClientRect()
     const axisTotalMinutes = axisCloseMin - axisOpenMin
 
     currentStartRef.current = currentStartMin
@@ -122,7 +121,7 @@ export function useDemandaResize({
       side,
       initialX: e.clientX,
       initialMinutes: side === 'left' ? currentStartMin : currentEndMin,
-      containerWidth: rect.width,
+      containerWidth: containerEl.clientWidth,
       axisOpenMin,
       axisCloseMin,
       axisTotalMinutes,

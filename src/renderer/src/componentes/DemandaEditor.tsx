@@ -131,17 +131,19 @@ function TimelineShell({
 }: TimelineShellProps) {
   return (
     <div className="overflow-x-auto rounded-lg border bg-background">
-      <div
-        className="min-w-[600px]"
-        ref={innerRef}
-        data-demanda-grid={isMainGrid ? '' : undefined}
-      >
-        <TimelineAxis
-          timeLabels={timeLabels}
-          totalMinutes={totalMinutes}
-          displayOpenMin={displayOpenMin}
-        />
-        {children}
+      <div className="min-w-[600px]">
+        <div
+          className="px-2"
+          ref={innerRef}
+          data-demanda-grid={isMainGrid ? '' : undefined}
+        >
+          <TimelineAxis
+            timeLabels={timeLabels}
+            totalMinutes={totalMinutes}
+            displayOpenMin={displayOpenMin}
+          />
+          {children}
+        </div>
       </div>
     </div>
   )
@@ -197,6 +199,29 @@ export type { SemanaDraft, DiaDraft, PadraoDraft, SegmentoDraft }
 
 function sortByInicio(a: { hora_inicio: string }, b: { hora_inicio: string }): number {
   return toMinutes(a.hora_inicio) - toMinutes(b.hora_inicio)
+}
+
+function hasGapCobertura(
+  segmentos: { hora_inicio: string; hora_fim: string; min_pessoas: number }[],
+  horaAbertura: string,
+  horaFechamento: string,
+): boolean {
+  const openMin = toMinutes(horaAbertura)
+  const closeMin = toMinutes(horaFechamento)
+  if (closeMin - openMin < 30) return false
+
+  for (let slotStart = openMin; slotStart < closeMin; slotStart += 30) {
+    let count = 0
+    for (const s of segmentos) {
+      const dStart = toMinutes(s.hora_inicio)
+      const dEnd = toMinutes(s.hora_fim)
+      if (dStart <= slotStart && dEnd > slotStart) {
+        count += s.min_pessoas
+      }
+    }
+    if (count === 0) return true
+  }
+  return false
 }
 
 function cloneSegmentos(segmentos: SegmentoDraft[], nextIdRef: { current: number }): SegmentoDraft[] {
@@ -751,6 +776,29 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
     return map
   }, [draft])
 
+  const hasGapPadrao = useMemo(
+    () => hasGapCobertura(
+      draft.padrao.segmentos,
+      draft.padrao.hora_abertura,
+      draft.padrao.hora_fechamento,
+    ),
+    [draft.padrao],
+  )
+
+  const diaComGapCobertura = useMemo(() => {
+    const map: Record<DiaSemana, boolean> = {
+      SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false,
+    }
+    for (const dia of DIAS_SEMANA) {
+      const cfg = draft.dias[dia]
+      const segs = cfg.usa_padrao ? draft.padrao.segmentos : cfg.segmentos
+      const abertura = cfg.usa_padrao ? draft.padrao.hora_abertura : cfg.hora_abertura
+      const fechamento = cfg.usa_padrao ? draft.padrao.hora_fechamento : cfg.hora_fechamento
+      map[dia] = hasGapCobertura(segs, abertura, fechamento)
+    }
+    return map
+  }, [draft])
+
   // ─── Resize hooks ────────────────────────────────────────────────────────────
 
   const { resizingId, preview, startResize } = useDemandaResize({
@@ -1056,7 +1104,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
         isMainGrid
       >
         {/* ── Operational bar row ── */}
-        <div className="relative px-2 pt-2 pb-1.5">
+        <div className="relative pt-2 pb-1.5">
           <div className="group relative h-9">
             <div className="absolute inset-0 rounded-md bg-muted/30 dark:bg-muted/20" />
 
@@ -1128,7 +1176,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
         </div>
 
         {/* ── Demand bars ── */}
-        <div className="relative space-y-1.5 px-2 pt-4 pb-2">
+        <div className="relative space-y-1.5 pt-4 pb-2">
           {liveDisabledBefore > 0 && (
             <div
               className="pointer-events-none absolute inset-y-3 left-0 z-0 rounded-l-md bg-muted/60 dark:bg-muted/50"
@@ -1182,6 +1230,9 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
         <div className="border-t bg-muted/20 dark:bg-muted/10">
           <div className="flex items-end px-0" style={{ height: '36px' }}>
             {coverageData.map((count, i) => {
+              const slotStartMin = displayOpenMin + i * 30
+              const dentroOperacional = slotStartMin >= operationalOpenMin && slotStartMin < operationalCloseMin
+              const isGap = count === 0 && dentroOperacional
               const h = maxCoverage > 0 ? (count / maxCoverage) * 100 : 0
               return (
                 <div
@@ -1194,9 +1245,11 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                       'w-full transition-all',
                       count > 0
                         ? 'bg-primary/20 dark:bg-primary/15 border-t border-primary/30'
-                        : 'bg-transparent',
+                        : isGap
+                          ? 'bg-amber-500/20 dark:bg-amber-500/15 border-t border-amber-500/30'
+                          : 'bg-transparent',
                     )}
-                    style={{ height: `${h}%`, minHeight: count > 0 ? '4px' : 0 }}
+                    style={{ height: `${h}%`, minHeight: count > 0 || isGap ? '4px' : 0 }}
                   />
                   {count > 0 && (
                     <span className="absolute bottom-0.5 text-[10px] font-semibold text-primary/70">{count}</span>
@@ -1267,14 +1320,26 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'padrao' | DiaSemana)}>
         <div className="flex items-center justify-between gap-2">
           <TabsList>
-            <TabsTrigger value="padrao">
+            <TabsTrigger value="padrao" className="relative">
               Padrao
+              {hasGapPadrao && (
+                <span className="absolute top-1 right-1 size-1.5 rounded-full bg-amber-500" aria-hidden />
+              )}
             </TabsTrigger>
             {DIAS_SEMANA.map((dia) => (
-              <TabsTrigger key={dia} value={dia} className="relative">
+              <TabsTrigger key={dia} value={dia} className="relative" title={diaComGapCobertura[dia] ? 'Dia com gap de cobertura' : undefined}>
                 {DIAS_LABELS[dia]}
                 {diaComDivergencia[dia] && (
-                  <span className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />
+                  <span className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" aria-hidden />
+                )}
+                {diaComGapCobertura[dia] && (
+                  <span
+                    className={cn(
+                      'absolute top-1 size-1.5 rounded-full bg-amber-500',
+                      diaComDivergencia[dia] ? 'right-3' : 'right-1',
+                    )}
+                    aria-hidden
+                  />
                 )}
               </TabsTrigger>
             ))}
