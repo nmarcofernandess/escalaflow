@@ -21,7 +21,7 @@
     "test:ia:live": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/live/live-smoke.ts",
     "ia:chat": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/live/ia-chat-cli.ts",
     "db:reset": "node scripts/db-reset.mjs",
-    "db:seed2": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/seed2-cli.ts",
+    "db:extract-seed": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/extract-db-to-seed.ts",
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
@@ -38,7 +38,9 @@
     "solver:cli": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/solver-cli.ts",
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "model:download": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/download-embedding-model.ts",
-    "knowledge:seed": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/knowledge-seed.ts"
+    "knowledge:seed": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/knowledge-seed.ts",
+    "mcp:dev": "npx tsx mcp-server/index.ts",
+    "mcp:install": "cd mcp-server && npm install"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.30",
