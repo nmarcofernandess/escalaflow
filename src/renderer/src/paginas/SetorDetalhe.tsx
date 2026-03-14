@@ -973,10 +973,10 @@ export function SetorDetalhe() {
     const kDom = Math.max(0, ...(demandas ?? [])
       .filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
       .map(d => d.min_pessoas))
-    const K = Math.min(kDom > 0 ? kDom : sugerirK(N), kMaxSemTT)
+    const kReal = kDom > 0 ? kDom : sugerirK(N)
+    const K = Math.min(kReal, kMaxSemTT)
+    const kFoiLimitado = kReal > kMaxSemTT
 
-    // Usar F/V dos colaboradores como seeds (recomputa quando regrasPadrao muda)
-    console.log('[preview] regrasPadrao count:', regrasPadrao?.length ?? 0, 'postos:', N, 'K:', K)
     const folgasForcadas = postosElegiveis.map(p => {
       const regra = regrasPadrao?.find(r => r.colaborador_id === p.titular.id)
       const fixa = regra?.folga_fixa_dia_semana ?? null
@@ -997,7 +997,12 @@ export function SetorDetalhe() {
     })
 
     if (!output.sucesso) return null
-    return converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao)
+    return {
+      ...converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao),
+      avisos: [
+        ...(kFoiLimitado ? [`Demanda domingo = ${kReal}, mas maximo sem 2 domingos seguidos = ${kMaxSemTT} (com ${N} postos). Cobertura de domingo pode ficar abaixo da demanda.`] : []),
+      ],
+    }
   }, [escalaCompleta, carregandoTabEscala, setor, funcoesList, orderedColabs,
       demandas, regrasPadrao, periodoGeracao, setorId, simulacaoPreviewMeses])
 
@@ -2788,11 +2793,21 @@ export function SetorDetalhe() {
                         <div className="flex-1" />
                         <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
                       </div>
+                      {previewNivel1.avisos?.length > 0 && (
+                        <div className="space-y-1.5">
+                          {previewNivel1.avisos.map((aviso, idx) => (
+                            <div key={idx} className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
+                              <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+                              <span>{aviso}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <EscalaCicloResumo
                         escala={previewNivel1.escala}
                         alocacoes={previewNivel1.alocacoes}
                         colaboradores={orderedColabs}
-                        funcoes={funcoesList}
+                        funcoes={funcoesList.filter(f => f.ativo)}
                         regrasPadrao={previewNivel1.regras}
                         viewMode={cicloMode}
                       />

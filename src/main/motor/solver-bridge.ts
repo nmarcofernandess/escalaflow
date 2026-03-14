@@ -821,7 +821,8 @@ export function runSolver(
 
 /**
  * Persiste o resultado de uma execução bem-sucedida do solver no banco de dados.
- * Cria os registros em: escalas, alocacoes, escala_decisoes, escala_comparacao_demanda
+ * Cria os registros em: escalas, alocacoes, escala_decisoes.
+ * escala_comparacao_demanda é preenchida depois por persistirResumoAutoritativoEscala (após validarEscalaV3).
  * Retorna o id da escala criada.
  */
 export async function persistirSolverResult(
@@ -834,7 +835,8 @@ export async function persistirSolverResult(
 ): Promise<number> {
   const ind = solverResult.indicadores!
   const decisoes = solverResult.decisoes ?? []
-  const comparacao = solverResult.comparacao_demanda ?? []
+  // comparacao_demanda NÃO é inserida aqui: é gravada só em persistirResumoAutoritativoEscala
+  // após validarEscalaV3(), evitando duplicate key (escala_comparacao_demanda_pkey)
   const equipeSnapshot = await buildEscalaEquipeSnapshot(setorId)
 
   return await transaction(async () => {
@@ -879,18 +881,6 @@ export async function persistirSolverResult(
         INSERT INTO escala_decisoes (escala_id, colaborador_id, data, acao, razao, alternativas_tentadas)
         VALUES (?, ?, ?, ?, ?, ?)
       `, escalaId, d.colaborador_id, d.data, d.acao, d.razao, d.alternativas_tentadas)
-    }
-
-    for (const c of comparacao) {
-      await execute(`
-        INSERT INTO escala_comparacao_demanda (escala_id, data, hora_inicio, hora_fim, planejado, executado, delta, override, justificativa)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        escalaId, c.data, c.hora_inicio, c.hora_fim,
-        c.planejado, c.executado, c.delta,
-        c.override ?? false,
-        c.justificativa ?? null,
-      )
     }
 
     return escalaId

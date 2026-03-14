@@ -13,6 +13,10 @@ export async function persistirResumoAutoritativoEscala(
 
   await transaction(async () => {
     await execute('DELETE FROM escala_comparacao_demanda WHERE escala_id = ?', escalaId)
+    // Sincroniza a sequence com o maior id existente (evita duplicate key após restore de backup)
+    await execute(
+      "SELECT setval(pg_get_serial_sequence('escala_comparacao_demanda', 'id'), COALESCE((SELECT MAX(id) FROM escala_comparacao_demanda), 0) + 1, false)",
+    )
 
     for (const c of comparacao) {
       await execute(
@@ -65,6 +69,9 @@ export async function persistirAjusteResult(
     await execute('DELETE FROM alocacoes WHERE escala_id = ?', escalaId)
     await execute('DELETE FROM escala_decisoes WHERE escala_id = ?', escalaId)
     await execute('DELETE FROM escala_comparacao_demanda WHERE escala_id = ?', escalaId)
+    await execute(
+      "SELECT setval(pg_get_serial_sequence('escala_comparacao_demanda', 'id'), COALESCE((SELECT MAX(id) FROM escala_comparacao_demanda), 0) + 1, false)",
+    )
 
     for (const a of solverResult.alocacoes ?? []) {
       await execute(
