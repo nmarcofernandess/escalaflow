@@ -654,7 +654,7 @@ export function gerarCiclo(input: SimulaCicloInput): SimulaCicloOutput {
 
 import type { Escala, Alocacao, Colaborador, Funcao, DiaSemana, RegraHorarioColaborador } from './index'
 
-const DIAS_IDX_TO_DIASEMANA: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
+const DIAS_IDX_TO_DIASEMANA: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
 
 export function converterNivel1ParaEscala(
   output: SimulaCicloOutput,

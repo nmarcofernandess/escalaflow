@@ -975,7 +975,7 @@ const excecoesListarAtivas = t.procedure
   .input<Record<string, never>>()
   .action(async () => {
     const hoje = new Date().toISOString().split('T')[0]
-    return await queryAll('SELECT * FROM excecoes WHERE data_inicio <= ? AND data_fim >= ? ORDER BY tipo, data_inicio', hoje, hoje)
+    return await queryAll('SELECT * FROM excecoes WHERE data_fim >= ? ORDER BY tipo, data_inicio', hoje)
   })
 
 const excecoesCriar = t.procedure
@@ -2054,6 +2054,11 @@ const colaboradoresSalvarRegraHorario = t.procedure
       : (hasOwnField(input, 'folga_variavel_dia_semana')
           ? (input.folga_variavel_dia_semana ?? null)
           : (existe?.folga_variavel_dia_semana ?? null))
+
+    // Validação: FF e FV não podem ser o mesmo dia
+    if (folgaFixa && folgaVariavel && folgaFixa === folgaVariavel) {
+      throw new Error(`Folga fixa e folga variável não podem ser o mesmo dia (${folgaFixa}). Escolha dias diferentes.`)
+    }
 
     if (existe) {
       await execute(`

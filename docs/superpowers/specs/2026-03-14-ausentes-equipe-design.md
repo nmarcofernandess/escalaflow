@@ -2,7 +2,8 @@
 
 > Aprovado: 2026-03-14
 > Dominio: A (Context/Store) + C (UI)
-> Motivacao: RH nao ve quem esta de ferias/atestado no setor. Dashboard mostra 0 pra ferias futuras. Posto fica "normal" quando titular esta fora.
+> Escopo: Ausentes na Equipe + A11 (snapshot IA) + A12 (tools redundantes) + bugfix data_nascimento
+> Motivacao: RH nao ve quem esta de ferias/atestado no setor. Dashboard mostra 0 pra ferias futuras. Posto fica "normal" quando titular esta fora. IA faz queries redundantes. Tool criar colaborador quebra.
 
 ---
 
@@ -191,3 +192,94 @@ FERIAS ACABAM:
 
 - **Offline/desktop:** se o app ficar aberto alem da meia-noite, os estados de ausente/proximo nao atualizam sozinhos ate o proximo reload de excecoes (navegacao, mutacao, ou restart). Isso e inerente ao modelo offline — sem server push.
 - **Hover no card mostra posto:** redundante se o card ja mostra "AC3 • CLT 44h" no corpo. Manter so no corpo, sem tooltip separado.
+
+---
+
+## 8. A11 — Snapshot do store no IaContexto
+
+### Problema
+
+A `discovery.ts` roda 15+ queries no PGlite a CADA mensagem do chat (feriados, setores, regras, alertas, memorias, etc.). O renderer ja tem esses dados no AppDataStore. A IA nao sabe o que o usuario esta VENDO — so o que ta no banco.
+
+### Solucao
+
+Incluir um `store_snapshot` no `IaContexto` que o renderer envia ao main process junto com cada mensagem:
+
+```typescript
+// No IaContexto (shared/types.ts ou discovery.ts)
+store_snapshot?: {
+  empresa: { nome: string; grid_minutos: number }
+  setor?: { id: number; nome: string; hora_abertura: string; hora_fechamento: string }
+  colaboradores?: Array<{ id: number; nome: string; tipo: string; funcao_id: number | null }>
+  postos?: Array<{ id: number; apelido: string; titular_id: number | null }>
+  ciclo?: { N: number; K: number; semanas: number }
+  ausentes?: Array<{ nome: string; tipo: string; datas: string }>
+  avisos?: Array<{ id: string; nivel: string; titulo: string }>
+  escalaAtual?: { id: number; status: string; cobertura: number }
+}
+```
+
+### Impacto no discovery.ts
+
+- Se `store_snapshot` presente: pular queries de setores, feriados, regras, alertas que o snapshot ja cobre
+- Economia: ~10 queries por mensagem quando setor ta aberto
+- IA SABE o que o usuario ta vendo ("usuario ve cobertura 85% com 2 avisos")
+
+### Arquivos a modificar
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `store/appDataStore.ts` | Metodo `snapshot()` que retorna objeto leve |
+| `componentes/IaChatView.tsx` | Incluir snapshot no contexto enviado ao chat |
+| `main/ia/discovery.ts` | Ler snapshot quando disponivel, pular queries redundantes |
+| `shared/types.ts` ou `main/ia/discovery.ts` | Tipo `IaContexto` atualizado |
+
+---
+
+## 9. A12 — Eliminar tools redundantes da IA
+
+### Problema
+
+5 tools da IA fazem queries que o discovery ja injeta automaticamente em cada turno:
+
+| Tool | O que faz | Discovery ja cobre? |
+|------|-----------|---------------------|
+| `listar_memorias` | Lista memorias IA | SIM — `_memorias()` injeta todas |
+| `consultar("setores")` | Lista setores | SIM — `_listaSetores()` injeta |
+| `consultar("feriados")` | Lista feriados proximos | SIM — `_feriadosProximos()` injeta |
+| `consultar("regra_empresa")` | Lista overrides de regras | SIM — `_regrasCustom()` injeta |
+| `obter_alertas` | Alertas do sistema | SIM — `_coreAlerts()` injeta |
+
+### Solucao
+
+Remover essas 5 tools do `IA_TOOLS` e `TOOL_SCHEMAS`. A IA ja recebe essas informacoes no system prompt via discovery. Com o snapshot do store (A11), a redundancia fica ainda mais evidente.
+
+**NAO remover as tools de ESCRITA** (salvar_memoria, criar, editar_regra, etc.) — so as de leitura pura que o discovery substitui.
+
+### Arquivos a modificar
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `main/ia/tools.ts` | Remover 5 entries de IA_TOOLS e TOOL_SCHEMAS |
+| `main/ia/system-prompt.ts` | Atualizar referencia de "34 tools" pra "29 tools" |
+
+---
+
+## 10. Bugfix — campos fantasma `data_nascimento` no tools.ts
+
+### Problema (ja corrigido)
+
+A IA tool `criar` para colaboradores referenciava 3 campos que nao existem no banco:
+- `data_nascimento` — no schema Zod, no CAMPOS_VALIDOS, e no applyColaboradorDefaults
+- `hora_inicio_min` — no schema Zod e no CAMPOS_VALIDOS
+- `hora_fim_max` — no schema Zod e no CAMPOS_VALIDOS
+
+A funcao `applyColaboradorDefaults` gerava um `data_nascimento` aleatorio e injetava no INSERT, causando erro PostgreSQL 42703.
+
+### Fix aplicado
+
+- Removidos 3 campos do `CriarColaboradorSchema`
+- Removidos do `CAMPOS_VALIDOS.colaboradores`
+- Removida geracao de `data_nascimento` e defaults de horario do `applyColaboradorDefaults`
+- Corrigido `tipo_trabalhador` default de `'regular'` para `'CLT'`
+- Adicionado `funcao_id` ao CAMPOS_VALIDOS (campo real que faltava)

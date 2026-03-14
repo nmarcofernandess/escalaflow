@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Outlet, useNavigate, useLocation, createHashRouter } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { useIaStore } from '@/store/iaStore'
+import { useAppDataStore } from '@/store/appDataStore'
 import { AppSidebar } from './componentes/AppSidebar'
 import { ErrorBoundary } from './componentes/ErrorBoundary'
 import { TourProvider } from './componentes/Tour'
@@ -32,6 +33,24 @@ function AppLayout() {
     localStorage.getItem(TOUR_STORAGE_KEY) === 'true',
   )
   const { toggleAberto } = useIaStore()
+  const initAppData = useAppDataStore((s) => s.init)
+  const invalidate = useAppDataStore((s) => s.invalidate)
+
+  // A1: Carrega entidades globais ao abrir o app
+  useEffect(() => {
+    initAppData()
+  }, [initAppData])
+
+  // A6: Listener de invalidação — main process notifica quando dados mudam
+  useEffect(() => {
+    const cleanup = window.electron.ipcRenderer.on(
+      'data:invalidated',
+      (payload: { entidades: string[]; setor_id?: number }) => {
+        invalidate(payload.entidades, payload.setor_id)
+      },
+    )
+    return cleanup
+  }, [invalidate])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

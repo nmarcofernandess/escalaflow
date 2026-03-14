@@ -70,13 +70,13 @@ import { EmptyState } from '@/componentes/EmptyState'
 import { ViewToggle, useViewMode } from '@/componentes/ViewToggle'
 import { SetorIcon } from '@/componentes/IconPicker'
 import { colaboradoresService } from '@/servicos/colaboradores'
-import { setoresService } from '@/servicos/setores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { excecoesService } from '@/servicos/excecoes'
 import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
+import { useAppDataStore } from '@/store/appDataStore'
 import { toast } from 'sonner'
-import type { Colaborador, Setor, TipoContrato, Excecao, Funcao, PerfilHorarioContrato } from '@shared/index'
+import type { Colaborador, Excecao, Funcao, PerfilHorarioContrato } from '@shared/index'
 
 const novoColabSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
@@ -137,18 +137,11 @@ export function ColaboradorLista() {
     defaultValues: { nome: '', sexo: '', setor_id: '', tipo_contrato_id: '', tipo_trabalhador: 'CLT', funcao_id: 'none', perfil_horario_id: 'none' },
   })
 
+  const setoresList = useAppDataStore((s) => s.setores)
+  const contratosList = useAppDataStore((s) => s.tiposContrato)
+
   const { data: todosColabs, loading: loadingColabs, reload: reloadColabs } = useApiData<Colaborador[]>(
     () => colaboradoresService.listar(),
-    [],
-  )
-
-  const { data: setores } = useApiData<Setor[]>(
-    () => setoresService.listar(true),
-    [],
-  )
-
-  const { data: tiposContrato } = useApiData<TipoContrato[]>(
-    () => tiposContratoService.listar(),
     [],
   )
 
@@ -158,8 +151,6 @@ export function ColaboradorLista() {
   )
 
   const colaboradores = todosColabs ?? []
-  const setoresList = setores ?? []
-  const contratosList = tiposContrato ?? []
   const excecoesList = excecoesAtivas ?? []
 
   const setorMap = new Map(setoresList.map((s) => [s.id, { nome: s.nome, icone: s.icone }]))

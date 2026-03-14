@@ -39,6 +39,18 @@ export interface AvisoEscala {
   origem?: 'setor' | 'operacao' | 'escala'
 }
 
+export interface AusenteInfo {
+  colaborador: Colaborador
+  excecao: Excecao
+  posto: Funcao | null
+}
+
+export interface ProximoAusenteInfo {
+  colaborador: Colaborador
+  excecao: Excecao
+  diasAte: number
+}
+
 export interface Derivados {
   N: number              // postos elegiveis com titular (sem INTERMITENTE)
   K: number              // demanda domingo efetiva (capped por kMaxSemTT)
@@ -47,6 +59,8 @@ export interface Derivados {
   cicloSemanas: number   // N / gcd(N, K)
   demandaPorDia: number[]  // [SEG..DOM] — max min_pessoas por dia
   avisos: AvisoEscala[]
+  ausentes: AusenteInfo[]           // excecoes ativas HOJE
+  proximosAusentes: ProximoAusenteInfo[]  // excecoes comecando em ate 7 dias
 }
 
 const DERIVADOS_VAZIO: Derivados = {
@@ -57,6 +71,8 @@ const DERIVADOS_VAZIO: Derivados = {
   cicloSemanas: 0,
   demandaPorDia: [0, 0, 0, 0, 0, 0, 0],
   avisos: [],
+  ausentes: [],
+  proximosAusentes: [],
 }
 
 export interface AppDataStore {
@@ -97,10 +113,14 @@ export interface AppDataStore {
 // Derivados — calculo puro a partir do estado atual
 // ---------------------------------------------------------------------------
 
+// Prioridade de tipo de excecao pra dedup (maior = mais relevante)
+const TIPO_EXCECAO_PRIORIDADE: Record<string, number> = { FERIAS: 3, ATESTADO: 2, BLOQUEIO: 1 }
+
 function calcularDerivados(
   postos: Funcao[],
   colaboradores: Colaborador[],
   demandas: Demanda[],
+  excecoes: Excecao[],
 ): Derivados {
   // N: postos ativos com titular (excluindo INTERMITENTE)
   const postosElegiveis = postos
@@ -178,7 +198,49 @@ function calcularDerivados(
     })
   }
 
-  return { N, K, kReal, kMaxSemTT, cicloSemanas, demandaPorDia, avisos }
+  // Ausentes e próximos (excecoes ativas e futuras 7 dias)
+  const hoje = new Date().toISOString().split('T')[0]
+  const seteDiasMs = 7 * 86400000
+  const hojeMs = Date.parse(hoje)
+  const colabIds = new Set(colaboradores.map(c => c.id))
+
+  // Dedup: 1 excecao por colaborador (maior prioridade)
+  const excecoesPorColab = new Map<number, Excecao>()
+  for (const exc of excecoes) {
+    if (!colabIds.has(exc.colaborador_id)) continue
+    const existente = excecoesPorColab.get(exc.colaborador_id)
+    if (!existente || (TIPO_EXCECAO_PRIORIDADE[exc.tipo] ?? 0) > (TIPO_EXCECAO_PRIORIDADE[existente.tipo] ?? 0)) {
+      excecoesPorColab.set(exc.colaborador_id, exc)
+    }
+  }
+
+  const ausentes: AusenteInfo[] = []
+  const proximosAusentes: ProximoAusenteInfo[] = []
+
+  for (const [colabId, exc] of excecoesPorColab) {
+    const colab = colaboradores.find(c => c.id === colabId)
+    if (!colab) continue
+
+    const inicioMs = Date.parse(exc.data_inicio)
+    const isAtiva = exc.data_inicio <= hoje && exc.data_fim >= hoje
+    const isProxima = exc.data_inicio > hoje && (inicioMs - hojeMs) <= seteDiasMs
+
+    if (isAtiva) {
+      ausentes.push({
+        colaborador: colab,
+        excecao: exc,
+        posto: postos.find(p => p.id === colab.funcao_id) ?? null,
+      })
+    } else if (isProxima) {
+      proximosAusentes.push({
+        colaborador: colab,
+        excecao: exc,
+        diasAte: Math.ceil((inicioMs - hojeMs) / 86400000),
+      })
+    }
+  }
+
+  return { N, K, kReal, kMaxSemTT, cicloSemanas, demandaPorDia, avisos, ausentes, proximosAusentes }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +281,7 @@ async function carregarSetor(setorId: number) {
       setoresService.listarHorarioSemana(setorId),
     ])
 
-  const derivados = calcularDerivados(postos, colaboradores, demandas)
+  const derivados = calcularDerivados(postos, colaboradores, demandas, excecoes)
 
   return { setor, colaboradores, postos, demandas, regrasPadrao, excecoes, escalas, horarioSemana, derivados }
 }
@@ -239,7 +301,7 @@ const GLOBAL_LOADERS: Record<string, (set: SetFn) => Promise<void>> = {
 }
 
 // Entidades que afetam derivados — recalcular após reload
-const DERIVADOS_DEPS = new Set(['colaboradores', 'postos', 'funcoes', 'demandas'])
+const DERIVADOS_DEPS = new Set(['colaboradores', 'postos', 'funcoes', 'demandas', 'excecoes'])
 
 const SETOR_LOADERS: Record<string, (set: SetFn, setorId: number) => Promise<void>> = {
   setor: async (set, id) => set({ setor: await setoresService.buscar(id) }),
@@ -368,8 +430,8 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
         await setorLoader(set, setorId)
         // Recalcula derivados se a entidade afeta o ciclo
         if (DERIVADOS_DEPS.has(key)) {
-          const { postos, colaboradores, demandas } = get()
-          set({ derivados: calcularDerivados(postos, colaboradores, demandas) })
+          const { postos, colaboradores, demandas, excecoes } = get()
+          set({ derivados: calcularDerivados(postos, colaboradores, demandas, excecoes) })
         }
       } catch (err) {
         console.error(`[AppDataStore] reload setor ${key} falhou:`, err)
