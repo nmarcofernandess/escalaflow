@@ -2868,7 +2868,6 @@ export function SetorDetalhe() {
                         <>
                           {/* ── ZONA 2: Ciclo info + view toggle ── */}
                           <div className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="font-medium tabular-nums">Ciclo {simulacaoPreview.resultado.ciclo_semanas} sem</span>
                             {simulacaoPreview.resultado.stats.sem_TT === false && (
                               <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">
                                 TT: {simulacaoPreview.resultado.stats.domingos_consecutivos_max}x consecutivos
