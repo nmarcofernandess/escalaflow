@@ -40,6 +40,7 @@
     "model:download": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/download-embedding-model.ts",
     "knowledge:seed": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/knowledge-seed.ts",
     "mcp:dev": "npx tsx mcp-server/index.ts",
+    "mcp:build": "cd mcp-server && bun install && cd .. && bun build --compile mcp-server/index.ts --outfile mcp-bin/escalaflow-mcp",
     "mcp:install": "cd mcp-server && npm install"
   },
   "dependencies": {

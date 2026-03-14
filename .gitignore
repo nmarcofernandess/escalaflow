@@ -41,6 +41,9 @@ __pycache__/
 
 # Solver build artifacts
 solver-bin/
+
+# MCP server build artifacts
+mcp-bin/
 solver/build/
 solver/dist/
 
