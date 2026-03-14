@@ -975,7 +975,8 @@ export function SetorDetalhe() {
       .map(d => d.min_pessoas))
     const K = Math.min(kDom > 0 ? kDom : sugerirK(N), kMaxSemTT)
 
-    // Usar F/V dos colaboradores como seeds
+    // Usar F/V dos colaboradores como seeds (recomputa quando regrasPadrao muda)
+    console.log('[preview] regrasPadrao count:', regrasPadrao?.length ?? 0, 'postos:', N, 'K:', K)
     const folgasForcadas = postosElegiveis.map(p => {
       const regra = regrasPadrao?.find(r => r.colaborador_id === p.titular.id)
       const fixa = regra?.folga_fixa_dia_semana ?? null
