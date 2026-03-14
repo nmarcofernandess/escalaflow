@@ -1003,12 +1003,19 @@ export function SetorDetalhe() {
       }
     }
 
+    // kMaxSemTT: maximo de pessoas no domingo sem 2 domingos seguidos (TT)
+    const kMaxSemTT = Math.floor(N / 2)
+
     if (demandaDomingoSetor > 0) {
+      const kEfetivo = Math.min(demandaDomingoSetor, kMaxSemTT)
+      const limitado = kEfetivo < demandaDomingoSetor
       return {
         n: N,
-        k: demandaDomingoSetor,
+        k: kEfetivo,
         origemN: `N pelo setor: ${N} posto(s) ativo(s).`,
-        origemK: `K pelo setor: pico de demanda em DOM/padrao = ${demandaDomingoSetor}.`,
+        origemK: limitado
+          ? `K: demanda DOM=${demandaDomingoSetor}, limitado a ${kEfetivo} (sem TT com ${N} postos).`
+          : `K pelo setor: pico de demanda em DOM/padrao = ${demandaDomingoSetor}.`,
       }
     }
 
@@ -1096,7 +1103,7 @@ export function SetorDetalhe() {
     const effectiveN = modoSimulacaoEfetivo === 'SETOR' ? setorSimulacaoInfo.n : simulacaoConfig.livre.n
     const effectiveK = modoSimulacaoEfetivo === 'SETOR' ? setorSimulacaoInfo.k : simulacaoConfig.livre.k
     const rowLabels = modoSimulacaoEfetivo === 'SETOR'
-      ? previewSetorRows.map((row) => row.funcao.apelido)
+      ? previewSetorRows.map((row) => row.titular?.nome ?? row.funcao.apelido)
       : Array.from({ length: simulacaoConfig.livre.n }, (_, idx) => `Pessoa ${idx + 1}`)
     const blockedRows = modoSimulacaoEfetivo === 'SETOR'
       ? previewSetorRows.flatMap((row, idx) => row.bloqueio ? [idx] : [])
@@ -1458,6 +1465,11 @@ export function SetorDetalhe() {
     }
 
     setFolgasSetorEditadas(new Map())
+    // Forçar re-render da config persistida (limpar folgas_setor no banco)
+    atualizarSimulacaoConfig((prev) => ({
+      ...prev,
+      folgas_setor: {},
+    }))
   }, [atualizarSimulacaoConfig, simulacaoPreview.mode])
 
   const handlePreviewFolgaChange = useCallback((rowIndex: number, field: 'fixa' | 'variavel', value: DiaSemana | null) => {
@@ -2699,141 +2711,112 @@ export function SetorDetalhe() {
             <CardContent className="space-y-4">
               {escalaTab === 'simulacao' && (
                 <div className="space-y-4">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Simulador de Ciclo</CardTitle>
-                      <CardDescription>
-                        Mesmo motor do Dashboard: use o setor real ou entre em modo livre para brincar antes de cadastrar tudo.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Modo</p>
-                          <div className="inline-flex rounded-lg border bg-muted/30 p-1">
-                            {([
-                              { value: 'SETOR' as const, label: 'Usar setor' },
-                              { value: 'LIVRE' as const, label: 'Livre' },
-                            ]).map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                className={cn(
-                                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                                  simulacaoPreview.mode === option.value
-                                    ? 'bg-background text-foreground shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground',
-                                )}
-                                onClick={() => handleMudarModoSimulacao(option.value)}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          {simulacaoConfigSaving && (
-                            <Badge variant="outline" className="text-xs">Salvando simulacao...</Badge>
+                  {/* ── ZONA 1: Barra de controle compacta ── */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Toggle modo */}
+                    <div className="inline-flex rounded-lg border bg-muted/30 p-0.5">
+                      {([
+                        { value: 'SETOR' as const, label: 'Setor' },
+                        { value: 'LIVRE' as const, label: 'Livre' },
+                      ]).map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={cn(
+                            'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                            simulacaoPreview.mode === option.value
+                              ? 'bg-background text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground',
                           )}
-                          <Button variant="outline" size="sm" onClick={handleResetarSimulacao}>
-                            <RotateCcw className="mr-1 size-3.5" />
-                            Resetar
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="setor-simulacao-n">Pessoas no preview</Label>
-                          <Input
-                            id="setor-simulacao-n"
-                            type="number"
-                            min={1}
-                            max={99}
-                            value={simulacaoPreview.mode === 'SETOR' ? String(simulacaoPreview.effectiveN) : rawLivreN}
-                            onChange={handleLivreNChange}
-                            disabled={simulacaoPreview.mode === 'SETOR'}
-                            className="w-full max-w-[220px]"
-                          />
-                          <p className="text-xs text-muted-foreground">{simulacaoPreview.origemN}</p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label htmlFor="setor-simulacao-k">Trabalham domingo</Label>
-                          <Input
-                            id="setor-simulacao-k"
-                            type="number"
-                            min={0}
-                            max={Math.max(simulacaoPreview.effectiveN, 0)}
-                            value={simulacaoPreview.mode === 'SETOR' ? String(simulacaoPreview.effectiveK) : rawLivreK}
-                            onChange={handleLivreKChange}
-                            disabled={simulacaoPreview.mode === 'SETOR'}
-                            className="w-full max-w-[220px]"
-                          />
-                          <p className="text-xs text-muted-foreground">{simulacaoPreview.origemK}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() => setSolverConfigOpen(true)}
-                          title={`Periodo atual: ${getPresetLabel(periodoPreset)}`}
+                          onClick={() => handleMudarModoSimulacao(option.value)}
                         >
-                          <SlidersHorizontal className="size-3.5" />
-                          Configurar
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* N e K inline (compacto) */}
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="text-muted-foreground">N</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={simulacaoPreview.mode === 'SETOR' ? String(simulacaoPreview.effectiveN) : rawLivreN}
+                        onChange={handleLivreNChange}
+                        disabled={simulacaoPreview.mode === 'SETOR'}
+                        className="h-7 w-12 px-1.5 text-center text-xs tabular-nums"
+                      />
+                      <span className="text-muted-foreground">K</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={Math.max(simulacaoPreview.effectiveN, 0)}
+                        value={simulacaoPreview.mode === 'SETOR' ? String(simulacaoPreview.effectiveK) : rawLivreK}
+                        onChange={handleLivreKChange}
+                        disabled={simulacaoPreview.mode === 'SETOR'}
+                        className="h-7 w-12 px-1.5 text-center text-xs tabular-nums"
+                      />
+                    </div>
+
+                    {/* Separador visual */}
+                    <div className="mx-1 h-5 w-px bg-border" />
+
+                    {/* Acoes secundarias */}
+                    <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setSolverConfigOpen(true)}>
+                      <SlidersHorizontal className="size-3" />
+                      Configurar
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={handleResetarSimulacao}>
+                      <RotateCcw className="size-3" />
+                      Resetar
+                    </Button>
+
+                    {/* Spacer → empurra CTA pra direita */}
+                    <div className="flex-1" />
+
+                    {/* CTA principal */}
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleGerar}
+                      disabled={
+                        gerando ||
+                        isPreviewMode ||
+                        simulacaoPreview.mode !== 'SETOR' ||
+                        !empresa ||
+                        (tiposContrato?.length ?? 0) === 0 ||
+                        (orderedColabs?.length ?? 0) === 0
+                      }
+                      title={
+                        simulacaoPreview.mode !== 'SETOR'
+                          ? 'Para gerar escala, ative "Setor".'
+                          : !empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0
+                            ? 'Complete os itens em "Antes de gerar" abaixo'
+                            : undefined
+                      }
+                    >
+                      {gerando ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : escalaCompleta ? (
+                        <RotateCcw className="size-3.5" />
+                      ) : (
+                        <Play className="size-3.5" />
+                      )}
+                      {escalaCompleta ? 'Regerar' : 'Gerar Escala'}
+                    </Button>
+
+                    {escalaCompleta && (
+                      <>
+                        <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando || isPreviewMode}>
+                          {oficializando ? 'Oficializando...' : 'Oficializar'}
                         </Button>
-
-                        <Badge variant="outline" className="text-xs">
-                          {getPresetLabel(periodoPreset)}
-                        </Badge>
-
-                        <Button
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={handleGerar}
-                          disabled={
-                            gerando ||
-                            isPreviewMode ||
-                            simulacaoPreview.mode !== 'SETOR' ||
-                            !empresa ||
-                            (tiposContrato?.length ?? 0) === 0 ||
-                            (orderedColabs?.length ?? 0) === 0
-                          }
-                          title={
-                            simulacaoPreview.mode !== 'SETOR'
-                              ? 'Para gerar escala, ative "Usar setor".'
-                              : !empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0
-                                ? 'Complete os itens em "Antes de gerar" abaixo'
-                                : undefined
-                          }
-                        >
-                          {gerando ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : escalaCompleta ? (
-                            <RotateCcw className="size-3.5" />
-                          ) : (
-                            <Play className="size-3.5" />
-                          )}
-                          {escalaCompleta ? 'Regerar' : 'Gerar Escala'}
+                        <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando || isPreviewMode}>
+                          {descartando ? 'Descartando...' : 'Descartar'}
                         </Button>
-
-                        {escalaCompleta && (
-                          <>
-                            <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando || isPreviewMode}>
-                              {oficializando ? 'Oficializando...' : 'Oficializar'}
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando || isPreviewMode}>
-                              {descartando ? 'Descartando...' : 'Descartar'}
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </>
+                    )}
+                  </div>
 
                   {escalaCompleta ? (
                     <div className="space-y-3">
@@ -2871,139 +2854,52 @@ export function SetorDetalhe() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold">
-                          {simulacaoPreview.mode === 'SETOR' ? 'Preview do Setor' : 'Preview Livre'}
-                        </p>
-                        <Badge variant="outline" className="text-xs">Nivel 1 — sem horarios</Badge>
-                        {simulacaoPreview.mode === 'LIVRE' && (
-                          <Badge variant="outline" className="text-xs">Nao gera escala</Badge>
-                        )}
-                        {simulacaoPreview.foraDoPreview > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            {simulacaoPreview.foraDoPreview} fora do preview 5x2
-                          </Badge>
-                        )}
-                        {simulacaoPreview.semTitular > 0 && simulacaoPreview.mode === 'SETOR' && (
-                          <Badge variant="outline" className="text-xs">
-                            {simulacaoPreview.semTitular} posto(s) sem titular
-                          </Badge>
-                        )}
-                        {simulacaoPreview.resultado.sucesso && simulacaoPreview.resultado.stats.sem_TT === false && (
-                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">TT detectado</Badge>
-                        )}
-                        {simulacaoPreview.resultado.sucesso && simulacaoPreview.resultado.stats.sem_H1_violation === false && (
-                          <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">H1 violado</Badge>
-                        )}
-                      </div>
                       {!simulacaoPreview.resultado.sucesso ? (
-                        <Card className="border-red-500/30">
-                          <CardContent className="flex items-start gap-3 pt-6">
-                            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-400" />
-                            <div>
-                              <p className="font-medium text-red-400">{simulacaoPreview.resultado.erro}</p>
-                              {simulacaoPreview.resultado.sugestao && (
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  {simulacaoPreview.resultado.sugestao}
-                                </p>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
+                        <div className="flex items-start gap-3 rounded-md border border-destructive/30 px-4 py-3">
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                          <div className="text-sm">
+                            <p className="font-medium text-destructive">{simulacaoPreview.resultado.erro}</p>
+                            {simulacaoPreview.resultado.sugestao && (
+                              <p className="mt-0.5 text-muted-foreground">{simulacaoPreview.resultado.sugestao}</p>
+                            )}
+                          </div>
+                        </div>
                       ) : (
                         <>
-                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                            <div className="rounded-lg border p-3">
-                              <p className="text-xs text-muted-foreground">Ciclo</p>
-                              <p className="mt-0.5 text-lg font-semibold tabular-nums">
-                                {simulacaoPreview.resultado.ciclo_semanas}{' '}
-                                <span className="text-sm font-normal text-muted-foreground">
-                                  semana{simulacaoPreview.resultado.ciclo_semanas > 1 ? 's' : ''}
-                                </span>
-                              </p>
-                            </div>
-                            <div
-                              className={cn(
-                                'rounded-lg border p-3',
-                                simulacaoPreview.resultado.stats.sem_TT ? 'border-emerald-500/30' : 'border-amber-500/30',
-                              )}
-                            >
-                              <p className="text-xs text-muted-foreground">Domingos seguidos</p>
-                              <p
-                                className={cn(
-                                  'mt-0.5 text-lg font-semibold',
-                                  simulacaoPreview.resultado.stats.sem_TT ? 'text-emerald-500' : 'text-amber-500',
-                                )}
-                              >
-                                {simulacaoPreview.resultado.stats.sem_TT
-                                  ? 'Nenhum'
-                                  : `Até ${simulacaoPreview.resultado.stats.domingos_consecutivos_max}`}
-                              </p>
-                            </div>
-                            <div
-                              className={cn(
-                                'rounded-lg border p-3',
-                                simulacaoPreview.resultado.stats.sem_H1_violation ? 'border-emerald-500/30' : 'border-red-500/30',
-                              )}
-                            >
-                              <p className="text-xs text-muted-foreground">Dias consecutivos</p>
-                              <p
-                                className={cn(
-                                  'mt-0.5 text-lg font-semibold',
-                                  simulacaoPreview.resultado.stats.sem_H1_violation ? 'text-emerald-500' : 'text-red-500',
-                                )}
-                              >
-                                {simulacaoPreview.resultado.stats.h1_violacoes === 0
-                                  ? 'Até 6'
-                                  : `${simulacaoPreview.resultado.stats.h1_violacoes} reparos`}
-                              </p>
-                            </div>
-                            <div className="rounded-lg border p-3">
-                              <p className="text-xs text-muted-foreground">Cobertura diária</p>
-                              <p className="mt-0.5 text-lg font-semibold tabular-nums">
-                                {simulacaoPreview.resultado.stats.cobertura_min}
-                                <span className="text-sm font-normal text-muted-foreground"> a </span>
-                                {simulacaoPreview.resultado.stats.cobertura_max}
-                                <span className="ml-1 text-sm font-normal text-muted-foreground">pessoas</span>
-                              </p>
-                            </div>
+                          {/* ── ZONA 2: Ciclo info + view toggle ── */}
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="font-medium tabular-nums">Ciclo {simulacaoPreview.resultado.ciclo_semanas} sem</span>
+                            {simulacaoPreview.resultado.stats.sem_TT === false && (
+                              <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">
+                                TT: {simulacaoPreview.resultado.stats.domingos_consecutivos_max}x consecutivos
+                              </Badge>
+                            )}
+                            {simulacaoPreview.resultado.stats.sem_H1_violation === false && (
+                              <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">
+                                H1: {simulacaoPreview.resultado.stats.h1_violacoes} reparo(s)
+                              </Badge>
+                            )}
+                            {simulacaoPreview.mode === 'LIVRE' && (
+                              <span className="text-muted-foreground italic">Modo livre — nao gera escala</span>
+                            )}
+                            <div className="flex-1" />
+                            <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
                           </div>
 
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-base">Ciclo Rotativo</CardTitle>
-                              <CardDescription>
-                                Preview instantaneo do padrao T/F antes do solver, no mesmo estilo do simulador do Dashboard.
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                              <div className="flex flex-wrap items-center gap-3">
-                                <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
-                              </div>
-                              <SimuladorCicloGrid
-                                resultado={simulacaoPreview.resultado}
-                                viewMode={cicloMode}
-                                selectedWeek={previewSelectedWeek}
-                                onSelectedWeekChange={setPreviewSelectedWeek}
-                                rowLabels={simulacaoPreview.rowLabels}
-                                blockedRows={simulacaoPreview.blockedRows}
-                                onFolgaChange={handlePreviewFolgaChange}
-                                allowDomingoNaFixa={false}
-                                domingoTarget={simulacaoPreview.effectiveK}
-                              />
-                            </CardContent>
-                          </Card>
+                          {/* ── ZONA 3: Grid (maximo espaco) ── */}
+                          <SimuladorCicloGrid
+                            resultado={simulacaoPreview.resultado}
+                            viewMode={cicloMode}
+                            selectedWeek={previewSelectedWeek}
+                            onSelectedWeekChange={setPreviewSelectedWeek}
+                            rowLabels={simulacaoPreview.rowLabels}
+                            blockedRows={simulacaoPreview.blockedRows}
+                            onFolgaChange={handlePreviewFolgaChange}
+                            allowDomingoNaFixa={false}
+                            domingoTarget={simulacaoPreview.effectiveK}
+                          />
                         </>
                       )}
-
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Info className="size-4 shrink-0" />
-                        <span>
-                          {simulacaoPreview.mode === 'SETOR'
-                            ? 'No modo Usar setor, o preview herda N/K do setor e usa seeds reais quando existe titular.'
-                            : 'No modo Livre, este preview e salvo por setor so para exploracao. Ele nao alimenta o solver.'}
-                        </span>
-                      </div>
 
                       {simulacaoPreview.mode === 'SETOR' && postosAtivos.length === 0 && (
                         <div className="rounded-md border border-dashed px-4 py-4">
