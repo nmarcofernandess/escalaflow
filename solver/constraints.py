@@ -724,6 +724,10 @@ def add_domingo_ciclo_soft(
     for c in range(C):
         if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
             continue
+        # Guard: folga_fixa=DOM → always off Sunday, cycle is N/A
+        if colabs[c].get("folga_fixa_dia_semana") == "DOM":
+            continue
+
         N = int(colabs[c].get("domingo_ciclo_trabalho", 2))
         M = int(colabs[c].get("domingo_ciclo_folga", 1))
         window = N + M
@@ -961,6 +965,10 @@ def add_folga_variavel_condicional(
     OFFSET = {"SEG": -6, "TER": -5, "QUA": -4, "QUI": -3, "SEX": -2, "SAB": -1}
 
     for c in range(C):
+        # Guard: folga_fixa=DOM → person never works Sunday, XOR is meaningless
+        if colabs[c].get("folga_fixa_dia_semana") == "DOM":
+            continue
+
         var_day = colabs[c].get("folga_variavel_dia_semana")
         if not var_day:
             continue
@@ -999,6 +1007,10 @@ def add_dom_max_consecutivo(
     for c in range(C):
         if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
             continue
+        # Guard: folga_fixa=DOM → never works Sunday, max consec is trivially 0
+        if colabs[c].get("folga_fixa_dia_semana") == "DOM":
+            continue
+
         sexo = colabs[c].get("sexo", "M")
         max_consec = 1 if sexo == "F" else 2
         available_suns = [d for d in sunday_indices if d not in blocked_days.get(c, set())]
@@ -1097,6 +1109,10 @@ def add_domingo_ciclo_hard(
     for c in range(C):
         if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
             continue
+        # Guard: folga_fixa=DOM → never works Sunday, hard cycle N/A
+        if colabs[c].get("folga_fixa_dia_semana") == "DOM":
+            continue
+
         N = int(colabs[c].get("domingo_ciclo_trabalho", 2))
         M = int(colabs[c].get("domingo_ciclo_folga", 1))
         window = N + M
