@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useRestorePreview } from '@/hooks/useRestorePreview'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -259,6 +260,7 @@ export function ColaboradorDetalhe() {
   const { id } = useParams<{ id: string }>()
   const colabId = parseInt(id!)
   const navigate = useNavigate()
+  const { isPreviewMode } = useRestorePreview()
 
   // Form
   const colabForm = useForm<ColabFormInput, unknown, ColabFormData>({
@@ -673,7 +675,8 @@ export function ColaboradorDetalhe() {
               variant={isDirty ? 'default' : 'outline'}
               size="sm"
               onClick={handleSalvarTudo}
-              disabled={salvandoTudo}
+              disabled={salvandoTudo || isPreviewMode}
+              title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
             >
               {salvandoTudo ? (
                 <Loader2 className="mr-1 size-3.5 animate-spin" />
@@ -686,7 +689,7 @@ export function ColaboradorDetalhe() {
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5">
+                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5" disabled={isPreviewMode}>
                   <Archive className="mr-1 size-3.5" />
                   Arquivar
                 </Button>
@@ -1168,7 +1171,7 @@ export function ColaboradorDetalhe() {
                   <Button variant="outline" size="sm" onClick={() => {
                     setExcDataForm({ data: '', tipo_restricao: 'nenhum', horario: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
                     setShowExcDataDialog(true)
-                  }}>
+                  }} disabled={isPreviewMode}>
                     <Plus className="mr-1 size-3.5" /> Nova Excecao
                   </Button>
                 </CardHeader>
@@ -1228,7 +1231,7 @@ export function ColaboradorDetalhe() {
                   <CardTitle className="text-base font-semibold">
                     Excecoes
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => setShowExcecaoDialog(true)}>
+                  <Button variant="outline" size="sm" onClick={() => setShowExcecaoDialog(true)} disabled={isPreviewMode}>
                     <Plus className="mr-1 size-3.5" /> Nova Excecao
                   </Button>
                 </CardHeader>
@@ -1353,7 +1356,7 @@ export function ColaboradorDetalhe() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowExcDataDialog(false)}>Cancelar</Button>
-            <Button onClick={handleSalvarExcData} disabled={excDataSalvando || !excDataForm.data}>
+            <Button onClick={handleSalvarExcData} disabled={excDataSalvando || !excDataForm.data || isPreviewMode}>
               {excDataSalvando ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>

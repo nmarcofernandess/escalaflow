@@ -178,15 +178,48 @@ export async function importFromData(
 
         const sample = rows[0] as Record<string, unknown>
         const columns = Object.keys(sample)
-        const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ')
 
-        for (const row of rows) {
-          const r = row as Record<string, unknown>
-          const values = columns.map((col) => r[col] ?? null)
-          await execute(
-            `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
-            ...values,
-          )
+        // Tabelas com UNIQUE (setor_id, dia_semana): UPSERT para restaurar usa_padrao e demanda por faixa corretamente
+        if (table === 'setor_horario_semana') {
+          const wantCols = ['setor_id', 'dia_semana', 'ativo', 'usa_padrao', 'hora_abertura', 'hora_fechamento']
+          const setCols = wantCols.filter((c) => columns.includes(c))
+          const placeholders = setCols.map((_, i) => `$${i + 1}`).join(', ')
+          const updateSet = setCols
+            .filter((c) => !['setor_id', 'dia_semana'].includes(c))
+            .map((c) => `${c} = excluded.${c}`)
+            .join(', ')
+          for (const row of rows) {
+            const r = row as Record<string, unknown>
+            const values = setCols.map((col) => {
+              const v = r[col]
+              if (col === 'usa_padrao' || col === 'ativo') return v === true || v === 1 || v === '1' || v === 'true'
+              return v ?? null
+            })
+            await execute(
+              `INSERT INTO setor_horario_semana (${setCols.join(', ')}) VALUES (${placeholders})
+               ON CONFLICT (setor_id, dia_semana) DO UPDATE SET ${updateSet}`,
+              ...values,
+            )
+          }
+        } else {
+          const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ')
+          for (const row of rows) {
+            const r = row as Record<string, unknown>
+            const values = columns.map((col) => {
+              const v = r[col]
+              // Normalizar boolean para backups que serializaram 0/1 ou "true"/"false"
+              if (typeof v === 'boolean') return v
+              if (col === 'usa_padrao' || col === 'ativo' || col === 'override' || col === 'protegido_sistema' || col === 'cct_autoriza') {
+                if (v === 1 || v === '1' || v === 'true') return true
+                if (v === 0 || v === '0' || v === 'false') return false
+              }
+              return v ?? null
+            })
+            await execute(
+              `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+              ...values,
+            )
+          }
         }
 
         totalTabelas++
@@ -352,9 +385,14 @@ export async function restoreSnapshot(
   filename: string,
   userData: string,
   appVersion?: string,
-): Promise<{ tabelas: number; registros: number }> {
-  // Safety net: create pre-restore snapshot
-  await createSnapshot('auto_pre_restore', userData, appVersion)
+  options?: { skipPreRestore?: boolean },
+): Promise<{ tabelas: number; registros: number; preRestoreFilename: string | null }> {
+  let preRestoreFilename: string | null = null
+
+  if (!options?.skipPreRestore) {
+    const preSnap = await createSnapshot('auto_pre_restore', userData, appVersion)
+    preRestoreFilename = preSnap?.filename ?? null
+  }
 
   const dir = await getBackupDir(userData)
   const filepath = path.join(dir, filename)
@@ -366,7 +404,7 @@ export async function restoreSnapshot(
 
   const result = await importFromData(dados)
   log(`Restored: ${filename} (${result.tabelas} tables, ${result.registros} records)`)
-  return result
+  return { ...result, preRestoreFilename }
 }
 
 export async function cleanupSnapshots(max: number, userData: string): Promise<void> {

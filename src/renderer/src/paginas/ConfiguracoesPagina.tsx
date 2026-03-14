@@ -27,6 +27,7 @@ import {
   Terminal,
   Copy,
   ClipboardCheck,
+  History,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -40,6 +41,7 @@ import { Form } from '@/components/ui/form'
 import { PageHeader } from '@/componentes/PageHeader'
 import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { useRestorePreview } from '@/hooks/useRestorePreview'
 import { useApiData } from '@/hooks/useApiData'
 import { useColorTheme } from '@/hooks/useColorTheme'
 import { useAppVersion } from '@/hooks/useAppVersion'
@@ -58,6 +60,7 @@ import type {
   IaOpenRouterFreeModelsTestResult,
 } from '@shared/types'
 import { IaModelCatalogPicker } from '@/componentes/IaModelCatalogPicker'
+import { TimeMachineModal } from '@/componentes/TimeMachineModal'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -270,8 +273,10 @@ export function ConfiguracoesPagina() {
     pasta: string | null; pasta_padrao: string; ativo: boolean; ultimo_backup: string | null
   } | null>(null)
   const [backupNowLoading, setBackupNowLoading] = useState(false)
+  const [timeMachineOpen, setTimeMachineOpen] = useState(false)
   const [exportLoading, setExportLoading] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
+  const { isPreviewMode } = useRestorePreview()
 
   useEffect(() => {
     window.electron.ipcRenderer.invoke('backup.config.obter').then((config: any) => {
@@ -1023,7 +1028,8 @@ export function ConfiguracoesPagina() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={backupNowLoading || exportLoading}
+                    disabled={backupNowLoading || exportLoading || isPreviewMode}
+                    title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
                   >
                     {(backupNowLoading || exportLoading) ? (
                       <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -1049,7 +1055,8 @@ export function ConfiguracoesPagina() {
                 size="sm"
                 variant="outline"
                 onClick={handleImportar}
-                disabled={importLoading}
+                disabled={importLoading || isPreviewMode}
+                title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
               >
                 {importLoading ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -1058,7 +1065,16 @@ export function ConfiguracoesPagina() {
                 )}
                 Importar
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTimeMachineOpen(true)}
+              >
+                <History className="mr-1.5 size-3.5" />
+                Maquina do Tempo
+              </Button>
             </div>
+            <TimeMachineModal open={timeMachineOpen} onOpenChange={setTimeMachineOpen} />
           </CardContent>
         </Card>
 

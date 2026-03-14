@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useRestorePreview } from '@/hooks/useRestorePreview'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -139,7 +140,6 @@ import {
   Excecao,
   SetorHorarioSemana,
   RegraHorarioColaborador,
-  inferFolgasFromAlocacoes,
 } from '@shared/index'
 
 function PrecondicaoItem({
@@ -347,6 +347,7 @@ export function SetorDetalhe() {
   const { id } = useParams<{ id: string }>()
   const setorId = parseInt(id!)
   const navigate = useNavigate()
+  const { isPreviewMode } = useRestorePreview()
 
   // Form
   const setorForm = useForm<SetorFormInput, unknown, SetorFormData>({
@@ -379,7 +380,7 @@ export function SetorDetalhe() {
     [setorId],
   )
 
-  const { data: escalas, reload: reloadEscalas } = useApiData<Escala[]>(
+  const { data: escalas, loading: loadingEscalas, reload: reloadEscalas } = useApiData<Escala[]>(
     () => escalasService.listarPorSetor(setorId),
     [setorId],
   )
@@ -399,7 +400,7 @@ export function SetorDetalhe() {
     [],
   )
 
-  const { data: regrasPadrao, reload: reloadRegrasPadrao } = useApiData<RegraHorarioColaborador[]>(
+  const { data: regrasPadrao, loading: loadingRegrasPadrao, reload: reloadRegrasPadrao } = useApiData<RegraHorarioColaborador[]>(
     () => colaboradoresService.listarRegrasPadraoSetor(setorId),
     [setorId],
   )
@@ -468,6 +469,7 @@ export function SetorDetalhe() {
   // Preview Nivel 1: F/V editadas localmente
   const [folgasEditadas, setFolgasEditadas] = useState<Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>>(new Map())
   const [manualEditado, setManualEditado] = useState(false)
+  const [ultimoPadraoGerado, setUltimoPadraoGerado] = useState<Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }> | null>(null)
 
   const [exportOpen, setExportOpen] = useState(false)
   const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
@@ -542,46 +544,19 @@ export function SetorDetalhe() {
     return map
   }, [regrasPadrao])
 
-  const folgasInferidasOficialMap = useMemo(() => {
-    const map = new Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>()
-    if (!oficialCompleta) return map
-
-    const alocacoesPorColaborador = new Map<number, typeof oficialCompleta.alocacoes>()
-    for (const aloc of oficialCompleta.alocacoes) {
-      const current = alocacoesPorColaborador.get(aloc.colaborador_id) ?? []
-      current.push(aloc)
-      alocacoesPorColaborador.set(aloc.colaborador_id, current)
-    }
-
-    for (const colab of orderedColabs) {
-      const alocs = alocacoesPorColaborador.get(colab.id)
-      if (!alocs || alocs.length === 0) continue
-
-      const regra = regrasMap.get(colab.id)
-      map.set(colab.id, inferFolgasFromAlocacoes({
-        alocacoes: alocs,
-        folgaFixaAtual: regra?.folga_fixa_dia_semana ?? null,
-        folgaVariavelAtual: regra?.folga_variavel_dia_semana ?? null,
-      }))
-    }
-
-    return map
-  }, [oficialCompleta, orderedColabs, regrasMap])
-
   const folgasEquipeMap = useMemo(() => {
     const map = new Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>()
 
     for (const colab of orderedColabs) {
       const regra = regrasMap.get(colab.id)
-      const inferidas = folgasInferidasOficialMap.get(colab.id)
       map.set(colab.id, {
-        fixa: regra?.folga_fixa_dia_semana ?? inferidas?.fixa ?? null,
-        variavel: regra?.folga_variavel_dia_semana ?? inferidas?.variavel ?? null,
+        fixa: regra?.folga_fixa_dia_semana ?? null,
+        variavel: regra?.folga_variavel_dia_semana ?? null,
       })
     }
 
     return map
-  }, [orderedColabs, regrasMap, folgasInferidasOficialMap])
+  }, [orderedColabs, regrasMap])
 
   const ocupanteMap = useMemo(() => {
     const map = new Map<number, Colaborador>()
@@ -948,18 +923,29 @@ export function SetorDetalhe() {
 
   // Preview Nivel 1: grid T/F instantaneo antes de rodar solver
   const previewNivel1 = useMemo(() => {
-    if (escalaCompleta || carregandoTabEscala) return null
+    if (escalaCompleta || carregandoTabEscala || loadingEscalas || loadingRegrasPadrao) return null
     if (setor?.regime_escala !== '5X2') return null
     if (!funcoesList.length || !orderedColabs.length) return null
 
+    const colaboradoresBloqueados = new Set<number>()
     const postosElegiveis = funcoesList
       .filter(f => f.ativo)
       .sort((a, b) => a.ordem - b.ordem)
       .map(f => {
         const titular = orderedColabs.find(c => c.funcao_id === f.id)
-        return titular && (titular.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE'
-          ? { funcao: f, titular }
-          : null
+        if (!titular) return null
+
+        const editada = folgasEditadas.get(titular.id)
+        const regra = regrasMap.get(titular.id)
+        const regraGerada = ultimoPadraoGerado?.get(titular.id)
+        const folgaFixaAtual = editada?.fixa ?? regraGerada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
+        const foraDoModelo = (titular.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE' || folgaFixaAtual === 'DOM'
+        if (foraDoModelo) {
+          colaboradoresBloqueados.add(titular.id)
+          return null
+        }
+
+        return { funcao: f, titular }
       })
       .filter(Boolean) as Array<{ funcao: typeof funcoesList[0]; titular: typeof orderedColabs[0] }>
 
@@ -974,9 +960,10 @@ export function SetorDetalhe() {
 
     const folgasForcadas = postosElegiveis.map(p => {
       const editada = folgasEditadas.get(p.titular.id)
-      const regra = regrasPadrao?.find(r => r.colaborador_id === p.titular.id)
-      const fixa = editada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
-      const variavel = editada?.variavel ?? regra?.folga_variavel_dia_semana ?? null
+      const regraGerada = ultimoPadraoGerado?.get(p.titular.id)
+      const regra = regrasMap.get(p.titular.id)
+      const fixa = editada?.fixa ?? regraGerada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
+      const variavel = editada?.variavel ?? regraGerada?.variavel ?? regra?.folga_variavel_dia_semana ?? null
       return {
         folga_fixa_dia: fixa ? DIAS_IDX.indexOf(fixa) : null,
         folga_variavel_dia: variavel ? DIAS_IDX.indexOf(variavel as DiaSemana) : null,
@@ -993,13 +980,31 @@ export function SetorDetalhe() {
     })
 
     if (!output.sucesso) return null
+    const convertido = converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao)
+    const regrasPreviewMap = new Map<number, RegraHorarioColaborador>()
+    for (const regra of regrasPadrao ?? []) {
+      regrasPreviewMap.set(regra.colaborador_id, regra)
+    }
+    for (const regra of convertido.regras) {
+      const atual = regrasPreviewMap.get(regra.colaborador_id)
+      regrasPreviewMap.set(regra.colaborador_id, atual
+        ? {
+            ...atual,
+            folga_fixa_dia_semana: regra.folga_fixa_dia_semana,
+            folga_variavel_dia_semana: regra.folga_variavel_dia_semana,
+          }
+        : regra)
+    }
+
     return {
-      ...converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao),
+      ...convertido,
+      regras: [...regrasPreviewMap.values()],
       stats: output.stats,
       ciclo_semanas: output.ciclo_semanas,
+      colaboradoresBloqueados: [...colaboradoresBloqueados],
     }
-  }, [escalaCompleta, carregandoTabEscala, setor, funcoesList, orderedColabs,
-      demandas, regrasPadrao, folgasEditadas, periodoGeracao, setorId])
+  }, [escalaCompleta, carregandoTabEscala, loadingEscalas, loadingRegrasPadrao, setor, funcoesList, orderedColabs,
+      demandas, regrasPadrao, regrasMap, folgasEditadas, ultimoPadraoGerado, periodoGeracao, setorId])
 
   // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -1017,6 +1022,11 @@ export function SetorDetalhe() {
   useEffect(() => {
     setPeriodoGeracao(resolvePresetRange(periodoPreset, new Date(), inicioSemanaEscala))
   }, [periodoPreset, inicioSemanaEscala])
+
+  useEffect(() => {
+    if (!regrasPadrao) return
+    setUltimoPadraoGerado(null)
+  }, [regrasPadrao])
 
   // Fallback: se oficial sumir, volta para simulacao
   useEffect(() => {
@@ -1276,13 +1286,19 @@ export function SetorDetalhe() {
           folga_variavel_dia_semana: r.folga_variavel_dia_semana,
         }))
         await colaboradoresService.salvarPadraoFolgas(padrao, true)
+        setUltimoPadraoGerado(new Map(
+          padrao.map((item) => [item.colaborador_id, {
+            fixa: item.folga_fixa_dia_semana,
+            variavel: item.folga_variavel_dia_semana,
+          }]),
+        ))
+        reloadRegrasPadrao()
       }
 
       // Montar pinned_folga_externo do preview (T/F → band 0/3)
       let pinnedFolgaExterno: Array<{ c: number; d: number; band: number }> | undefined
       if (previewNivel1) {
-        const colabOrdenados = [...orderedColabs]
-          .filter(c => (c.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
+        const colabOrdenados = [...(colaboradores ?? [])]
           .sort((a, b) => b.rank - a.rank)
         const colabIdToIdx = new Map(colabOrdenados.map((c, i) => [c.id, i]))
 
@@ -1319,6 +1335,7 @@ export function SetorDetalhe() {
       setEscalaCompleta(result)
       setFolgasEditadas(new Map())
       setManualEditado(false)
+      reloadEscalas()
       toast.success('Escala gerada')
     } catch (err) {
       const msg = mapError(err) || 'Nao foi possivel gerar a escala.'
@@ -1360,6 +1377,8 @@ export function SetorDetalhe() {
       await escalasService.deletar(escalaCompleta.escala.id)
       toast.success('Escala descartada')
       setEscalaCompleta(null)
+      reloadEscalas()
+      reloadRegrasPadrao()
     } catch (err) {
       toast.error(mapError(err) || 'Erro ao descartar')
     } finally {
@@ -1612,7 +1631,11 @@ export function SetorDetalhe() {
         : `historico:${maisRecente.id}`
     setEscalaSelecionada(valor)
     if (maisRecente.status === 'RASCUNHO') {
-      escalasService.buscar(maisRecente.id).then(setEscalaCompleta).catch(() => {})
+      setCarregandoTabEscala(true)
+      escalasService.buscar(maisRecente.id)
+        .then(setEscalaCompleta)
+        .catch(() => {})
+        .finally(() => setCarregandoTabEscala(false))
     }
   }, [escalas]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1797,7 +1820,8 @@ export function SetorDetalhe() {
               variant={isDirty ? 'default' : 'outline'}
               size="sm"
               onClick={handleSalvarTudo}
-              disabled={salvandoTudo}
+              disabled={salvandoTudo || isPreviewMode}
+              title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
             >
               {salvandoTudo ? (
                 <Loader2 className="mr-1 size-3.5 animate-spin" />
@@ -1810,7 +1834,7 @@ export function SetorDetalhe() {
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5">
+                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5" disabled={isPreviewMode}>
                   <Archive className="mr-1 size-3.5" />
                   Arquivar
                 </Button>
@@ -2441,6 +2465,7 @@ export function SetorDetalhe() {
                         onClick={handleGerar}
                         disabled={
                           gerando ||
+                          isPreviewMode ||
                           !empresa ||
                           (tiposContrato?.length ?? 0) === 0 ||
                           (orderedColabs?.length ?? 0) === 0
@@ -2463,10 +2488,10 @@ export function SetorDetalhe() {
 
                       {escalaCompleta && (
                         <>
-                          <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando}>
+                          <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando || isPreviewMode}>
                             {oficializando ? 'Oficializando...' : 'Oficializar'}
                           </Button>
-                          <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando}>
+                          <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando || isPreviewMode}>
                             {descartando ? 'Descartando...' : 'Descartar'}
                           </Button>
                         </>
@@ -2509,6 +2534,11 @@ export function SetorDetalhe() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold">Preview do Ciclo</p>
                         <Badge variant="outline" className="text-xs">Nivel 1 — sem horarios</Badge>
+                        {previewNivel1.colaboradoresBloqueados.length > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {previewNivel1.colaboradoresBloqueados.length} fora do preview
+                          </Badge>
+                        )}
                         {previewNivel1.stats.sem_TT === false && (
                           <Badge variant="outline" className="border-destructive/30 text-destructive text-xs">TT detectado</Badge>
                         )}
@@ -2528,6 +2558,8 @@ export function SetorDetalhe() {
                         colaboradores={orderedColabs}
                         funcoes={funcoesList}
                         regrasPadrao={previewNivel1.regras}
+                        folgaBloqueadaColabIds={previewNivel1.colaboradoresBloqueados}
+                        allowDomingoNaFolgaFixa={false}
                         onFolgaChange={(colabId, field, value) => {
                           setFolgasEditadas(prev => {
                             const next = new Map(prev)
@@ -2548,7 +2580,9 @@ export function SetorDetalhe() {
                         <p className="text-sm font-medium text-foreground">
                           {setor?.regime_escala === '6X1'
                             ? 'Preview disponivel apenas para setores 5x2. Use Gerar Escala.'
-                            : 'Configure postos e demandas para ver o preview do ciclo.'}
+                            : funcoesList.length > 0 && orderedColabs.length > 0
+                              ? 'Preview indisponivel com a equipe/demanda atuais. Em 5x2, o domingo precisa caber em ate metade da equipe elegivel.'
+                              : 'Configure postos e demandas para ver o preview do ciclo.'}
                         </p>
                       </div>
                       {(!empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0 || (demandas?.length ?? 0) === 0) && (
@@ -2815,7 +2849,7 @@ export function SetorDetalhe() {
             <Button variant="outline" onClick={() => setShowExcDemandaDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSalvarExcDemanda} disabled={excDemandaSalvando}>
+            <Button onClick={handleSalvarExcDemanda} disabled={excDemandaSalvando || isPreviewMode}>
               {excDemandaSalvando ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
@@ -2942,7 +2976,7 @@ export function SetorDetalhe() {
               </Button>
               <Button
                 onClick={() => { void handleSalvarPostoDialog() }}
-                disabled={salvandoPosto || !postoDialogApelido.trim()}
+                disabled={salvandoPosto || !postoDialogApelido.trim() || isPreviewMode}
               >
                 {salvandoPosto
                   ? (postoDialogMode === 'create' ? 'Criando...' : 'Salvando...')

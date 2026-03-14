@@ -47,6 +47,8 @@ interface EscalaCicloResumoProps {
   funcoes: Funcao[]
   regrasPadrao?: RegraHorarioColaborador[]
   onFolgaChange?: (colaboradorId: number, field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana', value: DiaSemana | null) => void
+  folgaBloqueadaColabIds?: number[]
+  allowDomingoNaFolgaFixa?: boolean
   mostrarTodasSemanas?: boolean
   className?: string
   // Controlled view mode (optional — falls back to internal state)
@@ -120,20 +122,30 @@ function FolgaSelect({
   field,
   inferredFolgas,
   onFolgaChange,
+  disabled = false,
+  allowDomingoNaFolgaFixa = true,
 }: {
   colabId: number | null
   field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana'
   inferredFolgas: Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>
   onFolgaChange?: (colaboradorId: number, field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana', value: DiaSemana | null) => void
+  disabled?: boolean
+  allowDomingoNaFolgaFixa?: boolean
 }) {
   if (!colabId) return <span className="text-xs text-muted-foreground">-</span>
 
   const inf = inferredFolgas.get(colabId)
   const current = field === 'folga_fixa_dia_semana' ? inf?.fixa : inf?.variavel
 
-  if (!onFolgaChange) {
+  if (!onFolgaChange || disabled) {
     return (
-      <span className={cn('text-xs', current ? 'text-foreground' : 'text-muted-foreground')}>
+      <span
+        className={cn(
+          'text-xs',
+          current ? (disabled ? 'text-muted-foreground' : 'text-foreground') : 'text-muted-foreground',
+        )}
+        title={disabled ? 'Edicao bloqueada neste contexto.' : undefined}
+      >
         {current ? DIAS_CURTOS[current] : '-'}
       </span>
     )
@@ -152,7 +164,10 @@ function FolgaSelect({
       <SelectContent>
         <SelectItem value="__none__" className="text-xs">-</SelectItem>
         {DIAS_ORDEM
-          .filter(dia => field === 'folga_fixa_dia_semana' || dia !== 'DOM')
+          .filter((dia) => {
+            if (field === 'folga_variavel_dia_semana') return dia !== 'DOM'
+            return allowDomingoNaFolgaFixa || dia !== 'DOM'
+          })
           .map((dia) => (
             <SelectItem key={dia} value={dia} className="text-xs">{DIAS_CURTOS[dia]}</SelectItem>
           ))}
@@ -213,6 +228,8 @@ export function EscalaCicloResumo({
   funcoes,
   regrasPadrao = [],
   onFolgaChange,
+  folgaBloqueadaColabIds = [],
+  allowDomingoNaFolgaFixa = true,
   mostrarTodasSemanas = false,
   className,
   viewMode: controlledViewMode,
@@ -254,6 +271,11 @@ export function EscalaCicloResumo({
       }
     })
   }, [postosOrdenados, regrasMap, titularPorPosto])
+
+  const folgaBloqueadaSet = useMemo(
+    () => new Set(folgaBloqueadaColabIds),
+    [folgaBloqueadaColabIds],
+  )
 
   const weeks = useMemo(() => {
     const start = new Date(`${escala.data_inicio}T00:00:00`)
@@ -398,10 +420,11 @@ export function EscalaCicloResumo({
   const pendentesFolgaConfig = useMemo(
     () => rows.filter((row) => {
       if (!row.titular) return false
+      if (folgaBloqueadaSet.has(row.titular.id)) return false
       const inf = inferredFolgas.get(row.titular.id)
       return !inf?.fixa || !inf?.variavel
     }).length,
-    [rows, inferredFolgas],
+    [rows, inferredFolgas, folgaBloqueadaSet],
   )
 
   function resolveSymbol(colab: Colaborador | null, dia: DiaSemana, dateStr: string | null): Simbolo {
@@ -472,6 +495,8 @@ export function EscalaCicloResumo({
                       field="folga_variavel_dia_semana"
                       inferredFolgas={inferredFolgas}
                       onFolgaChange={mostrarTodasSemanas ? undefined : onFolgaChange}
+                      disabled={titular ? folgaBloqueadaSet.has(titular.id) : false}
+                      allowDomingoNaFolgaFixa={allowDomingoNaFolgaFixa}
                     />
                   </TableCell>
                   <TableCell className="p-1 text-center">
@@ -480,6 +505,8 @@ export function EscalaCicloResumo({
                       field="folga_fixa_dia_semana"
                       inferredFolgas={inferredFolgas}
                       onFolgaChange={mostrarTodasSemanas ? undefined : onFolgaChange}
+                      disabled={titular ? folgaBloqueadaSet.has(titular.id) : false}
+                      allowDomingoNaFolgaFixa={allowDomingoNaFolgaFixa}
                     />
                   </TableCell>
                   {DIAS_ORDEM.map((dia) => {

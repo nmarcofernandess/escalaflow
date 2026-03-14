@@ -3434,7 +3434,15 @@ const backupSnapshotsRestaurar = t.procedure
   .input<{ filename: string }>()
   .action(async ({ input }) => {
     const { restoreSnapshot } = await import('./backup')
-    return restoreSnapshot(input.filename, app.getPath('userData'), app.getVersion())
+    return restoreSnapshot(input.filename, app.getPath('userData'), app.getVersion(), { skipPreRestore: false })
+  })
+
+const backupSnapshotsRestaurarPreRestore = t.procedure
+  .input<{ filename: string }>()
+  .action(async ({ input }) => {
+    const { restoreSnapshot } = await import('./backup')
+    const result = await restoreSnapshot(input.filename, app.getPath('userData'), app.getVersion(), { skipPreRestore: true })
+    return { tabelas: result.tabelas, registros: result.registros }
   })
 
 const backupSnapshotsDeletar = t.procedure
@@ -4018,6 +4026,7 @@ export const router = {
   'backup.snapshots.listar': backupSnapshotsListar,
   'backup.snapshots.criar': backupSnapshotsCriar,
   'backup.snapshots.restaurar': backupSnapshotsRestaurar,
+  'backup.snapshots.restaurarPreRestore': backupSnapshotsRestaurarPreRestore,
   'backup.snapshots.deletar': backupSnapshotsDeletar,
   'backup.pasta.escolher': backupPastaEscolher,
 }

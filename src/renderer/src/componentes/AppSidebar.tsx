@@ -19,6 +19,8 @@ import {
   Info,
   Palette,
   Zap,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react'
 import logoIcon from '@/assets/logo.png'
 import {
@@ -47,8 +49,16 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { empresaService } from '@/servicos/empresa'
+import { useRestorePreviewStore } from '@/store/restorePreviewStore'
+import { toast } from 'sonner'
 import { TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
 import { useTour } from './Tour'
 import { useAppVersion } from '@/hooks/useAppVersion'
@@ -90,6 +100,8 @@ export function AppSidebar() {
   const { startTour } = useTour()
   const [empresaNome, setEmpresaNome] = useState('Empresa')
   const appVersion = useAppVersion()
+  const { active: restorePreviewActive, snapshotLabel, aplicar, sair } = useRestorePreviewStore()
+  const [saindo, setSaindo] = useState(false)
 
   useEffect(() => {
     empresaService
@@ -201,6 +213,77 @@ export function AppSidebar() {
         </SidebarGroup>
 
       </SidebarContent>
+
+      {restorePreviewActive && (
+        <>
+          <SidebarSeparator />
+          <SidebarMenu className="px-2 pb-2">
+          <SidebarMenuItem>
+            <Popover>
+              <PopoverTrigger asChild>
+                <SidebarMenuButton
+                  tooltip="Visualizando backup"
+                  size="sm"
+                  className="text-amber-600 dark:text-amber-400 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300"
+                >
+                  <RotateCcw className="size-4" />
+                </SidebarMenuButton>
+              </PopoverTrigger>
+          <PopoverContent
+            side={isMobile ? 'bottom' : 'right'}
+            align="start"
+            className="w-64 border-amber-500/40 bg-background"
+          >
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                Visualizando backup de {snapshotLabel}. Somente leitura.
+              </p>
+              <div className="flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-7 flex-1 text-xs"
+                  onClick={() => {
+                    aplicar()
+                    toast.success('Estado aplicado')
+                  }}
+                >
+                  Aplicar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 flex-1 text-xs border-amber-500/50"
+                  disabled={saindo}
+                  onClick={async () => {
+                    setSaindo(true)
+                    try {
+                      await sair()
+                      toast.success('Visualizacao encerrada')
+                    } catch (err) {
+                      toast.error('Erro ao sair', { description: (err as Error).message })
+                    } finally {
+                      setSaindo(false)
+                    }
+                  }}
+                >
+                  {saindo ? (
+                    <>
+                      <Loader2 className="mr-1 size-3 animate-spin" />
+                      Saindo...
+                    </>
+                  ) : (
+                    'Sair da visualizacao'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        </>
+      )}
 
       <SidebarFooter id={TOUR_STEP_IDS.FOOTER_MENU}>
         <SidebarMenu>
