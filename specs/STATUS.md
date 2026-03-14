@@ -1,6 +1,6 @@
 # STATUS — Painel Unico de Escala
 
-> Atualizado: 2026-03-14 17:30
+> Atualizado: 2026-03-14 22:00
 > Warlog: `specs/WARLOG_PAINEL_UNICO.md`
 > Spec base: `docs/ANALYST_PAINEL_UNICO_ESCALA.md`
 
@@ -18,10 +18,19 @@
 ---
 
 ## Em andamento
-(nada — aguardando lancamento dos 3 Claudes)
+- [CLAUDE A] A8-A10: migracao de paginas useApiData → useAppData
 
 ## Concluido
-(nada)
+- [CLAUDE A] A1: AppDataStore globais ✅
+- [CLAUDE A] A2: AppDataStore por setor (8 entidades, race guard, aliases) ✅
+- [CLAUDE A] A3: Derivados automaticos (N, K, kMaxSemTT, cicloSemanas, demandaPorDia, avisos) ✅
+- [CLAUDE A] A4: IPC `data:invalidated` em tipc.ts — 46 handlers com broadcast ✅
+- [CLAUDE A] A5: IPC invalidacao em tools.ts — 21 tools com broadcast ✅
+- [CLAUDE A] A6: Listener global em App.tsx — recebe e invalida store ✅
+- [CLAUDE A] A7: `useAppData()` hook seletor tipado ✅
+- [CLAUDE B] B1: Fix folga_fixa=DOM no solver — 4 guards (XOR, ciclo hard, ciclo soft, dom_max) ✅
+- [CLAUDE B] B2: Fix folga_fixa=DOM na bridge — zero ciclo, null variavel ✅
+- [CLAUDE B] B3: Fix folga_fixa=DOM no TS — folga_fixa_dom flag + 4 unit tests ✅
 
 ## Decisoes pendentes (PRECISA DO MARCO)
 - C1: Layout do painel unico — prototipo necessario ANTES de codar
