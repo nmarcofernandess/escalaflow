@@ -546,6 +546,7 @@ function _dicaPagina(pagina: string): string {
         feriados: '\n💡 O usuário está na página de feriados.',
         configuracoes: '\n💡 O usuário está nas configurações do sistema.',
         regras: '\n💡 O usuário está na página de regras do motor (CLT, SOFT, Antipadrões).',
+        externo: '\n💡 Contexto externo (MCP/terminal). Sem página visual — resolva nomes e IDs via tools.',
     }
     return dicas[pagina] || ''
 }

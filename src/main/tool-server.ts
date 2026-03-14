@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { executeTool, IA_TOOLS } from './ia/tools'
+import { buildContextBriefing } from './ia/discovery'
+import type { IaContexto } from '../shared/types'
 
 const TOOL_PORT = 17380
 let httpServer: ReturnType<typeof createServer> | null = null
@@ -37,6 +39,18 @@ export function startToolServer() {
         }
         const result = await executeTool(name, args ?? {})
         return json(res, result)
+      }
+      if (req.method === 'GET' && req.url?.startsWith('/discovery')) {
+        const url = new URL(req.url, `http://127.0.0.1:${TOOL_PORT}`)
+        const setorParam = url.searchParams.get('setor')
+        const syntheticCtx: IaContexto = {
+          rota: '/mcp',
+          pagina: 'externo',
+          setor_id: setorParam ? parseInt(setorParam, 10) || undefined : undefined,
+          colaborador_id: undefined,
+        }
+        const briefing = await buildContextBriefing(syntheticCtx)
+        return json(res, { discovery: briefing })
       }
       if (req.method === 'GET' && req.url === '/instructions') {
         const { buildMcpInstructions } = await import('./ia/system-prompt')
