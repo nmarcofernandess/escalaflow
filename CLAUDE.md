@@ -50,6 +50,15 @@ npm run solver:test
 - alterou `src/main/tipc.ts` ou persistencia de resumo oficial;
 - alterou UI/IA que envia `solve_mode`, `generation_mode` ou `rules_override`.
 
+## Trabalho em andamento (Painel Unico)
+
+Se voce foi lancado como CLAUDE A, B ou C:
+- **LEIA `specs/STATUS.md` ANTES DE QUALQUER ACAO**
+- **LEIA seu prompt em `specs/prompts/PROMPT_CLAUDE_{A,B,C}_*.md`**
+- **LEIA `specs/WARLOG_PAINEL_UNICO.md`** pra saber todas as 30 tasks
+- **LEIA `docs/ANALYST_PAINEL_UNICO_ESCALA.md`** (38 secoes) pra entender o contexto
+- **NADA e implementado sem validar com o Marco (usuario)**
+
 ## Referencias
 
 - `tests/main/solver-cli-parity.spec.ts`

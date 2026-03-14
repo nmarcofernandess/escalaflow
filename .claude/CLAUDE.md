@@ -671,6 +671,23 @@ escalaflow-backup-2026-03-13T14-30-00-000.zip
 
 ---
 
+## Ciclo V3 — Estado atual (2026-03-14)
+
+O sistema de ciclos passou por refatoracao significativa. Estado REAL:
+
+- **domingo_ciclo**: removido do `RegraHorarioColaborador`. Calculado automaticamente pela bridge (`calcularCicloDomingo`).
+- **XOR folga variavel**: offset NEGATIVO (mesma semana). `constraints.py` OFFSET = {SEG:-6..SAB:-1}.
+- **H3_DOM_MAX_CONSEC**: regra existe no seed mas `add_dom_max_consecutivo` esta IMPORTADO MAS NUNCA CHAMADO no solver.
+- **pinned_folga_externo**: tipo existe no TS (bridge + tipc) mas NAO IMPLEMENTADO no Python.
+- **folga_fixa=DOM**: caso especial NAO tratado no solver (bomba logica). Ver `docs/ANALYST_PAINEL_UNICO_ESCALA.md` secao 35.
+- **Preview Nivel 1**: funciona no SetorDetalhe via `previewNivel1` useMemo + `converterNivel1ParaEscala`.
+- **SimuladorCicloGrid**: ainda importado mas deveria ser substituido pelo CicloGrid unificado.
+- **autoFolgaInteligente**: NAO EXISTE (so pseudo-codigo no doc).
+- **Context Provider**: NAO EXISTE. 50+ useApiData independentes. Dados stale.
+
+Spec completa: `docs/ANALYST_PAINEL_UNICO_ESCALA.md` (38 secoes)
+Warlog: `specs/WARLOG_PAINEL_UNICO.md` (30 tasks)
+
 ## Checklist antes de commitar
 
 - [ ] `npm run typecheck` retorna 0 erros
