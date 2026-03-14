@@ -20,12 +20,13 @@ import {
   Save,
   ExternalLink,
   HardDrive,
-  Database,
-  BookOpen,
-  MessageSquare,
   Trash2,
   Wifi,
   WifiOff,
+  History,
+  Terminal,
+  Copy,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -57,6 +58,7 @@ import type {
   IaOpenRouterFreeModelsTestResult,
 } from '@shared/types'
 import { IaModelCatalogPicker } from '@/componentes/IaModelCatalogPicker'
+import { TimeMachineModal } from '../componentes/TimeMachineModal'
 
 type IaProviderConfigForm = {
   token?: string
@@ -158,6 +160,68 @@ function buildIaFormValues(iaConfig?: any) {
   }
 }
 
+const MCP_COMMAND = 'claude mcp add escalaflow --transport stdio --scope user -- npx tsx /Users/marcofernandes/escalaflow/mcp-server/index.ts'
+
+function ClaudeCodeCard() {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(MCP_COMMAND)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Terminal className="size-4" />
+          Claude Code
+        </CardTitle>
+        <CardDescription>
+          Use o Claude Code pra operar o EscalaFlow pelo terminal — mesmas tools da IA do app, com poder extra
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <div className="text-sm font-medium">Como configurar</div>
+          <div className="text-xs text-muted-foreground">
+            Abra o terminal, cole o comando abaixo e reinicie o Claude Code. So precisa fazer uma vez.
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2">
+          <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {MCP_COMMAND}
+          </code>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 px-2 text-xs"
+            onClick={handleCopy}
+          >
+            {copied ? (
+              <>
+                <ClipboardCheck className="mr-1 size-3.5 text-green-500" />
+                Copiado
+              </>
+            ) : (
+              <>
+                <Copy className="mr-1 size-3.5" />
+                Copiar
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className="text-xs text-muted-foreground">
+          <strong>Requisito:</strong> o EscalaFlow precisa estar aberto pra o Claude Code funcionar com as tools.
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function ConfiguracoesPagina() {
   const { theme: currentMode, setTheme } = useTheme()
   const { colorTheme, setColorTheme } = useColorTheme()
@@ -196,52 +260,84 @@ export function ConfiguracoesPagina() {
     window.electron.ipcRenderer.invoke('update:install').catch(() => { })
   }
 
-  const [backupLoading, setBackupLoading] = useState(false)
-  const [restoreLoading, setRestoreLoading] = useState(false)
-  const [backupCadastros, setBackupCadastros] = useState(true)
-  const [backupConhecimento, setBackupConhecimento] = useState(true)
-  const [backupChat, setBackupChat] = useState(false)
+  // Backup
+  const [backupConfig, setBackupConfig] = useState<{
+    pasta: string | null; pasta_padrao: string; ativo: boolean; ultimo_backup: string | null
+  } | null>(null)
+  const [timeMachineOpen, setTimeMachineOpen] = useState(false)
+  const [backupNowLoading, setBackupNowLoading] = useState(false)
+  const [importLoading, setImportLoading] = useState(false)
 
-  const handleExportar = async () => {
-    if (!backupCadastros && !backupConhecimento && !backupChat) {
-      toast.error('Selecione pelo menos uma categoria para exportar.')
-      return
-    }
-    setBackupLoading(true)
+  useEffect(() => {
+    window.electron.ipcRenderer.invoke('backup.config.obter').then((config: any) => {
+      setBackupConfig(config)
+    }).catch(console.error)
+  }, [])
+
+  async function handleToggleBackup(ativo: boolean) {
     try {
-      const res = await window.electron.ipcRenderer.invoke('dados.exportar', {
-        incluir_cadastros: backupCadastros,
-        incluir_conhecimento: backupConhecimento,
-        incluir_historico_chat: backupChat,
-      }) as { filepath: string; tamanho_mb: number } | null
-      if (res) {
-        toast.success('Backup exportado com sucesso!', {
-          description: `${res.tamanho_mb} MB — ${res.filepath}`,
-        })
-      }
-    } catch (err: any) {
-      toast.error('Erro ao exportar backup', { description: err?.message ?? 'Erro desconhecido' })
-    } finally {
-      setBackupLoading(false)
+      const updated = await window.electron.ipcRenderer.invoke('backup.config.salvar', { ativo }) as typeof backupConfig
+      setBackupConfig(updated)
+    } catch (err) {
+      toast.error('Erro ao salvar configuracao', { description: (err as Error).message })
     }
   }
 
-  const handleImportar = async () => {
-    setRestoreLoading(true)
+  async function handleBackupNow() {
+    setBackupNowLoading(true)
+    try {
+      const result = await window.electron.ipcRenderer.invoke('backup.snapshots.criar', { trigger: 'manual' }) as any
+      if (result) {
+        toast.success('Backup criado!', { description: `${result.meta.registros} registros salvos` })
+        const config = await window.electron.ipcRenderer.invoke('backup.config.obter') as typeof backupConfig
+        setBackupConfig(config)
+      } else {
+        toast.info('Backup ja em andamento')
+      }
+    } catch (err) {
+      toast.error('Erro ao criar backup', { description: (err as Error).message })
+    } finally {
+      setBackupNowLoading(false)
+    }
+  }
+
+  async function handleChooseBackupFolder() {
+    try {
+      const folder = await window.electron.ipcRenderer.invoke('backup.pasta.escolher') as string | null
+      if (folder) {
+        const updated = await window.electron.ipcRenderer.invoke('backup.config.salvar', { pasta: folder }) as typeof backupConfig
+        setBackupConfig(updated)
+      }
+    } catch (err) {
+      toast.error('Erro ao alterar pasta', { description: (err as Error).message })
+    }
+  }
+
+  async function handleResetBackupFolder() {
+    try {
+      const updated = await window.electron.ipcRenderer.invoke('backup.config.salvar', { pasta: null }) as typeof backupConfig
+      setBackupConfig(updated)
+      toast.success('Pasta restaurada para padrao')
+    } catch (err) {
+      toast.error('Erro ao resetar pasta', { description: (err as Error).message })
+    }
+  }
+
+  async function handleImportar() {
+    setImportLoading(true)
     try {
       const res = await window.electron.ipcRenderer.invoke('dados.importar') as {
         tabelas: number; registros: number; categorias: string[]
       } | null
       if (res) {
-        const catLabel = res.categorias.join(', ')
-        toast.success('Dados restaurados com sucesso!', {
-          description: `${res.tabelas} tabelas, ${res.registros} registros (${catLabel}). Reinicie o app para garantir consistencia.`,
+        toast.success('Dados importados!', {
+          description: `${res.tabelas} tabelas, ${res.registros} registros. Reinicie o app.`,
         })
       }
     } catch (err: any) {
-      toast.error('Erro ao importar backup', { description: err?.message ?? 'Erro desconhecido' })
+      toast.error('Erro ao importar', { description: err?.message ?? 'Erro desconhecido' })
     } finally {
-      setRestoreLoading(false)
+      setImportLoading(false)
     }
   }
 
@@ -852,121 +948,99 @@ export function ConfiguracoesPagina() {
           </CardContent>
         </Card>
 
-        {/* Backup / Restauracao */}
+        {/* Backup */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <HardDrive className="size-4" />
-              Backup e Restauracao
+              Backup
             </CardTitle>
-            <CardDescription>
-              Exporte os dados do sistema para um arquivo .zip compactado ou restaure a partir de um backup anterior.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <p className="text-sm font-medium">Exportar dados</p>
-              <p className="text-xs text-muted-foreground">
-                Escolha o que incluir no backup:
-              </p>
-            </div>
-
-            <div className="space-y-3 rounded-lg border p-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <Database className="size-4 text-muted-foreground" />
+            {backupConfig && (
+              <>
+                <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium">Cadastros e escalas</p>
-                    <p className="text-xs text-muted-foreground">
-                      Empresa, setores, colaboradores, escalas, regras, feriados
-                    </p>
+                    <div className="text-sm font-medium">Backup automatico</div>
+                    <div className="text-xs text-muted-foreground">Salva ao fechar e a cada 24h</div>
                   </div>
+                  <Switch
+                    checked={backupConfig.ativo}
+                    onCheckedChange={handleToggleBackup}
+                  />
                 </div>
-                <Switch
-                  checked={backupCadastros}
-                  onCheckedChange={setBackupCadastros}
-                />
-              </div>
 
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <BookOpen className="size-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Conhecimento e memorias</p>
-                    <p className="text-xs text-muted-foreground">
-                      Documentos importados, memorias da IA, grafo de relacoes
-                    </p>
+                {backupConfig.ativo && (
+                  <div className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs text-muted-foreground" title={backupConfig.pasta ?? backupConfig.pasta_padrao}>
+                        {backupConfig.pasta ?? backupConfig.pasta_padrao}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={handleChooseBackupFolder}>
+                        Alterar
+                      </Button>
+                      {backupConfig.pasta && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={handleResetBackupFolder}>
+                          Resetar
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <Switch
-                  checked={backupConhecimento}
-                  onCheckedChange={setBackupConhecimento}
-                />
-              </div>
+                )}
 
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <MessageSquare className="size-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Historico de conversas</p>
-                    <p className="text-xs text-muted-foreground">
-                      Todas as conversas com a assistente IA
-                    </p>
+                {backupConfig.ultimo_backup && (
+                  <div className="text-xs text-muted-foreground">
+                    Ultimo backup: {new Date(backupConfig.ultimo_backup).toLocaleString('pt-BR')}
                   </div>
-                </div>
-                <Switch
-                  checked={backupChat}
-                  onCheckedChange={setBackupChat}
-                />
-              </div>
-            </div>
+                )}
+              </>
+            )}
 
-            <div className="flex justify-end">
+            <div className="flex flex-wrap gap-2 border-t pt-3">
               <Button
-                size="sm"
                 variant="outline"
-                onClick={handleExportar}
-                disabled={backupLoading || (!backupCadastros && !backupConhecimento && !backupChat)}
+                size="sm"
+                onClick={handleBackupNow}
+                disabled={backupNowLoading}
               >
-                {backupLoading ? (
+                {backupNowLoading ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                 ) : (
-                  <Download className="mr-1.5 size-3.5" />
+                  <Save className="mr-1.5 size-3.5" />
                 )}
-                Exportar backup
+                {backupNowLoading ? 'Salvando...' : 'Backup Agora'}
               </Button>
-            </div>
-
-            <Separator />
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Restaurar dados</p>
-                <p className="text-xs text-muted-foreground">
-                  Aceita .zip (novo) ou .json (legado). Substitui apenas as categorias presentes no backup.
-                </p>
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setTimeMachineOpen(true)}
+              >
+                <History className="mr-1.5 size-3.5" />
+                Maquina do Tempo
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleImportar}
-                disabled={restoreLoading}
-                className="text-destructive hover:text-destructive"
+                disabled={importLoading}
               >
-                {restoreLoading ? (
+                {importLoading ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                 ) : (
                   <Upload className="mr-1.5 size-3.5" />
                 )}
-                Importar backup
+                Importar
               </Button>
             </div>
           </CardContent>
         </Card>
+
+        {/* Claude Code MCP */}
+        <ClaudeCodeCard />
+
+        <TimeMachineModal open={timeMachineOpen} onOpenChange={setTimeMachineOpen} />
 
         {/* Assistente IA e IA Local — sempre visíveis */}
         <Card>
