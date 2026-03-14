@@ -17,9 +17,11 @@ jobs:
           - os: macos-latest
             platform: mac
             solver-bin: escalaflow-solver
+            mcp-bin: escalaflow-mcp
           - os: windows-latest
             platform: win
             solver-bin: escalaflow-solver.exe
+            mcp-bin: escalaflow-mcp.exe
 
     runs-on: ${{ matrix.os }}
 
@@ -49,6 +51,22 @@ jobs:
         run: |
           ls -la solver-bin/
           file solver-bin/${{ matrix.solver-bin }} || true
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install MCP server dependencies
+        run: cd mcp-server && bun install
+
+      - name: Build MCP binary
+        shell: bash
+        run: bun build --compile mcp-server/index.ts --outfile mcp-bin/${{ matrix.mcp-bin }}
+
+      - name: Verify MCP binary
+        shell: bash
+        run: |
+          ls -la mcp-bin/
+          file mcp-bin/${{ matrix.mcp-bin }} || true
 
       - name: Install Node dependencies
         run: npm ci
