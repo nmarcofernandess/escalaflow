@@ -203,6 +203,22 @@ function calcularCicloDomingo(
 // Build SolverInput from DB
 // ---------------------------------------------------------------------------
 
+/**
+ * B7: Derive tipo_trabalhador from contract name.
+ * Ensures consistency even if the DB column is stale.
+ * Mirrors frontend derivarTipoTrabalhadorPorContrato() in ColaboradorDetalhe.tsx.
+ */
+function derivarTipoTrabalhador(
+  tipoColuna: string | null,
+  contratoNome: string,
+): string {
+  // NFD normalization to strip accents (matches frontend logic)
+  const nome = contratoNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (nome.includes('intermit')) return 'INTERMITENTE'
+  if (nome.includes('estagi')) return 'ESTAGIARIO'
+  return tipoColuna || 'CLT'
+}
+
 export async function buildSolverInput(
   setorId: number,
   dataInicio: string,
@@ -267,16 +283,26 @@ export async function buildSolverInput(
     tipo_trabalhador: string | null; funcao_id: number | null;
     regime_escala: '5X2' | '6X1' | null;
     dias_trabalho: number; max_minutos_dia: number;
+    contrato_nome: string;
   }>(`
     SELECT c.id, c.nome, c.sexo, c.horas_semanais, c.rank, c.prefere_turno, c.evitar_dia_semana,
-           c.tipo_trabalhador, c.funcao_id, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia
+           c.tipo_trabalhador, c.funcao_id, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia,
+           tc.nome AS contrato_nome
     FROM colaboradores c
     JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
     WHERE c.setor_id = ? AND c.ativo = true
     ORDER BY c.rank DESC
   `, setorId)
 
-  const colaboradores: SolverInputColab[] = colabRows.map(r => {
+  // B6: Exclude collaborators without a posto (funcao_id=null)
+  // They are "reserva operacional" — not scheduled by the solver
+  const reserva = colabRows.filter(r => r.funcao_id == null)
+  if (reserva.length > 0) {
+    console.log(`[solver-bridge] ${reserva.length} colab(s) sem posto (reserva): ${reserva.map(r => r.nome).join(', ')}`)
+  }
+  const colabRowsFiltered = colabRows.filter(r => r.funcao_id != null)
+
+  const colaboradores: SolverInputColab[] = colabRowsFiltered.map(r => {
     const regimeEfetivo = overrideByColab.get(r.id) ?? setor.regime_escala ?? r.regime_escala ?? (r.dias_trabalho <= 5 ? '5X2' : '6X1')
     const diasTrabalhoEfetivo = regimeEfetivo === '5X2' ? 5 : 6
     return ({
@@ -286,7 +312,7 @@ export async function buildSolverInput(
       regime_escala: regimeEfetivo,
       dias_trabalho: diasTrabalhoEfetivo,
       max_minutos_dia: r.max_minutos_dia,
-      tipo_trabalhador: r.tipo_trabalhador || 'CLT',
+      tipo_trabalhador: derivarTipoTrabalhador(r.tipo_trabalhador, r.contrato_nome),
       sexo: r.sexo,
       funcao_id: r.funcao_id,
       rank: r.rank ?? 0,
@@ -402,7 +428,7 @@ export async function buildSolverInput(
   {
     const start = new Date(dataInicio + 'T00:00:00')
     const end = new Date(dataFim + 'T00:00:00')
-    for (const colab of colabRows) {
+    for (const colab of colabRowsFiltered) {
       const group = regraGroupByColab.get(colab.id)
       const d = new Date(start)
       while (d <= end) {
@@ -493,7 +519,7 @@ export async function buildSolverInput(
   }
 
   // v22: Ciclo domingo calculado automaticamente (tenta 1/2 → 1/1 → 2/1)
-  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRows, regraGroupByColab)
+  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRowsFiltered, regraGroupByColab)
   for (const c of colaboradores) {
     if (c.tipo_trabalhador === 'INTERMITENTE') continue
     if (c.folga_fixa_dia_semana === 'DOM') {
