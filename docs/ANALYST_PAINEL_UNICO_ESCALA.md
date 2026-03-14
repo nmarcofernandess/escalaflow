@@ -2265,4 +2265,1380 @@ Se 'INTERMITENTE' → bug so no seed-local.
 
 ---
 
-*Doc em construcao — Marco ainda esta na surra. Proximo input vai complementar.*
+---
+
+## 29. O SETOR E BURRO — NAO TEM CONTEXT
+
+### 29.1 O problema demonstrado
+
+Marco colocou 6 pessoas no domingo na demanda. O preview nao reagiu.
+Continua mostrando S1-S6 com K=2. Nenhum aviso. Nenhum erro.
+A demanda diz 6 pessoas no DOM mas o preview mostra como se fosse 2.
+
+**O preview nao recebe a demanda de domingo como input.**
+
+O `previewNivel1` calcula K assim:
+```typescript
+const kDom = Math.max(0, ...(demandas ?? [])
+  .filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
+  .map(d => d.min_pessoas))
+```
+
+Mas `demandas` vem do `useApiData` que carrega quando o componente monta.
+Se o RH editou a demanda na mesma pagina (DemandaEditor), o `demandas` pode
+estar STALE — nao recarregou. Ou o DemandaEditor salva com debounce e o
+preview nao sabe que mudou.
+
+### 29.2 A raiz: falta de context unificado
+
+Hoje os dados do setor estao espalhados em N hooks independentes:
+
+```
+useApiData(colaboradores)    ← carrega uma vez, reload manual
+useApiData(funcoes)          ← carrega uma vez, reload manual
+useApiData(demandas)         ← carrega uma vez, reload manual
+useApiData(regrasPadrao)     ← carrega uma vez, reload manual
+useApiData(escalas)          ← carrega uma vez, reload manual
+```
+
+Cada um carrega do banco independentemente. Nenhum sabe quando o outro mudou.
+O preview le `demandas` mas nao sabe que o DemandaEditor acabou de salvar
+uma faixa nova. Precisa de reload manual que ninguem chama.
+
+### 29.3 O que deveria existir: Context do Setor
+
+```typescript
+// Context unificado do setor — FONTE UNICA
+interface SetorContext {
+  setor: Setor
+  colaboradores: Colaborador[]       // ativos, com contrato
+  postos: Funcao[]                   // ordenados por ordem
+  demandas: Demanda[]                // por dia, com faixas
+  regrasPadrao: RegraHorarioColaborador[]  // F/V por colab
+  excecoes: Excecao[]                // ferias, atestados
+  feriados: Feriado[]                // no periodo
+  horarioSemana: SetorHorarioSemana[] // por dia
+
+  // Derivados (calculados do acima):
+  N: number                          // postos elegiveis com titular
+  K: number                          // demanda dom (com null)
+  kMaxSemTT: number                  // floor(N/2)
+  cicloSemanas: number               // N/gcd(N,K)
+  coberturaPorDia: number[]          // [SEG..DOM]
+  demandaPorDia: number[]            // [SEG..DOM]
+  deficitPorDia: number[]            // cobertura - demanda
+  avisos: AvisoEscala[]              // todos os problemas detectados
+
+  // Estado:
+  dirty: boolean                     // algo mudou desde ultimo calculo
+  reload: () => Promise<void>        // recarrega tudo do banco
+}
+```
+
+Esse context seria:
+1. REATIVO — quando qualquer dado muda, tudo recalcula
+2. UNICO — nao tem N hooks separados que desincronizam
+3. COMPARTILHADO — DemandaEditor, Equipe, Preview, Gerar usam o mesmo
+4. INTELIGENTE — derivados (N, K, cobertura, avisos) calculados automaticamente
+
+### 29.4 Impacto na arquitetura
+
+Com context unificado:
+- `converterNivel1ParaEscala` MORRE — o context ja tem os dados no formato certo
+- `previewNivel1` SIMPLIFICA — le do context ao inves de calcular tudo
+- `handleGerar` SIMPLIFICA — le do context ao inves de montar do zero
+- Avisos sao REATIVOS — muda demanda, aviso aparece imediatamente
+- O bridge (pro solver) recebe do CONTEXT, nao monta do banco de novo
+
+### 29.5 Relacao com o Painel Unico
+
+O Painel Unico (secao 2) depende do context:
+- Camada 1 (ciclo domingos) → le N e K do context
+- Camada 2 (folgas) → le F/V e cobertura do context
+- Camada 3 (banco) → le excecoes e feriados do context
+- Camada 4 (solver) → le tudo do context e manda pro bridge
+
+Sem context unificado, cada camada monta seus proprios dados
+de hooks separados que podem estar desincronizados.
+
+### 29.6 O converterNivel1ParaEscala e lixo
+
+A funcao `converterNivel1ParaEscala` converte output do gerarCicloFase1
+(formato SimulaCicloOutput) pro formato do EscalaCicloResumo (Escala + Alocacao[]).
+
+Isso e CONVERSAO DE FORMATO. Nao deveria existir. O componente de grid
+deveria aceitar QUALQUER formato — ou o context deveria fornecer no formato
+que o grid precisa.
+
+Com context unificado:
+- O grid le do context direto (nao de props convertidas)
+- O context calcula alocacoes fake (se preview) ou reais (se solver)
+- O grid nao sabe nem liga de onde veio
+
+### 29.7 Prioridade
+
+```
+🔴 CRITICO: O setor nao reage quando muda demanda, postos, ou colaboradores.
+            O preview fica stale. Avisos nao aparecem.
+            TODAS as features planejadas (Painel Unico, avisos inline,
+            cobertura vs demanda) dependem do context funcionar.
+
+            SEM CONTEXT UNIFICADO, NADA DO QUE PLANEJAMOS FUNCIONA DIREITO.
+```
+
+---
+
+---
+
+## 30. DISCOVERY: O SISTEMA INTEIRO NAO TEM CONTEXT
+
+### 30.1 Inventario de useApiData (CADA chamada independente)
+
+O renderer inteiro usa `useApiData` — um hook de 28 linhas que carrega uma vez,
+sem cache, sem invalidacao, sem subscription. Cada componente carrega seus proprios
+dados do zero.
+
+**SetorDetalhe sozinho faz 10 queries independentes:**
+```
+setoresService.buscar(setorId)
+empresaService.buscar()
+setoresService.listarDemandas(setorId)
+setoresService.listarHorarioSemana(setorId)
+colaboradoresService.listar({ setor_id, ativo: true })
+escalasService.listarPorSetor(setorId)
+tiposContratoService.listar()
+funcoesService.listar(setorId)
+excecoesService.listarAtivas()
+colaboradoresService.listarRegrasPadraoSetor(setorId)
+```
+
+**EscalaPagina faz as MESMAS 10 queries pro MESMO setor.**
+Navegando entre as duas paginas = 20 queries pro mesmo dado.
+
+### 30.2 Entidades duplicadas (piores casos)
+
+| Entidade | Carregada em quantos lugares | Exemplos |
+|----------|------------------------------|----------|
+| **Colaboradores** | 5+ | SetorLista, SetorDetalhe, EscalaPagina, ColaboradorLista, EscalasHub |
+| **Setores** | 5+ | SetorLista, ColaboradorDetalhe, ColaboradorLista, EscalaPagina, EscalasHub |
+| **TiposContrato** | 5 | SetorDetalhe, EscalaPagina, ColaboradorLista, ColaboradorDetalhe, EscalasHub |
+| **Empresa** | 3 | SetorDetalhe, EmpresaConfig, RegrasPagina |
+| **Regras** | 2 | RegrasPagina, SolverConfigDrawer (mesmo page tree!) |
+| **ExcecoesAtivas** | 2 | ColaboradorLista, SetorDetalhe |
+
+TiposContrato QUASE NUNCA muda — mas e carregado em 5 paginas independentes.
+Empresa e SINGLETON — mas 3 queries separadas.
+
+### 30.3 Padroes de stale data (os piores)
+
+**A) IA muta dado → renderer nao sabe**
+
+A IA pode chamar `criar`, `atualizar`, `gerar_escala` etc via tools.ts.
+Essas tools escrevem direto no PGlite. O renderer NAO e notificado.
+Nenhum IPC event e emitido de volta. Nenhum useApiData recarrega.
+O RH ve a IA dizer "criei o colaborador Ana" mas a lista nao mostra Ana.
+
+**B) EscalasHub NUNCA recarrega**
+
+`deps: []` — carrega uma vez. Sem `reload`. Gerar ou oficializar escala
+em SetorDetalhe e depois ir pro EscalasHub = dados congelados.
+
+**C) Dashboard stale silencioso**
+
+`deps: []` — mostra totais desatualizados sem indicador. Nenhum auto-refresh.
+
+**D) Cross-page mutation blindness**
+
+SetorDetalhe e EscalaPagina carregam os mesmos dados independentemente.
+Editar em um nao atualiza o outro. Precisa sair e voltar.
+
+**E) Demandas stale no preview**
+
+Marco mudou demanda DOM pra 6 no DemandaEditor. Preview nao reagiu.
+`demandas` carregado com `useApiData` nao sabe que o editor salvou.
+
+### 30.4 Zustand stores existentes
+
+So existem 2 stores — NENHUMA de dados de negocio:
+
+| Store | O que guarda | Dados de negocio? |
+|-------|-------------|-------------------|
+| `iaStore` | Painel IA, conversa ativa, mensagens | NAO |
+| `restorePreviewStore` | Flag de preview de backup | NAO |
+
+ZERO stores de colaboradores, setores, escalas, empresa, demandas.
+Cada pagina carrega tudo sozinha.
+
+### 30.5 Servicos = IPC wrappers puros
+
+Toda a camada `servicos/` e fire-and-forget:
+```typescript
+listar: () => client['colaboradores.listar']({}) as Promise<Colaborador[]>
+```
+Zero cache. Zero dedup. 2 componentes chamam o mesmo servico = 2 IPC calls.
+
+---
+
+## 31. A IA TAMBEM SOFRE — MAS DE OUTRO JEITO
+
+### 31.1 Como a IA pega contexto
+
+`buildContextBriefing()` em `discovery.ts` roda em CADA mensagem do chat.
+Faz 15+ queries no PGlite do zero, sem cache:
+
+```
+memorias (1 query)
+autoRAG (1 vector search)
+resumoGlobal (4 COUNT queries)
+feriados proximos (1 range query)
+regras custom (1 JOIN)
+lista setores (N+1 queries — 1 query + 1 COUNT por setor!)
+infoSetor (6+ queries se tem setor_id)
+infoColaborador (3 queries se tem colaborador_id)
+coreAlerts (multiplas queries por setor, incluindo buildSolverInput pra checar hash!)
+backup config (1 query)
+statsKnowledge (2 COUNT)
+```
+
+10 mensagens no chat = 150+ queries repetidas. Mesmo dado, mesmo setor.
+
+### 31.2 IA vs Renderer — mundos separados
+
+| Aspecto | Renderer (hooks) | IA (discovery) |
+|---------|-----------------|----------------|
+| Fonte | useApiData → IPC → PGlite | queryOne/queryAll → PGlite direto |
+| Fresh? | NAO (carrega uma vez) | SIM (query a cada mensagem) |
+| Sabe de mutacoes da IA? | NAO | SIM (proxima mensagem ve o banco atualizado) |
+| Sabe do que o renderer mostra? | - | NAO (so recebe URL path como contexto) |
+| Cache | Nenhum | Nenhum |
+
+A IA e o renderer PODEM DISCORDAR sobre o estado atual.
+IA: "Alex tem folga fixa SAB" (leu do banco, fresh).
+Renderer: mostra Alex com folga SEG (hook stale de 5min atras).
+
+### 31.3 Um context ajudaria a IA?
+
+**Direto:** NAO muito — a IA ja le fresh do banco. Um cache no renderer nao
+ajuda o main process.
+
+**Indireto:** SIM — se o renderer tivesse context reativo, a IA poderia:
+1. Emitir IPC event apos mutacao → renderer invalida context → UI atualiza
+2. O `IaContexto` poderia incluir DADOS do context (nao so URL path)
+3. A discovery poderia ler do context cache ao inves de 15+ queries
+4. O MCP server poderia servir o context como recurso compartilhado
+
+### 31.4 Quick win: IPC event pos-mutacao
+
+O fix mais barato pra IA→renderer blindness:
+
+```typescript
+// Em tools.ts, apos qualquer tool que muta dados:
+for (const win of BrowserWindow.getAllWindows()) {
+  win.webContents.send('data:invalidated', {
+    entidades: ['colaboradores', 'escalas'],  // quais mudaram
+    setor_id: 2,  // contexto
+  })
+}
+
+// No renderer, listener global:
+window.electron.ipcRenderer.on('data:invalidated', (entidades) => {
+  // Invalidar stores/hooks relevantes
+})
+```
+
+Isso ja existe parcialmente: `solver-log` e `update:*` usam webContents.send.
+So falta fazer o mesmo pra mutacoes de dados.
+
+---
+
+## 32. PROPOSTA: CONTEXT PROVIDER GLOBAL
+
+### 32.1 O que seria
+
+```typescript
+// Zustand store global — FONTE UNICA pro renderer
+interface AppDataStore {
+  // Entidades globais (raramente mudam)
+  empresa: Empresa | null
+  tiposContrato: TipoContrato[]
+  feriados: Feriado[]
+  regras: RegraDefinicao[]
+
+  // Entidades por setor (mudam com frequencia)
+  setores: Setor[]
+  setorAtivo: number | null  // qual setor ta aberto
+
+  // Dados do setor ativo (calculados/derivados)
+  colaboradores: Colaborador[]
+  postos: Funcao[]
+  demandas: Demanda[]
+  regrasPadrao: RegraHorarioColaborador[]
+  excecoes: Excecao[]
+  escalas: Escala[]
+
+  // Derivados (calculados automaticamente)
+  N: number
+  K: number
+  kMaxSemTT: number
+  cicloSemanas: number
+  coberturaPorDia: number[]
+  demandaPorDia: number[]
+  avisos: AvisoEscala[]
+
+  // Acoes
+  reload: (entidade?: string) => Promise<void>
+  setSetorAtivo: (id: number) => void
+  invalidate: (entidades: string[]) => void
+}
+```
+
+### 32.2 Quem consome
+
+```
+ANTES (cada um por si):
+  SetorDetalhe: 10 useApiData → 10 IPC calls
+  EscalaPagina: 10 useApiData → 10 IPC calls
+  Dashboard: 1 useApiData → stale
+  EscalasHub: 1 useEffect → never reloads
+  ColaboradorLista: 4 useApiData → 4 IPC calls
+
+DEPOIS (context unico):
+  SetorDetalhe: useAppData() → 0 IPC calls (le do store)
+  EscalaPagina: useAppData() → 0 IPC calls (le do store)
+  Dashboard: useAppData() → 0 IPC calls (le do store)
+  Tudo: reativo — muda no banco, atualiza em todos
+```
+
+### 32.3 Quem invalida
+
+```
+1. USUARIO muta via UI → servico chama IPC → handler executa
+   → handler emite 'data:invalidated' → store.invalidate()
+
+2. IA muta via tool → tool executa no main process
+   → tool emite 'data:invalidated' → store.invalidate()
+
+3. MCP muta via HTTP → tool-server executa
+   → emite 'data:invalidated' → store.invalidate()
+
+TODOS os caminhos de mutacao passam pelo mesmo invalidate.
+O renderer SEMPRE ve o dado atualizado.
+```
+
+### 32.4 Impacto
+
+| Metrica | Antes | Depois |
+|---------|-------|--------|
+| IPC calls por navegacao | 10-20 | 0-2 (so reload do setor ativo) |
+| Stale data possivel | Sempre | Nunca (invalidacao reativa) |
+| IA mutacao → renderer | Invisivel | Instantanea (event) |
+| Codigo duplicado (useApiData) | 50+ chamadas | 1 store |
+| Complexidade de cada pagina | Alta (monta tudo) | Baixa (le do store) |
+
+### 32.5 Pra IA do sistema
+
+Com context global, o `IaContexto` poderia incluir:
+
+```typescript
+interface IaContexto {
+  pagina: string
+  setor_id?: number
+  colaborador_id?: number
+  // NOVO: dados vivos do context
+  store_snapshot?: {
+    N: number
+    K: number
+    avisos: AvisoEscala[]
+    coberturaPorDia: number[]
+    demandaPorDia: number[]
+    escalaStatus: string
+    dirty: boolean
+  }
+}
+```
+
+A discovery nao precisaria re-queryar o que o renderer JA TEM.
+Economia de 15+ queries por mensagem quando o setor ta aberto.
+
+E a IA SABERIA o que o usuario TA VENDO — nao so o que ta no banco.
+"O usuario ve cobertura 3 na segunda, demanda 4" → IA sugere ajuste contextual.
+
+---
+
+---
+
+## 33. ESQUELETO DO FLUXO DE DADOS COM CONTEXT
+
+### 33.1 Fluxo HOJE (sem context)
+
+```plantuml
+@startuml
+title Fluxo de dados HOJE — sem context
+skinparam backgroundColor #FEFEFE
+
+database "PGlite" as db
+
+package "Main Process" {
+  [tipc.ts\nIPC handlers] as tipc
+  [solver-bridge.ts\nmonta JSON] as bridge
+  [discovery.ts\n15+ queries/msg] as discovery
+  [tools.ts\n34 tools\ncada uma query DB] as tools
+}
+
+package "Renderer (React)" {
+  [useApiData #1\ncolaboradores] as hook1
+  [useApiData #2\ndemandas] as hook2
+  [useApiData #3\nescalas] as hook3
+  [useApiData #N\n...50+ hooks] as hookN
+  [SetorDetalhe\n10 hooks] as setor
+  [EscalaPagina\n10 hooks] as escala
+  [Dashboard\n1 hook stale] as dash
+}
+
+actor "RH" as rh
+actor "IA Chat" as ia
+
+rh --> setor : navega
+setor --> hook1 : carrega uma vez
+setor --> hook2 : carrega uma vez
+setor --> hookN : carrega uma vez
+hook1 --> tipc : IPC call
+hook2 --> tipc : IPC call
+hookN --> tipc : IPC call
+tipc --> db : SELECT
+
+ia --> tools : tool call
+tools --> db : SELECT/INSERT/UPDATE
+note right of tools : Renderer NAO sabe\nque o dado mudou
+
+discovery --> db : 15+ queries\npor mensagem
+
+rh --> escala : navega (mesmos dados!)
+escala --> hook1 : OUTRA instancia\n→ OUTRA query
+escala --> hook2 : OUTRA instancia\n→ OUTRA query
+
+note bottom of db
+  PROBLEMA:
+  50+ hooks independentes
+  Cada um query DB sozinho
+  Nenhum sabe quando recarregar
+  IA muta → renderer stale
+end note
+@enduml
+```
+
+### 33.2 Fluxo PROPOSTO (com context)
+
+```plantuml
+@startuml
+title Fluxo de dados PROPOSTO — com Context Provider
+skinparam backgroundColor #FEFEFE
+
+database "PGlite" as db
+
+package "Main Process" {
+  [tipc.ts\nIPC handlers] as tipc
+  [solver-bridge.ts\nle do context] as bridge
+  [discovery.ts\nle do context\n(0 queries extras)] as discovery
+  [tools.ts\n34 tools\nmutacoes invalidam] as tools
+
+  [Context Sync\nIPC events\ndata:invalidated] as sync
+}
+
+package "Renderer (React)" {
+  package "Context Provider (Zustand)" {
+    [AppDataStore\n- empresa\n- setores[]\n- colaboradores[]\n- demandas[]\n- postos[]\n- regras[]\n- excecoes[]\n- escalas[]\n+ derivados (N,K,avisos)] as store
+  }
+
+  [SetorDetalhe\nuseAppData()] as setor
+  [EscalaPagina\nuseAppData()] as escala
+  [Dashboard\nuseAppData()] as dash
+  [EscalasHub\nuseAppData()] as hub
+  [Preview ciclo\nuseAppData()] as preview
+}
+
+actor "RH" as rh
+actor "IA Chat" as ia
+
+rh --> setor : navega
+setor --> store : le (0 IPC)
+escala --> store : le (0 IPC)
+dash --> store : le (0 IPC)
+preview --> store : le (0 IPC) + derivados
+
+store --> tipc : reload(entidade) → 1 IPC call
+tipc --> db : SELECT
+
+ia --> tools : tool call
+tools --> db : INSERT/UPDATE
+tools --> sync : emite 'data:invalidated'
+sync --> store : store.invalidate(['colaboradores'])
+store --> tipc : reload('colaboradores')
+tipc --> db : SELECT (fresh)
+
+rh --> setor : edita algo
+setor --> tipc : save via IPC
+tipc --> db : UPDATE
+tipc --> sync : emite 'data:invalidated'
+sync --> store : invalidate + reload
+
+discovery --> store : le snapshot (0 queries)
+note right of discovery
+  IaContexto inclui store_snapshot
+  Discovery nao precisa re-queryar
+  o que o renderer JA carregou
+end note
+
+note bottom of store
+  FONTE UNICA:
+  1 store, N consumidores
+  Invalidacao reativa
+  IA e UI sempre sincronizados
+  Derivados calculados automaticamente
+end note
+@enduml
+```
+
+### 33.3 Esqueleto de codigo — onde vive cada peca
+
+```
+src/
+├── renderer/src/
+│   ├── store/
+│   │   ├── iaStore.ts              ← JA EXISTE (chat IA)
+│   │   ├── restorePreviewStore.ts  ← JA EXISTE (backup)
+│   │   └── appDataStore.ts         ← NOVO: context global
+│   │       │
+│   │       │  // Entidades globais (carrega 1x ao abrir app)
+│   │       │  empresa: Empresa | null
+│   │       │  tiposContrato: TipoContrato[]
+│   │       │  feriados: Feriado[]
+│   │       │  regras: RegraDefinicao[]
+│   │       │
+│   │       │  // Entidades por setor (carrega ao trocar setor)
+│   │       │  setorAtivo: number | null
+│   │       │  colaboradores: Colaborador[]
+│   │       │  postos: Funcao[]
+│   │       │  demandas: Demanda[]
+│   │       │  regrasPadrao: RegraHorarioColaborador[]
+│   │       │  excecoes: Excecao[]
+│   │       │  escalas: Escala[]
+│   │       │
+│   │       │  // Derivados (recalculam quando deps mudam)
+│   │       │  ciclo: { N, K, kMaxSemTT, semanas }
+│   │       │  cobertura: { porDia: number[], demandaPorDia: number[] }
+│   │       │  avisos: AvisoEscala[]
+│   │       │
+│   │       │  // Acoes
+│   │       │  init(): carrega globais
+│   │       │  setSetorAtivo(id): carrega dados do setor
+│   │       │  invalidate(entidades[]): recarrega do banco
+│   │       │  snapshot(): retorna objeto leve pro IaContexto
+│   │       │
+│   ├── hooks/
+│   │   ├── useApiData.ts           ← MORRE gradualmente
+│   │   └── useAppData.ts           ← NOVO: hook que le do store
+│   │       │  // Seletor tipado
+│   │       │  const { colaboradores, postos, avisos } = useAppData()
+│   │       │  // Reativo: re-render quando qualquer dep muda
+│   │       │
+│   ├── paginas/
+│   │   ├── SetorDetalhe.tsx        ← ANTES: 10 useApiData
+│   │   │                             DEPOIS: 1 useAppData()
+│   │   ├── EscalaPagina.tsx        ← ANTES: 10 useApiData
+│   │   │                             DEPOIS: 1 useAppData()
+│   │   └── ...
+│   │
+│   └── App.tsx                     ← NOVO: <AppDataProvider> wrapping tudo
+│       │  // Listener global de invalidacao
+│       │  useEffect(() => {
+│       │    window.electron.ipcRenderer.on('data:invalidated', (entidades) => {
+│       │      appDataStore.invalidate(entidades)
+│       │    })
+│       │  }, [])
+│
+├── main/
+│   ├── tipc.ts                     ← ADICIONA: emitir 'data:invalidated'
+│   │   // Apos CADA handler que muta dados:
+│   │   for (const win of BrowserWindow.getAllWindows()) {
+│   │     win.webContents.send('data:invalidated', {
+│   │       entidades: ['colaboradores'],
+│   │       setor_id: input.setor_id
+│   │     })
+│   │   }
+│   │
+│   ├── ia/
+│   │   ├── discovery.ts            ← MUDA: le store_snapshot do IaContexto
+│   │   │   // ANTES: 15+ queries por mensagem
+│   │   │   // DEPOIS: le do snapshot + queries complementares
+│   │   │
+│   │   └── tools.ts                ← MUDA: emite 'data:invalidated' apos mutacao
+│   │       // ANTES: muta e ninguem sabe
+│   │       // DEPOIS: muta → emite → renderer atualiza
+│   │
+│   └── tool-server.ts              ← MUDA: MCP tools tambem emitem invalidacao
+```
+
+### 33.4 O que MORRE com o context
+
+```
+MORRE:
+  - useApiData (gradualmente — substitui por useAppData)
+  - converterNivel1ParaEscala (context ja tem formato certo)
+  - previewNivel1 useMemo gigante (context calcula derivados)
+  - 50+ hooks independentes espalhados por 10+ paginas
+  - Stale data (invalidacao reativa resolve)
+
+VIVE:
+  - IPC handlers em tipc.ts (quem faz o CRUD real)
+  - PGlite (banco continua sendo a fonte de verdade)
+  - Servicos em servicos/ (mas viram thin wrappers do store)
+  - Zustand stores existentes (iaStore, restorePreviewStore)
+```
+
+---
+
+---
+
+## 34. TABELA COMPLETA — 34 TOOLS E IMPACTO DO CONTEXT
+
+### 34.1 Classificacao READ vs WRITE
+
+**Pure READ (9 tools — cache candidates):**
+buscar_colaborador, consultar, preflight, explicar_violacao,
+listar_perfis_horario, listar_conhecimento, explorar_relacoes,
+listar_memorias, resumir_horas_setor
+
+**WRITE (19 tools — bypass cache, emitir invalidacao):**
+criar, atualizar, deletar, salvar_posto_setor, editar_regra,
+gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala,
+cadastrar_lote, salvar_regra_horario_colaborador, salvar_demanda_excecao_data,
+upsert_regra_excecao_data, resetar_regras_empresa, salvar_perfil_horario,
+deletar_perfil_horario, configurar_horario_funcionamento,
+salvar_conhecimento, salvar_memoria
+
+**MIXED/HEAVY (6 tools):**
+diagnosticar_escala, diagnosticar_infeasible, preflight_completo,
+obter_alertas, fazer_backup, remover_memoria
+
+### 34.2 Tools que MORREM ou SIMPLIFICAM com context
+
+| Tool | Status com context | Motivo |
+|------|-------------------|--------|
+| `listar_memorias` | **ELIMINA** | Discovery ja injeta todas as memorias em cada turno |
+| `consultar("setores")` | **ELIMINA** | Discovery ja injeta lista completa de setores |
+| `consultar("feriados")` | **ELIMINA** (30d) | Discovery ja injeta feriados proximos 30 dias |
+| `consultar("regra_empresa")` | **ELIMINA** | Discovery ja injeta overrides de regras |
+| `obter_alertas` | **ELIMINA** | Discovery ja roda `coreAlerts()` em cada turno |
+| `buscar_colaborador` (no setor) | **SIMPLIFICA** | `_infoSetor()` ja carrega todos os colabs do setor |
+| `listar_conhecimento` | **SIMPLIFICA** | `_statsKnowledge()` ja injeta contagem |
+| `explicar_violacao` | **SIMPLIFICA** | Dicionario ja esta in-memory (linha 874) |
+| `preflight` | **SIMPLIFICA** | Counts ja estao no discovery |
+
+**9 tools afetadas — 5 eliminaveis, 4 simplificaveis.**
+
+### 34.3 Discovery vs Tools — sobreposicao de queries
+
+O `buildContextBriefing()` roda 15+ queries POR MENSAGEM. Muitas sao
+identicas ao que as tools consultam depois:
+
+| Discovery ja tem | Tool que repete a query |
+|-----------------|----------------------|
+| Lista setores + count colabs | `consultar("setores")` |
+| Feriados 30d | `consultar("feriados")` |
+| Regras overrides | `consultar("regra_empresa")`, `editar_regra` |
+| Perfil completo setor (colabs, postos, demandas, regras, escala) | `buscar_colaborador`, `consultar("colaboradores")` |
+| Perfil completo colaborador (regras, excecoes) | `buscar_colaborador` |
+| Alertas (coreAlerts) | `obter_alertas` |
+| Memorias | `listar_memorias` |
+| Knowledge stats | `listar_conhecimento` |
+
+**Com context, a discovery le do store (0 queries extras).
+E as tools redundantes morrem.**
+
+### 34.4 Tools que PRECISAM invalidar o context
+
+| Tool | Entidades invalidadas |
+|------|----------------------|
+| `criar` | Depende da entidade: colaboradores, excecoes, demandas, setores, feriados, funcoes |
+| `atualizar` | A entidade mutada |
+| `deletar` | A entidade deletada |
+| `gerar_escala` | escalas, alocacoes |
+| `ajustar_alocacao` | alocacoes |
+| `ajustar_horario` | alocacoes |
+| `oficializar_escala` | escalas |
+| `salvar_posto_setor` | funcoes, colaboradores |
+| `editar_regra` | regra_empresa |
+| `salvar_regra_horario_colaborador` | colaborador_regra_horario (regrasPadrao) |
+| `salvar_demanda_excecao_data` | demandas_excecao_data |
+| `upsert_regra_excecao_data` | colaborador_regra_horario_excecao_data |
+| `cadastrar_lote` | Multiplas entidades |
+| `resetar_regras_empresa` | regra_empresa |
+| `salvar_perfil_horario` | contrato_perfis_horario |
+| `deletar_perfil_horario` | contrato_perfis_horario |
+| `configurar_horario_funcionamento` | empresa/setor_horario_semana |
+| `salvar_conhecimento` | knowledge tables |
+| `salvar_memoria` | ia_memorias |
+
+**Padrao:** toda tool WRITE emite `data:invalidated` com lista de entidades.
+O context store invalida e recarrega. O renderer atualiza. A IA ve fresh na proxima msg.
+
+### 34.5 O que o IaContexto ganharia
+
+```typescript
+// ANTES (hoje):
+interface IaContexto {
+  rota: string
+  pagina: string
+  setor_id?: number
+  colaborador_id?: number
+}
+// → discovery faz 15+ queries pra montar o briefing
+
+// DEPOIS (com context):
+interface IaContexto {
+  rota: string
+  pagina: string
+  setor_id?: number
+  colaborador_id?: number
+  // NOVO: snapshot do context store
+  store?: {
+    empresa: { nome: string; grid_minutos: number; tolerancia: number }
+    setor?: { nome: string; regime: string; hora_abertura: string; hora_fechamento: string }
+    colaboradores?: Array<{ id: number; nome: string; tipo: string; funcao: string | null }>
+    postos?: Array<{ id: number; apelido: string; titular: string | null; ativo: boolean }>
+    demanda?: { porDia: Record<string, number>; domPico: number }
+    ciclo?: { N: number; K: number; semanas: number; kMaxSemTT: number }
+    cobertura?: { porDia: number[]; deficitDias: string[] }
+    avisos?: Array<{ id: string; nivel: string; titulo: string }>
+    escalaAtual?: { id: number; status: string; cobertura: number; violacoes_hard: number }
+  }
+}
+// → discovery le do store.snapshot (0-2 queries complementares)
+// → IA sabe o que o RH TA VENDO, nao so o que ta no banco
+```
+
+Isso e MUITO menor que o dump do banco inteiro.
+E ORGANIZADO — nao e "caralhada de infos", e o que importa pro contexto.
+Tratado, filtrado, derivado. O mesmo que o renderer usa.
+
+---
+
+---
+
+## 35. FOLGA FIXA NO DOMINGO — A BOMBA LOGICA
+
+### 35.1 O que acontece quando alguem tem folga_fixa = DOM
+
+A pessoa NUNCA trabalha domingo. Isso DESTRÓI toda a logica de ciclo pra ela:
+
+```
+LOGICA NORMAL (folga_fixa = SAB, por exemplo):
+  Ciclo domingo funciona (pessoa participa do rodizio)
+  XOR: trabalha DOM → folga na variavel / nao trabalha DOM → trabalha na variavel
+  Padrao TFFTF nos domingos do ciclo
+  2 folgas/semana: fixa (SAB) + variavel (quando trabalha dom) ou DOM (quando folga dom)
+
+LOGICA COM FIXA = DOM:
+  Pessoa NUNCA trabalha domingo (works_day[c, dom] == 0 HARD)
+  XOR: works_day[dom] + works_day[var] == 1
+       → 0 + works_day[var] == 1
+       → works_day[var] == 1 (TRABALHA no dia variavel SEMPRE)
+  A variavel NUNCA ativa como folga!
+  Resultado: so 1 folga/semana (a fixa = DOM)
+  5x2 exige 2 folgas → CONFLITO → solver procura outra folga → logica quebra
+```
+
+### 35.2 Onde CADA peca quebra
+
+**No solver (Python):**
+```
+add_folga_fixa_5x2:     works_day[c, dom] == 0 (HARD, todo domingo)
+add_folga_variavel:     works_day[c, dom] + works_day[c, var] == 1
+                        → 0 + works_day[c, var] == 1
+                        → variavel SEMPRE trabalho (XOR forca)
+add_dias_trabalho:      exige 5 dias/semana (5x2)
+                        → com DOM folga + variavel trabalho = so 1 folga
+                        → solver precisa achar OUTRA folga em algum lugar
+                        → mas nao tem constraint pra isso → resultado imprevisivel
+add_domingo_ciclo_hard: ciclo N/M nos domingos
+                        → mas a pessoa NUNCA trabalha dom
+                        → sliding window conta 0 sempre
+                        → constraint sempre satisfeita (trivial) mas sem significado
+```
+
+**No preview (TS):**
+```
+gerarCicloFase1:  NUNCA gera fixa=DOM (p%6 = 0-5 = SEG-SAB)
+                  Mas se folgas_forcadas traz fixa=DOM de regra do banco,
+                  base1 = indexOf('DOM') = ??? (DOM nao ta no DIAS_IDX SEG-SAB!)
+                  Na verdade indexOf retorna -1 → base1 = -1 → grid[p][w*7 + (-1)]
+                  → ACESSO FORA DO ARRAY → bug silencioso
+```
+
+**No calcularCicloDomingo (bridge):**
+```
+calcularCicloDomingo:  EXCLUI quem tem folga_fixa=DOM de N_dom
+                       (linha 183: if padrao.folga_fixa_dia_semana === 'DOM' return false)
+                       CORRETO — nao conta no N
+                       Mas o ciclo calculado e pra quem PARTICIPA
+                       A pessoa com fixa=DOM recebe esse ciclo mesmo assim
+                       (linhas 497-501: aplica a todos que nao sao INTERMITENTE)
+                       → pessoa recebe domingo_ciclo mas NUNCA trabalha dom
+                       → ciclo sem sentido pra ela
+```
+
+### 35.3 O padrao TFFTF morre
+
+O ciclo de domingos assume que TODOS participam do rodizio.
+Com alguem tendo fixa=DOM:
+- N efetivo diminui (correto no calcularCicloDomingo)
+- Mas o padrao TFFTF so funciona se todos participam
+- A pessoa com fixa=DOM nao aparece no T nem no F do domingo
+- O ciclo dos OUTROS muda (menos gente pra cobrir)
+- A XOR forca a variavel como trabalho (nunca folga)
+- O solver nao sabe dar a 2a folga semanal de forma consistente
+
+### 35.4 O que deveria acontecer
+
+**Regra: folga_fixa = DOM e um CASO ESPECIAL que muda o modelo inteiro pra essa pessoa.**
+
+Quando fixa = DOM:
+```
+1. Pessoa SAI do calculo de ciclo domingo (ja faz — calcularCicloDomingo)
+2. Pessoa NAO recebe domingo_ciclo_trabalho/folga (solver deve pular)
+3. XOR NAO se aplica (sem domingo trabalhado, sem condicional)
+4. Folga variavel perde sentido (era condicional ao domingo)
+5. A pessoa precisa de 2 folgas/semana: DOM (fixa) + OUTRO dia (2a folga fixa)
+6. O OUTRO dia e escolhido pelo auto ou pelo RH
+7. Essencialmente: pessoa com fixa=DOM vira "5x2 sem rodizio"
+```
+
+### 35.5 Onde corrigir
+
+**No solver (constraints.py):**
+```python
+# add_folga_variavel_condicional — PULAR se folga_fixa == DOM
+for c in range(C):
+    if colabs[c].get("folga_fixa_dia_semana") == "DOM":
+        continue  # sem XOR — pessoa nao participa do rodizio
+    var_day = colabs[c].get("folga_variavel_dia_semana")
+    ...
+
+# add_domingo_ciclo_hard — PULAR se folga_fixa == DOM
+for c in range(C):
+    if colabs[c].get("folga_fixa_dia_semana") == "DOM":
+        continue  # nao tem ciclo
+    ...
+
+# add_dom_max_consecutivo — PULAR se folga_fixa == DOM
+for c in range(C):
+    if colabs[c].get("folga_fixa_dia_semana") == "DOM":
+        continue  # nunca trabalha dom, sem consecutivo
+    ...
+```
+
+**No preview (TS):**
+```typescript
+// gerarCicloFase1 — tratar fixa=DOM como caso especial
+if (forcada?.folga_fixa_dia === 6) {  // 6 = DOM no array de 7 dias
+  // Pessoa nao participa do rodizio de domingos
+  // Todos os domingos sao F pra ela (ja e assim no Step 1 se K < N)
+  // Step 2: dar 1 folga extra em dia de semana (nao variavel condicional)
+  // A variavel nao faz sentido — usar como "2a folga fixa"
+}
+```
+
+**Na bridge (solver-bridge.ts):**
+```typescript
+// Enriquecer colaboradores — NAO setar ciclo pra quem tem fixa=DOM
+for (const c of colaboradores) {
+  if (c.tipo_trabalhador === 'INTERMITENTE') continue
+  if (c.folga_fixa_dia_semana === 'DOM') {
+    // Sem ciclo, sem XOR, sem rodizio
+    c.domingo_ciclo_trabalho = 0
+    c.domingo_ciclo_folga = 1
+    c.folga_variavel_dia_semana = null  // variavel nao faz sentido
+    continue
+  }
+  c.domingo_ciclo_trabalho = cicloTrabalho
+  c.domingo_ciclo_folga = cicloFolga
+}
+```
+
+**Na UI (EscalaCicloResumo):**
+```
+Se fixa=DOM:
+  - Coluna Variavel mostra "-" (nao aplicavel)
+  - OU mostra o dia da 2a folga fixa (nao e "variavel condicional", e "2a fixa")
+  - Explicar: "Folga fixa domingo. Nao participa do rodizio."
+```
+
+### 35.6 Impacto no ciclo dos OUTROS
+
+Quando 1 pessoa sai do rodizio (fixa=DOM), o N diminui:
+```
+Acougue: 5 pessoas, 1 com fixa=DOM
+  N_dom = 4 (sem a pessoa com fixa=DOM)
+  K = demanda = 2
+  Ciclo = 4/gcd(4,2) = 2 semanas
+
+Sem ninguem com fixa=DOM:
+  N_dom = 5
+  Ciclo = 5/gcd(5,2) = 5 semanas
+```
+
+O ciclo MUDA pra todo mundo. Isso e esperado e correto —
+menos gente no rodizio = ciclo diferente.
+
+### 35.7 Resumo
+
+```
+FIXA = DOM muda TUDO pra essa pessoa:
+  ✗ Sem rodizio de domingos
+  ✗ Sem XOR dom↔variavel
+  ✗ Sem padrao TFFTF
+  ✗ Variavel perde sentido condicional
+  ✓ Vira "2 folgas fixas por semana" (DOM + outro dia)
+  ✓ Os OUTROS continuam com ciclo (N menor)
+
+HOJE: o solver NAO trata esse caso. Aplica XOR, ciclo, tudo.
+       Resultado: XOR forca variavel como trabalho, pessoa fica com 1 folga,
+       solver improvisa a 2a folga, padrao fica imprevisivel.
+
+FIX: detectar fixa=DOM e PULAR XOR/ciclo/dom_max pra essa pessoa.
+     Tratar como "5x2 sem rodizio" — 2 folgas fixas por semana.
+```
+
+---
+
+---
+
+## 36. COMPONENTE DE GRID — DUPLICACAO, INCONSISTENCIA, DoD
+
+### 36.1 Arvore de componentes que renderizam o grid T/F
+
+```
+COMPONENTES DE GRID (estado atual):
+│
+├── EscalaCicloResumo.tsx ← PRINCIPAL (700 linhas)
+│   ├── Siglas: T, FF, FV, DT, DF, I, ., -
+│   ├── View: tabela (1 semana) / resumo (ciclo completo)
+│   ├── Edit: onFolgaChange (dropdowns F/V)
+│   ├── Export: sim (print-colors class)
+│   ├── Usado em: SetorDetalhe (preview + solver result), EscalaPagina,
+│   │             EscalasHub, ExportarEscala
+│   └── Legenda: COMPLETA (T FF FV DT DF I .)
+│
+├── SimuladorCicloGrid.tsx ← DUPLICATA (370 linhas)
+│   ├── Siglas: T, F, FF, FV, DT, DF (sem I, sem ., sem -)
+│   ├── View: tabela / resumo (mesma logica, reimplementada)
+│   ├── Edit: onFolgaChange (dropdowns F/V, reimplementados)
+│   ├── Export: nao
+│   ├── Usado em: SimulaCicloPagina (Dashboard brinquedo)
+│   ├── Legenda: NAO TEM
+│   └── PROBLEMA: DT mostra "T", DF mostra "F" (simplificado)
+│
+├── gerarHTMLFuncionario.ts ← EXPORT HTML (220 linhas)
+│   ├── Siglas: [F], (V), F, I, horarios
+│   ├── View: cards mobile + tabela print
+│   ├── Edit: NAO (view-only)
+│   ├── Export: SIM (HTML self-contained)
+│   ├── Usado em: EscalaPagina, EscalasHub (botao Exportar)
+│   └── PROBLEMA: [F] e (V) ao inves de FF e FV
+│
+├── EscalaGrid.tsx ← GRID DE ALOCACOES (diferente)
+│   ├── Siglas: "F", "(V)", horarios, "—"
+│   ├── NAO usa T/FF/FV/DT/DF
+│   ├── Mostra HORARIOS, nao padrao T/F
+│   └── Diferente o suficiente pra ser outro componente
+│
+└── TimelineGrid.tsx ← TIMELINE (diferente)
+    ├── Sem siglas — barras horizontais por slot 15min
+    └── Outro dominio visual completamente
+```
+
+### 36.2 Tabela de inconsistencias
+
+| Aspecto | EscalaCicloResumo | SimuladorCicloGrid | gerarHTMLFuncionario |
+|---------|------------------|--------------------|----------------------|
+| **Domingo trabalho** | DT | DT (mostra "T") | horario |
+| **Domingo folga** | DF | DF (mostra "F") | — |
+| **Folga fixa** | FF | FF | [F] |
+| **Folga variavel** | FV | FV | (V) |
+| **Folga generica** | FF (fallback) | F (tipo proprio) | F |
+| **Indisponivel** | I | — (nao suporta) | I |
+| **Sem alocacao** | . | — (nao ocorre) | — |
+| **Sem titular** | - | — (nao ocorre) | — |
+| **Legenda** | Completa (7 itens) | NAO TEM | Inline no HTML |
+| **View toggle** | Dentro do componente ou prop | Dentro do componente | N/A |
+| **Edit dropdowns** | onFolgaChange + folgaBloqueadaColabIds | onFolgaChange + blockedRows | Nao |
+| **Print support** | print-colors class | Nao | HTML self-contained |
+
+### 36.3 O que DEVERIA existir — 1 componente, N modos
+
+```
+CicloGrid (componente unico)
+│
+├── Props:
+│   ├── data: CicloGridData (formato unificado)
+│   ├── mode: 'view' | 'edit' | 'export' | 'print'
+│   ├── viewMode: 'tabela' | 'resumo'
+│   ├── showLegend: boolean
+│   ├── showCobertura: boolean
+│   ├── showDemanda: boolean (NOVO — linha de demanda embaixo)
+│   ├── onFolgaChange?: callback
+│   ├── blockedIds?: number[]
+│   └── className?: string
+│
+├── Modos:
+│   ├── VIEW: so visualizacao, sem dropdowns
+│   ├── EDIT: dropdowns ativos, avisos inline
+│   ├── EXPORT: print-colors, sem interatividade
+│   └── PRINT: versao compacta pra impressao
+│
+├── Siglas (padrao unico):
+│   ├── T = Trabalho (verde)
+│   ├── FF = Folga Fixa (cinza)
+│   ├── FV = Folga Variavel (amarelo)
+│   ├── DT = Domingo Trabalhado (amarelo + ring)
+│   ├── DF = Domingo Folga (azul)
+│   ├── I = Indisponivel (vermelho)
+│   ├── · = Sem alocacao (muted)
+│   └── — = Sem titular (muted)
+│
+├── Legenda: sempre visivel (ou prop pra esconder)
+│
+├── CicloGridData (formato unificado):
+│   interface CicloGridData {
+│     rows: Array<{
+│       label: string          // nome ou posto
+│       sublabel?: string      // posto se label e nome
+│       variavel: DiaSemana | null
+│       fixa: DiaSemana | null
+│       blocked: boolean
+│       semanas: Array<{
+│         dias: Array<'T'|'FF'|'FV'|'DT'|'DF'|'I'|'.'|'-'>
+│       }>
+│     }>
+│     cobertura: number[][]    // por semana por dia
+│     demanda?: number[]       // por dia (SEG-DOM) — pra comparar
+│     cicloSemanas: number
+│   }
+│
+└── Quem consome:
+    ├── SetorDetalhe → CicloGrid(data=preview, mode='edit')
+    ├── EscalaPagina → CicloGrid(data=escalaReal, mode='view')
+    ├── SimulaCicloPagina → CicloGrid(data=brinquedo, mode='edit')
+    ├── EscalasHub → CicloGrid(data=escalaReal, mode='view')
+    ├── ExportarEscala → CicloGrid(data=escalaReal, mode='export')
+    └── gerarHTMLFuncionario → CicloGrid(data=individual, mode='print')
+```
+
+### 36.4 DoD (Definition of Done) pra componente de grid
+
+**Funcional:**
+- [ ] Siglas padrao unico (T, FF, FV, DT, DF, I, ·, —)
+- [ ] Cores padrao unico (success, slate, warning, blue, rose, muted)
+- [ ] View modes: tabela (1 semana + S1..SN) e resumo (ciclo completo)
+- [ ] Edit mode: dropdowns F/V com blockedIds
+- [ ] Cobertura por dia na ultima linha
+- [ ] Demanda por dia comparativa (NOVO)
+- [ ] Deficit pintado de vermelho
+- [ ] Legenda visivel (ou escondivel via prop)
+
+**Exportavel:**
+- [ ] `mode='export'` renderiza com print-colors, sem interatividade
+- [ ] `mode='print'` renderiza versao compacta pra tabela de impressao
+- [ ] Siglas iguais em tela e em export (nao [F]/(V), mas FF/FV)
+- [ ] Cores funcionam em dark mode E light mode
+- [ ] Cores funcionam em impressao (print-colors class)
+
+**Integracao:**
+- [ ] Aceita dados do context store (nao monta do zero)
+- [ ] onFolgaChange dispara invalidacao no context
+- [ ] Nao depende de SimulaCicloOutput nem de EscalaCompletaV3
+- [ ] Aceita CicloGridData (formato unificado)
+- [ ] Conversor: SimulaCicloOutput → CicloGridData
+- [ ] Conversor: EscalaCompletaV3 → CicloGridData
+
+**Morte dos duplicatas:**
+- [ ] SimuladorCicloGrid.tsx MORRE (substituido por CicloGrid mode=edit)
+- [ ] Logica de resolveSymbol UNIFICADA (1 funcao, 1 lugar)
+- [ ] gerarHTMLFuncionario usa CicloGrid mode=print (ou pelo menos mesmas siglas)
+
+### 36.5 Prioridade
+
+```
+🟡 P1 — Unificar APOS o Context Provider existir.
+
+Hoje: unificar componentes sem context = mais gambiarras de props.
+Com context: CicloGrid le do store, nao precisa de 10 props.
+A unificacao faz sentido DEPOIS que o context estiver funcionando.
+
+Excecao: padronizar siglas PODE ser feito antes (e rapido).
+Trocar [F]→FF e (V)→FV no export e 5 linhas.
+```
+
+---
+
+---
+
+## 37. ELEGIBILIDADE PRA DOMINGO — NAO E SO CONTAR GENTE
+
+### 37.1 O problema
+
+Hoje o calculo de N_dom (quem pode trabalhar domingo) e burro:
+
+```python
+# calcularCicloDomingo — estado atual:
+nDom = colabRows.filter(c =>
+  tipo_trabalhador !== 'INTERMITENTE' &&
+  folga_fixa_dia_semana !== 'DOM'
+).length
+```
+
+So exclui 2 casos: intermitente e folga_fixa=DOM.
+
+**O que FALTA considerar:**
+
+| Motivo de indisponibilidade DOM | Considerado hoje? | Onde vive no banco |
+|--------------------------------|-------------------|-------------------|
+| INTERMITENTE | SIM | `colaboradores.tipo_trabalhador` |
+| Folga fixa = DOM | SIM | `colaborador_regra_horario.folga_fixa_dia_semana` |
+| Ferias que caem no domingo | NAO | `excecoes` (data_inicio, data_fim) |
+| Atestado que cai no domingo | NAO | `excecoes` (tipo=ATESTADO) |
+| Bloqueio que cai no domingo | NAO | `excecoes` (tipo=BLOQUEIO) |
+| Excecao de horario com domingo_forcar_folga | NAO | `colaborador_regra_horario_excecao_data` |
+| Contrato com horario que nao cobre DOM | NAO | `contrato_perfis_horario` / regra inicio/fim |
+| Estagiario com restricao legal | NAO (PODE dom) | Nao se aplica — estagiario participa |
+
+### 37.2 Impacto no ciclo
+
+```
+CENARIO: Acougue, 5 CLT, 3 meses, demanda DOM=2
+
+Calculo BURRO (hoje):
+  N_dom = 5 (todos elegiveis)
+  K = 2
+  Ciclo = 5/gcd(5,2) = 5 semanas
+
+REALIDADE:
+  Alex em ferias 15-30/mar (3 domingos bloqueados)
+  Jessica com excecao "domingo_forcar_folga" em 22/mar
+  N_dom EFETIVO varia por semana:
+    S1: 5 (todos)
+    S2: 4 (Alex ferias)
+    S3: 3 (Alex ferias + Jessica excecao)
+    S4: 4 (Alex ferias)
+    S5: 5 (todos)
+
+O ciclo FIXO de 5 semanas nao reflete a realidade.
+Na S3, N_dom=3 e K=2 → kMaxSemTT=1 → TT inevitavel nessa semana.
+Mas o sistema nao sabe e gera como se fossem 5 disponiveis.
+```
+
+### 37.3 O bridge JA TEM essa info
+
+O `buildSolverInput` em `solver-bridge.ts` JA calcula `blocked_days` por
+colaborador (linhas 396-473). Ele sabe EXATAMENTE quem esta indisponivel
+em cada dia do periodo. Mas essa info so vai pro Python — o TS (preview)
+nao ve.
+
+```
+O que o bridge monta e o TS NAO usa:
+  - regrasColaboradorDia[]: folga_fixa por dia por pessoa
+  - excecoes bloqueiam dias (ferias/atestado/bloqueio)
+  - excecaoData com domingo_forcar_folga
+  - feriados com proibido_trabalhar
+```
+
+### 37.4 O que o context precisa entregar
+
+Com context inteligente, a elegibilidade de domingo nao e uma contagem —
+e um MAPA por semana:
+
+```typescript
+interface ElegibilidadeDomingo {
+  // Por semana do periodo
+  semanas: Array<{
+    data_domingo: string          // '2026-03-08'
+    elegiveis: number[]           // IDs dos colabs disponiveis
+    indisponiveis: Array<{
+      colaborador_id: number
+      motivo: string              // 'ferias' | 'atestado' | 'bloqueio' | 'folga_fixa' | 'excecao'
+      detalhe: string             // 'Ferias 15-30/mar'
+    }>
+    n_efetivo: number             // quantos REALMENTE podem
+    k_atende: boolean             // n_efetivo >= K?
+    tt_inevitavel: boolean        // n_efetivo < kMaxSemTT?
+  }>
+
+  // Resumo
+  n_min: number                   // menor N efetivo do periodo
+  n_max: number                   // maior N efetivo
+  semanas_com_deficit: number     // quantas semanas n_efetivo < K
+  semanas_com_tt: number          // quantas semanas TT inevitavel
+}
+```
+
+Isso e calculavel pelo TS (com dados do banco via context).
+Nao precisa de solver. Precisa de excecoes + feriados + regras.
+
+### 37.5 O componente NAO pode ser tapado
+
+O grid precisa MOSTRAR isso:
+
+```
+        SEG  TER  QUA  QUI  SEX  SAB  DOM
+Alex     T    T    T    T    T    FF   DT    ← semana normal
+Alex     —    —    —    —    —    —    —     ← semana em ferias
+Jessica  T    T    T    T    T    FF   DF    ← domingo com excecao
+Jessica  T    T    T    T    T    FF   DT    ← domingo sem excecao
+
+COBERTURA DOM:
+  S1: 3 de 5 ✓
+  S2: 2 de 5 ✓ (Alex ferias)
+  S3: 1 de 5 ❌ (Alex ferias + Jessica excecao) ← DEFICIT
+  S4: 2 de 5 ✓
+```
+
+O componente mostra:
+- Quem ta indisponivel e POR QUE (ferias, atestado, excecao)
+- Cobertura de domingo POR SEMANA (nao media)
+- Semanas com deficit MARCADAS
+- TT inevitavel avisado POR SEMANA
+
+### 37.6 O solver JA lida com isso
+
+O solver Python JA recebe `blocked_days` por colaborador e respeita:
+- Ferias → `works_day[c, d] == 0` (HARD)
+- Feriado proibido → `works_day[c, d] == 0` (HARD)
+- Excecao domingo_forcar_folga → `works_day[c, dom] == 0`
+
+O problema nao e o solver — e que o PREVIEW e o PRE-FLIGHT nao sabem disso.
+O RH ve preview bonito com todos disponiveis, clica Gerar, e o solver
+retorna INFEASIBLE porque na S3 so tem 1 pessoa disponivel pro domingo.
+
+### 37.7 Adicao ao problema do folga_fixa=DOM (secao 35)
+
+Alem do que ja foi documentado na secao 35, a folga_fixa=DOM interage com
+a elegibilidade variavel:
+
+```
+CENARIO COMPOSTO:
+  Jessica: folga_fixa = DOM (nunca trabalha dom)
+  Alex: ferias 15-30/mar (nao trabalha dom nessas semanas)
+  Jose: excecao 22/mar domingo_forcar_folga = true
+
+  S3 (22/mar): N_dom efetivo = 5 - Jessica(fixa) - Alex(ferias) - Jose(excecao) = 2
+  Se K=2: funciona (apertado, zero margem)
+  Se K=3: IMPOSSIVEL nessa semana
+
+  O preview burro mostra N=4 (5 - Jessica) constante.
+  O solver descobre que N varia de 2 a 4 por semana.
+```
+
+### 37.8 Resumo — o que precisa mudar
+
+```
+HOJE:
+  N_dom = contagem simples (exclui intermitente + fixa=DOM)
+  Constante pro periodo inteiro
+  Nao sabe de ferias, atestados, excecoes, feriados
+
+PRECISA:
+  N_dom = mapa por semana (exclui tudo que bloqueia)
+  Variavel por semana
+  Sabe de ferias, atestados, excecoes, feriados
+  Componente mostra por semana
+  Avisos de deficit por semana
+
+QUEM FAZ:
+  Context inteligente calcula (TS com dados do banco)
+  Bridge ja tem a info (blocked_days) — so precisa expor
+  Solver ja respeita — so precisa que o preview SAIBA antes
+  Componente mostra — nao inventa, le do context
+```
+
+---
+
+## 38. ENCERRAMENTO DA SURRA — MAPA GERAL
+
+### 38.1 Todas as secoes do ANALYST
+
+| Secao | Tema | Status |
+|-------|------|--------|
+| 1 | Visao geral (mind map) | Feito |
+| 2 | Insight central — fluxo progressivo | Feito |
+| 3 | O que o TS sabe fazer sem solver | Feito |
+| 4 | Fluxo progressivo da UI (4 camadas) | Feito |
+| 5 | Regras de negocio por camada | Feito |
+| 6 | Componente unico — o que aparece e quando | Feito |
+| 7 | Arquivos e responsabilidades | Feito |
+| 8 | Bugs e problemas conhecidos (10) | Feito |
+| 9 | Descobertas da sessao (D1-D7) | Feito |
+| 10 | Questoes em aberto (Q1-Q5) | Feito |
+| 11 | Disclaimers criticos | Feito |
+| 12 | Mini-analytics por camada | Feito |
+| 13 | Modo inteligente (toggle sugestoes) | Feito |
+| 14 | Como o Python funciona (Phase 1+2+multipass) | Feito |
+| 15 | TS vs Python — fonte unica e way out (4 opcoes) | Feito |
+| 16 | Tabela consolidada Phase 1/Pinned/Multipass | Feito |
+| 17 | Python HTTP (servidor persistente — possibilidade) | Feito |
+| 18 | Preflight itens minimos — NUNCA ESQUECER | Feito |
+| 19 | Area de avisos separada (userfriendly + IA) | Feito |
+| 20 | Fluxo Validar/Solucionar com diff | Feito |
+| 21 | Prioridades (P0/P1/P2) | Feito |
+| 22 | TS vs Python — NAO compartilham nada | Feito |
+| 23 | O TS gera cego — precisa ficar inteligente | Feito |
+| 24 | Erros do solver que o TS poderia evitar (8 de 13) | Feito |
+| 25 | Mensagens de erro — por que sao lixo | Feito |
+| 26 | O solver e um trator cego | Feito |
+| 27 | Bug: periodoCiclo conta postos demais | RESOLVIDO |
+| 28 | Bug: intermitente tratado como CLT | RESOLVIDO |
+| 29 | O setor e burro — nao tem context | Feito |
+| 30 | Discovery: sistema inteiro sem context | Feito |
+| 31 | A IA tambem sofre (15+ queries/msg) | Feito |
+| 32 | Proposta Context Provider Global | Feito |
+| 33 | Esqueleto fluxo de dados com PlantUML | Feito |
+| 34 | 34 tools da IA — tabela de impacto | Feito |
+| 35 | Folga fixa no domingo — bomba logica | Feito |
+| 36 | Componente grid — duplicacao e DoD | Feito |
+| 37 | Elegibilidade domingo — nao e so contar | Feito |
+
+### 38.2 Bugs RESOLVIDOS nesta sessao
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| periodoCiclo conta postos sem titular | `rows.filter(r => r.titular != null)` | 962b3c6 |
+| K silenciado sem aviso | Aviso inline quando kDom > kMaxSemTT | 962b3c6 |
+| Manoel CLT ao inves de INTERMITENTE | seed-local corrigido | dfb3719 |
+| periodoCiclo conta INTERMITENTE | Filtro tipo_trabalhador | 2b4f969 |
+
+### 38.3 Coisas que PRECISAM ser feitas (proximos passos)
+
+```
+🔴 P0 — CRITICO:
+  1. Context Provider Global (secoes 29-34)
+  2. Preflight itens minimos NA UI (secao 18)
+  3. Fix folga_fixa=DOM no solver (secao 35)
+  4. Elegibilidade domingo variavel por semana (secao 37)
+
+🟡 P1 — IMPORTANTE:
+  5. Area de avisos separada com contexto_ia (secao 19)
+  6. Validar/Solucionar com diff (secao 20)
+  7. TS auto inteligente (secao 23)
+  8. Mensagens de erro bonitinhas (secao 25)
+  9. Unificar componente grid (secao 36)
+
+🟢 P2 — NICE TO HAVE:
+  10. Python HTTP (secao 17)
+  11. Modo inteligente toggle (secao 13)
+  12. Mini-analytics viabilidade faixa (secao 12.2)
+```
+
+---
+
+*Surra encerrada. Doc pronto pra ser base de implementacao.*
+*37 secoes. 0 TBD. Tudo destilado.*
