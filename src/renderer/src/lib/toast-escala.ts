@@ -18,3 +18,19 @@ export function toastErroGeracaoEscala(err: unknown): void {
   const msg = mapError(err)
   toastErrorPersistent(msg)
 }
+
+/**
+ * Exibe erro INFEASIBLE com toast persistente e botao opcional "Analisar com IA".
+ * O callback onAnalyze e passado pelo caller — mantem este arquivo desacoplado da store.
+ */
+export function toastInfeasible(mensagem: string, onAnalyze?: () => void): void {
+  toast.error(mensagem, {
+    duration: Number.POSITIVE_INFINITY,
+    ...(onAnalyze ? {
+      action: {
+        label: 'Analisar com IA',
+        onClick: onAnalyze,
+      },
+    } : {}),
+  })
+}

@@ -28,6 +28,7 @@ import type {
   SetorSimulacaoConfig,
   SalvarDetalheFuncaoRequest,
   SnapshotTrigger,
+  InfeasibleError,
 } from '../shared'
 import {
   inferFolgasFromAlocacoes,
@@ -43,6 +44,15 @@ const { tipc } = require('@egoist/tipc/main') as typeof import('@egoist/tipc/mai
 const t = tipc.create()
 const { dialog, BrowserWindow, app } = electron
 const execFileAsync = promisify(execFile)
+
+// ---------------------------------------------------------------------------
+// Broadcast de invalidação — notifica renderer que dados mudaram (A4)
+// ---------------------------------------------------------------------------
+function broadcastInvalidation(entidades: string[], setor_id?: number) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('data:invalidated', { entidades, setor_id })
+  }
+}
 
 // =============================================================================
 // ANEXOS — persistência em disco
@@ -324,7 +334,9 @@ const empresaAtualizar = t.procedure
         )
     }
 
-    return await queryOne('SELECT * FROM empresa LIMIT 1')
+    const result = await queryOne('SELECT * FROM empresa LIMIT 1')
+    broadcastInvalidation(['empresa'])
+    return result
   })
 
 // =============================================================================
@@ -360,7 +372,9 @@ const tiposContratoCriar = t.procedure
       VALUES (?, ?, ?, ?, ?, ?)
     `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia, false)
 
-    return await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', id)
+    broadcastInvalidation(['tipos_contrato'])
+    return result
   })
 
 const tiposContratoAtualizar = t.procedure
@@ -380,7 +394,9 @@ const tiposContratoAtualizar = t.procedure
       max_minutos_dia = ? WHERE id = ?
     `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia, input.id)
 
-    return await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', input.id)
+    const result = await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', input.id)
+    broadcastInvalidation(['tipos_contrato'])
+    return result
   })
 
 const tiposContratoDeletar = t.procedure
@@ -400,6 +416,7 @@ const tiposContratoDeletar = t.procedure
       throw new Error(`${count.count} colaboradores usam este contrato. Mova-os antes de deletar.`)
     }
     await execute('DELETE FROM tipos_contrato WHERE id = ?', input.id)
+    broadcastInvalidation(['tipos_contrato'])
     return undefined
   })
 
@@ -434,7 +451,9 @@ const tiposContratoCriarPerfilHorario = t.procedure
       input.preferencia_turno_soft ?? null, input.ordem ?? 0,
       input.horas_semanais ?? null, input.max_minutos_dia ?? null
     )
-    return await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
+    broadcastInvalidation(['tipos_contrato'])
+    return result
   })
 
 const tiposContratoAtualizarPerfilHorario = t.procedure
@@ -465,13 +484,16 @@ const tiposContratoAtualizarPerfilHorario = t.procedure
       values.push(id)
       await execute(`UPDATE contrato_perfis_horario SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
-    return await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM contrato_perfis_horario WHERE id = ?', id)
+    broadcastInvalidation(['tipos_contrato'])
+    return result
   })
 
 const tiposContratoDeletarPerfilHorario = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM contrato_perfis_horario WHERE id = ?', input.id)
+    broadcastInvalidation(['tipos_contrato'])
     return undefined
   })
 
@@ -511,7 +533,9 @@ const setoresCriar = t.procedure
       VALUES (?, ?, ?, ?, ?)
     `, input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento, regimeEscala)
 
-    return await queryOne('SELECT * FROM setores WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM setores WHERE id = ?', id)
+    broadcastInvalidation(['setores'])
+    return result
   })
 
 const setoresAtualizar = t.procedure
@@ -532,7 +556,9 @@ const setoresAtualizar = t.procedure
       await execute(`UPDATE setores SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
 
-    return await queryOne('SELECT * FROM setores WHERE id = ?', input.id)
+    const result = await queryOne('SELECT * FROM setores WHERE id = ?', input.id)
+    broadcastInvalidation(['setores'], input.id)
+    return result
   })
 
 const setoresSalvarSimulacaoConfig = t.procedure
@@ -544,13 +570,16 @@ const setoresSalvarSimulacaoConfig = t.procedure
       configJson,
       input.setor_id,
     )
-    return await queryOne('SELECT * FROM setores WHERE id = ?', input.setor_id)
+    const result = await queryOne('SELECT * FROM setores WHERE id = ?', input.setor_id)
+    broadcastInvalidation(['setores'], input.setor_id)
+    return result
   })
 
 const setoresDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM setores WHERE id = ?', input.id)
+    broadcastInvalidation(['setores'])
     return undefined
   })
 
@@ -612,7 +641,9 @@ const setoresCriarDemanda = t.procedure
       VALUES (?, ?, ?, ?, ?, ?)
     `, input.setor_id, input.dia_semana ?? null, input.hora_inicio, input.hora_fim, input.min_pessoas, input.override ?? false)
 
-    return await queryOne('SELECT * FROM demandas WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM demandas WHERE id = ?', id)
+    broadcastInvalidation(['demandas'], input.setor_id)
+    return result
   })
 
 const setoresAtualizarDemanda = t.procedure
@@ -665,13 +696,16 @@ const setoresAtualizarDemanda = t.procedure
       await execute(`UPDATE demandas SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
 
-    return await queryOne('SELECT * FROM demandas WHERE id = ?', input.id)
+    const result = await queryOne('SELECT * FROM demandas WHERE id = ?', input.id)
+    broadcastInvalidation(['demandas'])
+    return result
   })
 
 const setoresDeletarDemanda = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM demandas WHERE id = ?', input.id)
+    broadcastInvalidation(['demandas'])
     return undefined
   })
 
@@ -687,6 +721,7 @@ const setoresReordenarRank = t.procedure
       }
     })
 
+    broadcastInvalidation(['colaboradores'], input.setor_id)
     return undefined
   })
 
@@ -747,7 +782,9 @@ const colaboradoresCriar = t.procedure
       input.funcao_id ?? null
     )
 
-    return await queryOne('SELECT * FROM colaboradores WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM colaboradores WHERE id = ?', id)
+    broadcastInvalidation(['colaboradores'], input.setor_id)
+    return result
   })
 
 const colaboradoresAtualizar = t.procedure
@@ -788,7 +825,9 @@ const colaboradoresAtualizar = t.procedure
       await execute(`UPDATE colaboradores SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
 
-    return await queryOne('SELECT * FROM colaboradores WHERE id = ?', input.id)
+    const result = await queryOne('SELECT * FROM colaboradores WHERE id = ?', input.id)
+    broadcastInvalidation(['colaboradores'])
+    return result
   })
 
 const colaboradoresAtribuirPosto = t.procedure
@@ -862,6 +901,7 @@ const colaboradoresAtribuirPosto = t.procedure
     }
     snapshotDepois.sort((a, b) => a.colaborador_id - b.colaborador_id)
 
+    broadcastInvalidation(['colaboradores', 'postos'])
     return {
       snapshot_antes: snapshotAntes,
       snapshot_depois: snapshotDepois,
@@ -909,6 +949,7 @@ const colaboradoresRestaurarPostos = t.procedure
       }
     })
 
+    broadcastInvalidation(['colaboradores', 'postos'])
     return { ok: true as const }
   })
 
@@ -916,6 +957,7 @@ const colaboradoresDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM colaboradores WHERE id = ?', input.id)
+    broadcastInvalidation(['colaboradores'])
     return undefined
   })
 
@@ -944,7 +986,9 @@ const excecoesCriar = t.procedure
       VALUES (?, ?, ?, ?, ?)
     `, input.colaborador_id, input.data_inicio, input.data_fim, input.tipo, input.observacao ?? null)
 
-    return await queryOne('SELECT * FROM excecoes WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM excecoes WHERE id = ?', id)
+    broadcastInvalidation(['excecoes'])
+    return result
   })
 
 const excecoesAtualizar = t.procedure
@@ -954,13 +998,16 @@ const excecoesAtualizar = t.procedure
       UPDATE excecoes SET data_inicio = ?, data_fim = ?, tipo = ?, observacao = ? WHERE id = ?
     `, input.data_inicio, input.data_fim, input.tipo, input.observacao ?? null, input.id)
 
-    return await queryOne('SELECT * FROM excecoes WHERE id = ?', input.id)
+    const result = await queryOne('SELECT * FROM excecoes WHERE id = ?', input.id)
+    broadcastInvalidation(['excecoes'])
+    return result
   })
 
 const excecoesDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM excecoes WHERE id = ?', input.id)
+    broadcastInvalidation(['excecoes'])
     return undefined
   })
 
@@ -1128,7 +1175,9 @@ const escalasOficializar = t.procedure
       console.warn('[escalas.oficializar] Falha ao auto-definir folgas fixa/variavel:', err)
     }
 
-    return await queryOne('SELECT * FROM escalas WHERE id = ?', input.id)
+    const result = await queryOne('SELECT * FROM escalas WHERE id = ?', input.id)
+    broadcastInvalidation(['escalas'])
+    return result
   })
 
 const escalasAjustar = t.procedure
@@ -1186,7 +1235,14 @@ const escalasAjustar = t.procedure
           solverResult.erro?.mensagem,
           solverResult.erro?.sugestoes,
         )
-        throw new Error(msg)
+        const infeasibleError: InfeasibleError = {
+          tipo: 'INFEASIBLE',
+          mensagem: msg,
+          diagnostico_resumido: solverResult.diagnostico?.motivo_infeasible ?? undefined,
+          sugestoes: solverResult.erro?.sugestoes ?? undefined,
+          capacidade_ratio: solverResult.diagnostico?.capacidade_vs_demanda?.ratio_cobertura_max ?? undefined,
+        }
+        throw new Error(JSON.stringify(infeasibleError))
       }
       throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
@@ -1200,6 +1256,7 @@ const escalasAjustar = t.procedure
 
     const validacao = await validarEscalaV3(escalaId)
     await persistirResumoAutoritativoEscala(escalaId, validacao)
+    broadcastInvalidation(['escalas'])
     return {
       ...validacao,
       diagnostico: solverResult.diagnostico,
@@ -1215,6 +1272,7 @@ const escalasDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM escalas WHERE id = ?', input.id)
+    broadcastInvalidation(['escalas'])
     return undefined
   })
 
@@ -1275,7 +1333,14 @@ const escalasGerar = t.procedure
           solverResult.erro?.mensagem,
           solverResult.erro?.sugestoes,
         )
-        throw new Error(msg)
+        const infeasibleError: InfeasibleError = {
+          tipo: 'INFEASIBLE',
+          mensagem: msg,
+          diagnostico_resumido: solverResult.diagnostico?.motivo_infeasible ?? undefined,
+          sugestoes: solverResult.erro?.sugestoes ?? undefined,
+          capacidade_ratio: solverResult.diagnostico?.capacidade_vs_demanda?.ratio_cobertura_max ?? undefined,
+        }
+        throw new Error(JSON.stringify(infeasibleError))
       }
       throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
@@ -1290,6 +1355,7 @@ const escalasGerar = t.procedure
 
     const validacao = await validarEscalaV3(escalaId)
     await persistirResumoAutoritativoEscala(escalaId, validacao)
+    broadcastInvalidation(['escalas'])
     return {
       ...validacao,
       diagnostico: solverResult.diagnostico,
@@ -1535,7 +1601,9 @@ const funcoesCriar = t.procedure
       INSERT INTO funcoes (setor_id, apelido, tipo_contrato_id, ordem)
       VALUES (?, ?, ?, ?)
     `, input.setor_id, input.apelido, input.tipo_contrato_id, input.ordem ?? 0)
-    return await queryOne('SELECT * FROM funcoes WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM funcoes WHERE id = ?', id)
+    broadcastInvalidation(['postos'], input.setor_id)
+    return result
   })
 
 const funcoesAtualizar = t.procedure
@@ -1551,19 +1619,24 @@ const funcoesAtualizar = t.procedure
       values.push(input.id)
       await execute(`UPDATE funcoes SET ${fields.join(', ')} WHERE id = ?`, ...values)
     }
-    return await queryOne('SELECT * FROM funcoes WHERE id = ?', input.id)
+    const result = await queryOne('SELECT * FROM funcoes WHERE id = ?', input.id)
+    broadcastInvalidation(['postos'])
+    return result
   })
 
 const funcoesSalvarDetalhe = t.procedure
   .input<SalvarDetalheFuncaoRequest>()
   .action(async ({ input }) => {
-    return await salvarDetalheFuncao(input)
+    const result = await salvarDetalheFuncao(input)
+    broadcastInvalidation(['postos', 'colaboradores'])
+    return result
   })
 
 const funcoesDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await deletarFuncao(input.id)
+    broadcastInvalidation(['postos'])
     return undefined
   })
 
@@ -1593,13 +1666,16 @@ const feriadosCriar = t.procedure
       input.proibido_trabalhar ?? false,
       input.cct_autoriza !== false
     )
-    return await queryOne('SELECT * FROM feriados WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM feriados WHERE id = ?', id)
+    broadcastInvalidation(['feriados'])
+    return result
   })
 
 const feriadosDeletar = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM feriados WHERE id = ?', input.id)
+    broadcastInvalidation(['feriados'])
     return undefined
   })
 
@@ -1644,8 +1720,10 @@ const setoresUpsertHorarioSemana = t.procedure
       input.hora_abertura,
       input.hora_fechamento
     )
-    return await queryOne('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?',
+    const result = await queryOne('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?',
       input.setor_id, input.dia_semana)
+    broadcastInvalidation(['horario_semana'], input.setor_id)
+    return result
   })
 
 /** Salva horário do dia + segmentos de demanda de forma transacional (RFC §11.1) */
@@ -1822,7 +1900,7 @@ const setoresSalvarTimelineDia = t.procedure
       }
     })
 
-    return {
+    const result = {
       horario: await queryOne('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND dia_semana = ?',
         input.setor_id, input.dia_semana),
       demandas: await queryAll('SELECT * FROM demandas WHERE setor_id = ? AND dia_semana = ? ORDER BY hora_inicio',
@@ -1833,6 +1911,8 @@ const setoresSalvarTimelineDia = t.procedure
         slots_sem_demanda: slotsPreenchidosComPiso,
       },
     }
+    broadcastInvalidation(['demandas', 'horario_semana'], input.setor_id)
+    return result
   })
 
 /** Limpa demandas padrao (dia_semana IS NULL) — chamado pelo autosave do DemandaEditor
@@ -1843,6 +1923,7 @@ const setoresLimparPadraoDemandas = t.procedure
   .input<{ setor_id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM demandas WHERE setor_id = ? AND dia_semana IS NULL', input.setor_id)
+    broadcastInvalidation(['demandas'], input.setor_id)
   })
 
 // =============================================================================
@@ -1874,13 +1955,16 @@ const setoresSalvarDemandaExcecaoData = t.procedure
       INSERT INTO demandas_excecao_data (setor_id, data, hora_inicio, hora_fim, min_pessoas, override)
       VALUES (?, ?, ?, ?, ?, ?)
     `, input.setor_id, input.data, input.hora_inicio, input.hora_fim, input.min_pessoas, input.override ?? false)
-    return await queryOne('SELECT * FROM demandas_excecao_data WHERE id = ?', id)
+    const result = await queryOne('SELECT * FROM demandas_excecao_data WHERE id = ?', id)
+    broadcastInvalidation(['demandas'], input.setor_id)
+    return result
   })
 
 const setoresDeletarDemandaExcecaoData = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM demandas_excecao_data WHERE id = ?', input.id)
+    broadcastInvalidation(['demandas'])
     return undefined
   })
 
@@ -1990,7 +2074,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
         folgaVariavel,
         existe.id
       )
-      return await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', existe.id)
+      const result = await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', existe.id)
+      broadcastInvalidation(['regras_padrao'])
+      return result
     } else {
       const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario
@@ -2006,7 +2092,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
         folgaFixa,
         folgaVariavel,
       )
-      return await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', id)
+      const result = await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', id)
+      broadcastInvalidation(['regras_padrao'])
+      return result
     }
   })
 
@@ -2044,6 +2132,7 @@ const colaboradoresSalvarPadraoFolgas = t.procedure
         }
       }
     })
+    broadcastInvalidation(['regras_padrao'])
     return { ok: true, count: input.padrao.length }
   })
 
@@ -2051,6 +2140,7 @@ const colaboradoresDeletarRegraHorario = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM colaborador_regra_horario WHERE id = ?', input.id)
+    broadcastInvalidation(['regras_padrao'])
     return undefined
   })
 
@@ -2088,7 +2178,9 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
         input.domingo_forcar_folga !== undefined ? input.domingo_forcar_folga : null,
         existe.id
       )
-      return await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', existe.id)
+      const result = await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', existe.id)
+      broadcastInvalidation(['regras_padrao'])
+      return result
     } else {
       const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario_excecao_data
@@ -2101,7 +2193,9 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
         input.preferencia_turno_soft ?? null,
         input.domingo_forcar_folga ?? false
       )
-      return await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', id)
+      const result = await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', id)
+      broadcastInvalidation(['regras_padrao'])
+      return result
     }
   })
 
@@ -2109,6 +2203,7 @@ const colaboradoresDeletarRegraExcecaoData = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM colaborador_regra_horario_excecao_data WHERE id = ?', input.id)
+    broadcastInvalidation(['regras_padrao'])
     return undefined
   })
 
@@ -2164,7 +2259,9 @@ const escalasSalvarCicloRotativo = t.procedure
       }
       return newId
     })
-    return await queryOne('SELECT * FROM escala_ciclo_modelos WHERE id = ?', modeloId)
+    const result = await queryOne('SELECT * FROM escala_ciclo_modelos WHERE id = ?', modeloId)
+    broadcastInvalidation(['escalas'])
+    return result
   })
 
 const escalasListarCiclosRotativos = t.procedure
@@ -2218,6 +2315,7 @@ const escalasGerarPorCicloRotativo = t.procedure
 
     // Validar escala gerada pelo ciclo (pode ter violacoes CLT)
     const validacao = await validarEscalaV3(escalaId)
+    broadcastInvalidation(['escalas'])
     return validacao
   })
 
@@ -3325,7 +3423,9 @@ const empresaHorariosAtualizar = t.procedure
         hora_abertura = EXCLUDED.hora_abertura,
         hora_fechamento = EXCLUDED.hora_fechamento
     `, input.dia_semana, input.ativo, input.hora_abertura, input.hora_fechamento)
-    return await queryOne('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?', input.dia_semana)
+    const result = await queryOne('SELECT * FROM empresa_horario_semana WHERE dia_semana = ?', input.dia_semana)
+    broadcastInvalidation(['empresa'])
+    return result
   })
 
 // =============================================================================
@@ -3353,16 +3453,19 @@ const regrasAtualizar = t.procedure
         status = excluded.status,
         atualizado_em = excluded.atualizado_em
     `, input.codigo, input.status)
+    broadcastInvalidation(['regras'])
   })
 
 const regrasResetarEmpresa = t.procedure.action(async () => {
   await execute('DELETE FROM regra_empresa')
+  broadcastInvalidation(['regras'])
 })
 
 const regrasResetarRegra = t.procedure
   .input<{ codigo: string }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM regra_empresa WHERE codigo = ?', input.codigo)
+    broadcastInvalidation(['regras'])
   })
 
 // =============================================================================

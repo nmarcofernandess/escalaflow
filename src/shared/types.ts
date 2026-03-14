@@ -998,3 +998,11 @@ export interface SnapshotInfo {
   meta: SnapshotMeta
   tamanho_bytes: number
 }
+
+export interface InfeasibleError {
+  tipo: 'INFEASIBLE'
+  mensagem: string
+  diagnostico_resumido?: string
+  sugestoes?: string[]
+  capacidade_ratio?: number
+}

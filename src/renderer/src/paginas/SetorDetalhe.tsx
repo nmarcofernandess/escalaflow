@@ -112,14 +112,12 @@ import { DemandaEditor } from '@/componentes/DemandaEditor'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
-import { empresaService } from '@/servicos/empresa'
-import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { funcoesService } from '@/servicos/funcoes'
-import { excecoesService } from '@/servicos/excecoes'
-import { useApiData } from '@/hooks/useApiData'
+import { useAppDataStore } from '@/store/appDataStore'
+import { useIaStore } from '@/store/iaStore'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { formatarData, formatarDataHora, mapError } from '@/lib/formatadores'
-import { toastErroGeracaoEscala } from '@/lib/toast-escala'
+import { toastErroGeracaoEscala, toastInfeasible } from '@/lib/toast-escala'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
@@ -146,6 +144,7 @@ import {
   normalizeSetorSimulacaoConfig,
   type SetorSimulacaoConfig,
   type SetorSimulacaoMode,
+  type InfeasibleError,
 } from '@shared/index'
 
 function PrecondicaoItem({
@@ -374,55 +373,24 @@ export function SetorDetalhe() {
     defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '', regime_escala: '5X2' },
   })
 
-  // ─── Data loading ────────────────────────────────────────────────────
-  const { data: setor, loading: loadingSetor, reload: reloadSetor } = useApiData<Setor>(
-    () => setoresService.buscar(setorId),
-    [setorId],
-  )
-  const { data: empresa } = useApiData<Empresa>(
-    () => empresaService.buscar(),
-    [],
-  )
+  // ─── Data from store (reactive) ──────────────────────────────────────
+  const setSetorAtivo = useAppDataStore((s) => s.setSetorAtivo)
+  const carregandoSetor = useAppDataStore((s) => s.carregandoSetor)
+  const setor = useAppDataStore((s) => s.setor)
+  const empresa = useAppDataStore((s) => s.empresa)
+  const demandas = useAppDataStore((s) => s.demandas)
+  const horariosSemana = useAppDataStore((s) => s.horarioSemana)
+  const colaboradores = useAppDataStore((s) => s.colaboradores)
+  const escalas = useAppDataStore((s) => s.escalas)
+  const tiposContrato = useAppDataStore((s) => s.tiposContrato)
+  const funcoes = useAppDataStore((s) => s.postos)
+  const excecoesAtivas = useAppDataStore((s) => s.excecoes)
+  const regrasPadrao = useAppDataStore((s) => s.regrasPadrao)
 
-  const { data: demandas, reload: reloadDemandas } = useApiData<Demanda[]>(
-    () => setoresService.listarDemandas(setorId),
-    [setorId],
-  )
-
-  const { data: horariosSemana, reload: reloadHorariosSemana } = useApiData<SetorHorarioSemana[]>(
-    () => setoresService.listarHorarioSemana(setorId),
-    [setorId],
-  )
-
-  const { data: colaboradores, reload: reloadColaboradores } = useApiData<Colaborador[]>(
-    () => colaboradoresService.listar({ setor_id: setorId, ativo: true }),
-    [setorId],
-  )
-
-  const { data: escalas, loading: loadingEscalas, reload: reloadEscalas } = useApiData<Escala[]>(
-    () => escalasService.listarPorSetor(setorId),
-    [setorId],
-  )
-
-  const { data: tiposContrato } = useApiData<TipoContrato[]>(
-    () => tiposContratoService.listar(),
-    [],
-  )
-
-  const { data: funcoes, reload: reloadFuncoes } = useApiData<Funcao[]>(
-    () => funcoesService.listar(setorId),
-    [setorId],
-  )
-
-  const { data: excecoesAtivas } = useApiData<Excecao[]>(
-    () => excecoesService.listarAtivas(),
-    [],
-  )
-
-  const { data: regrasPadrao, loading: loadingRegrasPadrao, reload: reloadRegrasPadrao } = useApiData<RegraHorarioColaborador[]>(
-    () => colaboradoresService.listarRegrasPadraoSetor(setorId),
-    [setorId],
-  )
+  // Notify store which sector is active (loads data if changed)
+  useEffect(() => {
+    setSetorAtivo(setorId)
+  }, [setorId, setSetorAtivo])
 
   const contratoMap = new Map((tiposContrato ?? []).map((tc) => [tc.id, tc.nome]))
   const funcoesList = useMemo(() => funcoes ?? [], [funcoes])
@@ -661,9 +629,8 @@ export function SetorDetalhe() {
       )
     } catch {
       toast.error('Erro ao salvar organizacao dos postos')
-      reloadFuncoes()
     }
-  }, [reloadFuncoes])
+  }, [])
 
   const handlePostoReorderDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
@@ -818,8 +785,6 @@ export function SetorDetalhe() {
         }
       }
 
-      reloadFuncoes()
-      reloadColaboradores()
       closeTitularPicker()
 
       if (titularId == null) {
@@ -838,7 +803,7 @@ export function SetorDetalhe() {
     } finally {
       setPostoAssignmentLoading(false)
     }
-  }, [closeTitularPicker, moverPostoParaBancoEspera, ocupanteMap, orderedColabs, postosOrdenados, reloadColaboradores, reloadFuncoes])
+  }, [closeTitularPicker, moverPostoParaBancoEspera, ocupanteMap, orderedColabs, postosOrdenados])
 
   const handleSelecionarNoAutocomplete = useCallback((source: 'picker' | 'dialog', postoId: number, colabId: number) => {
     const candidato = orderedColabs.find((c) => c.id === colabId)
@@ -1025,11 +990,10 @@ export function SetorDetalhe() {
       await setoresService.salvarSimulacaoConfig(setorId, next)
     } catch (err) {
       toast.error(mapError(err) || 'Erro ao salvar configuracao da simulacao')
-      reloadSetor()
     } finally {
       setSimulacaoConfigSaving(false)
     }
-  }, [reloadSetor, setorId])
+  }, [setorId])
 
   const atualizarSimulacaoConfig = useCallback((updater: (prev: SetorSimulacaoConfig) => SetorSimulacaoConfig) => {
     setSimulacaoConfigDraft((prev) => {
@@ -1125,9 +1089,7 @@ export function SetorDetalhe() {
   )
 
   const carregandoPreviewSimulacao = (
-    loadingSetor ||
-    loadingEscalas ||
-    loadingRegrasPadrao ||
+    carregandoSetor ||
     Boolean(
       escalaTab === 'simulacao' &&
       rascunhoAtual &&
@@ -1613,11 +1575,20 @@ export function SetorDetalhe() {
         rulesOverride,
       })
       setEscalaCompleta(result)
-      reloadEscalas()
       toast.success('Escala gerada')
     } catch (err) {
-      const msg = mapError(err) || 'Nao foi possivel gerar a escala.'
-      if (!msg.includes('cancelado') && !msg.includes('SIGTERM') && !msg.includes('killed')) {
+      const rawMsg = err instanceof Error ? err.message : String(err)
+
+      // Try to parse structured INFEASIBLE error before mapError destroys the JSON
+      let parsed: InfeasibleError | null = null
+      try {
+        const obj = JSON.parse(rawMsg)
+        if (obj?.tipo === 'INFEASIBLE') parsed = obj as InfeasibleError
+      } catch { /* not structured JSON, fall through */ }
+
+      if (parsed) {
+        toastInfeasible(parsed.mensagem, () => useIaStore.getState().setAberto(true))
+      } else if (!rawMsg.includes('cancelado') && !rawMsg.includes('SIGTERM') && !rawMsg.includes('killed')) {
         toastErroGeracaoEscala(err)
       }
     } finally {
@@ -1631,7 +1602,6 @@ export function SetorDetalhe() {
     try {
       await escalasService.oficializar(escalaCompleta.escala.id)
       const detalheOficial = await escalasService.buscar(escalaCompleta.escala.id)
-      await Promise.all([reloadEscalas(), reloadRegrasPadrao()])
       setOficialCompleta(detalheOficial)
       setEscalaSelecionada('oficial')
       toast.success('Escala oficializada')
@@ -1655,8 +1625,6 @@ export function SetorDetalhe() {
       await escalasService.deletar(escalaCompleta.escala.id)
       toast.success('Escala descartada')
       setEscalaCompleta(null)
-      reloadEscalas()
-      reloadRegrasPadrao()
     } catch (err) {
       toast.error(mapError(err) || 'Erro ao descartar')
     } finally {
@@ -1999,8 +1967,6 @@ export function SetorDetalhe() {
         }
       }
 
-      reloadFuncoes()
-      reloadColaboradores()
       closePostoDialog(false)
       toast.success(
         postoDialogMode === 'create'
@@ -2022,8 +1988,6 @@ export function SetorDetalhe() {
     setSalvandoPosto(true)
     try {
       await moverPostoParaBancoEspera(posto)
-      reloadFuncoes()
-      reloadColaboradores()
       closePostoDialog(false)
       toast.success(`${posto.apelido} foi movido para o banco de espera`)
     } catch (err) {
@@ -2037,7 +2001,6 @@ export function SetorDetalhe() {
     setPostoAssignmentLoading(true)
     try {
       await ativarPostoBancoEspera(posto)
-      reloadFuncoes()
       toast.success(`${posto.apelido} voltou para a hierarquia ativa`)
     } catch (err) {
       toast.error(mapError(err) || 'Erro ao ativar posto')
@@ -2050,8 +2013,6 @@ export function SetorDetalhe() {
     setDeletandoPosto(true)
     try {
       await funcoesService.deletar(posto.id)
-      reloadFuncoes()
-      reloadColaboradores()
       toast.success('Posto removido')
     } catch (err) {
       toast.error(mapError(err) || 'Erro ao remover posto')
@@ -2061,7 +2022,7 @@ export function SetorDetalhe() {
   }
 
   // ─── Loading / Not Found ─────────────────────────────────────────────
-  if (loadingSetor) {
+  if (carregandoSetor) {
     return (
       <div className="flex flex-1 flex-col">
         <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Setores', href: '/setores' }, { label: '...' }]} />
@@ -2335,7 +2296,7 @@ export function SetorDetalhe() {
                                                   colaborador_id: ocupante.id,
                                                   folga_variavel_dia_semana: val === '__none__' ? null : (val as DiaSemana),
                                                 })
-                                                await reloadRegrasPadrao()
+
                                               } catch (err) {
                                                 toast.error(mapError(err) || 'Erro ao salvar folga')
                                               }
@@ -2365,7 +2326,7 @@ export function SetorDetalhe() {
                                                   colaborador_id: ocupante.id,
                                                   folga_fixa_dia_semana: val === '__none__' ? null : (val as DiaSemana),
                                                 })
-                                                await reloadRegrasPadrao()
+
                                               } catch (err) {
                                                 toast.error(mapError(err) || 'Erro ao salvar folga')
                                               }
