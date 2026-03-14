@@ -24,13 +24,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
-import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { CicloGrid } from '@/componentes/CicloGrid'
+import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { ResumoFolgas } from '@/componentes/ResumoFolgas'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { EscalaTimelineDiaria } from '@/componentes/EscalaTimelineDiaria'
 import { EscalaViewToggle, useEscalaViewMode } from '@/componentes/EscalaViewToggle'
-import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
 import { TimelineGrid } from '@/componentes/TimelineGrid'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { StatusBadge } from '@/componentes/StatusBadge'
@@ -40,13 +40,9 @@ import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda } from '@/lib/gerarCSV'
 import { resolveEscalaEquipe } from '@/lib/escala-team'
-import { useApiData } from '@/hooks/useApiData'
 import { useAppVersion } from '@/hooks/useAppVersion'
-import { setoresService } from '@/servicos/setores'
-import { funcoesService } from '@/servicos/funcoes'
-import { colaboradoresService } from '@/servicos/colaboradores'
+import { useAppDataStore } from '@/store/appDataStore'
 import { escalasService } from '@/servicos/escalas'
-import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { exportarService } from '@/servicos/exportar'
 import type {
   EscalaCompletaV3,
@@ -256,49 +252,37 @@ export function EscalaPagina() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Data loading
-  const { data: setor } = useApiData(() => setoresService.buscar(setorId), [setorId])
-  const { data: setores } = useApiData(() => setoresService.listar(), [])
-  const { data: resumoPorSetor } = useApiData(() => escalasService.resumoPorSetor(), [])
-  const { data: colaboradores } = useApiData(
-    () => colaboradoresService.listar({ setor_id: setorId, ativo: true }),
-    [setorId],
-  )
-  const { data: demandas } = useApiData(
-    () => setoresService.listarDemandas(setorId),
-    [setorId],
-  )
-  const { data: tiposContrato } = useApiData(
-    () => tiposContratoService.listar(),
-    [],
-  )
-  const { data: funcoes } = useApiData(
-    () => funcoesService.listar(setorId, true),
-    [setorId],
-  )
-  const { data: horariosSemana } = useApiData(
-    () => setoresService.listarHorarioSemana(setorId),
-    [setorId],
-  )
-  const { data: regrasPadrao } = useApiData(
-    () => colaboradoresService.listarRegrasPadraoSetor(setorId),
-    [setorId],
-  )
-  const { data: escalas } = useApiData(
-    () => escalasService.listarPorSetor(setorId),
-    [setorId],
-  )
+  // Data from store (reactive)
+  const setSetorAtivo = useAppDataStore((s) => s.setSetorAtivo)
+  const carregandoSetor = useAppDataStore((s) => s.carregandoSetor)
+  const setor = useAppDataStore((s) => s.setor)
+  const setores = useAppDataStore((s) => s.setores)
+  const colaboradores = useAppDataStore((s) => s.colaboradores)
+  const demandas = useAppDataStore((s) => s.demandas)
+  const tiposContrato = useAppDataStore((s) => s.tiposContrato)
+  const funcoes = useAppDataStore((s) => s.postos)
+  const horariosSemana = useAppDataStore((s) => s.horarioSemana)
+  const regrasPadrao = useAppDataStore((s) => s.regrasPadrao)
+  const escalas = useAppDataStore((s) => s.escalas)
+
+  // Notify store which sector is active (loads data if changed)
+  useEffect(() => {
+    setSetorAtivo(setorId)
+  }, [setorId, setSetorAtivo])
+
+  // resumoPorSetor is not in the store — load locally for "Outro setor" dropdown
+  const [resumoPorSetor, setResumoPorSetor] = useState<{ setor_id: number; data_inicio: string; data_fim: string; status: string }[] | null>(null)
+  useEffect(() => {
+    escalasService.resumoPorSetor().then(setResumoPorSetor).catch(() => {})
+  }, [])
 
   const regrasMap = useMemo(() => {
     const map = new Map<number, RegraHorarioColaborador>()
-    if (regrasPadrao) {
-      for (const r of regrasPadrao) map.set(r.colaborador_id, r)
-    }
+    for (const r of regrasPadrao) map.set(r.colaborador_id, r)
     return map
   }, [regrasPadrao])
 
   const [timelineViewMode, setTimelineViewMode] = useEscalaViewMode()
-  const [cicloMode, setCicloMode] = useCicloViewMode()
   const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [loading, setLoading] = useState(true)
   const [exportOpen, setExportOpen] = useState(false)
@@ -365,7 +349,7 @@ export function EscalaPagina() {
   const violacoesCount = escalaCompleta?.violacoes.length ?? 0
   const nenhumBlocoVisivel = !conteudoView.ciclo && !conteudoView.timeline && !conteudoView.funcionarios && !conteudoView.avisos
   const escalasOrdenadas = useMemo(
-    () => [...(escalas ?? [])].sort((a, b) => b.criada_em.localeCompare(a.criada_em)),
+    () => [...escalas].sort((a, b) => b.criada_em.localeCompare(a.criada_em)),
     [escalas],
   )
   const escalaOficialAtual = escalasOrdenadas.find((e) => e.status === 'OFICIAL') ?? null
@@ -391,17 +375,29 @@ export function EscalaPagina() {
 
   const setoresComEscala = useMemo(() => new Set((resumoPorSetor ?? []).map((s) => s.setor_id)), [resumoPorSetor])
   const outrosSetores = useMemo(
-    () => (setores ?? []).filter((s) => s.id !== setorId && setoresComEscala.has(s.id)),
+    () => setores.filter((s) => s.id !== setorId && setoresComEscala.has(s.id)),
     [setores, setorId, setoresComEscala],
   )
   const contratoMap = useMemo(
-    () => new Map((tiposContrato ?? []).map((tc) => [tc.id, tc.nome])),
+    () => new Map(tiposContrato.map((tc) => [tc.id, tc.nome])),
     [tiposContrato],
   )
   const equipeEscala = useMemo(
-    () => resolveEscalaEquipe(escalaCompleta, colaboradores ?? [], funcoes ?? []),
+    () => resolveEscalaEquipe(escalaCompleta, colaboradores, funcoes),
     [colaboradores, escalaCompleta, funcoes],
   )
+
+  const cicloGridData = useMemo(() => {
+    if (!escalaCompleta) return null
+    return escalaParaCicloGrid(
+      escalaCompleta.escala,
+      escalaCompleta.alocacoes,
+      equipeEscala.colaboradores,
+      equipeEscala.funcoes,
+      regrasPadrao,
+      demandas,
+    )
+  }, [escalaCompleta, equipeEscala, regrasPadrao, demandas])
 
   const domingosTrabalhadosPorColab = useMemo(() => {
     const map = new Map<number, number>()
@@ -434,10 +430,10 @@ export function EscalaPagina() {
         colaboradores={equipeEscala.colaboradores}
         setor={setor}
         violacoes={escalaCompleta.violacoes}
-        tiposContrato={tiposContrato ?? []}
+        tiposContrato={tiposContrato}
         funcoes={equipeEscala.funcoes}
-        horariosSemana={horariosSemana ?? []}
-        regrasPadrao={regrasPadrao ?? []}
+        horariosSemana={horariosSemana}
+        regrasPadrao={regrasPadrao}
         modo={modo}
         incluirAvisos={conteudo.avisos}
         incluirCiclo={conteudo.ciclo}
@@ -621,10 +617,10 @@ export function EscalaPagina() {
             colaboradores={equipeEscala.colaboradores}
             setor={setor}
             violacoes={escalaCompleta.violacoes}
-            tiposContrato={tiposContrato ?? []}
+            tiposContrato={tiposContrato}
             funcoes={equipeEscala.funcoes}
-            horariosSemana={horariosSemana ?? []}
-            regrasPadrao={regrasPadrao ?? []}
+            horariosSemana={horariosSemana}
+            regrasPadrao={regrasPadrao}
             modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
             incluirAvisos={conteudoExport.avisos}
             incluirCiclo={conteudoExport.ciclo}
@@ -671,7 +667,7 @@ export function EscalaPagina() {
   }
 
   // Loading / no data states
-  if (!setor || !colaboradores) {
+  if (carregandoSetor || !setor) {
     return (
       <div className="flex flex-1 flex-col">
         <PageHeader breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Escala' }, { label: 'Carregando...' }]} />
@@ -918,7 +914,7 @@ export function EscalaPagina() {
                     colaboradores={equipeEscala.colaboradores}
                     alocacoes={escalaCompleta.alocacoes}
                     violacoes={escalaCompleta.violacoes}
-                    tiposContrato={tiposContrato ?? []}
+                    tiposContrato={tiposContrato}
                     dataInicio={escalaCompleta.escala.data_inicio}
                     dataFim={escalaCompleta.escala.data_fim}
                   />
@@ -975,18 +971,10 @@ export function EscalaPagina() {
                             {violacoesCount > 0 ? `${violacoesCount} aviso(s)` : 'Sem avisos relevantes'}
                           </Badge>
                         </div>
-                        <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <EscalaCicloResumo
-                        escala={escalaCompleta.escala}
-                        alocacoes={escalaCompleta.alocacoes}
-                        colaboradores={equipeEscala.colaboradores}
-                        funcoes={equipeEscala.funcoes}
-                        regrasPadrao={regrasPadrao ?? []}
-                        viewMode={cicloMode}
-                      />
+                      {cicloGridData && <CicloGrid data={cicloGridData} mode="view" />}
                     </CardContent>
                   </Card>
                 )}
@@ -1020,9 +1008,9 @@ export function EscalaPagina() {
                           alocacoes={escalaCompleta.alocacoes}
                           colaboradores={equipeEscala.colaboradores}
                           setor={setor}
-                          tiposContrato={tiposContrato ?? []}
+                          tiposContrato={tiposContrato}
                           funcoes={equipeEscala.funcoes}
-                          horariosSemana={horariosSemana ?? []}
+                          horariosSemana={horariosSemana}
                         />
                       ) : (
                         <TimelineGrid
@@ -1032,9 +1020,9 @@ export function EscalaPagina() {
                           dataSelecionada={escalaCompleta.escala.data_inicio}
                           dataInicio={escalaCompleta.escala.data_inicio}
                           dataFim={escalaCompleta.escala.data_fim}
-                          demandas={demandas ?? []}
-                          tiposContrato={tiposContrato ?? []}
-                          horariosSemana={horariosSemana ?? []}
+                          demandas={demandas}
+                          tiposContrato={tiposContrato}
+                          horariosSemana={horariosSemana}
                           regrasMap={regrasMap}
                           readOnly
                         />

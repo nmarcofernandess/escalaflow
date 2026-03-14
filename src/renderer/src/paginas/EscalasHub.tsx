@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Download, ExternalLink, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
-import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
-import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
+import { CicloGrid } from '@/componentes/CicloGrid'
+import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
@@ -76,7 +76,6 @@ function hasConteudoSetorial(conteudo: EscalaExportContent): boolean {
 }
 
 export function EscalasHub() {
-  const [cicloMode, setCicloMode] = useCicloViewMode()
   const [loadingSetores, setLoadingSetores] = useState(true)
   const [loadingMetaSetores, setLoadingMetaSetores] = useState<Set<number>>(new Set())
   const [loadingEscalas, setLoadingEscalas] = useState<Set<number>>(new Set())
@@ -600,9 +599,6 @@ export function EscalasHub() {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
-                        {selectedEscala && isExpanded && detalhe && (
-                          <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
-                        )}
                         {selectedEscala ? (
                           <>
                             <Button
@@ -645,13 +641,16 @@ export function EscalasHub() {
                         </div>
                       ) : detalhe ? (
                         <>
-                          <EscalaCicloResumo
-                            escala={detalhe.escala}
-                            alocacoes={detalhe.alocacoes}
-                            colaboradores={equipeEscala.colaboradores}
-                            funcoes={equipeEscala.funcoes}
-                            regrasPadrao={regrasPadrao}
-                            viewMode={cicloMode}
+                          <CicloGrid
+                            data={escalaParaCicloGrid(
+                              detalhe.escala,
+                              detalhe.alocacoes,
+                              equipeEscala.colaboradores,
+                              equipeEscala.funcoes,
+                              regrasPadrao,
+                              [],
+                            )}
+                            mode="view"
                           />
                           {detalhe.comparacao_demanda.length > 0 && (
                             <CoberturaChart

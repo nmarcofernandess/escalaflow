@@ -31,8 +31,6 @@ import {
   Trash2,
   Square,
   Terminal,
-  CheckCircle2,
-  CircleAlert,
   Save,
   Check,
   AlertTriangle,
@@ -99,11 +97,12 @@ import { cn } from '@/lib/utils'
 import { PageHeader } from '@/componentes/PageHeader'
 import type { DemandaEditorRef, SemanaDraft } from '@/componentes/DemandaEditor'
 import { StatusBadge } from '@/componentes/StatusBadge'
-import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
-import { SimuladorCicloGrid } from '@/componentes/SimuladorCicloGrid'
+import { CicloGrid } from '@/componentes/CicloGrid'
+import { PreflightChecklist } from '@/componentes/PreflightChecklist'
+import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { gerarCicloFase1, converterNivel1ParaEscala, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
-import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
+import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
@@ -146,37 +145,6 @@ import {
   type SetorSimulacaoMode,
   type InfeasibleError,
 } from '@shared/index'
-
-function PrecondicaoItem({
-  ok,
-  label,
-  linkTo,
-  hint,
-}: {
-  ok: boolean
-  label: string
-  linkTo?: string
-  hint?: string
-}) {
-  const Icon = ok ? CheckCircle2 : CircleAlert
-  const content = (
-    <span className="flex items-center gap-2">
-      <Icon className={cn('size-4 shrink-0', ok ? 'text-success' : 'text-muted-foreground')} />
-      <span className={ok ? 'text-muted-foreground' : 'text-foreground'}>{label}</span>
-      {hint && !ok && <span className="text-xs text-muted-foreground">({hint})</span>}
-    </span>
-  )
-  if (linkTo && !ok) {
-    return (
-      <li>
-        <Link to={linkTo} className="hover:underline">
-          {content}
-        </Link>
-      </li>
-    )
-  }
-  return <li>{content}</li>
-}
 
 // ─── DnD: Sortable row for posto hierarchy reorder ──────────────────
 
@@ -436,7 +404,6 @@ export function SetorDetalhe() {
   // Geracao inline — seletor unificado: simulacao | oficial | historico:${id}
   const [escalaSelecionada, setEscalaSelecionada] = useState<string>('simulacao')
   const [periodoPreset, setPeriodoPreset] = useState<EscalaPeriodoPreset>('3_MESES')
-  const [cicloMode, setCicloMode] = useCicloViewMode()
   const [previewSelectedWeek, setPreviewSelectedWeek] = useState(0)
   const [gerando, setGerando] = useState(false)
   const [solverLogs, setSolverLogs] = useState<string[]>([])
@@ -521,12 +488,14 @@ export function SetorDetalhe() {
   }, [funcoesList])
 
   const excecaoMap = useMemo(() => {
+    const hoje = new Date().toISOString().split('T')[0]
     const colabIds = new Set((colaboradores ?? []).map((c) => c.id))
     const map = new Map<number, Excecao>()
     for (const exc of excecoesAtivas ?? []) {
-      if (colabIds.has(exc.colaborador_id)) {
-        map.set(exc.colaborador_id, exc)
-      }
+      // Filtrar só exceções ativas HOJE (query agora retorna não-expiradas, inclui futuras)
+      if (!colabIds.has(exc.colaborador_id)) continue
+      if (exc.data_inicio > hoje) continue
+      map.set(exc.colaborador_id, exc)
     }
     return map
   }, [colaboradores, excecoesAtivas])
@@ -562,6 +531,22 @@ export function SetorDetalhe() {
     }
     return map
   }, [orderedColabs])
+
+  const ausenteMap = useMemo(() => {
+    const map = new Map<number, (typeof derivados)['ausentes'][number]>()
+    for (const info of derivados?.ausentes ?? []) {
+      map.set(info.colaborador.id, info)
+    }
+    return map
+  }, [derivados?.ausentes])
+
+  const proximoAusenteMap = useMemo(() => {
+    const map = new Map<number, (typeof derivados)['proximosAusentes'][number]>()
+    for (const info of derivados?.proximosAusentes ?? []) {
+      map.set(info.colaborador.id, info)
+    }
+    return map
+  }, [derivados?.proximosAusentes])
 
   const postosOrdenados = orderedPostos
   const postosAtivos = useMemo(
@@ -913,6 +898,42 @@ export function SetorDetalhe() {
     [exportColaboradoresBase, exportDetalhe, postosOrdenados],
   )
 
+  const escalaGridData = useMemo(() => {
+    if (!escalaCompleta) return null
+    return escalaParaCicloGrid(
+      escalaCompleta.escala,
+      escalaCompleta.alocacoes,
+      equipeEscalaSimulacao.colaboradores,
+      equipeEscalaSimulacao.funcoes,
+      regrasPadrao ?? [],
+      demandas ?? [],
+    )
+  }, [escalaCompleta, equipeEscalaSimulacao, regrasPadrao, demandas])
+
+  const oficialGridData = useMemo(() => {
+    if (!oficialCompleta) return null
+    return escalaParaCicloGrid(
+      oficialCompleta.escala,
+      oficialCompleta.alocacoes,
+      equipeEscalaOficial.colaboradores,
+      equipeEscalaOficial.funcoes,
+      regrasPadrao ?? [],
+      demandas ?? [],
+    )
+  }, [oficialCompleta, equipeEscalaOficial, regrasPadrao, demandas])
+
+  const historicoGridData = useMemo(() => {
+    if (!historicoCompleta) return null
+    return escalaParaCicloGrid(
+      historicoCompleta.escala,
+      historicoCompleta.alocacoes,
+      equipeEscalaHistorico.colaboradores,
+      equipeEscalaHistorico.funcoes,
+      regrasPadrao ?? [],
+      demandas ?? [],
+    )
+  }, [historicoCompleta, equipeEscalaHistorico, regrasPadrao, demandas])
+
   const simulacaoPreviewMeses = useMemo(() => {
     if (periodoPreset === '6_MESES') return 6
     if (periodoPreset === '1_ANO') return 12
@@ -984,6 +1005,18 @@ export function SetorDetalhe() {
     }
   }, [escalaCompleta, carregandoTabEscala, setor, funcoesList, orderedColabs,
       demandas, regrasPadrao, periodoGeracao, setorId, simulacaoPreviewMeses])
+
+  const previewGridData = useMemo(() => {
+    if (!previewNivel1) return null
+    return escalaParaCicloGrid(
+      previewNivel1.escala,
+      previewNivel1.alocacoes,
+      orderedColabs,
+      funcoesList.filter(f => f.ativo),
+      previewNivel1.regras,
+      demandas ?? [],
+    )
+  }, [previewNivel1, orderedColabs, funcoesList, demandas])
 
   const simulacaoConfigBase = useMemo(
     () => normalizeSetorSimulacaoConfig(setor?.simulacao_config_json, { hasActivePostos: postosAtivos.length > 0 }),
@@ -1221,7 +1254,7 @@ export function SetorDetalhe() {
 
   useEffect(() => {
     setPreviewSelectedWeek(0)
-  }, [cicloMode, modoSimulacaoEfetivo, simulacaoPreview.effectiveK, simulacaoPreview.effectiveN])
+  }, [modoSimulacaoEfetivo, simulacaoPreview.effectiveK, simulacaoPreview.effectiveN])
 
   // Fallback: se oficial sumir, volta para simulacao
   useEffect(() => {
@@ -2321,7 +2354,24 @@ export function SetorDetalhe() {
                                       <TableCell className="font-medium">{posto.apelido}</TableCell>
                                       <TableCell>
                                         {ocupante ? (
-                                          <span className="truncate text-sm">{ocupante.nome}</span>
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={cn('truncate text-sm', ausenteMap.has(ocupante.id) && 'text-warning')}>{ocupante.nome}</span>
+                                            {(() => {
+                                              const prox = proximoAusenteMap.get(ocupante.id)
+                                              if (!prox) return null
+                                              const ini = prox.excecao.data_inicio.split('-').reverse().join('/')
+                                              const fim = prox.excecao.data_fim.split('-').reverse().join('/')
+                                              const tipo = prox.excecao.tipo === 'FERIAS' ? 'Ferias' : prox.excecao.tipo === 'ATESTADO' ? 'Atestado' : 'Bloqueio'
+                                              return (
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <AlertTriangle size={14} className="shrink-0 text-warning" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>{tipo} em {prox.diasAte} dia{prox.diasAte > 1 ? 's' : ''} ({ini} - {fim})</TooltipContent>
+                                                </Tooltip>
+                                              )
+                                            })()}
+                                          </span>
                                         ) : (
                                           <span className="text-sm italic text-muted-foreground">Vazio</span>
                                         )}
@@ -2497,6 +2547,54 @@ export function SetorDetalhe() {
                       </DndContext>
                     )}
                   </div>
+
+                  {(derivados?.ausentes?.length ?? 0) > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-warning">
+                          AUSENTES ({derivados!.ausentes.length})
+                        </span>
+                        <span className="text-xs text-muted-foreground">ferias e atestados ativos</span>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        {derivados!.ausentes.map((info) => (
+                          <div
+                            key={info.colaborador.id}
+                            className={cn(
+                              'rounded-lg border p-3 min-w-[220px]',
+                              info.excecao.tipo === 'FERIAS' && 'border-warning/30 bg-warning/5',
+                              info.excecao.tipo === 'ATESTADO' && 'border-destructive/30 bg-destructive/5',
+                              info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/30 bg-muted/5',
+                            )}
+                          >
+                            <div className="font-medium text-sm">{info.colaborador.nome}</div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {info.posto?.apelido ?? 'Sem posto'} {'\u2022'} {tiposContrato?.find(t => t.id === info.colaborador.tipo_contrato_id)?.nome ?? 'CLT'}
+                              {' \u2022 '}
+                              <Badge variant="outline" className={cn(
+                                'text-[10px] px-1.5 py-0',
+                                info.excecao.tipo === 'FERIAS' && 'border-warning/40 text-warning',
+                                info.excecao.tipo === 'ATESTADO' && 'border-destructive/40 text-destructive',
+                                info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/40 text-muted-foreground',
+                              )}>
+                                {info.excecao.tipo === 'FERIAS' ? 'Ferias' : info.excecao.tipo === 'ATESTADO' ? 'Atestado' : 'Bloqueio'}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {info.excecao.data_inicio.split('-').reverse().join('/')} - {info.excecao.data_fim.split('-').reverse().join('/')}
+                              {(() => {
+                                const hoje = new Date().toISOString().split('T')[0]
+                                const fimMs = Date.parse(info.excecao.data_fim)
+                                const hojeMs = Date.parse(hoje)
+                                const diasRestantes = Math.ceil((fimMs - hojeMs) / 86400000)
+                                return diasRestantes > 0 ? ` (volta em ${diasRestantes} dia${diasRestantes > 1 ? 's' : ''})` : ''
+                              })()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2690,7 +2788,6 @@ export function SetorDetalhe() {
                 {/* Action buttons (consolidated) */}
                 {activeEscalaCompleta && (
                   <div className="flex items-center gap-2">
-                    <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
                     <Button
                       variant="outline"
                       size="sm"
@@ -2754,6 +2851,13 @@ export function SetorDetalhe() {
                     )}
                   </div>
 
+                  <PreflightChecklist items={[
+                    { ok: !!empresa, label: 'Empresa configurada', linkTo: '/empresa' },
+                    { ok: (tiposContrato?.length ?? 0) > 0, label: 'Tipo de contrato cadastrado', linkTo: '/tipos-contrato' },
+                    { ok: (orderedColabs?.length ?? 0) > 0, label: 'Colaborador(es) ativo(s) no setor', linkTo: '/colaboradores', hint: 'Cadastre na secao Colaboradores acima' },
+                    { ok: (demandas?.length ?? 0) > 0, label: 'Demanda cadastrada (faixas horarias)' },
+                  ]} />
+
                   {escalaCompleta ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
@@ -2767,17 +2871,10 @@ export function SetorDetalhe() {
                         {escalaCompleta.escala.criada_em && (
                           <span className="text-xs text-muted-foreground">Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}</span>
                         )}
-                        <div className="flex-1" />
-                        <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
                       </div>
-                      <EscalaCicloResumo
-                        escala={escalaCompleta.escala}
-                        alocacoes={escalaCompleta.alocacoes}
-                        colaboradores={equipeEscalaSimulacao.colaboradores}
-                        funcoes={equipeEscalaSimulacao.funcoes}
-                        regrasPadrao={regrasPadrao ?? []}
-                        viewMode={cicloMode}
-                      />
+                      {escalaGridData && (
+                        <CicloGrid data={escalaGridData} mode="view" />
+                      )}
                       {escalaCompleta.comparacao_demanda.length > 0 && (
                         <CoberturaChart
                           comparacao={escalaCompleta.comparacao_demanda}
@@ -2791,50 +2888,27 @@ export function SetorDetalhe() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold">Preview do Ciclo</p>
                         <Badge variant="outline" className="text-xs">Nivel 1 — sem horarios</Badge>
-                        <div className="flex-1" />
-                        <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
                       </div>
-                      {previewNivel1.avisos?.length > 0 && (
-                        <div className="space-y-1.5">
-                          {previewNivel1.avisos.map((aviso, idx) => (
-                            <div key={idx} className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
-                              <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-                              <span>{aviso}</span>
-                            </div>
-                          ))}
-                        </div>
+                      {previewGridData && (
+                        <CicloGrid data={previewGridData} mode="edit" />
                       )}
-                      <EscalaCicloResumo
-                        escala={previewNivel1.escala}
-                        alocacoes={previewNivel1.alocacoes}
-                        colaboradores={orderedColabs}
-                        funcoes={funcoesList.filter(f => f.ativo)}
-                        regrasPadrao={previewNivel1.regras}
-                        viewMode={cicloMode}
-                      />
+                      {(() => {
+                        const previewAvisos: Aviso[] = (previewNivel1.avisos ?? []).map((msg, idx) => ({
+                          id: `preview-${idx}`,
+                          nivel: 'warning' as const,
+                          titulo: msg.split('.')[0] || msg,
+                          descricao: msg,
+                        }))
+                        return <AvisosSection avisos={previewAvisos} />
+                      })()}
                     </div>
                   ) : (
-                    <div className="space-y-4 rounded-lg border border-dashed px-4 py-5">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {setor?.regime_escala === '6X1'
-                            ? 'Preview disponivel apenas para setores 5x2. Use Gerar Escala.'
-                            : 'Configure postos e demandas para ver o preview do ciclo.'}
-                        </p>
-                      </div>
-                      {(!empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0 || (demandas?.length ?? 0) === 0) && (
-                        <div className="rounded-md border bg-muted/30 px-3 py-3">
-                          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            Antes de gerar
-                          </p>
-                          <ul className="space-y-1.5 text-sm">
-                            <PrecondicaoItem ok={!!empresa} label="Empresa configurada" linkTo="/empresa" />
-                            <PrecondicaoItem ok={(tiposContrato?.length ?? 0) > 0} label="Tipo de contrato cadastrado" linkTo="/tipos-contrato" />
-                            <PrecondicaoItem ok={(orderedColabs?.length ?? 0) > 0} label="Colaborador(es) ativo(s) no setor" linkTo="/colaboradores" hint="Cadastre na secao Colaboradores acima" />
-                            <PrecondicaoItem ok={(demandas?.length ?? 0) > 0} label="Demanda cadastrada (faixas horarias)" linkTo={undefined} hint="Configure na secao Demanda acima" />
-                          </ul>
-                        </div>
-                      )}
+                    <div className="rounded-lg border border-dashed px-4 py-5">
+                      <p className="text-sm font-medium text-foreground">
+                        {setor?.regime_escala === '6X1'
+                          ? 'Preview disponivel apenas para setores 5x2. Use Gerar Escala.'
+                          : 'Configure postos e demandas para ver o preview do ciclo.'}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -2865,14 +2939,9 @@ export function SetorDetalhe() {
                           <span className="text-xs text-muted-foreground">Gerado em {formatarDataHora(oficialCompleta.escala.criada_em)}</span>
                         )}
                       </div>
-                      <EscalaCicloResumo
-                        escala={oficialCompleta.escala}
-                        alocacoes={oficialCompleta.alocacoes}
-                        colaboradores={equipeEscalaOficial.colaboradores}
-                        funcoes={equipeEscalaOficial.funcoes}
-                        regrasPadrao={regrasPadrao ?? []}
-                        viewMode={cicloMode}
-                      />
+                      {oficialGridData && (
+                        <CicloGrid data={oficialGridData} mode="view" />
+                      )}
                       {oficialCompleta.comparacao_demanda.length > 0 && (
                         <CoberturaChart
                           comparacao={oficialCompleta.comparacao_demanda}
@@ -2914,14 +2983,9 @@ export function SetorDetalhe() {
                               <span className="text-xs text-muted-foreground">Gerado em {formatarDataHora(historicoCompleta.escala.criada_em)}</span>
                             )}
                           </div>
-                          <EscalaCicloResumo
-                            escala={historicoCompleta.escala}
-                            alocacoes={historicoCompleta.alocacoes}
-                            colaboradores={equipeEscalaHistorico.colaboradores}
-                            funcoes={equipeEscalaHistorico.funcoes}
-                            regrasPadrao={regrasPadrao ?? []}
-                            viewMode={cicloMode}
-                          />
+                          {historicoGridData && (
+                            <CicloGrid data={historicoGridData} mode="view" />
+                          )}
                         </div>
                       ) : null}
                     </div>

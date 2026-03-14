@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type {
   Escala,
   Alocacao,
@@ -12,7 +13,8 @@ import type {
 import { formatarData, REGRAS_TEXTO } from '@/lib/formatadores'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { EscalaCicloResumo } from '@/componentes/EscalaCicloResumo'
+import { CicloGrid } from '@/componentes/CicloGrid'
+import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { EscalaTimelineDiaria } from '@/componentes/EscalaTimelineDiaria'
 import { useAppVersion } from '@/hooks/useAppVersion'
 
@@ -56,6 +58,19 @@ export function ExportarEscala({
 }: ExportarEscalaProps) {
   const appVersion = useAppVersion()
   const modoDetalhado = modo === 'detalhado'
+
+  const cicloGridData = useMemo(
+    () =>
+      escalaParaCicloGrid(
+        escala,
+        alocacoes,
+        colaboradores,
+        funcoes,
+        regrasPadrao,
+        [],
+      ),
+    [escala, alocacoes, colaboradores, funcoes, regrasPadrao],
+  )
   const mostrarCiclo = incluirCiclo ?? true
   const mostrarTimeline = incluirTimeline ?? modoDetalhado
   const deveIncluirAvisos = incluirAvisos ?? mostrarTimeline
@@ -91,14 +106,7 @@ export function ExportarEscala({
       {/* Ciclo Rotativo */}
       {mostrarCiclo && (
         <div className="mb-6">
-          <EscalaCicloResumo
-            escala={escala}
-            alocacoes={alocacoes}
-            colaboradores={colaboradores}
-            funcoes={funcoes}
-            regrasPadrao={regrasPadrao}
-            mostrarTodasSemanas
-          />
+          <CicloGrid data={cicloGridData} mode="view" />
         </div>
       )}
 

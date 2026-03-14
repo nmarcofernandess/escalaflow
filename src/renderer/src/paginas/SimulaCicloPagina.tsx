@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/componentes/PageHeader'
-import { CicloViewToggle, useCicloViewMode } from '@/componentes/CicloViewToggle'
-import { SimuladorCicloGrid } from '@/componentes/SimuladorCicloGrid'
+import { CicloGrid } from '@/componentes/CicloGrid'
+import { simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import {
   gerarCicloFase1,
   sugerirK,
@@ -28,9 +28,6 @@ export function SimulaCicloPagina() {
   const [K, setK] = useState(kSugerido)
   const [rawN, setRawN] = useState(String(DEFAULT_N))
   const [rawK, setRawK] = useState(String(kSugerido))
-  const [cicloMode, setCicloMode] = useCicloViewMode()
-  const [selectedWeek, setSelectedWeek] = useState(0)
-
   const kSugeridoAtual = useMemo(() => sugerirK(N, 7), [N])
   const numMeses = 3
   const SEMANAS_POR_MES = 4.33
@@ -47,6 +44,11 @@ export function SimulaCicloPagina() {
   )
 
   const resultado: SimulaCicloOutput = useMemo(() => gerarCicloFase1(input), [input])
+
+  const cicloGridData = useMemo(() => {
+    if (!resultado.sucesso) return null
+    return simulacaoParaCicloGrid(resultado)
+  }, [resultado])
 
   const handleNChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
@@ -83,7 +85,6 @@ export function SimulaCicloPagina() {
     setK(k)
     setRawN(String(DEFAULT_N))
     setRawK(String(k))
-    setSelectedWeek(0)
   }, [])
 
   return (
@@ -239,17 +240,8 @@ export function SimulaCicloPagina() {
                   Mesmo layout do sistema: Tabela (uma semana) ou Resumo (ciclo completo).
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <CicloViewToggle mode={cicloMode} onChange={setCicloMode} />
-                </div>
-                <SimuladorCicloGrid
-                  resultado={resultado}
-                  viewMode={cicloMode}
-                  selectedWeek={selectedWeek}
-                  onSelectedWeekChange={setSelectedWeek}
-                  domingoTarget={K}
-                />
+              <CardContent>
+                {cicloGridData && <CicloGrid data={cicloGridData} mode="edit" />}
               </CardContent>
             </Card>
 
