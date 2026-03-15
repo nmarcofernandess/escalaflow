@@ -2280,26 +2280,76 @@ export function SetorDetalhe() {
                     </div>
                   )}
 
-                  {colabsSemPosto.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reserva operacional</p>
-                        <span className="text-xs text-muted-foreground">{colabsSemPosto.length}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 rounded-md border border-dashed bg-muted/20 p-2">
-                        {colabsSemPosto.map((colab) => (
-                          <Link key={colab.id} to={`/colaboradores/${colab.id}`}>
-                            <Badge variant="secondary" className="cursor-pointer gap-1 text-xs hover:bg-secondary/80">
-                              {colab.nome}
-                              <ArrowRight className="size-3" />
-                            </Badge>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {(() => {
+                    // IDs de ausentes pra evitar duplicação (pessoa sem posto E de férias)
+                    const ausenteIds = new Set((derivados?.ausentes ?? []).map(a => a.colaborador.id))
+                    // Reserve: sem posto E que NÃO estão na lista de ausentes
+                    const reservaPura = colabsSemPosto.filter(c => !ausenteIds.has(c.id))
+                    // Ausentes que também estão sem posto (aparecem como ausente, não reserva)
+                    const totalForaEscala = reservaPura.length + (derivados?.ausentes?.length ?? 0)
 
-                  {colabsSemPosto.length > 0 && <div className="h-px bg-border" />}
+                    if (totalForaEscala === 0) return null
+
+                    return (
+                      <>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Reserva e ausentes
+                            </p>
+                            <span className="text-xs text-muted-foreground">{totalForaEscala}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {/* Ausentes — cards com badge de tipo */}
+                            {(derivados?.ausentes ?? []).map((info) => (
+                              <Link key={`aus-${info.colaborador.id}`} to={`/colaboradores/${info.colaborador.id}`} className="no-underline">
+                                <div className={cn(
+                                  'rounded-lg border p-3 min-w-[200px] cursor-pointer transition-colors hover:bg-accent/50',
+                                  info.excecao.tipo === 'FERIAS' && 'border-warning/30 bg-warning/5',
+                                  info.excecao.tipo === 'ATESTADO' && 'border-destructive/30 bg-destructive/5',
+                                  info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/30 bg-muted/5',
+                                )}>
+                                  <div className="font-medium text-sm">{info.colaborador.nome}</div>
+                                  <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
+                                    {info.posto?.apelido ?? 'Sem posto'}
+                                    {' \u2022 '}
+                                    {tiposContrato?.find(t => t.id === info.colaborador.tipo_contrato_id)?.nome ?? 'CLT'}
+                                    {' \u2022 '}
+                                    <Badge variant="outline" className={cn(
+                                      'text-[10px] px-1.5 py-0',
+                                      info.excecao.tipo === 'FERIAS' && 'border-warning/40 text-warning',
+                                      info.excecao.tipo === 'ATESTADO' && 'border-destructive/40 text-destructive',
+                                      info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/40 text-muted-foreground',
+                                    )}>
+                                      {info.excecao.tipo === 'FERIAS' ? 'Férias' : info.excecao.tipo === 'ATESTADO' ? 'Atestado' : 'Bloqueio'}
+                                    </Badge>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    {info.excecao.data_inicio.split('-').reverse().join('/')} - {info.excecao.data_fim.split('-').reverse().join('/')}
+                                    {(() => {
+                                      const hoje = new Date().toISOString().split('T')[0]
+                                      const diasRestantes = Math.ceil((Date.parse(info.excecao.data_fim) - Date.parse(hoje)) / 86400000)
+                                      return diasRestantes > 0 ? ` (volta em ${diasRestantes} dia${diasRestantes > 1 ? 's' : ''})` : ''
+                                    })()}
+                                  </div>
+                                </div>
+                              </Link>
+                            ))}
+                            {/* Reserva pura — chips simples */}
+                            {reservaPura.map((colab) => (
+                              <Link key={`res-${colab.id}`} to={`/colaboradores/${colab.id}`}>
+                                <Badge variant="secondary" className="cursor-pointer gap-1 text-xs hover:bg-secondary/80 h-auto py-1.5">
+                                  {colab.nome}
+                                  <ArrowRight className="size-3" />
+                                </Badge>
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="h-px bg-border" />
+                      </>
+                    )
+                  })()}
 
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2547,54 +2597,6 @@ export function SetorDetalhe() {
                       </DndContext>
                     )}
                   </div>
-
-                  {(derivados?.ausentes?.length ?? 0) > 0 && (
-                    <div className="mt-6">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-warning">
-                          AUSENTES ({derivados!.ausentes.length})
-                        </span>
-                        <span className="text-xs text-muted-foreground">ferias e atestados ativos</span>
-                      </div>
-                      <div className="flex flex-wrap gap-3">
-                        {derivados!.ausentes.map((info) => (
-                          <div
-                            key={info.colaborador.id}
-                            className={cn(
-                              'rounded-lg border p-3 min-w-[220px]',
-                              info.excecao.tipo === 'FERIAS' && 'border-warning/30 bg-warning/5',
-                              info.excecao.tipo === 'ATESTADO' && 'border-destructive/30 bg-destructive/5',
-                              info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/30 bg-muted/5',
-                            )}
-                          >
-                            <div className="font-medium text-sm">{info.colaborador.nome}</div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {info.posto?.apelido ?? 'Sem posto'} {'\u2022'} {tiposContrato?.find(t => t.id === info.colaborador.tipo_contrato_id)?.nome ?? 'CLT'}
-                              {' \u2022 '}
-                              <Badge variant="outline" className={cn(
-                                'text-[10px] px-1.5 py-0',
-                                info.excecao.tipo === 'FERIAS' && 'border-warning/40 text-warning',
-                                info.excecao.tipo === 'ATESTADO' && 'border-destructive/40 text-destructive',
-                                info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/40 text-muted-foreground',
-                              )}>
-                                {info.excecao.tipo === 'FERIAS' ? 'Ferias' : info.excecao.tipo === 'ATESTADO' ? 'Atestado' : 'Bloqueio'}
-                              </Badge>
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {info.excecao.data_inicio.split('-').reverse().join('/')} - {info.excecao.data_fim.split('-').reverse().join('/')}
-                              {(() => {
-                                const hoje = new Date().toISOString().split('T')[0]
-                                const fimMs = Date.parse(info.excecao.data_fim)
-                                const hojeMs = Date.parse(hoje)
-                                const diasRestantes = Math.ceil((fimMs - hojeMs) / 86400000)
-                                return diasRestantes > 0 ? ` (volta em ${diasRestantes} dia${diasRestantes > 1 ? 's' : ''})` : ''
-                              })()}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2899,7 +2901,7 @@ export function SetorDetalhe() {
                           titulo: msg.split('.')[0] || msg,
                           descricao: msg,
                         }))
-                        return <AvisosSection avisos={previewAvisos} />
+                        return <AvisosSection avisos={previewAvisos} onPedirSugestao={() => { /* TODO C7: abrir Sheet bottom com sugestao */ }} />
                       })()}
                     </div>
                   ) : (
