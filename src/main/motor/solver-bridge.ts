@@ -472,6 +472,13 @@ export async function buildSolverInput(
           folga_fixa = true
         }
 
+        // D14: Quando fixa=DOM, a "variavel" vira 2ª folga fixa (não condicional).
+        // XOR é pulado no solver (B1 guard), então forçar folga_fixa no dia da variavel.
+        if (!isIntermitente && group?.padrao?.folga_fixa_dia_semana === 'DOM'
+          && group?.padrao?.folga_variavel_dia_semana && group.padrao.folga_variavel_dia_semana === diaSemana) {
+          folga_fixa = true
+        }
+
         // Traduz 2→4: inicio fixo = inicio_min==inicio_max, fim = fim_max (fim_min=null)
         const inicio_min = efetivo_inicio
         const inicio_max = efetivo_inicio  // solver forca slot exato
@@ -525,7 +532,10 @@ export async function buildSolverInput(
     if (c.folga_fixa_dia_semana === 'DOM') {
       c.domingo_ciclo_trabalho = 0
       c.domingo_ciclo_folga = 1
-      c.folga_variavel_dia_semana = null
+      // D14: NÃO nullar folga_variavel — quando fixa=DOM, a "variavel" vira
+      // "2ª folga fixa da semana" (RH escolhe o dia). O solver B1 guard já
+      // pula o XOR, e add_folga_fixa_5x2 trata DOM como dia off.
+      // Se variavel != null, o solver vai respeitar via regras_colaborador_dia.
       continue
     }
     c.domingo_ciclo_trabalho = cicloTrabalho
