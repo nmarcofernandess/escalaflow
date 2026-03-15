@@ -46,6 +46,12 @@
 - [CLAUDE B] B6: Guard funcao_id=null — filtrado na bridge, sem posto = sem escala ✅
 - [CLAUDE B] B7: Guard tipo_trabalhador — derivado do contrato na bridge com NFD normalization ✅
 - [CLAUDE B] B8+B9: Toast INFEASIBLE com "Analisar com IA" — abre chat pra diagnostico ✅
+- [CLAUDE B] pinned_folga_externo: TS preview → solver Phase 2 direto (converterPreviewParaPinned) ✅
+- [CLAUDE B] Avisos expandidos: ausentes reduzem cobertura + feriados proibidos no derivados ✅
+- [CLAUDE B] D14: Bridge nao nulla folga_variavel quando fixa=DOM — RH escolhe weekday ✅
+- [CLAUDE B] FF=DOM display: reapplicado no novo CicloGrid (CLAUDE C deletou componente antigo) ✅
+- [CLAUDE B] FolgaSelect: validacao fixa!=variavel reapplicada no CicloGrid ✅
+- [CLAUDE B] Bugfix: data_nascimento fantasma — filtro CAMPOS_VALIDOS em criar+cadastrar_lote ✅
 - [CLAUDE C] C1: Prototipo CicloGrid unificado APROVADO pelo Marco ✅
   - View unica (morte do toggle Tabela/Resumo e botoes S1/S2)
   - Nome+Posto empilhados, Var/Fixo sticky, scroll horizontal
