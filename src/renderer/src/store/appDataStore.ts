@@ -34,7 +34,9 @@ export interface StoreSnapshot {
   colaboradores?: Array<{ id: number; nome: string; tipo_trabalhador: string; funcao_id: number | null }>
   postos?: Array<{ id: number; apelido: string; titular_id: number | null }>
   demanda?: { porDia: number[] }
+  cobertura?: { porDia: number[]; deficitDias: string[] }
   ciclo?: { N: number; K: number; semanas: number }
+  dirty?: boolean
   ausentes?: Array<{ id: number; nome: string; tipo: string; data_inicio: string; data_fim: string }>
   proximosAusentes?: Array<{ id: number; nome: string; tipo: string; diasAte: number }>
   avisos?: Array<{ id: string; nivel: string; titulo: string }>
@@ -74,7 +76,10 @@ export interface Derivados {
   kReal: number          // demanda domingo raw (antes do cap)
   kMaxSemTT: number      // floor(N/2) — maximo sem 2 domingos consecutivos
   cicloSemanas: number   // N / gcd(N, K)
-  demandaPorDia: number[]  // [SEG..DOM] — max min_pessoas por dia
+  demandaPorDia: number[]    // [SEG..DOM] — max min_pessoas por dia
+  coberturaPorDia: number[]  // [SEG..DOM] — estimativa de cobertura (N - folgas fixas nesse dia)
+  deficitPorDia: number[]    // [SEG..DOM] — cobertura - demanda (negativo = falta gente)
+  dirty: boolean             // dados mudaram desde ultima escala gerada
   avisos: AvisoEscala[]
   ausentes: AusenteInfo[]           // excecoes ativas HOJE
   proximosAusentes: ProximoAusenteInfo[]  // excecoes comecando em ate 7 dias
@@ -87,6 +92,9 @@ const DERIVADOS_VAZIO: Derivados = {
   kMaxSemTT: 0,
   cicloSemanas: 0,
   demandaPorDia: [0, 0, 0, 0, 0, 0, 0],
+  coberturaPorDia: [0, 0, 0, 0, 0, 0, 0],
+  deficitPorDia: [0, 0, 0, 0, 0, 0, 0],
+  dirty: false,
   avisos: [],
   ausentes: [],
   proximosAusentes: [],
@@ -139,6 +147,8 @@ function calcularDerivados(
   colaboradores: Colaborador[],
   demandas: Demanda[],
   excecoes: Excecao[],
+  regrasPadrao: RegraHorarioColaborador[],
+  escalas: Escala[],
 ): Derivados {
   // N: postos ativos com titular (excluindo INTERMITENTE)
   const postosElegiveis = postos
@@ -258,7 +268,61 @@ function calcularDerivados(
     }
   }
 
-  return { N, K, kReal, kMaxSemTT, cicloSemanas, demandaPorDia, avisos, ausentes, proximosAusentes }
+  // Cobertura estimada por dia: N pessoas em 5x2, cada uma folga 1 dia fixo (seg-sab) + domingo por ciclo
+  // Para cada dia da semana: quantos colaboradores NÃO têm folga fixa nesse dia
+  const titularesElegiveis = postosElegiveis
+    .map(f => colaboradores.find(c => c.funcao_id === f.id))
+    .filter(Boolean) as Colaborador[]
+
+  // Mapa: dia → quantos têm folga fixa nesse dia
+  const folgasFixasPorDia = new Map<string, number>()
+  for (const regra of regrasPadrao) {
+    if (regra.dia_semana_regra !== null) continue // só regras padrão
+    if (!regra.folga_fixa_dia_semana) continue
+    if (!titularesElegiveis.some(c => c.id === regra.colaborador_id)) continue
+    folgasFixasPorDia.set(
+      regra.folga_fixa_dia_semana,
+      (folgasFixasPorDia.get(regra.folga_fixa_dia_semana) ?? 0) + 1,
+    )
+  }
+
+  const coberturaPorDia = DIAS_SEMANA.map((dia) => {
+    if (dia === 'DOM') return K // domingo = K pessoas do ciclo
+    // Seg-sab: N menos quem tem folga fixa nesse dia, menos 1 variável estimada
+    const comFolgaFixa = folgasFixasPorDia.get(dia) ?? 0
+    // Estimativa: cada pessoa trabalha 5 dias (5x2), então ~N/6 folga variável por dia
+    const variavelEstimada = N > 0 ? Math.round(N / 6) : 0
+    return Math.max(0, N - comFolgaFixa - variavelEstimada)
+  })
+
+  const deficitPorDia = DIAS_SEMANA.map((_, i) => coberturaPorDia[i] - demandaPorDia[i])
+
+  // Dirty: dados mudaram desde última escala gerada?
+  // Compara se existe escala RASCUNHO — se input_hash != null e algo mudou, dirty=true
+  // Heurística simples: se não tem escala ou escala é antiga, dirty=true
+  const latestEscala = [...escalas]
+    .filter(e => e.status === 'RASCUNHO' || e.status === 'OFICIAL')
+    .sort((a, b) => b.criada_em.localeCompare(a.criada_em))[0]
+  const dirty = !latestEscala || (latestEscala.input_hash != null && latestEscala.status === 'RASCUNHO')
+
+  // Aviso de deficit por dia (complementa o aviso de subdimensionamento existente)
+  const diasComDeficit = DIAS_SEMANA.filter((_, i) => deficitPorDia[i] < 0 && N > 0)
+  if (diasComDeficit.length > 0) {
+    // Substituir o aviso genérico por um mais detalhado
+    const existeSubdimensionamento = avisos.findIndex(a => a.id === 'subdimensionamento')
+    if (existeSubdimensionamento >= 0) avisos.splice(existeSubdimensionamento, 1)
+    avisos.push({
+      id: 'deficit_cobertura',
+      nivel: 'aviso',
+      titulo: `Cobertura insuficiente em: ${diasComDeficit.join(', ')}`,
+      detalhe: diasComDeficit.map(dia => {
+        const i = DIAS_SEMANA.indexOf(dia as typeof DIAS_SEMANA[number])
+        return `${dia}: ${coberturaPorDia[i]}/${demandaPorDia[i]}`
+      }).join(' · '),
+    })
+  }
+
+  return { N, K, kReal, kMaxSemTT, cicloSemanas, demandaPorDia, coberturaPorDia, deficitPorDia, dirty, avisos, ausentes, proximosAusentes }
 }
 
 // ---------------------------------------------------------------------------
@@ -299,7 +363,7 @@ async function carregarSetor(setorId: number) {
       setoresService.listarHorarioSemana(setorId),
     ])
 
-  const derivados = calcularDerivados(postos, colaboradores, demandas, excecoes)
+  const derivados = calcularDerivados(postos, colaboradores, demandas, excecoes, regrasPadrao, escalas)
 
   return { setor, colaboradores, postos, demandas, regrasPadrao, excecoes, escalas, horarioSemana, derivados }
 }
@@ -319,7 +383,7 @@ const GLOBAL_LOADERS: Record<string, (set: SetFn) => Promise<void>> = {
 }
 
 // Entidades que afetam derivados — recalcular após reload
-const DERIVADOS_DEPS = new Set(['colaboradores', 'postos', 'funcoes', 'demandas', 'excecoes'])
+const DERIVADOS_DEPS = new Set(['colaboradores', 'postos', 'funcoes', 'demandas', 'excecoes', 'regras_padrao', 'escalas'])
 
 const SETOR_LOADERS: Record<string, (set: SetFn, setorId: number) => Promise<void>> = {
   setor: async (set, id) => set({ setor: await setoresService.buscar(id) }),
@@ -448,8 +512,8 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
         await setorLoader(set, setorId)
         // Recalcula derivados se a entidade afeta o ciclo
         if (DERIVADOS_DEPS.has(key)) {
-          const { postos, colaboradores, demandas, excecoes } = get()
-          set({ derivados: calcularDerivados(postos, colaboradores, demandas, excecoes) })
+          const { postos, colaboradores, demandas, excecoes, regrasPadrao, escalas } = get()
+          set({ derivados: calcularDerivados(postos, colaboradores, demandas, excecoes, regrasPadrao, escalas) })
         }
       } catch (err) {
         console.error(`[AppDataStore] reload setor ${key} falhou:`, err)
@@ -500,6 +564,11 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
       }))
       snap.demanda = { porDia: state.derivados.demandaPorDia }
       snap.ciclo = { N: state.derivados.N, K: state.derivados.K, semanas: state.derivados.cicloSemanas }
+      snap.cobertura = {
+        porDia: state.derivados.coberturaPorDia,
+        deficitDias: DIAS_SEMANA.filter((_, i) => state.derivados.deficitPorDia[i] < 0),
+      }
+      snap.dirty = state.derivados.dirty
       snap.avisos = state.derivados.avisos.map(a => ({ id: a.id, nivel: a.nivel, titulo: a.titulo }))
       snap.ausentes = state.derivados.ausentes.map(a => ({
         id: a.colaborador.id, nome: a.colaborador.nome,
