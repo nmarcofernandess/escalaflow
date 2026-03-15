@@ -190,23 +190,23 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
               ))}
             </tr>
 
-            {/* Row 2: with bg-muted/50 — empty | Var | Fixo | S T Q Q S S D... */}
-            <tr className="border-b border-border bg-muted/50">
+            {/* Row 2: with bg-muted — empty | Var | Fixo | S T Q Q S S D... */}
+            <tr className="border-b border-border bg-muted">
               {/* Sticky col 1: empty */}
               <th
-                className="sticky left-0 z-20 bg-muted/50 pl-2.5 pr-1 py-2 text-left"
+                className="sticky left-0 z-20 bg-muted pl-2.5 pr-1 py-2 text-left"
                 style={{ width: 130, minWidth: 130 }}
               />
               {/* Sticky col 2: "Var" */}
               <th
-                className="sticky z-20 bg-muted/50 px-1 py-2 text-center text-xs font-medium text-muted-foreground"
+                className="sticky z-20 bg-muted px-1 py-2 text-center text-xs font-medium text-muted-foreground"
                 style={{ left: 130, width: 50, minWidth: 50 }}
               >
                 Var
               </th>
               {/* Sticky col 3: "Fixo" */}
               <th
-                className="sticky z-20 bg-muted/50 px-1 py-2 text-center text-xs font-medium text-muted-foreground border-r border-border"
+                className="sticky z-20 bg-muted px-1 py-2 text-center text-xs font-medium text-muted-foreground border-r border-border"
                 style={{ left: 180, width: 50, minWidth: 50 }}
               >
                 Fixo
@@ -245,7 +245,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
               >
                 {/* Col 1: Name + Posto (sticky) */}
                 <td
-                  className="sticky left-0 z-10 bg-background pl-2.5 pr-1 py-1.5 text-left group-hover:bg-muted/40"
+                  className="sticky left-0 z-10 bg-background pl-2.5 pr-1 py-1.5 text-left"
                   style={{ width: 130, minWidth: 130 }}
                 >
                   <div className="flex flex-col">
@@ -256,7 +256,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
 
                 {/* Col 2: Var folga select (sticky) */}
                 <td
-                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle group-hover:bg-muted/40"
+                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle"
                   style={{ left: 130, width: 50, minWidth: 50 }}
                 >
                   <FolgaSelect
@@ -272,7 +272,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
 
                 {/* Col 3: Fixo folga select (sticky) */}
                 <td
-                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle border-r border-border group-hover:bg-muted/40"
+                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle border-r border-border"
                   style={{ left: 180, width: 50, minWidth: 50 }}
                 >
                   <FolgaSelect
