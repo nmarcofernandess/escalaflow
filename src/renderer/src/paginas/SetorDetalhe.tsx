@@ -2865,13 +2865,36 @@ export function SetorDetalhe() {
                     </div>
                   ) : previewNivel1 ? (
                     <div className="space-y-3">
+                      {/* Avisos de operacao (preflight blockers + solver errors) */}
+                      {avisosOperacao.length > 0 && (
+                        <AvisosSection
+                          avisos={avisosOperacao.map(a => ({
+                            id: a.id,
+                            nivel: a.nivel === 'erro' ? 'error' as const : a.nivel === 'aviso' ? 'warning' as const : 'info' as const,
+                            titulo: a.titulo,
+                            descricao: a.detalhe ?? '',
+                            contexto_ia: `Aviso de operacao: ${a.titulo}. ${a.detalhe ?? ''}`,
+                          }))}
+                          onPedirSugestao={() => useIaStore.getState().setAberto(true)}
+                        />
+                      )}
+
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold">Ciclo Rotativo</p>
                         <Badge variant="outline" className="text-xs">Preview</Badge>
                       </div>
-                      {previewGridData && (
+
+                      {/* Preview condicional: esconder grid se tem erros criticos nos derivados */}
+                      {derivados?.avisos?.some(a => a.nivel === 'erro') ? (
+                        <div className="rounded-lg border border-dashed border-destructive/30 px-4 py-5">
+                          <p className="text-sm font-medium text-destructive">
+                            Resolva os problemas abaixo antes de visualizar o ciclo.
+                          </p>
+                        </div>
+                      ) : previewGridData ? (
                         <CicloGrid data={previewGridData} mode="edit" />
-                      )}
+                      ) : null}
+
                       {(() => {
                         // Combinar avisos do store (derivados — ricos, com id unico) + preview (strings brutas)
                         const storeAvisos: Aviso[] = (derivados?.avisos ?? []).map(a => ({

@@ -147,6 +147,7 @@ function calcularDerivados(
   colaboradores: Colaborador[],
   demandas: Demanda[],
   excecoes: Excecao[],
+  feriados: Feriado[],
   regrasPadrao: RegraHorarioColaborador[],
   escalas: Escala[],
 ): Derivados {
@@ -297,6 +298,50 @@ function calcularDerivados(
 
   const deficitPorDia = DIAS_SEMANA.map((_, i) => coberturaPorDia[i] - demandaPorDia[i])
 
+  // --- Camada 3: ausentes + feriados proibidos ---
+  const futuro4semMs = Date.now() + 28 * 86400000
+  const futuro4sem = new Date(futuro4semMs).toISOString().split('T')[0]
+
+  // Aviso: ausentes próximas 4 semanas podem reduzir cobertura abaixo da demanda
+  const ausentesProximas = excecoes.filter(e =>
+    colabIds.has(e.colaborador_id) &&
+    e.data_fim >= hoje &&
+    e.data_inicio <= futuro4sem,
+  )
+  if (ausentesProximas.length > 0 && N > 0) {
+    const maxDemanda = demandaPorDia.length > 0 ? Math.max(...demandaPorDia) : 0
+    if (N - ausentesProximas.length < maxDemanda) {
+      avisos.push({
+        id: 'ausentes_reduzem_cobertura',
+        nivel: 'aviso',
+        titulo: `${ausentesProximas.length} ausencia(s) proximas podem reduzir cobertura abaixo da demanda`,
+        detalhe: ausentesProximas.map(e => {
+          const colab = colaboradores.find(c => c.id === e.colaborador_id)
+          return `${colab?.nome ?? 'ID:' + e.colaborador_id}: ${e.tipo} ${e.data_inicio} a ${e.data_fim}`
+        }).join('; '),
+        origem: 'setor',
+      })
+    }
+  }
+
+  // Aviso: feriados com proibido_trabalhar nas próximas 4 semanas
+  const feriadosProibidos = feriados.filter(f =>
+    f.proibido_trabalhar && f.data >= hoje && f.data <= futuro4sem,
+  )
+  if (feriadosProibidos.length > 0) {
+    avisos.push({
+      id: 'feriados_proibidos',
+      nivel: 'aviso',
+      titulo: `${feriadosProibidos.length} feriado(s) proibido(s) nas proximas 4 semanas`,
+      detalhe: feriadosProibidos.map(f => `${f.data}: ${f.nome}`).join('; '),
+      origem: 'setor',
+    })
+  }
+
+  // TODO: aviso de folga_fixa concentrada (2+ pessoas mesma folga) requer regrasPadrao +
+  // análise de colab x folga_fixa_dia_semana — já disponível via regrasPadrao, mas a
+  // leitura cruzada com postos/titulares precisa de lógica extra. Adiar para iteração futura.
+
   // Dirty: dados mudaram desde última escala gerada?
   // Compara se existe escala RASCUNHO — se input_hash != null e algo mudou, dirty=true
   // Heurística simples: se não tem escala ou escala é antiga, dirty=true
@@ -350,7 +395,7 @@ const SETOR_VAZIO: SetorFields = {
 // Carrega todas as entidades do setor ativo em paralelo
 // ---------------------------------------------------------------------------
 
-async function carregarSetor(setorId: number) {
+async function carregarSetor(setorId: number, feriados: Feriado[]) {
   const [setor, colaboradores, postos, demandas, regrasPadrao, excecoes, escalas, horarioSemana] =
     await Promise.all([
       setoresService.buscar(setorId),
@@ -363,7 +408,7 @@ async function carregarSetor(setorId: number) {
       setoresService.listarHorarioSemana(setorId),
     ])
 
-  const derivados = calcularDerivados(postos, colaboradores, demandas, excecoes, regrasPadrao, escalas)
+  const derivados = calcularDerivados(postos, colaboradores, demandas, excecoes, feriados, regrasPadrao, escalas)
 
   return { setor, colaboradores, postos, demandas, regrasPadrao, excecoes, escalas, horarioSemana, derivados }
 }
@@ -479,7 +524,7 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
     set({ setorAtivo: id, carregandoSetor: true })
 
     try {
-      const dados = await carregarSetor(id)
+      const dados = await carregarSetor(id, get().feriados)
       if (get().setorAtivo !== id) return
       set({ ...dados, carregandoSetor: false })
     } catch (err) {
@@ -512,8 +557,8 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
         await setorLoader(set, setorId)
         // Recalcula derivados se a entidade afeta o ciclo
         if (DERIVADOS_DEPS.has(key)) {
-          const { postos, colaboradores, demandas, excecoes, regrasPadrao, escalas } = get()
-          set({ derivados: calcularDerivados(postos, colaboradores, demandas, excecoes, regrasPadrao, escalas) })
+          const { postos, colaboradores, demandas, excecoes, feriados, regrasPadrao, escalas } = get()
+          set({ derivados: calcularDerivados(postos, colaboradores, demandas, excecoes, feriados, regrasPadrao, escalas) })
         }
       } catch (err) {
         console.error(`[AppDataStore] reload setor ${key} falhou:`, err)
