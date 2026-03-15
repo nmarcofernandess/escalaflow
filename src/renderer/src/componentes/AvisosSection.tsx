@@ -3,10 +3,18 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export interface Aviso {
+  /** Codigo unico do aviso (ex: COB_DEFICIT_SEG, TT_ALEX_S3) — usado pra deduplicacao */
   id: string
   nivel: 'error' | 'warning' | 'info'
   titulo: string
   descricao: string
+  /** Botao de acao opcional (ex: "Resolver automatico") */
+  acao?: {
+    label: string
+    handler: () => void
+  }
+  /** Texto pro sistema de IA usar quando o RH perguntar sobre esse aviso */
+  contexto_ia?: string
 }
 
 interface AvisosSectionProps {
@@ -63,6 +71,16 @@ export function AvisosSection({ avisos, onPedirSugestao }: AvisosSectionProps) {
               <div className="flex-1">
                 <p className="text-sm font-semibold">{aviso.titulo}</p>
                 <p className="text-[13px] opacity-80">{aviso.descricao}</p>
+                {aviso.acao && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1.5 h-7 px-2 text-xs"
+                    onClick={aviso.acao.handler}
+                  >
+                    {aviso.acao.label}
+                  </Button>
+                )}
               </div>
             </div>
           )
