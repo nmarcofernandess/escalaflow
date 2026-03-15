@@ -245,19 +245,19 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
               >
                 {/* Col 1: Name + Posto (sticky) */}
                 <td
-                  className="sticky left-0 z-10 bg-background px-2.5 py-1.5 text-left group-hover:bg-muted/40"
+                  className="sticky left-0 z-10 bg-background px-3 py-2.5 text-left group-hover:bg-muted/40"
                   style={{ width: 130, minWidth: 130 }}
                 >
-                  <div className="flex flex-col leading-snug">
-                    <span className="text-[13px] font-medium text-foreground">{row.nome}</span>
-                    <span className="text-xs text-muted-foreground">{row.posto}</span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium leading-tight text-foreground">{row.nome}</span>
+                    <span className="text-xs leading-tight text-muted-foreground">{row.posto}</span>
                   </div>
                 </td>
 
                 {/* Col 2: Var folga select (sticky) */}
                 <td
-                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle group-hover:bg-muted/40"
-                  style={{ left: 130, width: 46, minWidth: 46 }}
+                  className="sticky z-10 bg-background px-1 py-2.5 text-center align-middle group-hover:bg-muted/40"
+                  style={{ left: 130, width: 50, minWidth: 50 }}
                 >
                   <FolgaSelect
                     colaboradorId={row.id}
@@ -272,8 +272,8 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
 
                 {/* Col 3: Fixo folga select (sticky) */}
                 <td
-                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle border-r border-border group-hover:bg-muted/40"
-                  style={{ left: 176, width: 46, minWidth: 46 }}
+                  className="sticky z-10 bg-background px-1 py-2.5 text-center align-middle border-r border-border group-hover:bg-muted/40"
+                  style={{ left: 180, width: 50, minWidth: 50 }}
                 >
                   <FolgaSelect
                     colaboradorId={row.id}
@@ -296,14 +296,14 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
                       <td
                         key={`${semanaIdx}-${diaIdx}`}
                         className={cn(
-                          'px-0.5 py-1.5 text-center align-middle',
+                          'px-0.5 py-2 text-center align-middle',
                           isFirst && 'border-l border-border',
                           isCycleEndCell && 'border-r-2 border-r-purple-500',
                         )}
                       >
                         <span
                           className={cn(
-                            'inline-block min-w-[26px] rounded px-0.5 py-0.5 text-xs font-semibold',
+                            'inline-block min-w-[30px] rounded px-1 py-0.5 text-xs font-semibold',
                             config.cell,
                           )}
                         >
@@ -320,20 +320,20 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
             <tr className="border-t-2 border-border">
               {/* Label (sticky) */}
               <td
-                className="sticky left-0 z-10 bg-background px-2.5 py-2 text-left text-xs font-semibold text-blue-500 border-t-2 border-border"
+                className="sticky left-0 z-10 bg-background px-3 py-2.5 text-left text-xs font-semibold text-blue-500 border-t-2 border-border"
                 style={{ width: 130, minWidth: 130 }}
               >
                 COBERTURA
               </td>
               {/* Empty Var cell (sticky) */}
               <td
-                className="sticky z-10 bg-background px-1 py-2 border-t-2 border-border"
-                style={{ left: 130, width: 46, minWidth: 46 }}
+                className="sticky z-10 bg-background px-1 py-2.5 border-t-2 border-border"
+                style={{ left: 130, width: 50, minWidth: 50 }}
               />
               {/* Empty Fixo cell (sticky) */}
               <td
-                className="sticky z-10 bg-background px-1 py-2 border-r border-border border-t-2"
-                style={{ left: 176, width: 46, minWidth: 46 }}
+                className="sticky z-10 bg-background px-1 py-2.5 border-r border-border border-t-2"
+                style={{ left: 180, width: 50, minWidth: 50 }}
               />
 
               {/* Coverage cells */}
@@ -349,7 +349,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
                     <td
                       key={`cov-${semanaIdx}-${diaIdx}`}
                       className={cn(
-                        'px-0.5 py-2 text-center align-middle text-xs font-bold',
+                        'px-0.5 py-2.5 text-center align-middle text-xs font-bold',
                         isFirst && 'border-l border-border',
                         isCycleEndCell && 'border-r-2 border-r-purple-500',
                         isDeficit && 'text-destructive',
