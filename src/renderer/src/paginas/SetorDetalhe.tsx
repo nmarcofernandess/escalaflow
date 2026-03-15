@@ -2873,13 +2873,27 @@ export function SetorDetalhe() {
                         <CicloGrid data={previewGridData} mode="edit" />
                       )}
                       {(() => {
-                        const previewAvisos: Aviso[] = (previewNivel1.avisos ?? []).map((msg, idx) => ({
-                          id: `preview-${idx}`,
-                          nivel: 'warning' as const,
-                          titulo: msg.split('.')[0] || msg,
-                          descricao: msg,
+                        // Combinar avisos do store (derivados — ricos, com id unico) + preview (strings brutas)
+                        const storeAvisos: Aviso[] = (derivados?.avisos ?? []).map(a => ({
+                          id: a.id,
+                          nivel: a.nivel === 'erro' ? 'error' as const : a.nivel === 'aviso' ? 'warning' as const : 'info' as const,
+                          titulo: a.titulo,
+                          descricao: a.detalhe ?? '',
+                          contexto_ia: `Aviso do setor ${setor?.nome ?? ''}: ${a.titulo}. ${a.detalhe ?? ''}`,
                         }))
-                        return <AvisosSection avisos={previewAvisos} onPedirSugestao={() => setSugestaoOpen(true)} />
+                        // Avisos do preview que nao estao no store (evitar duplicata)
+                        const storeIds = new Set(storeAvisos.map(a => a.id))
+                        const previewExtras: Aviso[] = (previewNivel1.avisos ?? [])
+                          .filter((_, idx) => !storeIds.has(`preview-${idx}`))
+                          .map((msg, idx) => ({
+                            id: `preview-extra-${idx}`,
+                            nivel: 'warning' as const,
+                            titulo: msg.split('.')[0] || msg,
+                            descricao: msg,
+                            contexto_ia: `Preview do ciclo: ${msg}`,
+                          }))
+                        const todosAvisos = [...storeAvisos, ...previewExtras]
+                        return <AvisosSection avisos={todosAvisos} onPedirSugestao={() => setSugestaoOpen(true)} />
                       })()}
                     </div>
                   ) : (
