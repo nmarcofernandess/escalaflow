@@ -68,6 +68,9 @@ export function calcularSugestaoFolgas(input: CalcSugestaoInput): {
     folgaCount[bestFixa]++
 
     const bestVar = pickBestDay(demandaPorDia, folgaCount, N, bestFixa)
+    // Variavel tambem consome cobertura (~50% das semanas quando ativa).
+    // Contar evita que o greedy concentre variaveis no mesmo dia.
+    folgaCount[bestVar]++
 
     sugestoes.push({
       colaborador_id: colab.id,

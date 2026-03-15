@@ -398,6 +398,7 @@ function calcularDerivados(
           nivel: 'info',
           titulo: `Pico de ${maxPessoas} pessoas na faixa ${picoDesc} (resto usa ${modePessoas})`,
           detalhe: `Pessoa extra custa ~${Math.round(jornadaMinEstimada / 60)}h/dia pra cobrir ${Math.round(duracaoPicoMin / 60)}h de pico. Considere intermitente ou redistribuir demanda.`,
+          origem: 'setor',
         })
       }
     }

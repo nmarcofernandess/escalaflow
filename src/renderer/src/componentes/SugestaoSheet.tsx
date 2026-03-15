@@ -10,22 +10,17 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import type { DiaSemana } from '@shared/index'
+import type { SugestaoFolgaItem } from '@shared/sugestao-folgas'
 import { DIAS_CURTOS } from '@/lib/ciclo-grid-types'
 
-export interface SugestaoFolga {
-  colaborador_id: number
-  nome: string
-  variavel_atual: DiaSemana | null
-  variavel_proposta: DiaSemana | null
-  fixa_atual: DiaSemana | null
-  fixa_proposta: DiaSemana | null
-}
+export type SugestaoFolga = SugestaoFolgaItem
 
 interface SugestaoSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   sugestoes: SugestaoFolga[]
   resultados?: string[]
+  /** Fire-and-forget: aceita async (salva no banco) — feedback via toast */
   onAceitar: () => void
   onDescartar: () => void
 }
