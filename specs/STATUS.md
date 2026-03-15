@@ -62,7 +62,16 @@
   - Prototipo: `specs/prototipos/ciclo-grid-final.html`
 
 ## Decisoes pendentes (PRECISA DO MARCO)
-- C7: Diff validar/solucionar — contrato de componente (UX do Sheet bottom ja aprovada)
+- (nenhuma — C7 implementado com logica de sugestao real)
+
+## Concluido nesta sessao (2026-03-15)
+- C6: avisosOperacao renderizado na UI (SetorDetalhe) ✅
+- Preview condicional: grid esconde se derivados tem erros ✅
+- C7: SugestaoSheet com logica REAL (calcularSugestaoFolgas + onAceitar salva) ✅
+- Viabilidade faixa horaria: aviso de pico isolado com ratio custo/beneficio ✅
+- C2: Verificado — PreflightChecklist JA FUNCIONAVA ✅
+- C4: Verificado — siglas JA PADRONIZADAS (FF/FV no export) ✅
+- C5: Verificado — DEMANDA JA IMPLEMENTADA (cob/dem no CicloGrid) ✅
 
 ## Conectores — RESOLVIDOS
 
