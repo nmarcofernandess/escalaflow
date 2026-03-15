@@ -73,12 +73,8 @@
   - Se "X pendente(s) F/V" → mostrar aviso "Configure as folgas primeiro" em vez do grid
   - Ref: ANALYST doc secoes 3, 24, 26 (preflight, o que TS valida, solver is blind)
 
-## Em andamento AGORA
-- [CLAUDE B] Fix FF=DOM display bug (caller nao passava folga_fixa_dom) + validacao fixa!=variavel
-
 ## Conflitos entre dominios
-- **appDataStore.ts**: CLAUDE A adicionou `ausentes/proximosAusentes` e mudou `calcularDerivados` pra 4 args, mas 2 callers ainda passam 3 (linhas ~242 e ~392). CLAUDE A precisa corrigir.
-- CLAUDE B adicionou `derivados` selector em SetorDetalhe.tsx — nao conflita com CLAUDE A
+- **RESOLVIDO:** CLAUDE C deletou EscalaCicloResumo (C8), perdendo fixes B3. CLAUDE B reaplicou em ciclo-grid-converters.ts + CicloGrid.tsx (commit ad03183).
 
 ## Mapa de dominios (quem faz o que)
 
