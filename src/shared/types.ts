@@ -747,6 +747,7 @@ export interface IaContexto {
   pagina: 'dashboard' | 'setor_lista' | 'setor_detalhe' | 'escala' | 'escalas_hub' | 'colaborador_lista' | 'colaborador_detalhe' | 'contratos' | 'empresa' | 'feriados' | 'configuracoes' | 'regras' | 'ia' | 'outro' | 'externo'
   setor_id?: number
   colaborador_id?: number
+  store_snapshot?: Record<string, any>  // StoreSnapshot from renderer
 }
 
 export interface ToolCall {

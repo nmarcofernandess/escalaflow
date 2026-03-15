@@ -195,6 +195,7 @@ function TitularAssignmentPanel({
   titular,
   candidatos,
   funcaoMap,
+  contratoMap,
   searchTerm,
   onSearchTermChange,
   onSelectColaborador,
@@ -206,6 +207,7 @@ function TitularAssignmentPanel({
   titular: Colaborador | null
   candidatos: Colaborador[]
   funcaoMap: Map<number, string>
+  contratoMap: Map<number, string>
   searchTerm: string
   onSearchTermChange: (value: string) => void
   onSelectColaborador: (colaboradorId: number) => void
@@ -237,7 +239,9 @@ function TitularAssignmentPanel({
         {titular ? (
           <ColaboradorCard
             nome={titular.nome}
-            subtitulo={getDescricaoBuscaColaborador(titular)}
+            posto={titular.funcao_id != null ? (funcaoMap.get(titular.funcao_id) ?? 'Posto') : null}
+            contrato={contratoMap.get(titular.tipo_contrato_id)}
+            status={getDescricaoBuscaColaborador(titular).split(' • ').pop() as 'Ativo' | 'Ferias' | 'Atestado' | 'Bloqueio'}
           />
         ) : (
           <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
@@ -270,24 +274,11 @@ function TitularAssignmentPanel({
                 <ColaboradorCard
                   key={candidato.id}
                   nome={candidato.nome}
-                  subtitulo={getDescricaoBuscaColaborador(candidato)}
+                  posto={candidato.funcao_id != null ? (funcaoMap.get(candidato.funcao_id) ?? 'Posto') : null}
+                  contrato={contratoMap.get(candidato.tipo_contrato_id)}
+                  status={getDescricaoBuscaColaborador(candidato).split(' • ').pop() as 'Ativo' | 'Ferias' | 'Atestado' | 'Bloqueio'}
                   onClick={() => onSelectColaborador(candidato.id)}
                   disabled={loading}
-                  rightContent={
-                    <Badge variant={candidato.funcao_id != null ? 'outline' : 'secondary'} className="text-xs">
-                      {candidato.funcao_id != null ? (
-                        <>
-                          <Briefcase className="mr-1 size-3" />
-                          {postoAtualNome}
-                        </>
-                      ) : (
-                        <>
-                          <Users className="mr-1 size-3" />
-                          Reserva
-                        </>
-                      )}
-                    </Badge>
-                  }
                 />
               )
             })
@@ -2294,21 +2285,20 @@ export function SetorDetalhe() {
                             </p>
                             <span className="text-xs text-muted-foreground">{totalForaEscala}</span>
                           </div>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
                             {/* Ausentes — cards com badge de tipo */}
                             {(derivados?.ausentes ?? []).map((info) => (
                               <ColaboradorCard
                                 key={`aus-${info.colaborador.id}`}
                                 nome={info.colaborador.nome}
-                                subtitulo={info.posto?.apelido ?? 'Sem posto'}
-                                excecao={{
-                                  tipo: info.excecao.tipo as 'FERIAS' | 'ATESTADO' | 'BLOQUEIO',
-                                  resumo: (() => {
-                                    const hoje = new Date().toISOString().split('T')[0]
-                                    const d = Math.ceil((Date.parse(info.excecao.data_fim) - Date.parse(hoje)) / 86400000)
-                                    return d > 0 ? `volta em ${d}d` : ''
-                                  })(),
-                                }}
+                                posto={info.posto?.apelido}
+                                contrato={contratoMap.get(info.colaborador.tipo_contrato_id)}
+                                excecaoTipo={info.excecao.tipo as 'FERIAS' | 'ATESTADO' | 'BLOQUEIO'}
+                                extra={(() => {
+                                  const hoje = new Date().toISOString().split('T')[0]
+                                  const d = Math.ceil((Date.parse(info.excecao.data_fim) - Date.parse(hoje)) / 86400000)
+                                  return d > 0 ? `volta em ${d}d` : ''
+                                })()}
                                 href={`/colaboradores/${info.colaborador.id}`}
                               />
                             ))}
@@ -2317,7 +2307,8 @@ export function SetorDetalhe() {
                               <ColaboradorCard
                                 key={`res-${colab.id}`}
                                 nome={colab.nome}
-                                subtitulo={getStatusColaborador(colab.id)}
+                                contrato={contratoMap.get(colab.tipo_contrato_id)}
+                                status={getStatusColaborador(colab.id) as 'Ativo' | 'Ferias' | 'Atestado' | 'Bloqueio'}
                                 href={`/colaboradores/${colab.id}`}
                               />
                             ))}
@@ -2537,6 +2528,7 @@ export function SetorDetalhe() {
                                                 titular={ocupante ?? null}
                                                 candidatos={colaboradoresFiltradosPicker}
                                                 funcaoMap={funcaoMap}
+                                                contratoMap={contratoMap}
                                                 searchTerm={titularPickerSearchTerm}
                                                 onSearchTermChange={setTitularPickerSearchTerm}
                                                 onSelectColaborador={(colaboradorId) => {
@@ -3223,6 +3215,7 @@ export function SetorDetalhe() {
                       titular={postoDialogTitularAtual}
                       candidatos={colaboradoresFiltradosDialogo}
                       funcaoMap={funcaoMap}
+                      contratoMap={contratoMap}
                       searchTerm={postoDialogSearchTerm}
                       onSearchTermChange={setPostoDialogSearchTerm}
                       onSelectColaborador={(colaboradorId) => {

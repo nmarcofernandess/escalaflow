@@ -156,33 +156,7 @@ describe('executeTool memórias IA', () => {
     expect(result.status).toBe('error')
     expect(result.code).toBe('LIMITE_MEMORIAS')
     expect(result.erro).toMatch(/Limite de 50/i)
-    expect(result.correction).toMatch(/listar_memorias/i)
-  })
-
-  // ===== listar_memorias =====
-
-  it('listar_memorias retorna lista vazia quando não há memórias', async () => {
-    const result = await executeTool('listar_memorias', {})
-
-    expect(result.status).toBe('ok')
-    expect(result.memorias).toEqual([])
-    expect(result.total).toBe(0)
-    expect(result.limite).toBe(50)
-    expect(result.summary).toMatch(/0 memória/i)
-  })
-
-  it('listar_memorias retorna memórias existentes ordenadas', async () => {
-    memorias.push(
-      { id: 1, conteudo: 'primeira', criada_em: '2026-01-01T00:00:00Z', atualizada_em: '2026-01-01T00:00:00Z' },
-      { id: 2, conteudo: 'segunda', criada_em: '2026-01-02T00:00:00Z', atualizada_em: '2026-01-02T00:00:00Z' },
-    )
-
-    const result = await executeTool('listar_memorias', {})
-
-    expect(result.status).toBe('ok')
-    expect(result.total).toBe(2)
-    expect(result.memorias).toHaveLength(2)
-    expect(result.memorias[0].conteudo).toBe('segunda') // mais recente primeiro
+    expect(result.correction).toMatch(/contexto automático/i)
   })
 
   // ===== remover_memoria =====
@@ -208,6 +182,6 @@ describe('executeTool memórias IA', () => {
     expect(result.status).toBe('error')
     expect(result.code).toBe('NOT_FOUND')
     expect(result.erro).toMatch(/não encontrada/i)
-    expect(result.correction).toMatch(/listar_memorias/i)
+    expect(result.correction).toMatch(/contexto automático/i)
   })
 })

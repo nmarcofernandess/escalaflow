@@ -1,6 +1,6 @@
 # STATUS — Painel Unico de Escala
 
-> Atualizado: 2026-03-15 01:00
+> Atualizado: 2026-03-15 02:30
 > Warlog: `specs/WARLOG_PAINEL_UNICO.md`
 > Spec base: `docs/ANALYST_PAINEL_UNICO_ESCALA.md`
 
@@ -18,7 +18,7 @@
 ---
 
 ## Em andamento
-(nada — A11/A12 sao P2, podem esperar)
+(nada — DOMINIO A COMPLETO)
 
 ## Concluido
 - [CLAUDE A] A1: AppDataStore globais ✅
@@ -31,6 +31,13 @@
 - [CLAUDE A] A8: SetorDetalhe migrado — 10 useApiData → store, 17 reloads removidos ✅
 - [CLAUDE A] A9: EscalaPagina migrada — 9 useApiData → store ✅
 - [CLAUDE A] A10: ColaboradorLista parcial (2/4 hooks migrados). Dashboard e EscalasHub sem useApiData do store ✅
+- [CLAUDE A] A11: Snapshot do store no IaContexto — discovery pula queries quando snapshot disponivel ✅
+- [CLAUDE A] A12: Removidas 2 tools redundantes (listar_memorias, obter_alertas) — discovery ja cobre ✅
+- [CLAUDE A] Ausentes na Equipe: secao visual + nome laranja + warning 7d + derivados ✅
+- [CLAUDE A] Bugfix: data_nascimento fantasma no tools.ts ✅
+- [CLAUDE A] Bugfix: DIAS_IDX_TO_DIASEMANA faltando DOM (simula-ciclo.ts) ✅
+- [CLAUDE A] Bugfix: FF == FV mesmo dia permitido — validacao backend ✅
+- [CLAUDE A] Query excecoes: retorna nao-expiradas (futuras + ativas) + filtro data no excecaoMap ✅
 - [CLAUDE B] B1: Fix folga_fixa=DOM no solver — 4 guards (XOR, ciclo hard, ciclo soft, dom_max) ✅
 - [CLAUDE B] B2: Fix folga_fixa=DOM na bridge — zero ciclo, null variavel ✅
 - [CLAUDE B] B3: Fix folga_fixa=DOM no TS — folga_fixa_dom flag + 4 unit tests ✅

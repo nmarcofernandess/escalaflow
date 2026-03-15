@@ -7,7 +7,6 @@ import { inferGenerationModeForOverrides } from '../motor/rule-policy'
 import { persistirResumoAutoritativoEscala } from '../tipc/escalas-utils'
 import { salvarDetalheFuncao, deletarFuncao } from '../funcoes-service'
 import { textoResumoCobertura, textoResumoViolacoesHard, textoResumoViolacoesSoft } from '../../shared/resumo-user'
-import { coreAlerts } from './discovery'
 import { validarEscalaV3 } from '../motor/validador'
 import { searchKnowledge, exploreRelations } from '../knowledge/search'
 import { ingestKnowledge } from '../knowledge/ingest'
@@ -385,11 +384,6 @@ const ConfigurarHorarioFuncionamentoSchema = z.object({
   usa_padrao: z.boolean().optional().describe('Só para setor: se true, herda horário da empresa neste dia.'),
 })
 
-// obter_alertas
-const ObterAlertasSchema = z.object({
-  setor_id: z.number().int().positive().optional().describe('Se informado, filtra alertas para este setor. Se omitido, retorna alertas de todos os setores.'),
-})
-
 // buscar_conhecimento
 const BuscarConhecimentoSchema = z.object({
   consulta: z.string().min(1).describe('Texto da pergunta ou termos para buscar na base de conhecimento.'),
@@ -421,8 +415,6 @@ const SalvarMemoriaSchema = z.object({
   conteudo: z.string().min(1).describe('Fato curto a memorizar (ex: "Cleunice nunca troca turno", "Black Friday precisa de 8 no Caixa").'),
   id: z.number().int().positive().optional().describe('ID da memória a atualizar. Se omitido, cria nova.'),
 })
-
-const ListarMemoriasSchema = z.object({})
 
 const RemoverMemoriaSchema = z.object({
   id: z.number().int().positive().describe('ID da memória a remover.'),
@@ -564,11 +556,6 @@ export const IA_TOOLS = [
         parameters: toJsonSchema(ConfigurarHorarioFuncionamentoSchema)
     },
     {
-        name: 'obter_alertas',
-        description: 'Retorna alertas ativos do sistema: setores sem escala, poucos colaboradores, escalas desatualizadas (dados mudaram desde geração), violações HARD pendentes. Use para dar contexto proativo ao usuário.',
-        parameters: toJsonSchema(ObterAlertasSchema)
-    },
-    {
         name: 'buscar_conhecimento',
         description: 'Busca semântica na base de conhecimento (RAG). Retorna chunks relevantes + relações do knowledge graph. Use para perguntas sobre regras, procedimentos, legislação que não estão nas outras tools. Diferente de `consultar` (dados estruturados), esta busca em texto livre e semântico.',
         parameters: toJsonSchema(BuscarConhecimentoSchema)
@@ -592,11 +579,6 @@ export const IA_TOOLS = [
         name: 'salvar_memoria',
         description: 'Salva uma memória curta do RH (max 20). Use quando o usuário diz "lembra que...", "anota que...", "registra que...". Para atualizar, passe o id.',
         parameters: toJsonSchema(SalvarMemoriaSchema)
-    },
-    {
-        name: 'listar_memorias',
-        description: 'Lista todas as memórias do RH salvas (max 20). Use para "o que eu pedi pra lembrar?", "quais anotações temos?".',
-        parameters: toJsonSchema(ListarMemoriasSchema)
     },
     {
         name: 'remover_memoria',
@@ -870,13 +852,11 @@ export const TOOL_SCHEMAS: Record<string, z.ZodTypeAny | null> = {
   salvar_perfil_horario: SalvarPerfilHorarioSchema,
   deletar_perfil_horario: DeletarPerfilHorarioSchema,
   configurar_horario_funcionamento: ConfigurarHorarioFuncionamentoSchema,
-  obter_alertas: ObterAlertasSchema,
   buscar_conhecimento: BuscarConhecimentoSchema,
   salvar_conhecimento: SalvarConhecimentoSchema,
   listar_conhecimento: ListarConhecimentoSchema,
   explorar_relacoes: ExplorarRelacoesSchema,
   salvar_memoria: SalvarMemoriaSchema,
-  listar_memorias: ListarMemoriasSchema,
   remover_memoria: RemoverMemoriaSchema,
   fazer_backup: FazerBackupSchema,
 }
@@ -3488,20 +3468,6 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
     }
 
-    // ==================== obter_alertas ====================
-    if (name === 'obter_alertas') {
-        const { setor_id: filtroSetorId } = args
-        try {
-            const alertas = await coreAlerts(filtroSetorId as number | undefined)
-            return toolOk(
-              { alertas, total: alertas.length },
-              { summary: alertas.length > 0 ? `${alertas.length} alerta(s) ativo(s).` : 'Nenhum alerta ativo.', meta: { tool_kind: 'discovery' } }
-            )
-        } catch (e: any) {
-            return toolError('OBTER_ALERTAS_FALHOU', `Erro: ${e.message}`, { correction: 'Tente sem setor_id para alertas gerais, ou verifique se o setor_id existe.', meta: { tool_kind: 'discovery' } })
-        }
-    }
-
     // ==================== KNOWLEDGE LAYER TOOLS ====================
 
     if (name === 'buscar_conhecimento') {
@@ -3628,7 +3594,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             // Create — check limit
             if (total >= 50) {
                 return toolError('LIMITE_MEMORIAS', `Limite de 50 memórias atingido (${total}/50).`, {
-                    correction: 'Use listar_memorias para ver as existentes e remover_memoria para liberar espaço.',
+                    correction: 'Consulte as memórias no contexto automático (já injetadas) e use remover_memoria para liberar espaço.',
                     meta: { tool_kind: 'memoria' }
                 })
             }
@@ -3648,29 +3614,13 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         }
     }
 
-    if (name === 'listar_memorias') {
-        try {
-            const rows = await queryAll<{ id: number; conteudo: string; origem: string; criada_em: string; atualizada_em: string }>(
-                'SELECT * FROM ia_memorias ORDER BY atualizada_em DESC')
-            return toolOk(
-                { memorias: rows, total: rows.length, limite: 50 },
-                { summary: `${rows.length} memória(s) salva(s) (max 50).`, meta: { tool_kind: 'memoria' } }
-            )
-        } catch (e: any) {
-            return toolError('LISTAR_MEMORIAS_FALHOU', `Erro ao listar memórias: ${e.message}`, {
-                correction: 'Tente novamente.',
-                meta: { tool_kind: 'memoria' }
-            })
-        }
-    }
-
     if (name === 'remover_memoria') {
         const { id } = args as { id: number }
         try {
             const existe = await queryOne<{ id: number }>('SELECT id FROM ia_memorias WHERE id = $1', id)
             if (!existe) {
                 return toolError('NOT_FOUND', `Memória #${id} não encontrada.`, {
-                    correction: 'Use listar_memorias para ver os IDs disponíveis.',
+                    correction: 'Consulte as memórias no contexto automático (já injetadas) para ver os IDs disponíveis.',
                     meta: { tool_kind: 'memoria' }
                 })
             }

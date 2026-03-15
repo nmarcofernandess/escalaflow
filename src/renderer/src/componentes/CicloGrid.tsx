@@ -241,7 +241,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
             {rows.map((row) => (
               <tr
                 key={row.id}
-                className="group border-b border-border/50 transition-colors hover:bg-muted/40"
+                className="group border-b border-border/50 transition-colors hover:bg-muted"
               >
                 {/* Col 1: Name + Posto (sticky) */}
                 <td

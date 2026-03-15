@@ -50,7 +50,7 @@ export const ESCALAFLOW_EVAL_DATASET: EscalaFlowEvalCase[] = [
     label: 'Resumo do sistema (via contexto automático)',
     input: 'Me dá um resumo do sistema agora.',
     expected: {
-      shouldCallAnyOf: ['consultar', 'obter_alertas'],
+      shouldCallAnyOf: ['consultar'],
       shouldNotCallTools: ['gerar_escala'],
       maxSteps: 4,
     },

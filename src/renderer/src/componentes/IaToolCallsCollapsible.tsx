@@ -18,7 +18,6 @@ const TOOL_ICONS: Record<string, string> = {
   preflight: '🛫',
   editar_regra: '⚙️',
   explicar_violacao: '📖',
-  obter_alertas: '📈',
 }
 
 interface Props {

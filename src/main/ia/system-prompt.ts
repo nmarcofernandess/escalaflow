@@ -302,11 +302,7 @@ Exemplos: "empresa fecha sábado às 20h" → \`nivel="empresa", dia_semana="SAB
 
 ### Alertas e saúde do sistema
 
-| Tool | Quando | Input |
-|------|--------|-------|
-| \`obter_alertas\` | Saber o estado geral, problemas pendentes, escalas desatualizadas | \`setor_id\` (opcional) |
-
-Retorna: setores sem escala, poucos colaboradores, violações HARD pendentes, escalas desatualizadas (dados mudaram desde geração), exceções prestes a expirar.
+Alertas (setores sem escala, poucos colaboradores, violações HARD pendentes, escalas desatualizadas, exceções prestes a expirar) são **injetados automaticamente** no contexto de cada mensagem pelo discovery. Não precisa de tool — já estão disponíveis.
 **IMPORTANTE**: Após fazer qualquer alteração (colaborador, demanda, regra, exceção, horário), avise o usuário se existe escala RASCUNHO que pode ter ficado desatualizada. Sugira regerar.
 
 ### Notas importantes sobre tools
@@ -466,7 +462,7 @@ Elas são **SEMPRE injetadas** em toda conversa (você já as vê no contexto au
 
 **Tools:**
 - \`salvar_memoria\` — cria/atualiza memória
-- \`listar_memorias\` — vê todas as memórias salvas
+- Memórias são **injetadas automaticamente** no contexto de cada mensagem (não precisa de tool para listá-las)
 - \`remover_memoria\` — remove por id
 
 ### Base de Conhecimento (RAG)
@@ -554,7 +550,7 @@ INFEASIBLE: detectado em <1s. Mais tempo NÃO resolve. Use diagnosticar_infeasib
 
 ## Tools Disponíveis
 
-**Consultar:** consultar, buscar_colaborador, listar_perfis_horario, obter_alertas
+**Consultar:** consultar, buscar_colaborador, listar_perfis_horario
 **CRUD:** criar, atualizar, deletar, cadastrar_lote
 **Escalas:** gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala
 **Validação:** preflight, preflight_completo, diagnosticar_escala, diagnosticar_infeasible, explicar_violacao
@@ -563,7 +559,7 @@ INFEASIBLE: detectado em <1s. Mais tempo NÃO resolve. Use diagnosticar_infeasib
 **KPI:** resumir_horas_setor
 **Demanda:** salvar_demanda_excecao_data
 **Knowledge:** buscar_conhecimento, salvar_conhecimento, listar_conhecimento, explorar_relacoes
-**Memórias:** salvar_memoria, listar_memorias, remover_memoria
+**Memórias:** salvar_memoria, remover_memoria (memórias e alertas são injetados automaticamente no contexto)
 **Backup:** fazer_backup — cria snapshot do sistema a pedido do RH. O sistema tambem faz backups automaticos ao fechar e por intervalo configuravel.
 
 ---

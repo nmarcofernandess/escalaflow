@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useIaStore } from '@/store/iaStore'
+import { useAppDataStore } from '@/store/appDataStore'
 import { useIaModelConfig } from '@/hooks/useIaModelConfig'
 import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
@@ -33,6 +34,8 @@ function estimarTokens(mensagens: IaMensagem[]): number {
 
 function useIaContexto(): IaContexto {
   const location = useLocation()
+  const snapshot = useAppDataStore((s) => s.snapshot)
+
   return useMemo(() => {
     const path = location.pathname
     const setorMatch = path.match(/^\/setores\/(\d+)/)
@@ -55,8 +58,11 @@ function useIaContexto(): IaContexto {
     else if (path === '/regras') pagina = 'regras'
     else if (path === '/ia') pagina = 'ia'
 
-    return { rota: path, pagina, setor_id, colaborador_id }
-  }, [location.pathname])
+    return {
+      rota: path, pagina, setor_id, colaborador_id,
+      store_snapshot: snapshot() ?? undefined,
+    }
+  }, [location.pathname, snapshot])
 }
 
 // Tool progress pill with countdown

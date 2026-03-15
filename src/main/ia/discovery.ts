@@ -14,6 +14,7 @@ import type { IaContexto } from '../../shared/types'
 export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuario?: string): Promise<string> {
     if (!contexto) return ''
 
+    const snap = contexto.store_snapshot as Record<string, any> | undefined
     const sections: string[] = []
 
     sections.push(`## CONTEXTO AUTOMÁTICO — PÁGINA ATUAL DO USUÁRIO`)
@@ -30,13 +31,14 @@ export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuari
     }
 
     // ─── Resumo global (sempre) ──────────────────────────────────────
+    // Snapshot doesn't have global counts for all setores — always query
     const resumo = await _resumoGlobal()
     sections.push(`\n### Resumo do sistema`)
     sections.push(`- Setores ativos: ${resumo.setores}`)
     sections.push(`- Colaboradores ativos: ${resumo.colaboradores}`)
     sections.push(`- Escalas RASCUNHO: ${resumo.rascunhos} | OFICIAL: ${resumo.oficiais}`)
 
-    // ─── Feriados próximos (30 dias) ───────────────────────────────
+    // ─── Feriados próximos (30 dias) — snapshot doesn't cover ───────
     const feriadosProximos = await queryAll<{ data: string; nome: string; proibido_trabalhar: boolean }>(`
         SELECT data, nome, proibido_trabalhar
         FROM feriados
@@ -51,7 +53,7 @@ export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuari
         }
     }
 
-    // ─── Regras customizadas (empresa overrides ativos) ────────────
+    // ─── Regras customizadas (empresa overrides ativos) — snapshot doesn't cover ─
     const regrasCustom = await queryAll<{ codigo: string; status: string; nome: string; status_sistema: string }>(`
         SELECT re.codigo, re.status, rd.nome, rd.status_sistema
         FROM regra_empresa re
@@ -71,16 +73,36 @@ export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuari
     if (setores.length > 0) {
         sections.push(`\n### Setores disponíveis`)
         for (const s of setores) {
-            const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id)
-            const numColabs = countRow?.c ?? 0
-            sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.hora_abertura}–${s.hora_fechamento}, ${numColabs} colaboradores`)
+            // If snapshot has this setor loaded, use its colaborador count to skip query
+            if (snap?.setor?.id === s.id && snap.colaboradores) {
+                sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.hora_abertura}–${s.hora_fechamento}, ${snap.colaboradores.length} colaboradores`)
+            } else {
+                const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id)
+                const numColabs = countRow?.c ?? 0
+                sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.hora_abertura}–${s.hora_fechamento}, ${numColabs} colaboradores`)
+            }
         }
     }
 
     // ─── Contexto de SETOR específico ────────────────────────────────
     if (contexto.setor_id) {
-        const setorInfo = await _infoSetor(contexto.setor_id)
-        if (setorInfo) sections.push(setorInfo)
+        // When snapshot covers this setor, use _infoSetorFromSnapshot (skips ~6 DB queries)
+        if (snap?.setor?.id === contexto.setor_id && snap.colaboradores) {
+            const snapInfo = _infoSetorFromSnapshot(snap)
+            if (snapInfo) sections.push(snapInfo)
+            // Still query the things snapshot doesn't cover: excecoes detail, regras horario, demandas detail, escala detail
+            const extraInfo = await _infoSetorExtras(contexto.setor_id, snap)
+            if (extraInfo) sections.push(extraInfo)
+        } else {
+            const setorInfo = await _infoSetor(contexto.setor_id)
+            if (setorInfo) sections.push(setorInfo)
+        }
+    }
+
+    // ─── Snapshot visual context — what the user is seeing now ──────
+    if (snap) {
+        const snapSection = _snapshotBriefing(snap)
+        if (snapSection) sections.push(snapSection)
     }
 
     // ─── Contexto de COLABORADOR específico ──────────────────────────
@@ -389,7 +411,230 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
 }
 
 // =============================================================================
-// ALERTAS ESTRUTURADOS — exportados para uso em tools.ts (obter_alertas)
+// SNAPSHOT-BASED HELPERS — skip DB queries when renderer already has the data
+// =============================================================================
+
+/**
+ * Builds setor header + colaboradores + postos from store snapshot.
+ * Skips: setor query, colaboradores query, postos query (3 DB queries saved).
+ */
+function _infoSetorFromSnapshot(snap: Record<string, any>): string | null {
+    if (!snap.setor) return null
+
+    const lines: string[] = []
+    lines.push(`\n### Setor em foco: ${snap.setor.nome} (ID: ${snap.setor.id})`)
+    lines.push(`- Horario: ${snap.setor.hora_abertura} – ${snap.setor.hora_fechamento}`)
+
+    const colabs = snap.colaboradores as Array<{ id: number; nome: string; tipo_trabalhador: string; funcao_id: number | null }> | undefined
+    if (colabs && colabs.length > 0) {
+        lines.push(`\n#### Colaboradores (${colabs.length} ativos):`)
+        for (const c of colabs) {
+            lines.push(`- ${c.nome} (ID: ${c.id}) — ${c.tipo_trabalhador}`)
+        }
+    } else {
+        lines.push(`\nSetor sem colaboradores ativos.`)
+    }
+
+    const postos = snap.postos as Array<{ id: number; apelido: string; titular_id: number | null }> | undefined
+    if (postos && postos.length > 0) {
+        const postosVazios = postos.filter(p => p.titular_id == null)
+        const reservaOp = colabs ? colabs.filter(c => c.funcao_id == null) : []
+        lines.push(`\n#### Postos do setor (${postos.length}):`)
+        lines.push(`- ${postosVazios.length} posto(s) sem titular = reserva de postos`)
+        lines.push(`- ${reservaOp.length} colaborador(es) sem funcao_id = reserva operacional`)
+        for (const p of postos) {
+            const titular = colabs?.find(c => c.id === p.titular_id)
+            const titularTexto = titular ? `${titular.nome} (ID: ${titular.id})` : 'vazio'
+            lines.push(`- ${p.apelido} (ID: ${p.id}) — titular: ${titularTexto}`)
+        }
+    }
+
+    return lines.join('\n')
+}
+
+/**
+ * Queries only the parts that the snapshot doesn't cover for a setor:
+ * excecoes detail (with dates), regras horario, demandas detail, escala detail.
+ */
+async function _infoSetorExtras(setor_id: number, snap: Record<string, any>): Promise<string | null> {
+    const lines: string[] = []
+
+    // Exceções ativas do setor (snapshot has ausentes but not all excecoes with dates)
+    const excecoes = await queryAll<{ tipo: string; data_inicio: string; data_fim: string; colab_nome: string }>(`
+        SELECT e.tipo, e.data_inicio, e.data_fim, c.nome as colab_nome
+        FROM excecoes e
+        JOIN colaboradores c ON e.colaborador_id = c.id
+        WHERE c.setor_id = ? AND c.ativo = true
+          AND e.data_fim::date >= CURRENT_DATE
+        ORDER BY e.data_inicio
+        LIMIT 10
+    `, setor_id)
+
+    if (excecoes.length > 0) {
+        lines.push(`\n#### Excecoes ativas (ferias/atestados):`)
+        for (const e of excecoes) {
+            lines.push(`- ${e.colab_nome}: ${e.tipo} ${e.data_inicio} a ${e.data_fim}`)
+        }
+    }
+
+    // Regras de horário individuais do setor — snapshot doesn't cover
+    const regrasSetor = await queryAll<{
+        colab_nome: string; colaborador_id: number;
+        dia_semana_regra: string | null; folga_fixa_dia_semana: string | null;
+        inicio: string | null; fim: string | null;
+    }>(`
+        SELECT c.nome as colab_nome, r.colaborador_id, r.dia_semana_regra,
+               r.folga_fixa_dia_semana, r.inicio, r.fim
+        FROM colaborador_regra_horario r
+        JOIN colaboradores c ON c.id = r.colaborador_id
+        WHERE c.setor_id = ? AND c.ativo = true AND r.ativo = true
+        ORDER BY c.nome, r.dia_semana_regra NULLS FIRST
+    `, setor_id)
+
+    if (regrasSetor.length > 0) {
+        lines.push(`\n#### Regras de horario individuais:`)
+        const porColab = new Map<number, { nome: string; regras: typeof regrasSetor }>()
+        for (const r of regrasSetor) {
+            if (!porColab.has(r.colaborador_id)) porColab.set(r.colaborador_id, { nome: r.colab_nome, regras: [] })
+            porColab.get(r.colaborador_id)!.regras.push(r)
+        }
+        for (const [, { nome, regras }] of porColab) {
+            const partes = regras.map(r => {
+                const label = r.dia_semana_regra ?? 'padrao'
+                const parts: string[] = []
+                if (r.inicio) parts.push(`entrada:${r.inicio}`)
+                if (r.fim) parts.push(`saida:${r.fim}`)
+                const janela = parts.join(' ')
+                const folga = !r.dia_semana_regra && r.folga_fixa_dia_semana ? `folga ${r.folga_fixa_dia_semana}` : ''
+                return [label, janela, folga].filter(Boolean).join(' ')
+            })
+            lines.push(`- ${nome}: ${partes.join(', ')}`)
+        }
+
+        // Detectar conflitos de folga fixa
+        const folgasPorDia = new Map<string, string[]>()
+        for (const r of regrasSetor) {
+            if (r.folga_fixa_dia_semana && !r.dia_semana_regra) {
+                const arr = folgasPorDia.get(r.folga_fixa_dia_semana) ?? []
+                arr.push(r.colab_nome)
+                folgasPorDia.set(r.folga_fixa_dia_semana, arr)
+            }
+        }
+        for (const [dia, nomes] of folgasPorDia) {
+            if (nomes.length > 1) {
+                lines.push(`- CONFLITO folga fixa ${dia}: ${nomes.join(', ')}`)
+            }
+        }
+
+        // Quem NÃO tem regra individual
+        const colabIds = snap.colaboradores as Array<{ id: number; nome: string }> | undefined
+        if (colabIds) {
+            const colabsSemRegra = colabIds.filter(c => !regrasSetor.some(r => r.colaborador_id === c.id))
+            if (colabsSemRegra.length > 0) {
+                lines.push(`- Sem regra individual: ${colabsSemRegra.map(c => c.nome).join(', ')}`)
+            }
+        }
+    }
+
+    // Demandas detail — snapshot only has porDia aggregation, not full segments
+    const demandas = await queryAll<{ dia_semana: string | null; hora_inicio: string; hora_fim: string; min_pessoas: number }>('SELECT dia_semana, hora_inicio, hora_fim, min_pessoas FROM demandas WHERE setor_id = ? ORDER BY dia_semana, hora_inicio', setor_id)
+    if (demandas.length > 0) {
+        lines.push(`\n#### Demanda planejada:`)
+        for (const d of demandas) {
+            const dia = d.dia_semana ?? 'TODOS'
+            lines.push(`- ${dia}: ${d.hora_inicio}–${d.hora_fim} → min ${d.min_pessoas} pessoa(s)`)
+        }
+    }
+
+    // Escala detail — snapshot has basic info but not scores/alocacao stats
+    const escala = await queryOne<any>(`
+        SELECT id, status, data_inicio, data_fim, pontuacao, cobertura_percent,
+               violacoes_hard, violacoes_soft, equilibrio
+        FROM escalas
+        WHERE setor_id = ?
+        ORDER BY CASE status WHEN 'RASCUNHO' THEN 0 WHEN 'OFICIAL' THEN 1 ELSE 2 END, id DESC
+        LIMIT 1
+    `, setor_id)
+
+    if (escala) {
+        lines.push(`\n#### Escala atual: ${escala.status} (ID: ${escala.id})`)
+        lines.push(`- Periodo: ${escala.data_inicio} a ${escala.data_fim}`)
+        lines.push(`- Score: ${escala.pontuacao}/100 | Cobertura: ${escala.cobertura_percent}%`)
+        lines.push(`- Violacoes HARD: ${escala.violacoes_hard} | SOFT: ${escala.violacoes_soft}`)
+        lines.push(`- Equilibrio: ${escala.equilibrio}%`)
+
+        if (escala.violacoes_hard > 0) {
+            lines.push(`\nATENCAO: Esta escala tem ${escala.violacoes_hard} violacao(oes) HARD — nao pode ser oficializada ate resolver.`)
+        }
+
+        const alocStats = await queryAll<{ status: string; total: number }>(`
+            SELECT status, COUNT(*)::int as total
+            FROM alocacoes WHERE escala_id = ?
+            GROUP BY status
+        `, escala.id)
+
+        if (alocStats.length > 0) {
+            lines.push(`\n#### Distribuicao de alocacoes:`)
+            for (const a of alocStats) {
+                lines.push(`- ${a.status}: ${a.total}`)
+            }
+        }
+    } else {
+        lines.push(`\nNenhuma escala encontrada para este setor.`)
+    }
+
+    return lines.length > 0 ? lines.join('\n') : null
+}
+
+/**
+ * Builds a "what the user sees now" section from the store snapshot.
+ * Gives the IA immediate awareness of the UI state without any DB query.
+ */
+function _snapshotBriefing(snap: Record<string, any>): string | null {
+    const lines: string[] = []
+
+    if (snap.setor) {
+        const ciclo = snap.ciclo as { N: number; K: number; semanas: number } | undefined
+        const header = ciclo
+            ? `${snap.setor.nome} (N=${ciclo.N} postos, K=${ciclo.K} domingo, ciclo ${ciclo.semanas} semanas)`
+            : snap.setor.nome
+        lines.push(`\n### O que o usuario esta vendo agora`)
+        lines.push(`- Setor: ${header}`)
+    }
+
+    const ausentes = snap.ausentes as Array<{ id: number; nome: string; tipo: string; data_inicio: string; data_fim: string }> | undefined
+    if (ausentes && ausentes.length > 0) {
+        for (const a of ausentes) {
+            lines.push(`- Ausente: ${a.nome} (${a.tipo} ${a.data_inicio}–${a.data_fim})`)
+        }
+    }
+
+    const prox = snap.proximosAusentes as Array<{ id: number; nome: string; tipo: string; diasAte: number }> | undefined
+    if (prox && prox.length > 0) {
+        for (const p of prox) {
+            lines.push(`- Em ${p.diasAte} dia(s): ${p.nome} (${p.tipo})`)
+        }
+    }
+
+    const avisos = snap.avisos as Array<{ id: string; nivel: string; titulo: string }> | undefined
+    if (avisos && avisos.length > 0) {
+        for (const a of avisos) {
+            lines.push(`- Aviso ${a.nivel}: ${a.titulo}`)
+        }
+    }
+
+    const escala = snap.escalaAtual as { id: number; status: string; cobertura_percent: number | null; violacoes_hard: number | null } | undefined
+    if (escala) {
+        const cob = escala.cobertura_percent != null ? ` | cobertura ${escala.cobertura_percent}%` : ''
+        const viol = escala.violacoes_hard != null && escala.violacoes_hard > 0 ? ` | ${escala.violacoes_hard} violacoes HARD` : ''
+        lines.push(`- Escala: ${escala.status} (ID: ${escala.id})${cob}${viol}`)
+    }
+
+    return lines.length > 0 ? lines.join('\n') : null
+}
+
+// =============================================================================
+// ALERTAS ESTRUTURADOS — injetados automaticamente pelo discovery no contexto de cada mensagem
 // =============================================================================
 
 export interface AlertaCore {

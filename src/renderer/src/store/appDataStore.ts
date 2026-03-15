@@ -25,6 +25,23 @@ import { excecoesService } from '@/servicos/excecoes'
 import { escalasService } from '@/servicos/escalas'
 
 // ---------------------------------------------------------------------------
+// StoreSnapshot — lightweight state for IA discovery (A11)
+// ---------------------------------------------------------------------------
+
+export interface StoreSnapshot {
+  empresa?: { nome: string; grid_minutos: number }
+  setor?: { id: number; nome: string; hora_abertura: string; hora_fechamento: string }
+  colaboradores?: Array<{ id: number; nome: string; tipo_trabalhador: string; funcao_id: number | null }>
+  postos?: Array<{ id: number; apelido: string; titular_id: number | null }>
+  demanda?: { porDia: number[] }
+  ciclo?: { N: number; K: number; semanas: number }
+  ausentes?: Array<{ id: number; nome: string; tipo: string; data_inicio: string; data_fim: string }>
+  proximosAusentes?: Array<{ id: number; nome: string; tipo: string; diasAte: number }>
+  avisos?: Array<{ id: string; nivel: string; titulo: string }>
+  escalaAtual?: { id: number; status: string; cobertura_percent: number | null; violacoes_hard: number | null }
+}
+
+// ---------------------------------------------------------------------------
 // AppDataStore — Entidades globais (A1) + por setor (A2) + derivados (A3)
 // ---------------------------------------------------------------------------
 
@@ -107,6 +124,7 @@ export interface AppDataStore {
   setSetorAtivo: (id: number | null) => Promise<void>
   reloadEntidade: (nome: string) => Promise<void>
   invalidate: (entidades: string[], setor_id?: number) => void
+  snapshot: () => StoreSnapshot | null
 }
 
 // ---------------------------------------------------------------------------
@@ -454,5 +472,58 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
         reloadEntidade(e)
       }
     }
+  },
+
+  snapshot: () => {
+    const state = get()
+    if (!state._inicializado) return null
+
+    const snap: StoreSnapshot = {}
+
+    if (state.empresa) {
+      snap.empresa = { nome: state.empresa.nome, grid_minutos: state.empresa.grid_minutos }
+    }
+
+    if (state.setor) {
+      snap.setor = {
+        id: state.setor.id,
+        nome: state.setor.nome,
+        hora_abertura: state.setor.hora_abertura,
+        hora_fechamento: state.setor.hora_fechamento,
+      }
+      snap.colaboradores = state.colaboradores.map(c => ({
+        id: c.id, nome: c.nome, tipo_trabalhador: c.tipo_trabalhador, funcao_id: c.funcao_id,
+      }))
+      snap.postos = state.postos.filter(p => p.ativo).map(p => ({
+        id: p.id, apelido: p.apelido,
+        titular_id: state.colaboradores.find(c => c.funcao_id === p.id)?.id ?? null,
+      }))
+      snap.demanda = { porDia: state.derivados.demandaPorDia }
+      snap.ciclo = { N: state.derivados.N, K: state.derivados.K, semanas: state.derivados.cicloSemanas }
+      snap.avisos = state.derivados.avisos.map(a => ({ id: a.id, nivel: a.nivel, titulo: a.titulo }))
+      snap.ausentes = state.derivados.ausentes.map(a => ({
+        id: a.colaborador.id, nome: a.colaborador.nome,
+        tipo: a.excecao.tipo, data_inicio: a.excecao.data_inicio, data_fim: a.excecao.data_fim,
+      }))
+      snap.proximosAusentes = state.derivados.proximosAusentes.map(a => ({
+        id: a.colaborador.id, nome: a.colaborador.nome, tipo: a.excecao.tipo, diasAte: a.diasAte,
+      }))
+
+      // Latest escala (prefer RASCUNHO > OFICIAL > ARQUIVADA)
+      const latest = [...state.escalas]
+        .sort((a, b) => {
+          const statusOrder: Record<string, number> = { RASCUNHO: 0, OFICIAL: 1, ARQUIVADA: 2 }
+          return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
+        })[0]
+      if (latest) {
+        snap.escalaAtual = {
+          id: latest.id, status: latest.status,
+          cobertura_percent: (latest as any).cobertura_percent ?? null,
+          violacoes_hard: (latest as any).violacoes_hard ?? null,
+        }
+      }
+    }
+
+    return snap
   },
 }))
