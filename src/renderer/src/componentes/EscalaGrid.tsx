@@ -328,8 +328,8 @@ export function EscalaGrid({
                                     if (colab.tipo_trabalhador === 'INTERMITENTE') return '—'
                                     const regra = regrasMap?.get(colab.id)
                                     const sigla = DIAS_SEMANA_CURTO[dow]
-                                    if (regra?.folga_fixa_dia_semana === sigla) return 'F'
-                                    if (regra?.folga_variavel_dia_semana === sigla) return '(V)'
+                                    if (regra?.folga_fixa_dia_semana === sigla) return 'FF'
+                                    if (regra?.folga_variavel_dia_semana === sigla) return 'FV'
                                     return 'FOLGA'
                                   })()}
                                 </span>

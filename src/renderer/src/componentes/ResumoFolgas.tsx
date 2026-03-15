@@ -57,12 +57,12 @@ export function ResumoFolgas({ colaboradores, alocacoes, regrasMap }: ResumoFolg
             <span key={c.id} className="text-xs text-muted-foreground whitespace-nowrap">
               {nome}
               {r.folga_fixa_dia_semana && (
-                <span className="ml-1 font-semibold text-foreground">[F] {r.folga_fixa_dia_semana}</span>
+                <span className="ml-1 font-semibold text-foreground">FF {r.folga_fixa_dia_semana}</span>
               )}
               {r.folga_variavel_dia_semana && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="ml-1 opacity-60 italic">(V) {r.folga_variavel_dia_semana}</span>
+                    <span className="ml-1 opacity-60 italic">FV {r.folga_variavel_dia_semana}</span>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs max-w-[200px]">
                     Folga variável: aplicada nos domingos em que trabalha.

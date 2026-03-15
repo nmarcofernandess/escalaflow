@@ -237,7 +237,7 @@ function TitularAssignmentPanel({
         {titular ? (
           <ColaboradorCard
             nome={titular.nome}
-            descricao={getDescricaoBuscaColaborador(titular)}
+            subtitulo={getDescricaoBuscaColaborador(titular)}
           />
         ) : (
           <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
@@ -270,7 +270,7 @@ function TitularAssignmentPanel({
                 <ColaboradorCard
                   key={candidato.id}
                   nome={candidato.nome}
-                  descricao={getDescricaoBuscaColaborador(candidato)}
+                  subtitulo={getDescricaoBuscaColaborador(candidato)}
                   onClick={() => onSelectColaborador(candidato.id)}
                   disabled={loading}
                   rightContent={
@@ -836,11 +836,10 @@ export function SetorDetalhe() {
   }, [pendingAutocompleteSwap, postosOrdenados, salvarTitularNoPosto])
 
   const getDescricaoBuscaColaborador = useCallback((colab: Colaborador) => {
-    const postoAtual = colab.funcao_id != null ? (funcaoMap.get(colab.funcao_id) ?? 'Posto') : 'Reserva operacional'
-    const contratoNome = contratoMap.get(colab.tipo_contrato_id) ?? 'Contrato'
+    const postoAtual = colab.funcao_id != null ? (funcaoMap.get(colab.funcao_id) ?? 'Posto') : 'Sem posto'
     const status = getStatusColaborador(colab.id)
-    return `${postoAtual} • ${contratoNome} • ${status}`
-  }, [contratoMap, funcaoMap, getStatusColaborador])
+    return `${postoAtual} • ${status}`
+  }, [funcaoMap, getStatusColaborador])
 
   const postoDialogTitularAtual = useMemo(
     () => postoDialogTitularId != null ? (orderedColabs.find((colab) => colab.id === postoDialogTitularId) ?? null) : null,
@@ -2301,11 +2300,14 @@ export function SetorDetalhe() {
                               <ColaboradorCard
                                 key={`aus-${info.colaborador.id}`}
                                 nome={info.colaborador.nome}
-                                descricao={`${info.posto?.apelido ?? 'Sem posto'} \u2022 ${tiposContrato?.find(t => t.id === info.colaborador.tipo_contrato_id)?.nome ?? 'CLT'}`}
+                                subtitulo={info.posto?.apelido ?? 'Sem posto'}
                                 excecao={{
                                   tipo: info.excecao.tipo as 'FERIAS' | 'ATESTADO' | 'BLOQUEIO',
-                                  data_inicio: info.excecao.data_inicio,
-                                  data_fim: info.excecao.data_fim,
+                                  resumo: (() => {
+                                    const hoje = new Date().toISOString().split('T')[0]
+                                    const d = Math.ceil((Date.parse(info.excecao.data_fim) - Date.parse(hoje)) / 86400000)
+                                    return d > 0 ? `volta em ${d}d` : ''
+                                  })(),
                                 }}
                                 href={`/colaboradores/${info.colaborador.id}`}
                               />
@@ -2315,7 +2317,7 @@ export function SetorDetalhe() {
                               <ColaboradorCard
                                 key={`res-${colab.id}`}
                                 nome={colab.nome}
-                                descricao={getDescricaoBuscaColaborador(colab)}
+                                subtitulo={getStatusColaborador(colab.id)}
                                 href={`/colaboradores/${colab.id}`}
                               />
                             ))}
@@ -2524,12 +2526,12 @@ export function SetorDetalhe() {
                                               <TooltipContent>Gerenciar titular</TooltipContent>
                                             </Tooltip>
                                             <PopoverContent
+                                              className="w-[22rem] p-0"
                                               side="bottom"
                                               align="end"
                                               sideOffset={8}
                                               collisionPadding={16}
                                               style={{ maxHeight: 'min(var(--radix-popover-content-available-height), 24rem)' }}
-                                              className="w-[20rem] max-w-[calc(100vw-2rem)] overflow-hidden p-0"
                                             >
                                               <TitularAssignmentPanel
                                                 titular={ocupante ?? null}
@@ -2863,8 +2865,8 @@ export function SetorDetalhe() {
                   ) : previewNivel1 ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold">Preview do Ciclo</p>
-                        <Badge variant="outline" className="text-xs">Nivel 1 — sem horarios</Badge>
+                        <p className="text-sm font-semibold">Ciclo Rotativo</p>
+                        <Badge variant="outline" className="text-xs">Preview</Badge>
                       </div>
                       {previewGridData && (
                         <CicloGrid data={previewGridData} mode="edit" />
@@ -3210,12 +3212,12 @@ export function SetorDetalhe() {
                     <TooltipContent>Gerenciar titular</TooltipContent>
                   </Tooltip>
                   <PopoverContent
+                    className="w-[22rem] p-0"
                     side="bottom"
                     align="end"
                     sideOffset={8}
                     collisionPadding={16}
                     style={{ maxHeight: 'min(var(--radix-popover-content-available-height), 24rem)' }}
-                    className="w-[20rem] max-w-[calc(100vw-2rem)] overflow-hidden p-0"
                   >
                     <TitularAssignmentPanel
                       titular={postoDialogTitularAtual}

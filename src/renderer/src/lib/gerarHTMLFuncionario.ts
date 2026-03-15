@@ -108,8 +108,8 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
 
         if (status === 'FOLGA' && regra) {
           const dayLabel = DIAS_CURTO[dow]
-          if (regra.folga_fixa_dia_semana === dayLabel) badgeHtml = ' <span class="badge-f">[F]</span>'
-          else if (regra.folga_variavel_dia_semana === dayLabel) badgeHtml = ' <span class="badge-v">(V)</span>'
+          if (regra.folga_fixa_dia_semana === dayLabel) badgeHtml = ' <span class="badge-ff">FF</span>'
+          else if (regra.folga_variavel_dia_semana === dayLabel) badgeHtml = ' <span class="badge-fv">FV</span>'
         }
 
         if (status === 'TRABALHO') {
@@ -192,10 +192,10 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
     rotatividadeHtml = `
     <div class="section rotatividade">
       <h3>Rotatividade</h3>
-      <div class="rot-row"><span class="rot-label">Folga fixa:</span> ${regra.folga_fixa_dia_semana ? `<span class="badge-f">[F]</span> ${DIA_LABEL[regra.folga_fixa_dia_semana] ?? regra.folga_fixa_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
-      <div class="rot-row"><span class="rot-label">Folga variavel:</span> ${regra.folga_variavel_dia_semana ? `<span class="badge-v">(V)</span> ${DIA_LABEL[regra.folga_variavel_dia_semana] ?? regra.folga_variavel_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
+      <div class="rot-row"><span class="rot-label">Folga fixa:</span> ${regra.folga_fixa_dia_semana ? `<span class="badge-ff">FF</span> ${DIA_LABEL[regra.folga_fixa_dia_semana] ?? regra.folga_fixa_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
+      <div class="rot-row"><span class="rot-label">Folga variavel:</span> ${regra.folga_variavel_dia_semana ? `<span class="badge-fv">FV</span> ${DIA_LABEL[regra.folga_variavel_dia_semana] ?? regra.folga_variavel_dia_semana}` : '<span style="color:var(--muted)">—</span>'}</div>
       <div class="rot-row"><span class="rot-label">Domingos trabalhados:</span> ${domTrabalhados} / ${domTotal}</div>
-      ${regra.folga_variavel_dia_semana ? '<p class="rot-note">(V) ativa quando trabalhou domingo nesta semana</p>' : ''}
+      ${regra.folga_variavel_dia_semana ? '<p class="rot-note">FV ativa quando trabalhou domingo nesta semana</p>' : ''}
     </div>`
   }
 
@@ -216,8 +216,8 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
           }
           if (st === 'INDISPONIVEL') return `<td class="print-off">I</td>`
           const dayLabel = DIAS_CURTO[new Date(dt + 'T00:00:00').getDay()]
-          if (regra?.folga_fixa_dia_semana === dayLabel) return `<td class="print-off">[F]</td>`
-          if (regra?.folga_variavel_dia_semana === dayLabel) return `<td class="print-off">(V)</td>`
+          if (regra?.folga_fixa_dia_semana === dayLabel) return `<td class="print-off">FF</td>`
+          if (regra?.folga_variavel_dia_semana === dayLabel) return `<td class="print-off">FV</td>`
           return `<td class="print-off">F</td>`
         }).join('')}</tr>
       </table>
@@ -277,8 +277,8 @@ export function gerarHTMLFuncionario(input: FuncionarioExportInput): string {
   .trabalho-dom .day-name, .trabalho-dom .day-status { color: var(--dom-fg); }
   .indisponivel .day-name, .indisponivel .day-status { color: var(--indis-fg); }
   .folga .day-name, .folga .day-status { color: var(--off-fg); }
-  .badge-f { display:inline-block; font-size:11px; font-weight:700; color:var(--off-fg); background:var(--border); border-radius:3px; padding:0 4px; margin-left:4px; }
-  .badge-v { display:inline-block; font-size:11px; font-weight:700; color:var(--off-fg); border:1px dashed var(--off-fg); border-radius:3px; padding:0 4px; margin-left:4px; }
+  .badge-ff { display:inline-block; font-size:11px; font-weight:700; color:var(--off-fg); background:var(--border); border-radius:3px; padding:0 4px; margin-left:4px; }
+  .badge-fv { display:inline-block; font-size:11px; font-weight:700; color:var(--off-fg); border:1px dashed var(--off-fg); border-radius:3px; padding:0 4px; margin-left:4px; }
   .day-body { display: flex; flex-direction: column; gap: 6px; }
   .day-status { font-size: 14px; font-weight: 600; }
   .bar-track { height: 6px; background: var(--border); border-radius: 3px; position: relative; }

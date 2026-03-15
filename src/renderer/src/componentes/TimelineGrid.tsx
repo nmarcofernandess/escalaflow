@@ -548,8 +548,8 @@ export function TimelineGrid({
                         if (colab.tipo_trabalhador === 'INTERMITENTE') return '—'
                         const regra = regrasMap?.get(colab.id)
                         const dow = DIAS_MAP[new Date(currentDate + 'T00:00:00').getDay()]
-                        if (regra?.folga_fixa_dia_semana === dow) return 'FOLGA [F]'
-                        if (regra?.folga_variavel_dia_semana === dow) return 'FOLGA (V)'
+                        if (regra?.folga_fixa_dia_semana === dow) return 'FOLGA FF'
+                        if (regra?.folga_variavel_dia_semana === dow) return 'FOLGA FV'
                         return 'FOLGA'
                       })()}
                     </Badge>
