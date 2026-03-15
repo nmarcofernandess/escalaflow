@@ -244,8 +244,11 @@ export function escalaParaCicloGrid(
     }
     if (alloc.status === 'INDISPONIVEL') return 'I'
 
-    // Folga — domingo gets DF, otherwise check fixed vs variable
-    if (dia === 'DOM') return 'DF'
+    // Folga — domingo: FF se folga_fixa=DOM, senao DF (ciclo)
+    if (dia === 'DOM') {
+      const inf = inferredFolgas.get(colab.id)
+      return inf?.fixa === 'DOM' ? 'FF' : 'DF'
+    }
     const inf = inferredFolgas.get(colab.id)
     if (inf?.fixa && inf.fixa === dia) return 'FF'
     if (inf?.variavel && inf.variavel === dia) return 'FV'
@@ -314,10 +317,12 @@ function resolveSimbolo(
   status: 'T' | 'F',
   dIdx: number,
   row: { folga_fixa_dia: number; folga_variavel_dia: number | null },
+  fixaDom?: boolean,
 ): Simbolo {
   const isDomingo = dIdx === 6
   if (status === 'T') return isDomingo ? 'DT' : 'T'
-  if (isDomingo) return 'DF'
+  // Domingo: FF se folga_fixa=DOM, senao DF (ciclo)
+  if (isDomingo) return fixaDom ? 'FF' : 'DF'
   if (dIdx === row.folga_variavel_dia) return 'FV'
   if (dIdx === row.folga_fixa_dia) return 'FF'
   return 'FF'
@@ -346,16 +351,19 @@ export function simulacaoParaCicloGrid(
   }
 
   const rows: CicloGridRow[] = resultado.grid.map((row, rowIndex) => {
+    // Detectar folga_fixa_dom: variavel null + todos domingos F
+    const allDomF = row.semanas.every(s => s.dias[6] === 'F')
+    const isFixaDom = row.folga_variavel_dia == null && allDomF && resultado.grid.length > 1
     const semanas: Simbolo[][] = row.semanas.map((semana) => {
-      return semana.dias.map((status, dIdx) => resolveSimbolo(status, dIdx, row))
+      return semana.dias.map((status, dIdx) => resolveSimbolo(status, dIdx, row, isFixaDom))
     })
 
     return {
       id: rowIndex,
       nome: labels?.[rowIndex] ?? row.posto,
       posto: row.posto,
-      fixa: getFixaDia(row),
-      variavel: getVariavelDia(row),
+      fixa: isFixaDom ? 'DOM' as DiaSemana : getFixaDia(row),
+      variavel: isFixaDom ? (getFixaDia(row) ?? null) : getVariavelDia(row),
       blocked: false,
       semanas,
     }

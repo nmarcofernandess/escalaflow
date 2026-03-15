@@ -36,6 +36,8 @@ interface FolgaSelectProps {
   colaboradorId: number
   field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana'
   value: DiaSemana | null
+  /** Valor do outro campo (fixa ou variavel) — impede selecionar o mesmo dia */
+  otherValue?: DiaSemana | null
   mode: 'edit' | 'view'
   blocked: boolean
   onFolgaChange?: CicloGridProps['onFolgaChange']
@@ -45,6 +47,7 @@ function FolgaSelect({
   colaboradorId,
   field,
   value,
+  otherValue,
   mode,
   blocked,
   onFolgaChange,
@@ -53,6 +56,8 @@ function FolgaSelect({
 
   const dias = DIAS_ORDEM.filter((dia) => {
     if (field === 'folga_variavel_dia_semana') return dia !== 'DOM'
+    // Impedir fixa == variavel (mesmo dia)
+    if (otherValue && otherValue === dia) return false
     return true
   })
 
@@ -146,27 +151,27 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
           because the shadcn Table wraps in an overflow-auto div which conflicts
           with our own scroll container and breaks sticky columns.
         */}
-        <table className="w-full caption-bottom border-collapse text-sm whitespace-nowrap">
+        <table className="w-full caption-bottom border-collapse whitespace-nowrap" style={{ fontSize: 14 }}>
           {/* ── THEAD ── */}
           <thead>
             {/* Row 1: transparent — "Ciclo de N semanas" + S1, S2, ... labels */}
             <tr>
               {/* Sticky col 1: label */}
               <th
-                className="sticky left-0 z-20 bg-background px-2.5 pb-0.5 pt-2 text-left text-xs font-medium text-muted-foreground"
+                className="sticky left-0 z-20 bg-background px-3 pb-1 pt-2.5 text-left text-xs font-medium text-muted-foreground"
                 style={{ width: 130, minWidth: 130 }}
               >
                 Ciclo de {cicloSemanas} semanas
               </th>
               {/* Sticky col 2: Var (empty in row 1) */}
               <th
-                className="sticky z-20 bg-background pb-0.5 pt-2"
-                style={{ left: 130, width: 46, minWidth: 46 }}
+                className="sticky z-20 bg-background pb-1 pt-2.5"
+                style={{ left: 130, width: 50, minWidth: 50 }}
               />
               {/* Sticky col 3: Fixo (empty in row 1) */}
               <th
-                className="sticky z-20 bg-background pb-0.5 pt-2 border-r border-border"
-                style={{ left: 176, width: 46, minWidth: 46 }}
+                className="sticky z-20 bg-background pb-1 pt-2.5 border-r border-border"
+                style={{ left: 180, width: 50, minWidth: 50 }}
               />
               {/* Week span headers: S1, S2, ... */}
               {Array.from({ length: totalSemanas }).map((_, semanaIdx) => (
@@ -174,7 +179,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
                   key={semanaIdx}
                   colSpan={7}
                   className={cn(
-                    'pb-0.5 pt-2 text-center text-xs font-normal text-muted-foreground',
+                    'pb-1 pt-2.5 text-center text-xs font-normal text-muted-foreground',
                     isWeekStart(semanaIdx) && 'border-l border-border',
                     // cycle-end marker on the header span (right border of last week in cycle)
                     (semanaIdx + 1) % cicloSemanas === 0 && 'border-r-2 border-r-purple-500',
@@ -189,20 +194,20 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
             <tr className="border-b border-border bg-muted/50">
               {/* Sticky col 1: empty */}
               <th
-                className="sticky left-0 z-20 bg-muted/50 px-2.5 py-2 text-left"
+                className="sticky left-0 z-20 bg-muted/50 px-3 py-2.5 text-left"
                 style={{ width: 130, minWidth: 130 }}
               />
               {/* Sticky col 2: "Var" */}
               <th
-                className="sticky z-20 bg-muted/50 px-1 py-2 text-center text-xs font-medium text-muted-foreground"
-                style={{ left: 130, width: 46, minWidth: 46 }}
+                className="sticky z-20 bg-muted/50 px-1 py-2.5 text-center text-xs font-medium text-muted-foreground"
+                style={{ left: 130, width: 50, minWidth: 50 }}
               >
                 Var
               </th>
               {/* Sticky col 3: "Fixo" */}
               <th
-                className="sticky z-20 bg-muted/50 px-1 py-2 text-center text-xs font-medium text-muted-foreground border-r border-border"
-                style={{ left: 176, width: 46, minWidth: 46 }}
+                className="sticky z-20 bg-muted/50 px-1 py-2.5 text-center text-xs font-medium text-muted-foreground border-r border-border"
+                style={{ left: 180, width: 50, minWidth: 50 }}
               >
                 Fixo
               </th>
@@ -216,7 +221,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
                     <th
                       key={`${semanaIdx}-${diaIdx}`}
                       className={cn(
-                        'px-1 py-2 text-center text-xs font-medium text-muted-foreground',
+                        'px-1.5 py-2.5 text-center text-xs font-medium text-muted-foreground',
                         isDom && 'font-semibold text-warning',
                         isFirst && 'border-l border-border',
                         isCycleEndCell && 'border-r-2 border-r-purple-500',
@@ -258,6 +263,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
                     colaboradorId={row.id}
                     field="folga_variavel_dia_semana"
                     value={row.variavel}
+                    otherValue={row.fixa}
                     mode={mode}
                     blocked={row.blocked}
                     onFolgaChange={onFolgaChange}
@@ -273,6 +279,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
                     colaboradorId={row.id}
                     field="folga_fixa_dia_semana"
                     value={row.fixa}
+                    otherValue={row.variavel}
                     mode={mode}
                     blocked={row.blocked}
                     onFolgaChange={onFolgaChange}
