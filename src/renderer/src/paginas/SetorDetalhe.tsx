@@ -102,6 +102,7 @@ import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet, type SugestaoFolga } from '@/componentes/SugestaoSheet'
 import { gerarCicloFase1, converterNivel1ParaEscala, converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { calcularSugestaoFolgas } from '@shared/sugestao-folgas'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
@@ -2932,31 +2933,59 @@ export function SetorDetalhe() {
               )}
 
               {/* Sheet de sugestao (C7) */}
-              <SugestaoSheet
-                open={sugestaoOpen}
-                onOpenChange={setSugestaoOpen}
-                sugestoes={(() => {
-                  if (!previewNivel1 || !orderedColabs) return []
-                  const regras = previewNivel1.regras ?? []
-                  return orderedColabs
+              {(() => {
+                const sugestaoData = (() => {
+                  if (!orderedColabs || !derivados) return { sugestoes: [], resultados: [] }
+                  const colabsInput = orderedColabs
                     .filter((c: Colaborador) => c.funcao_id != null)
                     .map((c: Colaborador) => {
-                      const regra = regras.find(r => r.colaborador_id === c.id)
+                      const regra = regrasPadrao?.find(r => r.colaborador_id === c.id)
                       const posto = funcoesList.find(f => f.id === c.funcao_id)
                       return {
-                        colaborador_id: c.id,
-                        nome: `${c.nome} (${posto?.apelido ?? ''})`,
-                        variavel_atual: (regra?.folga_variavel_dia_semana ?? null) as DiaSemana | null,
-                        variavel_proposta: (regra?.folga_variavel_dia_semana ?? null) as DiaSemana | null,
+                        id: c.id,
+                        nome: c.nome,
+                        posto_apelido: posto?.apelido ?? '',
                         fixa_atual: (regra?.folga_fixa_dia_semana ?? null) as DiaSemana | null,
-                        fixa_proposta: (regra?.folga_fixa_dia_semana ?? null) as DiaSemana | null,
+                        variavel_atual: (regra?.folga_variavel_dia_semana ?? null) as DiaSemana | null,
+                        tipo_trabalhador: c.tipo_trabalhador ?? 'CLT',
+                        folga_fixa_dom: regra?.folga_fixa_dia_semana === 'DOM',
                       }
                     })
-                })()}
-                resultados={['Cobertura OK', 'Sem TT', 'H1 OK']}
-                onAceitar={() => { toast.success('Sugestao aceita'); setSugestaoOpen(false) }}
-                onDescartar={() => setSugestaoOpen(false)}
-              />
+                  return calcularSugestaoFolgas({
+                    colaboradores: colabsInput,
+                    demandaPorDia: derivados.demandaPorDia,
+                    N: derivados.N,
+                  })
+                })()
+                return (
+                  <SugestaoSheet
+                    open={sugestaoOpen}
+                    onOpenChange={setSugestaoOpen}
+                    sugestoes={sugestaoData.sugestoes}
+                    resultados={sugestaoData.resultados}
+                    onAceitar={async () => {
+                      try {
+                        const padrao = sugestaoData.sugestoes
+                          .filter(s => s.fixa_proposta || s.variavel_proposta)
+                          .map(s => ({
+                            colaborador_id: s.colaborador_id,
+                            folga_fixa_dia_semana: s.fixa_proposta,
+                            folga_variavel_dia_semana: s.variavel_proposta,
+                          }))
+                        if (padrao.length > 0) {
+                          await colaboradoresService.salvarPadraoFolgas(padrao, true)
+                          useAppDataStore.getState().invalidate(['regrasPadrao'])
+                        }
+                        toast.success('Sugestao aplicada')
+                        setSugestaoOpen(false)
+                      } catch {
+                        toast.error('Erro ao aplicar sugestao')
+                      }
+                    }}
+                    onDescartar={() => setSugestaoOpen(false)}
+                  />
+                )
+              })()}
 
               {escalaTab === 'oficial' && (
                 <div className="space-y-4">

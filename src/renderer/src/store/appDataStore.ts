@@ -367,6 +367,42 @@ function calcularDerivados(
     })
   }
 
+  // Viabilidade: detectar pico isolado (1 faixa com demanda > resto)
+  // Se pessoa extra cobre so X minutos de pico mas custa Yh de jornada, avisar
+  const demandaFaixas = demandas.filter(d => d.dia_semana === null)
+  if (demandaFaixas.length >= 2) {
+    const pessoasPorFaixa = demandaFaixas.map(d => d.min_pessoas)
+    const maxPessoas = Math.max(...pessoasPorFaixa)
+    // Moda: valor mais frequente
+    const freq = new Map<number, number>()
+    for (const p of pessoasPorFaixa) freq.set(p, (freq.get(p) ?? 0) + 1)
+    let modePessoas = pessoasPorFaixa[0]
+    let modeCount = 0
+    for (const [val, cnt] of freq) { if (cnt > modeCount) { modePessoas = val; modeCount = cnt } }
+
+    if (maxPessoas > modePessoas && maxPessoas > 1) {
+      const picoFaixas = demandaFaixas.filter(d => d.min_pessoas === maxPessoas)
+      const duracaoPicoMin = picoFaixas.reduce((sum, d) => {
+        const [hi, mi] = d.hora_inicio.split(':').map(Number)
+        const [hf, mf] = d.hora_fim.split(':').map(Number)
+        return sum + ((hf * 60 + mf) - (hi * 60 + mi))
+      }, 0)
+      // Jornada minima tipica: 4h (240min) pra estagiario, 8h (480min) pra CLT
+      const jornadaMinEstimada = 240 // minutos — valor conservador
+      const ratio = duracaoPicoMin > 0 ? jornadaMinEstimada / duracaoPicoMin : 0
+
+      if (ratio > 3) {
+        const picoDesc = picoFaixas.map(d => `${d.hora_inicio}-${d.hora_fim}`).join(', ')
+        avisos.push({
+          id: 'pico_ratio_alto',
+          nivel: 'info',
+          titulo: `Pico de ${maxPessoas} pessoas na faixa ${picoDesc} (resto usa ${modePessoas})`,
+          detalhe: `Pessoa extra custa ~${Math.round(jornadaMinEstimada / 60)}h/dia pra cobrir ${Math.round(duracaoPicoMin / 60)}h de pico. Considere intermitente ou redistribuir demanda.`,
+        })
+      }
+    }
+  }
+
   return { N, K, kReal, kMaxSemTT, cicloSemanas, demandaPorDia, coberturaPorDia, deficitPorDia, dirty, avisos, ausentes, proximosAusentes }
 }
 
