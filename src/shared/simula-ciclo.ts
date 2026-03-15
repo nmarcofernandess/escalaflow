@@ -729,3 +729,41 @@ export function converterNivel1ParaEscala(
 
   return { escala, alocacoes, regras }
 }
+
+// ============================================================================
+// Conversor Preview T/F → pinned_folga_externo do solver
+// ============================================================================
+
+/**
+ * Converte preview T/F para formato pinned_folga_externo do solver.
+ * TS nao sabe de bandas (manha/tarde) — usa band=3 (INTEGRAL) para T e band=0 (OFF) para F.
+ * O solver Phase 2 decide a banda real baseado na demanda.
+ */
+export function converterPreviewParaPinned(
+  output: SimulaCicloOutput,
+  postosElegiveis: Array<{ funcao: { id: number }; titular: { id: number } }>,
+): Array<{ c: number; d: number; band: number }> {
+  const pinned: Array<{ c: number; d: number; band: number }> = []
+
+  for (let rowIdx = 0; rowIdx < output.grid.length; rowIdx++) {
+    const row = output.grid[rowIdx]
+    if (!postosElegiveis[rowIdx]) continue
+
+    // c = index in the collaborator array (same order as postosElegiveis → solver input)
+    const c = rowIdx
+    let dayCounter = 0
+
+    for (const semana of row.semanas) {
+      for (const status of semana.dias) {
+        pinned.push({
+          c,
+          d: dayCounter,
+          band: status === 'T' ? 3 : 0, // 3=INTEGRAL, 0=OFF (TS nao sabe de bandas)
+        })
+        dayCounter++
+      }
+    }
+  }
+
+  return pinned
+}

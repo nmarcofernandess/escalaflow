@@ -101,7 +101,7 @@ import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet, type SugestaoFolga } from '@/componentes/SugestaoSheet'
-import { gerarCicloFase1, converterNivel1ParaEscala, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { gerarCicloFase1, converterNivel1ParaEscala, converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
@@ -985,6 +985,8 @@ export function SetorDetalhe() {
     if (!output.sucesso) return null
     return {
       ...converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao),
+      output,
+      postosElegiveis,
       avisos: [
         ...(kFoiLimitado ? [`Demanda domingo = ${kReal}, mas maximo sem 2 domingos seguidos = ${kMaxSemTT} (com ${N} postos). Cobertura de domingo pode ficar abaixo da demanda.`] : []),
       ],
@@ -1610,12 +1612,19 @@ export function SetorDetalhe() {
       const rulesOverride = Object.keys(solverSessionConfig.rulesOverride).length > 0
         ? solverSessionConfig.rulesOverride
         : undefined
+
+      // Convert preview T/F to pinned format so solver skips Phase 1
+      const pinnedFolgaExterno = previewNivel1
+        ? converterPreviewParaPinned(previewNivel1.output, previewNivel1.postosElegiveis)
+        : undefined
+
       const result = await escalasService.gerar(setorId, {
         data_inicio: dataInicio,
         data_fim: dataFim,
         solveMode: solverSessionConfig.solveMode,
         maxTimeSeconds: solverSessionConfig.maxTimeSeconds,
         rulesOverride,
+        pinnedFolgaExterno,
       })
       setEscalaCompleta(result)
       toast.success('Escala gerada')
