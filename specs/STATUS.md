@@ -64,27 +64,15 @@
 ## Decisoes pendentes (PRECISA DO MARCO)
 - C7: Diff validar/solucionar — contrato de componente (UX do Sheet bottom ja aprovada)
 
-## Conectores prontos (CLAUDE C pode ligar)
+## Conectores — RESOLVIDOS
 
-### Avisos de operacao (preflight + solver) → area de avisos na UI
-- **State:** `avisosOperacao: AvisoEscala[]` em SetorDetalhe.tsx (useState, ja populado)
-- **Populado por:** preflight blockers (cada blocker vira AvisoEscala com origem='operacao') + solver INFEASIBLE (erro + sugestoes)
-- **Interface:** `AvisoEscala` em `appDataStore.ts` — campo `origem?: 'setor' | 'operacao' | 'escala'`
-- **O que falta (CLAUDE C):**
-  - Renderizar `avisosOperacao` na area de avisos do SetorDetalhe (separado dos avisos por pessoa)
-  - Renderizar na EscalaPagina (ver todos) como section separada
-  - Avisos de setor (`derivados.avisos`) ja tem `origem='setor'` (default)
-  - Avisos de operacao tem `origem='operacao'`
-  - Avisos de escala (validador) podem ter `origem='escala'` no futuro
+### ✅ Avisos de operacao (preflight + solver) → renderizados na UI
+- `avisosOperacao` renderizado via AvisosSection ACIMA do grid no preview
+- Commit 5ed3f33
 
-### Preview do Ciclo — visibilidade condicional (BUG REPORTADO PELO MARCO)
-- **Problema:** Preview mostra grid mesmo com F/V pendentes ou dados insuficientes, dando falsa impressao de que esta ok
-- **Onde:** SetorDetalhe.tsx ~linha 2780: `previewNivel1 ? (` renderiza sem checar se dados estao completos
-- **Regra do Marco:** "Deve ficar so o que temos certeza. Neste caso, e nada."
-- **O que falta (CLAUDE C):**
-  - Condicionar renderizacao do preview: se `derivados.avisos` tem algum com `nivel='erro'` → NAO mostrar grid, mostrar os avisos
-  - Se "X pendente(s) F/V" → mostrar aviso "Configure as folgas primeiro" em vez do grid
-  - Ref: ANALYST doc secoes 3, 24, 26 (preflight, o que TS valida, solver is blind)
+### ✅ Preview condicional — grid escondido se tem erros
+- Se `derivados.avisos` tem `nivel='erro'` → mostra "Resolva os problemas"
+- Commit 5ed3f33
 
 ## Conflitos entre dominios
 - **RESOLVIDO:** CLAUDE C deletou EscalaCicloResumo (C8), perdendo fixes B3. CLAUDE B reaplicou em ciclo-grid-converters.ts + CicloGrid.tsx (commit ad03183).
