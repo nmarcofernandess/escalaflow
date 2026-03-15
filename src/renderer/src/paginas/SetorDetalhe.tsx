@@ -100,6 +100,7 @@ import { StatusBadge } from '@/componentes/StatusBadge'
 import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
+import { SugestaoSheet, type SugestaoFolga } from '@/componentes/SugestaoSheet'
 import { gerarCicloFase1, converterNivel1ParaEscala, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
@@ -107,6 +108,7 @@ import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/Solv
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
 import { IconPicker } from '@/componentes/IconPicker'
+import { ColaboradorCard } from '@/componentes/ColaboradorCard'
 import { DemandaEditor } from '@/componentes/DemandaEditor'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
@@ -233,12 +235,10 @@ function TitularAssignmentPanel({
         </div>
 
         {titular ? (
-          <div className="rounded-md border px-3 py-2">
-            <p className="truncate text-sm font-medium text-foreground">{titular.nome}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {getDescricaoBuscaColaborador(titular)}
-            </p>
-          </div>
+          <ColaboradorCard
+            nome={titular.nome}
+            descricao={getDescricaoBuscaColaborador(titular)}
+          />
         ) : (
           <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
             Sem titular anexado.
@@ -267,33 +267,28 @@ function TitularAssignmentPanel({
               const postoAtualNome = candidato.funcao_id != null ? (funcaoMap.get(candidato.funcao_id) ?? 'Posto') : 'Reserva operacional'
 
               return (
-                <button
+                <ColaboradorCard
                   key={candidato.id}
-                  type="button"
-                  className="flex w-full items-center justify-between rounded-md border px-2 py-2 text-left hover:bg-muted"
+                  nome={candidato.nome}
+                  descricao={getDescricaoBuscaColaborador(candidato)}
                   onClick={() => onSelectColaborador(candidato.id)}
                   disabled={loading}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-foreground">{candidato.nome}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {getDescricaoBuscaColaborador(candidato)}
-                    </p>
-                  </div>
-                  <Badge variant={candidato.funcao_id != null ? 'outline' : 'secondary'} className="shrink-0 text-xs">
-                    {candidato.funcao_id != null ? (
-                      <>
-                        <Briefcase className="mr-1 size-3" />
-                        {postoAtualNome}
-                      </>
-                    ) : (
-                      <>
-                        <Users className="mr-1 size-3" />
-                        Reserva
-                      </>
-                    )}
-                  </Badge>
-                </button>
+                  rightContent={
+                    <Badge variant={candidato.funcao_id != null ? 'outline' : 'secondary'} className="text-xs">
+                      {candidato.funcao_id != null ? (
+                        <>
+                          <Briefcase className="mr-1 size-3" />
+                          {postoAtualNome}
+                        </>
+                      ) : (
+                        <>
+                          <Users className="mr-1 size-3" />
+                          Reserva
+                        </>
+                      )}
+                    </Badge>
+                  }
+                />
               )
             })
           )}
@@ -421,6 +416,7 @@ export function SetorDetalhe() {
   const [carregandoTabEscala, setCarregandoTabEscala] = useState(false)
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
+  const [sugestaoOpen, setSugestaoOpen] = useState(false)
   const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
   const [solverConfigOpen, setSolverConfigOpen] = useState(false)
   const [solverSessionConfig, setSolverSessionConfig] = useState<SolverSessionConfig>({
@@ -2302,47 +2298,26 @@ export function SetorDetalhe() {
                           <div className="flex flex-wrap gap-2">
                             {/* Ausentes — cards com badge de tipo */}
                             {(derivados?.ausentes ?? []).map((info) => (
-                              <Link key={`aus-${info.colaborador.id}`} to={`/colaboradores/${info.colaborador.id}`} className="no-underline">
-                                <div className={cn(
-                                  'rounded-lg border p-3 min-w-[200px] cursor-pointer transition-colors hover:bg-accent/50',
-                                  info.excecao.tipo === 'FERIAS' && 'border-warning/30 bg-warning/5',
-                                  info.excecao.tipo === 'ATESTADO' && 'border-destructive/30 bg-destructive/5',
-                                  info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/30 bg-muted/5',
-                                )}>
-                                  <div className="font-medium text-sm">{info.colaborador.nome}</div>
-                                  <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
-                                    {info.posto?.apelido ?? 'Sem posto'}
-                                    {' \u2022 '}
-                                    {tiposContrato?.find(t => t.id === info.colaborador.tipo_contrato_id)?.nome ?? 'CLT'}
-                                    {' \u2022 '}
-                                    <Badge variant="outline" className={cn(
-                                      'text-[10px] px-1.5 py-0',
-                                      info.excecao.tipo === 'FERIAS' && 'border-warning/40 text-warning',
-                                      info.excecao.tipo === 'ATESTADO' && 'border-destructive/40 text-destructive',
-                                      info.excecao.tipo === 'BLOQUEIO' && 'border-muted-foreground/40 text-muted-foreground',
-                                    )}>
-                                      {info.excecao.tipo === 'FERIAS' ? 'Férias' : info.excecao.tipo === 'ATESTADO' ? 'Atestado' : 'Bloqueio'}
-                                    </Badge>
-                                  </div>
-                                  <div className="text-xs text-muted-foreground mt-1">
-                                    {info.excecao.data_inicio.split('-').reverse().join('/')} - {info.excecao.data_fim.split('-').reverse().join('/')}
-                                    {(() => {
-                                      const hoje = new Date().toISOString().split('T')[0]
-                                      const diasRestantes = Math.ceil((Date.parse(info.excecao.data_fim) - Date.parse(hoje)) / 86400000)
-                                      return diasRestantes > 0 ? ` (volta em ${diasRestantes} dia${diasRestantes > 1 ? 's' : ''})` : ''
-                                    })()}
-                                  </div>
-                                </div>
-                              </Link>
+                              <ColaboradorCard
+                                key={`aus-${info.colaborador.id}`}
+                                nome={info.colaborador.nome}
+                                descricao={`${info.posto?.apelido ?? 'Sem posto'} \u2022 ${tiposContrato?.find(t => t.id === info.colaborador.tipo_contrato_id)?.nome ?? 'CLT'}`}
+                                excecao={{
+                                  tipo: info.excecao.tipo as 'FERIAS' | 'ATESTADO' | 'BLOQUEIO',
+                                  data_inicio: info.excecao.data_inicio,
+                                  data_fim: info.excecao.data_fim,
+                                }}
+                                href={`/colaboradores/${info.colaborador.id}`}
+                              />
                             ))}
                             {/* Reserva pura — chips simples */}
                             {reservaPura.map((colab) => (
-                              <Link key={`res-${colab.id}`} to={`/colaboradores/${colab.id}`}>
-                                <Badge variant="secondary" className="cursor-pointer gap-1 text-xs hover:bg-secondary/80 h-auto py-1.5">
-                                  {colab.nome}
-                                  <ArrowRight className="size-3" />
-                                </Badge>
-                              </Link>
+                              <ColaboradorCard
+                                key={`res-${colab.id}`}
+                                nome={colab.nome}
+                                descricao={getDescricaoBuscaColaborador(colab)}
+                                href={`/colaboradores/${colab.id}`}
+                              />
                             ))}
                           </div>
                         </div>
@@ -2901,7 +2876,7 @@ export function SetorDetalhe() {
                           titulo: msg.split('.')[0] || msg,
                           descricao: msg,
                         }))
-                        return <AvisosSection avisos={previewAvisos} onPedirSugestao={() => { /* TODO C7: abrir Sheet bottom com sugestao */ }} />
+                        return <AvisosSection avisos={previewAvisos} onPedirSugestao={() => setSugestaoOpen(true)} />
                       })()}
                     </div>
                   ) : (
@@ -2915,6 +2890,33 @@ export function SetorDetalhe() {
                   )}
                 </div>
               )}
+
+              {/* Sheet de sugestao (C7) */}
+              <SugestaoSheet
+                open={sugestaoOpen}
+                onOpenChange={setSugestaoOpen}
+                sugestoes={(() => {
+                  if (!previewNivel1 || !orderedColabs) return []
+                  const regras = previewNivel1.regras ?? []
+                  return orderedColabs
+                    .filter((c: Colaborador) => c.funcao_id != null)
+                    .map((c: Colaborador) => {
+                      const regra = regras.find(r => r.colaborador_id === c.id)
+                      const posto = funcoesList.find(f => f.id === c.funcao_id)
+                      return {
+                        colaborador_id: c.id,
+                        nome: `${c.nome} (${posto?.apelido ?? ''})`,
+                        variavel_atual: (regra?.folga_variavel_dia_semana ?? null) as DiaSemana | null,
+                        variavel_proposta: (regra?.folga_variavel_dia_semana ?? null) as DiaSemana | null,
+                        fixa_atual: (regra?.folga_fixa_dia_semana ?? null) as DiaSemana | null,
+                        fixa_proposta: (regra?.folga_fixa_dia_semana ?? null) as DiaSemana | null,
+                      }
+                    })
+                })()}
+                resultados={['Cobertura OK', 'Sem TT', 'H1 OK']}
+                onAceitar={() => { toast.success('Sugestao aceita'); setSugestaoOpen(false) }}
+                onDescartar={() => setSugestaoOpen(false)}
+              />
 
               {escalaTab === 'oficial' && (
                 <div className="space-y-4">
