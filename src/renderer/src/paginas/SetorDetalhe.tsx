@@ -99,9 +99,10 @@ import { StatusBadge } from '@/componentes/StatusBadge'
 import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
-import { SugestaoSheet, type SugestaoFolga } from '@/componentes/SugestaoSheet'
+import { SugestaoSheet } from '@/componentes/SugestaoSheet'
 import { gerarCicloFase1, converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
-import { calcularSugestaoFolgas } from '@shared/sugestao-folgas'
+import { calcularSugestaoFolgas, type SugestaoFolgaItem } from '@shared/sugestao-folgas'
+import type { EscalaAdvisoryOutput, AdvisoryCriterion } from '@shared/index'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
@@ -1882,7 +1883,7 @@ export function SetorDetalhe() {
   }, [avisosOperacao, previewDiagnostics, setor?.nome, simulacaoPreview.foraDoPreview, simulacaoPreview.semTitular, storePreviewAvisos])
 
   const sugestaoFolgasData = useMemo(() => {
-    if (modoSimulacaoEfetivo !== 'SETOR') return { sugestoes: [] as SugestaoFolga[], resultados: [] as string[] }
+    if (modoSimulacaoEfetivo !== 'SETOR') return { sugestoes: [] as SugestaoFolgaItem[], resultados: [] as string[] }
 
     const colabsInput = previewSetorRows.map((row) => ({
       id: row.titular.id,
@@ -1905,6 +1906,36 @@ export function SetorDetalhe() {
       resultados: resultado.resultados.map(traduzirResultadoSugestao),
     }
   }, [demandaPorDiaPreview, modoSimulacaoEfetivo, previewSetorRows, simulacaoPreview.effectiveN])
+
+  // Bridge: convert old sugestaoFolgasData → EscalaAdvisoryOutput for new SugestaoSheet
+  const sugestaoAdvisory = useMemo((): EscalaAdvisoryOutput | null => {
+    const { sugestoes, resultados } = sugestaoFolgasData
+    if (sugestoes.length === 0) return null
+    const bridgeCriteria: AdvisoryCriterion[] = resultados.map((r, i) => ({
+      code: 'COBERTURA_DIA' as const,
+      status: 'PASS' as const,
+      title: r,
+      detail: '',
+      source: 'DIAGNOSTIC' as const,
+    }))
+    return {
+      status: 'PROPOSAL_VALID',
+      normalized_diagnostics: [],
+      current: { criteria: [] },
+      proposal: {
+        diff: sugestoes.map((s) => ({
+          colaborador_id: s.colaborador_id,
+          nome: s.nome,
+          posto_apelido: '',
+          fixa_atual: s.fixa_atual,
+          fixa_proposta: s.fixa_proposta,
+          variavel_atual: s.variavel_atual,
+          variavel_proposta: s.variavel_proposta,
+        })),
+        criteria: bridgeCriteria,
+      },
+    }
+  }, [sugestaoFolgasData])
 
   // ── Export data for the new ExportModal mode='setor' ──────────────────
   const escalaExportData = useMemo((): EscalaExportData | undefined => {
@@ -2984,23 +3015,24 @@ export function SetorDetalhe() {
               <SugestaoSheet
                 open={sugestaoOpen}
                 onOpenChange={setSugestaoOpen}
-                sugestoes={sugestaoFolgasData.sugestoes}
-                resultados={sugestaoFolgasData.resultados}
+                loading={false}
+                advisory={sugestaoAdvisory}
                 onAceitar={async () => {
                   try {
+                    const diff = sugestaoAdvisory?.proposal?.diff ?? []
                     atualizarSimulacaoConfig((prev) => ({
                       ...prev,
                       setor: {
                         ...prev.setor,
-                        overrides_locais: sugestaoFolgasData.sugestoes.reduce((acc, sugestao) => {
-                          const nextOverride = mergeOverrideLocalWithBase(sugestao.colaborador_id, {
-                            fixa: sugestao.fixa_proposta,
-                            variavel: sugestao.variavel_proposta,
+                        overrides_locais: diff.reduce((acc, d) => {
+                          const nextOverride = mergeOverrideLocalWithBase(d.colaborador_id, {
+                            fixa: d.fixa_proposta,
+                            variavel: d.variavel_proposta,
                           })
                           if (nextOverride) {
-                            acc[String(sugestao.colaborador_id)] = nextOverride
+                            acc[String(d.colaborador_id)] = nextOverride
                           } else {
-                            delete acc[String(sugestao.colaborador_id)]
+                            delete acc[String(d.colaborador_id)]
                           }
                           return acc
                         }, { ...prev.setor.overrides_locais }),
