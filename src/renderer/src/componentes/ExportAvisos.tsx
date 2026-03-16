@@ -64,11 +64,11 @@ function mergeAvisos(violacoes: Violacao[], avisos: Aviso[]): UnifiedAviso[] {
 // Styles — hardcoded light-mode for print / renderToStaticMarkup
 // ---------------------------------------------------------------------------
 
-const TIPO_STYLES = {
-  h: 'border border-red-200 bg-red-50 text-red-800',
-  s: 'border border-amber-200 bg-amber-50 text-amber-800',
-  i: 'border border-blue-200 bg-blue-50 text-blue-800',
-} as const
+const TIPO_STYLES: Record<'h' | 's' | 'i', React.CSSProperties> = {
+  h: { border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b' },
+  s: { border: '1px solid #fde68a', background: '#fffbeb', color: '#78350f' },
+  i: { border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e40af' },
+}
 
 const TIPO_LABELS: Record<UnifiedAviso['tipo'], string> = {
   h: 'Criticas (HARD)',
@@ -76,11 +76,11 @@ const TIPO_LABELS: Record<UnifiedAviso['tipo'], string> = {
   i: 'Informativos',
 }
 
-const LABEL_STYLES = {
-  h: 'text-red-600',
-  s: 'text-amber-800',
-  i: 'text-blue-700',
-} as const
+const LABEL_STYLES: Record<'h' | 's' | 'i', React.CSSProperties> = {
+  h: { color: '#dc2626' },
+  s: { color: '#92400e' },
+  i: { color: '#1d4ed8' },
+}
 
 // ---------------------------------------------------------------------------
 // Component — STATELESS (renderToStaticMarkup compliant, R1)
@@ -111,19 +111,41 @@ export function ExportAvisos({
     .filter((g) => g.items.length > 0)
 
   return (
-    <div style={{ breakInside: 'avoid' }} className="mt-6">
-      <h2 className="mb-2.5 border-b border-gray-200 pb-1.5 text-sm font-semibold text-gray-900">
+    <div style={{ breakInside: 'avoid', marginTop: 24 }}>
+      <h2
+        style={{
+          marginBottom: 10,
+          borderBottom: '1px solid #e5e7eb',
+          paddingBottom: 6,
+          fontSize: 14,
+          fontWeight: 600,
+          color: '#111827',
+        }}
+      >
         Avisos ({unified.length})
       </h2>
       {groups.map((group) => (
-        <div key={group.tipo} className="mb-3">
-          <h3 className={`mb-1.5 text-xs font-semibold ${LABEL_STYLES[group.tipo]}`}>
+        <div key={group.tipo} style={{ marginBottom: 12 }}>
+          <h3
+            style={{
+              marginBottom: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              ...LABEL_STYLES[group.tipo],
+            }}
+          >
             {TIPO_LABELS[group.tipo]}
           </h3>
           {group.items.map((a, i) => (
             <div
               key={i}
-              className={`mb-1 rounded px-2.5 py-1.5 text-[10px] ${TIPO_STYLES[a.tipo]}`}
+              style={{
+                marginBottom: 4,
+                borderRadius: 4,
+                padding: '6px 10px',
+                fontSize: 10,
+                ...TIPO_STYLES[a.tipo],
+              }}
             >
               {a.texto}
             </div>
