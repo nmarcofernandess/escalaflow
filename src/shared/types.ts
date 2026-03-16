@@ -660,6 +660,7 @@ export interface SolverInput {
     policy_adjustments?: RulePolicyAdjustment[]
     nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'  // backward compat
     rules?: RuleConfig                           // v6: granular, substitui nivel_rigor quando presente
+    advisory_only?: boolean
   }
 }
 
@@ -730,6 +731,7 @@ export interface SolverOutput {
   indicadores?: Indicadores
   decisoes?: DecisaoMotor[]
   comparacao_demanda?: SlotComparacao[]
+  advisory_pattern?: Array<{ c: number; d: number; band: number }>
   erro?: {
     tipo: 'PREFLIGHT' | 'CONSTRAINT'
     regra: string
@@ -837,7 +839,7 @@ export interface IaMemoria {
 
 export interface KnowledgeSource {
   id: number
-  tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario'
+  tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario' | 'session'
   titulo: string
   conteudo_original: string
   metadata: Record<string, unknown>
