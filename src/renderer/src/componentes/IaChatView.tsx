@@ -155,6 +155,15 @@ export function IaChatView() {
     return () => clearInterval(timer)
   }, [carregando, lastEventAt])
 
+  // Auto-send pending message (advisory fallback → IA)
+  const pendingAutoMessage = useIaStore((s) => s.pendingAutoMessage)
+  useEffect(() => {
+    if (pendingAutoMessage && !carregando && conversa_ativa_id) {
+      useIaStore.getState().setPendingAutoMessage(null)
+      enviar(pendingAutoMessage)
+    }
+  }, [pendingAutoMessage, carregando, conversa_ativa_id])
+
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

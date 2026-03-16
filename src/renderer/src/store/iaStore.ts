@@ -58,6 +58,10 @@ interface IaStore {
   arquivarTodas: () => Promise<void>
   deletarArquivadas: () => Promise<void>
   editarEReenviar: (msgId: string, novoConteudo: string) => Promise<string | null>
+
+  // Pending auto-message (advisory fallback → IA)
+  pendingAutoMessage: string | null
+  setPendingAutoMessage: (msg: string | null) => void
 }
 
 const ipc = window.electron.ipcRenderer
@@ -359,4 +363,8 @@ export const useIaStore = create<IaStore>((set, get) => ({
 
     return novoConteudo
   },
+
+  // Pending auto-message (advisory fallback → IA)
+  pendingAutoMessage: null,
+  setPendingAutoMessage: (pendingAutoMessage) => set({ pendingAutoMessage }),
 }))
