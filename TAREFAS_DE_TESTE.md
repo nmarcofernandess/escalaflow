@@ -34,7 +34,7 @@
 - [ ] Editar F/V de um colaborador na tabela Equipe → preview ATUALIZA sozinho
 - [ ] Criar novo posto → preview recalcula (N muda)
 - [ ] Deletar posto → preview recalcula
-- [ ] Mudar demanda (faixa horaria) → verificar se avisos mudam
+- [ ] Mudar demanda (faixa horaria) → preview, cobertura e avisos mudam SEM salvar manualmente
 - [ ] Abrir chat IA → pedir "crie colaborador Teste" → lista de colaboradores atualiza na pagina
 
 ### A7-A9: Migracao hooks
@@ -70,6 +70,9 @@
 
 - [ ] Colaborador na reserva operacional (sem posto) → NAO aparece no preview
 - [ ] NAO aparece na escala gerada
+- [ ] Cenario real: Alex na reserva + AC1/Intermitente no banco de espera → Gerar escala
+- [ ] Alex NAO aparece com 0h no "Ver completo"
+- [ ] Alex NAO gera erro de H10 / abaixo da meta semanal
 
 ### B7: Guard tipo_trabalhador
 
@@ -82,6 +85,8 @@
 - [ ] Clicar "Gerar Escala"
 - [ ] Toast aparece com mensagem + botao "Analisar com IA"
 - [ ] Clicar "Analisar com IA" → abre chat IA
+- [ ] Forcar impossibilidade diaria no preview (ex: 4/4 domingo ou headcount diario impossivel)
+- [ ] Card da simulacao fica vermelho e o bloqueio aparece ANTES do solver
 
 ### pinned_folga_externo
 
@@ -124,16 +129,17 @@
 - [ ] Clicar "Pedir sugestao" → Sheet abre de baixo
 - [ ] Mostra tabela diff: Colaborador | Variavel (atual → proposta) | Fixo (atual → proposta)
 - [ ] Icones: manteve (muted), mudou (zap amarelo), adicionou (plus verde)
-- [ ] Resultados: "Cobertura OK", "Sem TT", "H1 OK" (ou deficit se houver)
-- [ ] Clicar "Aceitar sugestao" → toast "Sugestao aplicada" → F/V mudam no banco
+- [ ] Resultados aparecem em texto RH-friendly (nao sigla crua sem contexto)
+- [ ] Clicar "Aceitar sugestao" → toast "Sugestao aplicada na simulacao" → F/V mudam no PREVIEW, nao no banco
 - [ ] Preview recalcula com novos F/V
 - [ ] Clicar "Descartar" → fecha sheet, nada muda
 
 ### Preview condicional
 
-- [ ] Se derivados tem aviso com nivel='erro' → grid ESCONDE
-- [ ] Mostra: "Resolva os problemas abaixo antes de visualizar o ciclo"
-- [ ] Resolver o problema → grid APARECE
+- [ ] Se o preview detectar impossibilidade diaria → card fica VERMELHO
+- [ ] Aviso vermelho aparece abaixo do grid explicando por que nao pode gerar
+- [ ] Clicar "Gerar Escala" nesse estado → bloqueia ANTES do solver
+- [ ] Resolver o problema → card volta para amarelo/verde e gerar volta a funcionar
 
 ### Avisos de operacao
 

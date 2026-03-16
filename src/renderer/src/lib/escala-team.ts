@@ -1,3 +1,4 @@
+import { listEscalaParticipantes } from '@shared/index'
 import type { Colaborador, EscalaCompletaV3, Funcao } from '@shared/index'
 
 export function resolveEscalaEquipe(
@@ -7,9 +8,10 @@ export function resolveEscalaEquipe(
 ): { colaboradores: Colaborador[]; funcoes: Funcao[] } {
   const snapshot = detalhe?.snapshot_equipe
   if (!detalhe || !snapshot) {
+    const participantes = listEscalaParticipantes(fallbackColaboradores, fallbackFuncoes)
     return {
-      colaboradores: fallbackColaboradores,
-      funcoes: fallbackFuncoes,
+      colaboradores: participantes.map(({ colaborador }) => colaborador),
+      funcoes: participantes.map(({ funcao }) => funcao),
     }
   }
 

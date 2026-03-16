@@ -19,6 +19,8 @@ export interface EffectiveRulePolicy {
 const OFFICIAL_LOCKED_HARD_RULES = new Set([
   'H1',
   'H2',
+  'H3_DOM_MAX_CONSEC_M',
+  'H3_DOM_MAX_CONSEC_F',
   'H4',
   'H5',
   'H6',
@@ -44,11 +46,30 @@ const VALIDATOR_ONLY_HARD_RULES: ReadonlyArray<string> = [
 
 const FALLBACK_BASE_RULES: RuleConfig = {
   H1: 'HARD',
-  H3: 'SOFT',
+  H3_DOM_CICLO_EXATO: 'SOFT',
+  H3_DOM_MAX_CONSEC_M: 'HARD',
+  H3_DOM_MAX_CONSEC_F: 'HARD',
   H6: 'HARD',
   H10: 'HARD',
   DIAS_TRABALHO: 'HARD',
   MIN_DIARIO: 'HARD',
+}
+
+function normalizeRuleOverrides(rulesOverride?: Record<string, string>): Record<string, RuleStatus> | undefined {
+  if (!rulesOverride || Object.keys(rulesOverride).length === 0) return undefined
+  const normalized: Record<string, RuleStatus> = {}
+
+  for (const [codigo, status] of Object.entries(rulesOverride)) {
+    const nextStatus = status as RuleStatus
+    if (codigo === 'H3_DOM_MAX_CONSEC') {
+      if (normalized.H3_DOM_MAX_CONSEC_M === undefined) normalized.H3_DOM_MAX_CONSEC_M = nextStatus
+      if (normalized.H3_DOM_MAX_CONSEC_F === undefined) normalized.H3_DOM_MAX_CONSEC_F = nextStatus
+      continue
+    }
+    normalized[codigo] = nextStatus
+  }
+
+  return normalized
 }
 
 async function loadRuleRows(): Promise<RuleRow[]> {
@@ -121,6 +142,7 @@ export async function buildEffectiveRulePolicy(options: {
   rulesOverride?: Record<string, string>
 } = {}): Promise<EffectiveRulePolicy> {
   const generationMode = options.generationMode ?? 'OFFICIAL'
+  const normalizedOverrides = normalizeRuleOverrides(options.rulesOverride)
   const rows = await loadRuleRows()
   const adjustments: RulePolicyAdjustment[] = []
 
@@ -147,7 +169,7 @@ export async function buildEffectiveRulePolicy(options: {
 
   for (const row of rows) {
     let nextStatus = row.status_efetivo
-    const override = options.rulesOverride?.[row.codigo] as RuleStatus | undefined
+    const override = normalizedOverrides?.[row.codigo]
 
     if (override !== undefined) {
       if (!row.editavel) {
@@ -182,13 +204,14 @@ export async function buildEffectiveRulePolicy(options: {
 export async function inferGenerationModeForOverrides(
   rulesOverride?: Record<string, string>,
 ): Promise<GenerationMode> {
-  if (!rulesOverride || Object.keys(rulesOverride).length === 0) {
+  const normalizedOverrides = normalizeRuleOverrides(rulesOverride)
+  if (!normalizedOverrides || Object.keys(normalizedOverrides).length === 0) {
     return 'OFFICIAL'
   }
 
   const officialPolicy = await buildEffectiveRulePolicy({ generationMode: 'OFFICIAL' })
 
-  for (const [codigo, status] of Object.entries(rulesOverride)) {
+  for (const [codigo, status] of Object.entries(normalizedOverrides)) {
     if (isHardRuleRelaxation(officialPolicy.solverRules[codigo], status as RuleStatus)) {
       return 'EXPLORATORY'
     }

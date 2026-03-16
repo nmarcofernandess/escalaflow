@@ -34,6 +34,9 @@ export interface ColabMotor {
   prefere_turno: string | null
   evitar_dia_semana: DiaSemana | null
   funcao_id: number | null
+  domingo_ciclo_trabalho?: number
+  domingo_ciclo_folga?: number
+  folga_fixa_dia_semana?: DiaSemana | null
 }
 
 export interface CelulaMotor {
@@ -426,9 +429,10 @@ export function checkH3(
   mapa: Map<string, CelulaMotor>,
   lookback: LookbackV3,
   severidade: 'HARD' | 'SOFT' = 'SOFT',
+  maxConsec = CLT.MAX_DOMINGOS_CONSECUTIVOS[c.sexo],
+  regraCodigo = 'H3_RODIZIO_DOMINGO',
 ): Violacao[] {
   const violacoes: Violacao[] = []
-  const maxConsec = CLT.MAX_DOMINGOS_CONSECUTIVOS[c.sexo]
   let consec = lookback.domConsec
 
   for (const data of domingos) {
@@ -443,7 +447,7 @@ export function checkH3(
           : `máximo 2 domingos consecutivos para homens (convenção/jurisprudência)`
         violacoes.push({
           severidade,
-          regra: 'H3_RODIZIO_DOMINGO',
+          regra: regraCodigo,
           colaborador_id: c.id,
           colaborador_nome: c.nome,
           mensagem: `${c.nome} trabalhou ${consec} domingos consecutivos (${descricao}) — limite configurado de domingos consecutivos foi excedido`,
@@ -452,6 +456,68 @@ export function checkH3(
       }
     } else {
       consec = 0
+    }
+  }
+
+  return violacoes
+}
+
+export function checkH3DomingoCicloExato(
+  c: ColabMotor,
+  domingos: string[],
+  mapa: Map<string, CelulaMotor>,
+  severidade: 'HARD' | 'SOFT' = 'HARD',
+): Violacao[] {
+  if (c.tipo_trabalhador === 'INTERMITENTE') return []
+  if (c.folga_fixa_dia_semana === 'DOM') return []
+
+  const violacoes: Violacao[] = []
+  const trabalho = c.domingo_ciclo_trabalho ?? 2
+  const folga = c.domingo_ciclo_folga ?? 1
+  const janela = trabalho + folga
+  if (janela <= 0) return violacoes
+
+  const domingosDisponiveis = domingos.filter((data) => {
+    const cel = mapa.get(data)
+    return cel?.status !== 'INDISPONIVEL'
+  })
+  const domingosTrabalhados = (datas: string[]) => datas.reduce((sum, data) => {
+    const cel = mapa.get(data)
+    return sum + (cel?.status === 'TRABALHO' ? 1 : 0)
+  }, 0)
+
+  if (domingosDisponiveis.length < janela) {
+    if (domingosDisponiveis.length === 0) return violacoes
+    const esperado = Math.min(
+      domingosDisponiveis.length,
+      Math.max(1, Math.round((trabalho * domingosDisponiveis.length) / janela)),
+    )
+    const worked = domingosTrabalhados(domingosDisponiveis)
+    if (worked !== esperado) {
+      violacoes.push({
+        severidade,
+        regra: 'H3_DOM_CICLO_EXATO',
+        colaborador_id: c.id,
+        colaborador_nome: c.nome,
+        mensagem: `${c.nome} saiu do ciclo de domingos esperado (${worked}/${domingosDisponiveis.length} no periodo curto; esperado ${esperado}).`,
+        data: domingosDisponiveis.at(-1) ?? null,
+      })
+    }
+    return violacoes
+  }
+
+  for (let index = 0; index <= domingosDisponiveis.length - janela; index += 1) {
+    const slice = domingosDisponiveis.slice(index, index + janela)
+    const worked = domingosTrabalhados(slice)
+    if (worked !== trabalho) {
+      violacoes.push({
+        severidade,
+        regra: 'H3_DOM_CICLO_EXATO',
+        colaborador_id: c.id,
+        colaborador_nome: c.nome,
+        mensagem: `${c.nome} quebrou o ciclo exato de domingos (${worked}/${janela} trabalhados; esperado ${trabalho}/${janela}).`,
+        data: slice.at(-1) ?? null,
+      })
     }
   }
 
@@ -1092,9 +1158,24 @@ export function validarTudoV3(params: ValidarTudoParams): Violacao[] {
     // H2b — DSR interjornada (por colaborador)
     violacoes.push(...checkH2b(c, diasOrdered))
 
-    const h3Severity = resolveRuleSeverity(rules, 'H3_DOM_MAX_CONSEC', 'HARD')
+    const h3CicloSeverity = resolveRuleSeverity(rules, 'H3_DOM_CICLO_EXATO', 'SOFT')
+    if (h3CicloSeverity) {
+      violacoes.push(...checkH3DomingoCicloExato(c, domingos, mapa, h3CicloSeverity))
+    }
+
+    const h3LegacySeverity = resolveRuleSeverity(rules, 'H3_DOM_MAX_CONSEC', 'HARD')
+    const h3Codigo = c.sexo === 'F' ? 'H3_DOM_MAX_CONSEC_F' : 'H3_DOM_MAX_CONSEC_M'
+    const h3Severity = resolveRuleSeverity(rules, h3Codigo, h3LegacySeverity ?? 'HARD')
     if (h3Severity) {
-      violacoes.push(...checkH3(c, domingos, mapa, lb, h3Severity))
+      violacoes.push(...checkH3(
+        c,
+        domingos,
+        mapa,
+        lb,
+        h3Severity,
+        CLT.MAX_DOMINGOS_CONSECUTIVOS[c.sexo],
+        h3Codigo,
+      ))
     }
 
     // H4 — max jornada diária (por colaborador, itera internamente)

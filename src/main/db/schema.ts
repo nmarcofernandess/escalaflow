@@ -778,6 +778,36 @@ async function migrateSchema(): Promise<void> {
 
   // --- v25: simulacao_config_json por setor ---
   await addColumnIfMissing('setores', 'simulacao_config_json', 'TEXT')
+
+  // --- v26: split da familia H3 domingo ---
+  const regraEmpresaH3 = await queryOne<{ status: string | null }>(
+    `SELECT status FROM regra_empresa WHERE codigo = 'H3_DOM_MAX_CONSEC'`,
+  )
+  if (regraEmpresaH3?.status) {
+    await execute(
+      `INSERT INTO regra_empresa (codigo, status)
+       VALUES ('H3_DOM_MAX_CONSEC_M', ?)
+       ON CONFLICT(codigo) DO NOTHING`,
+      regraEmpresaH3.status,
+    )
+    await execute(
+      `INSERT INTO regra_empresa (codigo, status)
+       VALUES ('H3_DOM_MAX_CONSEC_F', ?)
+       ON CONFLICT(codigo) DO NOTHING`,
+      regraEmpresaH3.status,
+    )
+  }
+  await execute(`DELETE FROM regra_empresa WHERE codigo = 'H3_DOM_MAX_CONSEC'`)
+  await execute(`DELETE FROM regra_definicao WHERE codigo = 'H3_DOM_MAX_CONSEC'`)
+
+  // --- v27: Re-enable 'session' tipo in knowledge_sources for session indexing ---
+  try {
+    await execDDL(`ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_tipo_check`)
+    await execDDL(`ALTER TABLE knowledge_sources ADD CONSTRAINT knowledge_sources_tipo_check
+      CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario', 'session'))`)
+  } catch {
+    // safe to ignore
+  }
 }
 
 // ============================================================================

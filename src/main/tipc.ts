@@ -4041,22 +4041,77 @@ const knowledgeRebuildAndExportSistema = t.procedure.action(async () => {
 })
 
 // =============================================================================
+// KNOWLEDGE — SEARCH + CHUNKS (2 handlers)
+// =============================================================================
+
+const knowledgeSearch = t.procedure
+  .input<{ query: string; limite?: number; modo?: 'hybrid' | 'vector' | 'fts' }>()
+  .action(async ({ input }) => {
+    const { searchKnowledge } = await import('./knowledge/search')
+    const result = await searchKnowledge(input.query, { limite: input.limite ?? 10 })
+    // Enrich chunks com source info
+    const enriched = []
+    for (const chunk of result.chunks) {
+      const source = await queryOne<{ titulo: string; tipo: string; metadata: string }>(
+        'SELECT titulo, tipo, metadata::text as metadata FROM knowledge_sources WHERE id = $1',
+        chunk.source_id,
+      )
+      enriched.push({
+        ...chunk,
+        source_titulo: source?.titulo ?? 'Desconhecido',
+        source_tipo: source?.tipo ?? 'manual',
+        source_metadata: source?.metadata ? JSON.parse(source.metadata) : {},
+      })
+    }
+    return { chunks: enriched, relations: result.relations, total: enriched.length }
+  })
+
+const knowledgeListarChunks = t.procedure
+  .input<{ source_id: number }>()
+  .action(async ({ input }) => {
+    const chunks = await queryAll<{
+      id: number
+      source_id: number
+      conteudo: string
+      importance: string
+      last_accessed_at: string | null
+      access_count: number
+    }>(
+      `SELECT id, source_id, conteudo, importance,
+              last_accessed_at::text, COALESCE(access_count, 0)::int as access_count
+       FROM knowledge_chunks
+       WHERE source_id = $1
+       ORDER BY id ASC`,
+      input.source_id,
+    )
+    return chunks
+  })
+
+// =============================================================================
 // KNOWLEDGE GRAPH VISUALIZER (2 handlers)
 // =============================================================================
 
 const knowledgeGraphData = t.procedure
   .input<{ origem?: 'sistema' | 'usuario'; limite?: number }>()
   .action(async ({ input }) => {
-    const origem = input?.origem ?? 'usuario'
+    const origem = input?.origem
     const limite = input?.limite ?? 300
 
-    const entities = await queryAll<{ id: number; nome: string; tipo: string }>(
-      `SELECT id, nome, tipo FROM knowledge_entities
-       WHERE origem = $1 AND (valid_to IS NULL OR valid_to > NOW())
-       ORDER BY criada_em DESC
-       LIMIT $2`,
-      origem, limite,
-    )
+    const entities = origem
+      ? await queryAll<{ id: number; nome: string; tipo: string }>(
+          `SELECT id, nome, tipo FROM knowledge_entities
+           WHERE origem = $1 AND (valid_to IS NULL OR valid_to > NOW())
+           ORDER BY criada_em DESC
+           LIMIT $2`,
+          origem, limite,
+        )
+      : await queryAll<{ id: number; nome: string; tipo: string }>(
+          `SELECT id, nome, tipo FROM knowledge_entities
+           WHERE (valid_to IS NULL OR valid_to > NOW())
+           ORDER BY criada_em DESC
+           LIMIT $1`,
+          limite,
+        )
 
     const entityIds = entities.map(e => e.id)
     if (entityIds.length === 0) {
@@ -4295,6 +4350,8 @@ export const router = {
   'knowledge.rebuildGraph': knowledgeRebuildGraph,
   'knowledge.graphStats': knowledgeGraphStats,
   'knowledge.rebuildAndExportSistema': knowledgeRebuildAndExportSistema,
+  'knowledge.search': knowledgeSearch,
+  'knowledge.listarChunks': knowledgeListarChunks,
   'knowledge.graphData': knowledgeGraphData,
   'knowledge.graphExplore': knowledgeGraphExplore,
   // Backup / Restore

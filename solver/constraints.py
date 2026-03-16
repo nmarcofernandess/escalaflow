@@ -993,6 +993,9 @@ def add_dom_max_consecutivo(
     C: int,
     sunday_indices: List[int],
     blocked_days: Dict[int, set],
+    *,
+    hard_m: bool = True,
+    hard_f: bool = True,
 ) -> None:
     """HARD: max domingos consecutivos trabalhados.
 
@@ -1012,6 +1015,10 @@ def add_dom_max_consecutivo(
             continue
 
         sexo = colabs[c].get("sexo", "M")
+        if sexo == "F" and not hard_f:
+            continue
+        if sexo != "F" and not hard_m:
+            continue
         max_consec = 1 if sexo == "F" else 2
         available_suns = [d for d in sunday_indices if d not in blocked_days.get(c, set())]
         window = max_consec + 1

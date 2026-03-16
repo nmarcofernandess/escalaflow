@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import {
   Brain,
   Database,
@@ -14,7 +14,12 @@ import {
   Network,
   RefreshCw,
   Sparkles,
+  Zap,
 } from 'lucide-react'
+
+const RagPlayground = lazy(() =>
+  import('@/componentes/RagPlayground').then(m => ({ default: m.RagPlayground }))
+)
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -188,7 +193,6 @@ export function MemoriaPagina() {
   }
 
   // --- Graph ---
-  const [filtroGraph, setFiltroGraph] = useState<'usuario' | 'sistema'>('usuario')
   const [graphStats, setGraphStats] = useState<{
     entities_count: number
     relations_count: number
@@ -208,9 +212,9 @@ export function MemoriaPagina() {
   const graphContainerRef = useRef<HTMLDivElement>(null)
   const [graphWidth, setGraphWidth] = useState(800)
 
-  const carregarGraphStats = async (origem?: 'usuario' | 'sistema') => {
+  const carregarGraphStats = async () => {
     try {
-      const stats = await servicoConhecimento.graphStats(origem ?? filtroGraph)
+      const stats = await servicoConhecimento.graphStats()
       setGraphStats(stats)
       // Init active types from stats
       if (stats.tipos.length > 0) {
@@ -221,10 +225,10 @@ export function MemoriaPagina() {
     }
   }
 
-  const carregarGraphData = async (origem?: 'usuario' | 'sistema') => {
+  const carregarGraphData = async () => {
     setLoadingGraph(true)
     try {
-      const result = await servicoConhecimento.graphData(origem ?? filtroGraph, 300)
+      const result = await servicoConhecimento.graphData(undefined, 300)
       setGraphNodes(result.nodes)
       setGraphLinks(result.links)
     } catch {
@@ -238,9 +242,7 @@ export function MemoriaPagina() {
   useEffect(() => {
     carregarGraphStats()
     carregarGraphData()
-    setSelectedNode(null)
-    setExploredData(null)
-  }, [filtroGraph])
+  }, [])
 
   // Measure container width for responsive graph
   useEffect(() => {
@@ -254,26 +256,6 @@ export function MemoriaPagina() {
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
-
-  const handleRebuildGraph = async () => {
-    if (rebuildingGraph) return
-    setRebuildingGraph(true)
-    try {
-      if (filtroGraph === 'sistema') {
-        const result = await servicoConhecimento.rebuildAndExportSistema()
-        toast.success(`Graph sistema: ${result.seed_entities} entidades, ${result.seed_relations} relacoes exportadas`)
-      } else {
-        const result = await servicoConhecimento.rebuildGraph('usuario')
-        toast.success(`Grafo gerado: ${result.entities_count} entidades, ${result.relations_count} relacoes (${result.chunks_processados} chunks)`)
-      }
-      await carregarGraphStats()
-      await carregarGraphData()
-    } catch (err: any) {
-      toast.error('Erro ao gerar grafo', { description: err?.message ?? 'Erro desconhecido' })
-    } finally {
-      setRebuildingGraph(false)
-    }
-  }
 
   const handleNodeClick = async (node: GraphNode) => {
     setSelectedNode(node)
@@ -338,6 +320,15 @@ export function MemoriaPagina() {
                 </Badge>
               )}
             </TabsTrigger>
+            {import.meta.env.DEV && (
+              <TabsTrigger value="avancado">
+                <Zap className="mr-1.5 size-3.5" />
+                Avancado
+                <Badge className="ml-1.5 bg-orange-900/50 px-1.5 py-0 text-[9px] text-orange-400 hover:bg-orange-900/50">
+                  DEV
+                </Badge>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* ── TAB MEMORIAS ── */}
@@ -539,31 +530,37 @@ export function MemoriaPagina() {
             </Card>
           </TabsContent>
 
+          {/* ── TAB AVANCADO (DEV-only) ── */}
+          {import.meta.env.DEV && (
+            <TabsContent value="avancado" className="mt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Zap className="size-4 text-purple-400" />
+                  <span className="text-sm font-semibold">RAG Playground</span>
+                </div>
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  <span>Modelo: <strong className="text-foreground">e5-base ONNX</strong></span>
+                  <span>Embeddings: <strong className="text-foreground">768d</strong></span>
+                </div>
+              </div>
+              <Suspense fallback={
+                <div className="flex h-96 items-center justify-center">
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                </div>
+              }>
+                <RagPlayground />
+              </Suspense>
+            </TabsContent>
+          )}
+
           {/* ── TAB RELACOES ── */}
           <TabsContent value="relacoes" className="mt-4 space-y-4">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Select value={filtroGraph} onValueChange={(v) => setFiltroGraph(v as 'usuario' | 'sistema')}>
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="usuario">
-                          <span className="flex items-center gap-1.5">
-                            <User className="size-3.5" />
-                            Minhas Relacoes
-                          </span>
-                        </SelectItem>
-                        <SelectItem value="sistema">
-                          <span className="flex items-center gap-1.5">
-                            <BookOpen className="size-3.5" />
-                            Sistema
-                          </span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex items-center gap-2">
+                    <Network className="size-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Grafo de Conhecimento</span>
                     {graphStats && graphStats.entities_count > 0 && (
                       <Badge variant="outline" className="text-xs">
                         {graphStats.entities_count} entidades · {graphStats.relations_count} relacoes
@@ -571,33 +568,51 @@ export function MemoriaPagina() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {filtroGraph === 'usuario' && (
-                      <Button
-                        size="sm"
-                        onClick={handleRebuildGraph}
-                        disabled={rebuildingGraph}
-                      >
-                        {rebuildingGraph ? (
-                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-1.5 size-3.5" />
-                        )}
-                        {rebuildingGraph ? 'Analisando...' : 'Analisar Relacoes'}
-                      </Button>
-                    )}
-                    {import.meta.env.DEV && filtroGraph === 'sistema' && (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        setRebuildingGraph(true)
+                        try {
+                          const result = await servicoConhecimento.rebuildGraph('usuario')
+                          toast.success(`Grafo atualizado: ${result.entities_count} entidades, ${result.relations_count} relacoes`)
+                          await carregarGraphStats()
+                          await carregarGraphData()
+                        } catch (err: any) {
+                          toast.error('Erro ao gerar grafo', { description: err?.message })
+                        } finally {
+                          setRebuildingGraph(false)
+                        }
+                      }}
+                      disabled={rebuildingGraph}
+                    >
+                      {rebuildingGraph ? (
+                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-1.5 size-3.5" />
+                      )}
+                      {rebuildingGraph ? 'Analisando...' : 'Atualizar Relacoes'}
+                    </Button>
+                    {import.meta.env.DEV && (
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={handleRebuildGraph}
+                        onClick={async () => {
+                          setRebuildingGraph(true)
+                          try {
+                            const result = await servicoConhecimento.rebuildAndExportSistema()
+                            toast.success(`Sistema: ${result.seed_entities} entidades exportadas`)
+                            await carregarGraphStats()
+                            await carregarGraphData()
+                          } catch (err: any) {
+                            toast.error('Erro', { description: err?.message })
+                          } finally {
+                            setRebuildingGraph(false)
+                          }
+                        }}
                         disabled={rebuildingGraph}
                       >
-                        {rebuildingGraph ? (
-                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                        ) : (
-                          <Network className="mr-1.5 size-3.5" />
-                        )}
-                        {rebuildingGraph ? 'Extraindo...' : 'Rebuild Graph'}
+                        <Network className="mr-1.5 size-3.5" />
+                        Rebuild Sistema
                       </Button>
                     )}
                   </div>
@@ -608,10 +623,7 @@ export function MemoriaPagina() {
                   <EmptyState
                     icon={Network}
                     title="Grafo vazio"
-                    description={filtroGraph === 'usuario'
-                      ? "Clique em 'Analisar Relacoes' para extrair entidades e relacoes dos seus documentos."
-                      : "O grafo do sistema sera populado automaticamente."
-                    }
+                    description="Clique em 'Atualizar Relacoes' para extrair entidades e relacoes dos seus documentos."
                   />
                 ) : (
                   <>
@@ -711,7 +723,7 @@ export function MemoriaPagina() {
                   </>
                 )}
 
-                {filtroGraph === 'usuario' && graphStats && graphStats.entities_count === 0 && (
+                {graphStats && graphStats.entities_count === 0 && (
                   <div className="rounded-lg bg-muted/30 px-4 py-3">
                     <div className="flex gap-3">
                       <Lightbulb className="mt-0.5 size-4 shrink-0 text-warning" />

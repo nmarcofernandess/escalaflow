@@ -13,6 +13,8 @@ import { createHash } from 'node:crypto'
 import { queryOne, queryAll, execute, insertReturningId, transaction } from '../db/query'
 import { buildEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 import type {
+  Colaborador,
+  Funcao,
   GenerationMode,
   SolverInput,
   SolverOutput,
@@ -24,6 +26,7 @@ import type {
   PinnedCell,
   DiaSemana,
 } from '../../shared'
+import { listEscalaParticipantes, normalizeSetorSimulacaoConfig } from '../../shared'
 import { buildEffectiveRulePolicy } from './rule-policy'
 
 const require = createRequire(import.meta.url)
@@ -168,7 +171,7 @@ function resolvePythonCmd(): string {
 // Calculo automatico do ciclo domingo
 // ---------------------------------------------------------------------------
 
-function calcularCicloDomingo(
+export function calcularCicloDomingo(
   demandaRows: { dia_semana: string | null; min_pessoas: number }[],
   colabRows: { id: number; tipo_trabalhador: string | null }[],
   regraGroupByColab: Map<number, { padrao: { folga_fixa_dia_semana: string | null } | null; dias: Map<string, unknown> }>,
@@ -211,12 +214,12 @@ function calcularCicloDomingo(
 function derivarTipoTrabalhador(
   tipoColuna: string | null,
   contratoNome: string,
-): string {
+): Colaborador['tipo_trabalhador'] {
   // NFD normalization to strip accents (matches frontend logic)
   const nome = contratoNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   if (nome.includes('intermit')) return 'INTERMITENTE'
   if (nome.includes('estagi')) return 'ESTAGIARIO'
-  return tipoColuna || 'CLT'
+  return tipoColuna === 'INTERMITENTE' || tipoColuna === 'ESTAGIARIO' ? tipoColuna : 'CLT'
 }
 
 export async function buildSolverInput(
@@ -255,6 +258,12 @@ export async function buildSolverInput(
   const setorHorarios = await queryAll<{
     dia_semana: string; hora_abertura: string; hora_fechamento: string; ativo: boolean
   }>('SELECT * FROM setor_horario_semana WHERE setor_id = ? AND ativo = TRUE', setorId)
+  const funcoesAtivas = await queryAll<Funcao>(`
+    SELECT id, setor_id, apelido, tipo_contrato_id, ativo, ordem, cor_hex
+    FROM funcoes
+    WHERE setor_id = ? AND ativo = TRUE
+    ORDER BY ordem ASC, apelido ASC
+  `, setorId)
 
   const empresaHorarios = await queryAll<{
     dia_semana: string; hora_abertura: string; hora_fechamento: string
@@ -278,29 +287,47 @@ export async function buildSolverInput(
 
   // Colaboradores + TipoContrato
   const colabRows = await queryAll<{
-    id: number; nome: string; sexo: string; horas_semanais: number; rank: number;
+    id: number; setor_id: number; tipo_contrato_id: number; nome: string; sexo: string; horas_semanais: number; rank: number;
     prefere_turno: string | null; evitar_dia_semana: string | null;
-    tipo_trabalhador: string | null; funcao_id: number | null;
+    tipo_trabalhador: string | null; funcao_id: number | null; ativo: number;
     regime_escala: '5X2' | '6X1' | null;
     dias_trabalho: number; max_minutos_dia: number;
     contrato_nome: string;
   }>(`
-    SELECT c.id, c.nome, c.sexo, c.horas_semanais, c.rank, c.prefere_turno, c.evitar_dia_semana,
-           c.tipo_trabalhador, c.funcao_id, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia,
+    SELECT c.id, c.setor_id, c.tipo_contrato_id, c.nome, c.sexo, c.horas_semanais, c.rank, c.prefere_turno, c.evitar_dia_semana,
+           c.tipo_trabalhador, c.funcao_id, c.ativo, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia,
            tc.nome AS contrato_nome
     FROM colaboradores c
     JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
     WHERE c.setor_id = ? AND c.ativo = true
-    ORDER BY c.rank DESC
+    ORDER BY c.rank ASC, c.nome ASC
   `, setorId)
 
-  // B6: Exclude collaborators without a posto (funcao_id=null)
-  // They are "reserva operacional" — not scheduled by the solver
-  const reserva = colabRows.filter(r => r.funcao_id == null)
-  if (reserva.length > 0) {
-    console.log(`[solver-bridge] ${reserva.length} colab(s) sem posto (reserva): ${reserva.map(r => r.nome).join(', ')}`)
+  const colabRowsById = new Map(colabRows.map((row) => [row.id, row]))
+  const colabRowsForHelper: Colaborador[] = colabRows.map((row) => ({
+    id: row.id,
+    setor_id: row.setor_id,
+    tipo_contrato_id: row.tipo_contrato_id,
+    nome: row.nome,
+    sexo: row.sexo as 'M' | 'F',
+    horas_semanais: row.horas_semanais,
+    rank: row.rank ?? 0,
+    prefere_turno: (row.prefere_turno as Colaborador['prefere_turno']) ?? null,
+    evitar_dia_semana: (row.evitar_dia_semana as DiaSemana | null) ?? null,
+    ativo: Boolean(row.ativo),
+    tipo_trabalhador: derivarTipoTrabalhador(row.tipo_trabalhador, row.contrato_nome),
+    funcao_id: row.funcao_id,
+  }))
+  const participantes = listEscalaParticipantes(colabRowsForHelper, funcoesAtivas)
+  const participantIds = new Set(participantes.map(({ colaborador }) => colaborador.id))
+  const colabRowsFiltered = participantes
+    .map(({ colaborador }) => colabRowsById.get(colaborador.id) ?? null)
+    .filter((row): row is NonNullable<typeof row> => row != null)
+
+  const foraDaEscala = colabRows.filter((row) => !participantIds.has(row.id))
+  if (foraDaEscala.length > 0) {
+    console.log(`[solver-bridge] ${foraDaEscala.length} colab(s) fora da escala ativa: ${foraDaEscala.map(r => r.nome).join(', ')}`)
   }
-  const colabRowsFiltered = colabRows.filter(r => r.funcao_id != null)
 
   const colaboradores: SolverInputColab[] = colabRowsFiltered.map(r => {
     const regimeEfetivo = overrideByColab.get(r.id) ?? setor.regime_escala ?? r.regime_escala ?? (r.dias_trabalho <= 5 ? '5X2' : '6X1')
@@ -380,11 +407,12 @@ export async function buildSolverInput(
     WHERE r.ativo = true
       AND r.colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = true)
   `, setorId)
+  const regraHorarioRowsFiltered = regraHorarioRows.filter((row) => participantIds.has(row.colaborador_id))
 
   // Agrupar regras: padrao (dia_semana_regra IS NULL) + por dia da semana
   type RegraGroup = { padrao: RegraHorarioRow | null; dias: Map<string, RegraHorarioRow> }
   const regraGroupByColab = new Map<number, RegraGroup>()
-  for (const r of regraHorarioRows) {
+  for (const r of regraHorarioRowsFiltered) {
     let g = regraGroupByColab.get(r.colaborador_id)
     if (!g) { g = { padrao: null, dias: new Map() }; regraGroupByColab.set(r.colaborador_id, g) }
     if (r.dia_semana_regra === null) g.padrao = r
@@ -406,6 +434,7 @@ export async function buildSolverInput(
   `, dataInicio, dataFim, setorId)
   const excecaoDataMap = new Map<string, typeof excecaoDataRows[0]>()
   for (const ed of excecaoDataRows) {
+    if (!participantIds.has(ed.colaborador_id)) continue
     excecaoDataMap.set(`${ed.colaborador_id}|${ed.data}`, ed)
   }
 
@@ -567,7 +596,9 @@ export async function buildSolverInput(
       WHERE escala_id = ?
     `, lastScale.id)
 
-    hints = hintRows.map((h) => ({
+    hints = hintRows
+      .filter((hint) => participantIds.has(hint.colaborador_id))
+      .map((h) => ({
       colaborador_id: h.colaborador_id,
       data: h.data,
       status: h.status,
@@ -598,7 +629,9 @@ export async function buildSolverInput(
       // Outros feriados: orientados por demanda (solver so nao aloca se demanda = 0)
       proibido_trabalhar: Boolean(f.proibido_trabalhar) && !Boolean(f.cct_autoriza),
     })),
-    excecoes: excecoes.map(e => ({
+    excecoes: excecoes
+      .filter((excecao) => participantIds.has(excecao.colaborador_id))
+      .map(e => ({
       colaborador_id: e.colaborador_id,
       data_inicio: e.data_inicio,
       data_fim: e.data_fim,
@@ -879,6 +912,15 @@ export async function persistirSolverResult(
   // comparacao_demanda NÃO é inserida aqui: é gravada só em persistirResumoAutoritativoEscala
   // após validarEscalaV3(), evitando duplicate key (escala_comparacao_demanda_pkey)
   const equipeSnapshot = await buildEscalaEquipeSnapshot(setorId)
+  const setor = await queryOne<{ simulacao_config_json?: string | null }>(
+    'SELECT simulacao_config_json FROM setores WHERE id = ?',
+    setorId,
+  )
+  const setorSimulacao = normalizeSetorSimulacaoConfig(setor?.simulacao_config_json ?? null)
+  const simulacaoConfigJson = JSON.stringify({
+    regimes_override: regimesOverride ?? [],
+    setor_overrides_locais: setorSimulacao.setor.overrides_locais,
+  })
 
   return await transaction(async () => {
     const escalaId = await insertReturningId(`
@@ -890,7 +932,7 @@ export async function persistirSolverResult(
       setorId, dataInicio, dataFim,
       ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
       inputHash ?? null,
-      JSON.stringify({ regimes_override: regimesOverride ?? [] }),
+      simulacaoConfigJson,
       JSON.stringify(equipeSnapshot),
     )
 

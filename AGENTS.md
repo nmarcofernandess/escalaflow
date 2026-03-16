@@ -14,3 +14,4 @@
 - Setor "usar padrão" per day lives in setor_horario_semana; demand by time band in demandas. Export/import must restore both (UPSERT for setor_horario_semana, normalize booleans).
 - Estagiário 30h is defined in seed and migration in contrato_perfis_horario (TARDE_1330_PLUS, ESTUDA_NOITE_08_14).
 - Caixa has per-day demand in seed-local (caixaDemandas); Açougue uses a single pattern in seed-local.
+- Posto (função) has cor_hex in DB; it is only shown in EscalaGrid. SetorEscalaSection (which uses EscalaGrid) is not used by any current route, so post color does not appear in the UI today.

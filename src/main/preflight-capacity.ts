@@ -1,5 +1,5 @@
 import { dayLabel, listDays, minutesBetween } from './date-utils'
-import type { EscalaPreflightResult, SolverInput } from '../shared'
+import type { DiaSemana, EscalaPreflightResult, SolverInput } from '../shared'
 
 export type RegimeEscalaInput = '5X2' | '6X1'
 
@@ -10,6 +10,7 @@ export type SimulacaoRegimeOverride = {
 
 export type EscalaSimulacaoConfig = {
   regimes_override?: SimulacaoRegimeOverride[]
+  setor_overrides_locais?: Record<string, { fixa?: DiaSemana | null; variavel?: DiaSemana | null }>
 }
 
 export type PreflightIssue = EscalaPreflightResult['blockers'][number]
@@ -42,6 +43,7 @@ export function parseEscalaSimulacaoConfig(
     const parsed = JSON.parse(raw) as EscalaSimulacaoConfig
     return {
       regimes_override: normalizeRegimesOverride(parsed?.regimes_override),
+      setor_overrides_locais: parsed?.setor_overrides_locais ?? {},
     }
   } catch {
     return {}

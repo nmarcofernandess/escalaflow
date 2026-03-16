@@ -1,9 +1,11 @@
 import { queryOne, queryAll } from '../db/query'
 import { parseEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 import { buildEffectiveRulePolicy } from './rule-policy'
+import { listEscalaParticipantes } from '../../shared'
+import { calcularCicloDomingo } from './solver-bridge'
 import type {
   EscalaCompletaV3, Alocacao, Escala, Setor, Demanda, Feriado,
-  SetorHorarioSemana, Empresa, AntipatternViolacao, DecisaoMotor,
+  SetorHorarioSemana, Empresa, AntipatternViolacao, DecisaoMotor, Colaborador, Funcao,
 } from '../../shared'
 import { CLT } from '../../shared'
 import {
@@ -62,6 +64,13 @@ interface ColabComContrato {
   funcao_id: number | null
 }
 
+interface RegraPadraoColab {
+  colaborador_id: number
+  folga_fixa_dia_semana: string | null
+  domingo_ciclo_trabalho: number | null
+  domingo_ciclo_folga: number | null
+}
+
 // ─── VALIDADOR V3 ─────────────────────────────────────────────────────────────
 
 /**
@@ -106,14 +115,35 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
   const horariosSemana = await queryAll<SetorHorarioSemana>('SELECT * FROM setor_horario_semana WHERE setor_id = ?', escala.setor_id)
 
   const demandas = await queryAll<Demanda>('SELECT * FROM demandas WHERE setor_id = ?', escala.setor_id)
+  const funcoesAtivas = await queryAll<Funcao>(
+    `SELECT id, setor_id, apelido, tipo_contrato_id, ativo, ordem, cor_hex
+     FROM funcoes
+     WHERE setor_id = ? AND ativo = TRUE
+     ORDER BY ordem ASC, apelido ASC`,
+    escala.setor_id,
+  )
 
   const colaboradoresRaw = await queryAll<ColabComContrato>(
     `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.max_minutos_dia
      FROM colaboradores c
      JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
      WHERE c.setor_id = ? AND c.ativo = true
-     ORDER BY c.rank DESC`,
+     ORDER BY c.rank ASC, c.nome ASC`,
     escala.setor_id
+  )
+  const regrasPadraoColab = await queryAll<RegraPadraoColab>(
+    `SELECT colaborador_id, folga_fixa_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga
+     FROM colaborador_regra_horario
+     WHERE ativo = TRUE AND dia_semana_regra IS NULL
+       AND colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = TRUE)`,
+    escala.setor_id,
+  )
+  const regraPadraoMap = new Map(regrasPadraoColab.map((regra) => [regra.colaborador_id, regra]))
+  const regraGroupByColab = new Map(
+    regrasPadraoColab.map((regra) => [regra.colaborador_id, {
+      padrao: { folga_fixa_dia_semana: regra.folga_fixa_dia_semana },
+      dias: new Map<string, unknown>(),
+    }]),
   )
 
   const excecoes = await queryAll<{
@@ -137,7 +167,32 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
   // 3. Build ColabMotor array (igual ao gerador)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const colaboradores: ColabMotor[] = colaboradoresRaw.map(c => ({
+  const colaboradoresForHelper: Colaborador[] = colaboradoresRaw.map((c) => ({
+    id: c.id,
+    setor_id: escala.setor_id,
+    tipo_contrato_id: 0,
+    nome: c.nome,
+    sexo: c.sexo as 'M' | 'F',
+    horas_semanais: c.horas_semanais,
+    rank: c.rank ?? 0,
+    prefere_turno: c.prefere_turno as Colaborador['prefere_turno'] ?? null,
+    evitar_dia_semana: (c.evitar_dia_semana ?? null) as import('../../shared').DiaSemana | null,
+    ativo: true,
+    tipo_trabalhador: (c.tipo_trabalhador as Colaborador['tipo_trabalhador']) ?? 'CLT',
+    funcao_id: c.funcao_id ?? null,
+  }))
+  const participantes = listEscalaParticipantes(colaboradoresForHelper, funcoesAtivas)
+  const colaboradoresRawMap = new Map(colaboradoresRaw.map((item) => [item.id, item]))
+  const colaboradoresRawFiltrados = participantes
+    .map(({ colaborador }) => colaboradoresRawMap.get(colaborador.id) ?? null)
+    .filter((item): item is ColabComContrato => item != null)
+  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(
+    demandas.map((demanda) => ({ dia_semana: demanda.dia_semana, min_pessoas: demanda.min_pessoas })),
+    colaboradoresRawFiltrados.map((item) => ({ id: item.id, tipo_trabalhador: item.tipo_trabalhador })),
+    regraGroupByColab,
+  )
+
+  const colaboradores: ColabMotor[] = colaboradoresRawFiltrados.map(c => ({
     id: c.id,
     nome: c.nome,
     sexo: c.sexo as 'M' | 'F',
@@ -149,6 +204,17 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     prefere_turno: c.prefere_turno ?? null,
     evitar_dia_semana: (c.evitar_dia_semana ?? null) as import('../../shared').DiaSemana | null,
     funcao_id: c.funcao_id ?? null,
+    domingo_ciclo_trabalho: (
+      (regraPadraoMap.get(c.id)?.folga_fixa_dia_semana ?? null) === 'DOM'
+        ? 0
+        : cicloTrabalho
+    ) ?? undefined,
+    domingo_ciclo_folga: (
+      (regraPadraoMap.get(c.id)?.folga_fixa_dia_semana ?? null) === 'DOM'
+        ? 1
+        : cicloFolga
+    ) ?? undefined,
+    folga_fixa_dia_semana: (regraPadraoMap.get(c.id)?.folga_fixa_dia_semana as import('../../shared').DiaSemana | null) ?? null,
   }))
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -2,6 +2,7 @@ import { generateObject } from 'ai'
 import { z } from 'zod'
 import { generateQueryEmbedding } from '../knowledge/embeddings'
 import { queryOne, queryAll, execute, insertReturningId } from '../db/query'
+import { ingestKnowledge } from '../knowledge/ingest'
 import type { IaMensagem } from '../../shared/types'
 
 // =============================================================================
@@ -13,6 +14,7 @@ const COMPACTION_KEEP_RECENT = 10
 const DEDUP_COSINE_THRESHOLD = 0.85
 const TRANSCRIPT_MAX_CHARS = 8000
 const IA_MEMORIAS_AUTO_LIMIT = 50
+const SESSION_MAX_SOURCES = 50
 
 // =============================================================================
 // SANITIZE
@@ -156,6 +158,68 @@ ${transcript}`,
         item.summary,
       )
     }
+  }
+}
+
+// =============================================================================
+// SESSION INDEXING (GRATIS — embedding local, sem LLM)
+// =============================================================================
+
+/**
+ * Indexa o transcript de uma conversa no knowledge layer (chunks + embeddings).
+ * Idempotente: se ja indexou essa conversa, skip.
+ * Enforce limit: se > SESSION_MAX_SOURCES, deleta a mais antiga nunca acessada.
+ * Roda SEMPRE — nao depende de toggle memoria_automatica nem de API key.
+ */
+export async function indexSession(
+  conversa_id: string,
+  titulo: string,
+  mensagens: IaMensagem[],
+): Promise<void> {
+  const transcript = sanitizeTranscript(mensagens)
+  if (transcript.length < 100) return
+
+  // 1. Dedup: ja indexou essa conversa?
+  const existing = await queryOne<{ id: number }>(
+    `SELECT id FROM knowledge_sources WHERE tipo = 'session' AND metadata::text LIKE '%"conversa_id":"' || $1 || '"%'`,
+    conversa_id,
+  )
+  if (existing) return
+
+  // 2. Ingest (embeddings locais, gratis)
+  try {
+    await ingestKnowledge(
+      titulo || `Conversa ${conversa_id.slice(0, 8)}`,
+      transcript,
+      'low',
+      { tipo: 'session', conversa_id },
+    )
+  } catch (err) {
+    console.warn('[session-processor] indexSession falhou:', (err as Error).message)
+    return
+  }
+
+  // 3. Enforce limit: se > SESSION_MAX_SOURCES, deleta oldest sem acesso
+  try {
+    const countRow = await queryOne<{ c: number }>(
+      `SELECT COUNT(*)::int as c FROM knowledge_sources WHERE tipo = 'session'`,
+    )
+    if ((countRow?.c ?? 0) > SESSION_MAX_SOURCES) {
+      await execute(
+        `DELETE FROM knowledge_sources WHERE id = (
+          SELECT ks.id FROM knowledge_sources ks
+          WHERE ks.tipo = 'session'
+            AND NOT EXISTS (
+              SELECT 1 FROM knowledge_chunks kc
+              WHERE kc.source_id = ks.id AND kc.last_accessed_at IS NOT NULL
+            )
+          ORDER BY ks.criada_em ASC
+          LIMIT 1
+        )`,
+      )
+    }
+  } catch (err) {
+    console.warn('[session-processor] session eviction falhou:', (err as Error).message)
   }
 }
 

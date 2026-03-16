@@ -255,7 +255,9 @@ async function seedRegrasDefinicao(): Promise<void> {
     // -- CLT --
     ['H1', 'Maximo 6 dias consecutivos', 'Nenhum colaborador pode trabalhar mais de 6 dias seguidos sem folga (CLT Art. 67).', 'CLT', 'HARD', true, 'Desligar pode afetar o controle da meta semanal de horas.', 1],
     ['H2', 'Descanso minimo de 11h entre jornadas', 'Intervalo minimo obrigatorio de 11 horas entre o fim de uma jornada e o inicio da proxima (CLT Art. 66).', 'CLT', 'HARD', false, null, 2],
-    ['H3_DOM_MAX_CONSEC', 'Max domingos consecutivos', 'Mulher: max 1 (Art. 386 CLT). Homem: max 2 (convencao). Impede TT (trabalho-trabalho) em domingos.', 'CLT', 'HARD', true, 'Desligar pode permitir domingos consecutivos acima do limite por sexo.', 8],
+    ['H3_DOM_CICLO_EXATO', 'Ciclo exato de domingos', 'Mantem o ciclo configurado de domingos por colaborador (padrao 2 domingos trabalhados para 1 de folga).', 'CLT', 'SOFT', true, 'Endurecer essa regra trava o ciclo exato; relaxar permite cobrir mais domingos.', 8],
+    ['H3_DOM_MAX_CONSEC_M', 'Max domingos consecutivos (homens)', 'Homem: maximo 2 domingos consecutivos trabalhados (convencao/jurisprudencia).', 'CLT', 'HARD', true, 'Desligar pode permitir homens acima do limite configurado de domingos consecutivos.', 9],
+    ['H3_DOM_MAX_CONSEC_F', 'Max domingos consecutivos (mulheres)', 'Mulher: maximo 1 domingo consecutivo trabalhado (Art. 386 CLT).', 'CLT', 'HARD', true, 'Desligar pode permitir mulheres acima do limite configurado de domingos consecutivos.', 10],
     ['H4', 'Jornada maxima diaria de 10h', 'Nenhuma jornada pode ultrapassar 10 horas por dia incluindo hora extra (CLT Art. 59).', 'CLT', 'HARD', false, null, 3],
     ['H5', 'Ferias, atestados e bloqueios', 'Colaboradores em ferias, atestado ou bloqueio cadastrado nao recebem alocacao de trabalho.', 'CLT', 'HARD', false, null, 4],
     ['H6', 'Human blocks — almoco e estrutura de jornada', 'Garante que cada jornada tenha intervalo de almoco e estrutura minima de blocos (CLT Art. 71).', 'CLT', 'HARD', true, 'Sem human blocks, o motor pode gerar jornadas sem intervalo de almoco.', 5],
@@ -270,7 +272,7 @@ async function seedRegrasDefinicao(): Promise<void> {
     // -- SOFT --
     ['S_DEFICIT', 'Deficit de cobertura', 'Penaliza slots abaixo da demanda minima planejada.', 'SOFT', 'ON', true, null, 101],
     ['S_SURPLUS', 'Excesso de cobertura', 'Penaliza slots com mais pessoas do que a demanda maxima.', 'SOFT', 'ON', true, null, 102],
-    ['S_DOMINGO_CICLO', 'Rodizio justo de domingos', 'Distribui domingos de trabalho de forma equitativa entre a equipe.', 'SOFT', 'ON', true, null, 103],
+    ['S_DOMINGO_CICLO', 'Rodizio justo de domingos', 'Distribui domingos de trabalho de forma equitativa entre a equipe quando o ciclo exato estiver relaxado.', 'SOFT', 'ON', true, null, 103],
     ['S_TURNO_PREF', 'Preferencia de turno por colaborador', 'Tenta acomodar a preferencia de turno (manha/tarde) de cada colaborador.', 'SOFT', 'ON', true, null, 104],
     ['S_CONSISTENCIA', 'Consistencia de horarios entre dias', 'Penaliza variacoes bruscas de horario do mesmo colaborador ao longo da semana.', 'SOFT', 'ON', true, null, 105],
     ['S_SPREAD', 'Equilibrio de carga entre a equipe', 'Distribui horas de trabalho de forma equilibrada entre os colaboradores.', 'SOFT', 'ON', true, null, 106],

@@ -77,4 +77,39 @@ export const servicoConhecimento = {
       entidades: Array<{ nome: string; tipo: string; nivel: number }>
       relacoes: Array<{ from_nome: string; to_nome: string; tipo_relacao: string; peso: number }>
     }>,
+
+  async search(query: string, limite?: number) {
+    return (await client['knowledge.search']({ query, limite })) as {
+      chunks: Array<{
+        id: number
+        source_id: number
+        conteudo: string
+        importance: string
+        score: number
+        source_titulo: string
+        source_tipo: string
+        source_metadata: Record<string, unknown>
+        last_accessed_at: string | null
+        access_count: number
+      }>
+      relations: Array<{
+        from_nome: string
+        to_nome: string
+        tipo_relacao: string
+        peso: number
+      }>
+      total: number
+    }
+  },
+
+  async listarChunks(sourceId: number) {
+    return (await client['knowledge.listarChunks']({ source_id: sourceId })) as Array<{
+      id: number
+      source_id: number
+      conteudo: string
+      importance: string
+      last_accessed_at: string | null
+      access_count: number
+    }>
+  },
 }

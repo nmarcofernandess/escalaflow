@@ -1,5 +1,6 @@
 import { execute, queryAll, queryOne } from './db/query'
-import type { EscalaEquipeSnapshot } from '../shared'
+import { buildEscalaEquipeSnapshotFromEntities } from '../shared'
+import type { Colaborador, EscalaEquipeSnapshot, Funcao } from '../shared'
 
 export function parseEscalaEquipeSnapshot(raw: string | null | undefined): EscalaEquipeSnapshot | undefined {
   if (!raw) return undefined
@@ -16,30 +17,19 @@ export function parseEscalaEquipeSnapshot(raw: string | null | undefined): Escal
 
 export async function buildEscalaEquipeSnapshot(setorId: number): Promise<EscalaEquipeSnapshot> {
   const [funcoes, colaboradores] = await Promise.all([
-    queryAll<{
-      id: number
-      apelido: string
-      tipo_contrato_id: number
-      cor_hex: string | null
-      ordem: number
-    }>(
+    queryAll<Funcao>(
       `
-        SELECT id, apelido, tipo_contrato_id, cor_hex, ordem
+        SELECT id, setor_id, apelido, tipo_contrato_id, ativo, cor_hex, ordem
         FROM funcoes
-        WHERE setor_id = ?
+        WHERE setor_id = ? AND ativo = TRUE
         ORDER BY ordem ASC, apelido ASC
       `,
       setorId,
     ),
-    queryAll<{
-      id: number
-      nome: string
-      sexo: 'M' | 'F'
-      tipo_contrato_id: number
-      funcao_id: number | null
-    }>(
+    queryAll<Colaborador>(
       `
-        SELECT id, nome, sexo, tipo_contrato_id, funcao_id
+        SELECT id, setor_id, tipo_contrato_id, nome, sexo, horas_semanais, rank,
+               prefere_turno, evitar_dia_semana, ativo, tipo_trabalhador, funcao_id
         FROM colaboradores
         WHERE setor_id = ? AND ativo = TRUE
         ORDER BY rank ASC, nome ASC
@@ -48,10 +38,7 @@ export async function buildEscalaEquipeSnapshot(setorId: number): Promise<Escala
     ),
   ])
 
-  return {
-    funcoes,
-    colaboradores,
-  }
+  return buildEscalaEquipeSnapshotFromEntities(colaboradores, funcoes)
 }
 
 export async function atualizarEscalaEquipeSnapshot(escalaId: number, setorId?: number): Promise<EscalaEquipeSnapshot> {
