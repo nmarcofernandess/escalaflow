@@ -115,6 +115,7 @@ import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { funcoesService } from '@/servicos/funcoes'
 import { useAppDataStore, type AvisoEscala } from '@/store/appDataStore'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { useIaStore } from '@/store/iaStore'
 import { formatarData, formatarDataHora, mapError } from '@/lib/formatadores'
 import { toastErroGeracaoEscala, toastInfeasible } from '@/lib/toast-escala'
@@ -374,6 +375,7 @@ export function SetorDetalhe() {
   const excecoesAtivas = useAppDataStore((s) => s.excecoes)
   const regras = useAppDataStore((s) => s.regras)
   const regrasPadrao = useAppDataStore((s) => s.regrasPadrao)
+  const appVersion = useAppVersion()
 
   // Notify store which sector is active (loads data if changed)
   useEffect(() => {
@@ -1963,9 +1965,10 @@ export function SetorDetalhe() {
         mostrarTimeline={toggles.timeline}
         timelineMode={tlMode}
         mostrarAvisos={toggles.avisos}
+        appVersion={appVersion ?? undefined}
       />
     )
-  }, [exportColaboradoresBase, horariosSemana, postosOrdenados, regrasPadrao, setor, tiposContrato])
+  }, [appVersion, exportColaboradoresBase, horariosSemana, postosOrdenados, regrasPadrao, setor, tiposContrato])
 
   const handleExportHTML = useCallback(async (toggles?: ExportToggles, tlMode?: 'barras' | 'grid') => {
     if (!toggles || !exportDetalhe || !setor) return

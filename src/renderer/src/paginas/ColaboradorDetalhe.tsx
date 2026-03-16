@@ -77,6 +77,7 @@ import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { excecoesService } from '@/servicos/excecoes'
 import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
 import type {
@@ -263,6 +264,7 @@ export function ColaboradorDetalhe() {
   const colabId = parseInt(id!)
   const navigate = useNavigate()
   const { isPreviewMode } = useRestorePreview()
+  const appVersion = useAppVersion()
 
   // Form
   const colabForm = useForm<ColabFormInput, unknown, ColabFormData>({
@@ -672,6 +674,7 @@ export function ColaboradorDetalhe() {
         mode="funcionario"
         colaboradorId={exportData.colaborador.id}
         mostrarAvisos
+        appVersion={appVersion ?? undefined}
       />,
     )
     const fullHTML = buildStandaloneHtml(markup, {
@@ -686,7 +689,7 @@ export function ColaboradorDetalhe() {
     } catch {
       toast.error('Erro ao exportar HTML')
     }
-  }, [exportData])
+  }, [exportData, appVersion])
 
   const handlePrint = useCallback(async () => {
     if (!exportData) return
@@ -703,6 +706,7 @@ export function ColaboradorDetalhe() {
         mode="funcionario"
         colaboradorId={exportData.colaborador.id}
         mostrarAvisos
+        appVersion={appVersion ?? undefined}
       />,
     )
     const fullHTML = buildStandaloneHtml(markup, {
@@ -726,7 +730,7 @@ export function ColaboradorDetalhe() {
       iframe.contentWindow?.print()
       setTimeout(() => document.body.removeChild(iframe), 1000)
     }, 250)
-  }, [exportData])
+  }, [exportData, appVersion])
 
   if (loadingColab) {
     return (

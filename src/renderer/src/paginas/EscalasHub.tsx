@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Download, ExternalLink, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -77,6 +78,8 @@ export function EscalasHub() {
   const [funcoesBySetor, setFuncoesBySetor] = useState<Map<number, Funcao[]>>(new Map())
   const [horariosBySetor, setHorariosBySetor] = useState<Map<number, SetorHorarioSemana[]>>(new Map())
   const [regrasBySetor, setRegrasBySetor] = useState<Map<number, RegraHorarioColaborador[]>>(new Map())
+
+  const appVersion = useAppVersion()
 
   // Mass export state
   const [massaOpen, setMassaOpen] = useState(false)
@@ -290,6 +293,7 @@ export function EscalasHub() {
             mostrarCiclo
             mostrarSemanal
             mostrarAvisos={incluirAvisos}
+            appVersion={appVersion ?? undefined}
           />
         )
 

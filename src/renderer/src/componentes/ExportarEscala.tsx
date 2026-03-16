@@ -49,6 +49,8 @@ interface ExportarEscalaProps {
   colaboradorId?: number
   tipoContrato?: TipoContrato
 
+  appVersion?: string
+
   // ── Legacy props (backward compat) ──────────────────────────────────────
   /** @deprecated Use mostrarTimeline + mostrarCiclo instead */
   modo?: 'ciclo' | 'detalhado'
@@ -146,11 +148,13 @@ function ExportFooter({
   timelineMode,
   mostrarTimeline,
   mostrarCiclo,
+  appVersion,
 }: {
   mode: 'setor' | 'funcionario'
   timelineMode: 'barras' | 'grid'
   mostrarTimeline: boolean
   mostrarCiclo: boolean
+  appVersion?: string
 }) {
   const legendaParts: string[] = []
   if (mode === 'funcionario') {
@@ -185,7 +189,7 @@ function ExportFooter({
         )}
       </div>
       <div>
-        Gerada em {new Date().toLocaleDateString('pt-BR')} | <strong>EscalaFlow</strong>
+        Gerada em {new Date().toLocaleDateString('pt-BR')} | <strong>EscalaFlow{appVersion ? ` v${appVersion}` : ''}</strong>
       </div>
     </div>
   )
@@ -399,6 +403,7 @@ export function ExportarEscala({
   mode = 'setor',
   colaboradorId,
   tipoContrato,
+  appVersion,
   // Legacy props (backward compat)
   modo,
   incluirAvisos,
@@ -444,12 +449,7 @@ export function ExportarEscala({
     ? violacoes.filter((v) => v.colaborador_id === colaboradorId)
     : []
 
-  const colabAvisos = mode === 'funcionario' && colaboradorId
-    ? avisos.filter((a) => {
-        // Avisos are setor-level, include all for the colaborador's context
-        return true
-      })
-    : []
+  const colabAvisos = mode === 'funcionario' && colaboradorId ? avisos : []
 
   const colabRegra = mode === 'funcionario' && colaboradorId
     ? regrasMap.get(colaboradorId)
@@ -582,6 +582,7 @@ export function ExportarEscala({
           timelineMode={timelineMode}
           mostrarTimeline={efMostrarTimeline}
           mostrarCiclo={efMostrarCiclo}
+          appVersion={appVersion}
         />
       )}
 

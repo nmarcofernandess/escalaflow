@@ -40,6 +40,7 @@ import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda } from '@/lib/gerarCSV'
 import { resolveEscalaEquipe } from '@/lib/escala-team'
 import { useAppDataStore } from '@/store/appDataStore'
+import { useAppVersion } from '@/hooks/useAppVersion'
 import { escalasService } from '@/servicos/escalas'
 import { exportarService } from '@/servicos/exportar'
 import type {
@@ -262,6 +263,7 @@ export function EscalaPagina() {
   const horariosSemana = useAppDataStore((s) => s.horarioSemana)
   const regrasPadrao = useAppDataStore((s) => s.regrasPadrao)
   const escalas = useAppDataStore((s) => s.escalas)
+  const appVersion = useAppVersion()
 
   // Notify store which sector is active (loads data if changed)
   useEffect(() => {
@@ -442,6 +444,7 @@ export function EscalaPagina() {
         mostrarTimeline={toggles.timeline}
         timelineMode={tlMode}
         mostrarAvisos={toggles.avisos}
+        appVersion={appVersion ?? undefined}
       />
     )
   }
