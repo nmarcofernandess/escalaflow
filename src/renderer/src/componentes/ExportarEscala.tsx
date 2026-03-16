@@ -11,6 +11,7 @@ import type {
 } from '@shared/index'
 import type { Aviso } from '@/componentes/AvisosSection'
 import { formatarData, formatarMinutos } from '@/lib/formatadores'
+import { tipoFolga } from '@/lib/folga-helpers'
 import { CicloGrid } from '@/componentes/CicloGrid'
 import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { EscalaTimelineDiaria } from '@/componentes/EscalaTimelineDiaria'
@@ -76,38 +77,6 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
 // ---------------------------------------------------------------------------
 // Helpers — pure functions, NO hooks (R1 compliance)
 // ---------------------------------------------------------------------------
-
-/** Find Sunday of the ISO week containing dateStr */
-function encontrarDomingoDaSemana(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  const diff = d.getDay()
-  d.setDate(d.getDate() - diff)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
-}
-
-/** Derive folga type from regra for a given date */
-function tipoFolga(
-  data: string,
-  regra: RegraHorarioColaborador | undefined,
-  alocacoes: Alocacao[],
-  colaboradorId: number,
-): 'FF' | 'FV' | 'DF' | 'F' {
-  const dow = new Date(data + 'T00:00:00').getDay()
-  const dayLabel = DAY_LABELS[dow]
-  if (regra?.folga_fixa_dia_semana === dayLabel) return 'FF'
-  if (regra?.folga_variavel_dia_semana === dayLabel) {
-    const domDate = encontrarDomingoDaSemana(data)
-    const domAloc = alocacoes.find(
-      (a) => a.data === domDate && a.colaborador_id === colaboradorId,
-    )
-    if (domAloc?.status === 'TRABALHO') return 'FV'
-  }
-  if (dow === 0) return 'DF'
-  return 'F'
-}
 
 /** Format time HH:MM:SS or HH:MM to HH:MM */
 function fmtTime(t: string | null | undefined): string {

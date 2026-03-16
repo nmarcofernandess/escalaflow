@@ -11,6 +11,7 @@ import type { Aviso } from '@/componentes/AvisosSection'
 import { ExportAvisos } from '@/componentes/ExportAvisos'
 import { agruparPorSemanaISO, formatWeekLabel } from '@/lib/date-helpers'
 import { formatarData, formatarMinutos, iniciais } from '@/lib/formatadores'
+import { tipoFolga } from '@/lib/folga-helpers'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,48 +48,6 @@ const DIA_LABEL_CURTO: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Helpers — pure functions, no hooks (R1 compliance)
 // ---------------------------------------------------------------------------
-
-/** Finds the Sunday date of the ISO week that contains `dateStr` */
-function encontrarDomingoDaSemana(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  const diff = d.getDay() // 0=DOM, 1=SEG...
-  d.setDate(d.getDate() - diff) // rewind to Sunday
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
-}
-
-/**
- * Derives the folga type for a given date based on the collaborator's rule and allocations.
- *
- * Logic (spec 18.4):
- *   - If the day matches folga_fixa_dia_semana -> 'FF'
- *   - If the day matches folga_variavel_dia_semana AND the collaborator worked Sunday
- *     in the same week -> 'FV'
- *   - If it's Sunday (dow=0) -> 'DF' (domingo folga ciclo)
- *   - Otherwise -> 'F' (generic folga)
- */
-function tipoFolga(
-  data: string,
-  regra: RegraHorarioColaborador | undefined,
-  alocacoes: Alocacao[],
-): 'FF' | 'FV' | 'DF' | 'F' {
-  const dow = new Date(data + 'T00:00:00').getDay()
-  const dayLabel = DAY_LABELS[dow]
-
-  if (regra?.folga_fixa_dia_semana === dayLabel) return 'FF'
-
-  if (regra?.folga_variavel_dia_semana === dayLabel) {
-    // FV is active only when the collaborator worked Sunday in the SAME week
-    const domDate = encontrarDomingoDaSemana(data)
-    const domAloc = alocacoes.find((a) => a.data === domDate)
-    if (domAloc?.status === 'TRABALHO') return 'FV'
-  }
-
-  if (dow === 0) return 'DF'
-  return 'F'
-}
 
 /** Formats time string HH:MM:SS or HH:MM to HH:MM */
 function fmtTime(t: string | null | undefined): string {

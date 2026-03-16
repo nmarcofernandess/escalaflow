@@ -6,6 +6,7 @@ import type {
   RegraHorarioColaborador,
 } from '@shared/index'
 import { toMinutes, formatarMinutos, formatarData } from '@/lib/formatadores'
+import { tipoFolga } from '@/lib/folga-helpers'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,35 +38,6 @@ function timeToPercent(time: string, open: string, close: string): number {
   if (total <= 0) return 0
   const pos = toMin(time) - toMin(open)
   return Math.max(0, Math.min(100, (pos / total) * 100))
-}
-
-/** Find the Sunday date (YYYY-MM-DD) of the same ISO week that contains `dateStr` */
-function encontrarDomingoDaSemana(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  const diff = d.getDay() // 0=DOM
-  d.setDate(d.getDate() - diff)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-/** Derive folga type from regra + context */
-function tipoFolga(
-  data: string,
-  regra: RegraHorarioColaborador | undefined,
-  allAlocacoes: Alocacao[],
-): 'FF' | 'FV' | 'DF' | 'F' {
-  const dow = new Date(data + 'T00:00:00').getDay()
-  const dayLabel = DIAS_LABEL[dow]
-  if (regra?.folga_fixa_dia_semana === dayLabel) return 'FF'
-  if (regra?.folga_variavel_dia_semana === dayLabel) {
-    // FV only active if the collaborator worked on Sunday of the same week
-    const domDate = encontrarDomingoDaSemana(data)
-    const domAloc = allAlocacoes.find(
-      (a) => a.data === domDate && a.colaborador_id === (regra?.colaborador_id),
-    )
-    if (domAloc?.status === 'TRABALHO') return 'FV'
-  }
-  if (dow === 0) return 'DF'
-  return 'F'
 }
 
 const FOLGA_LABELS: Record<string, string> = {
@@ -598,7 +570,7 @@ export function ExportTimelineBarras({
 
               if (!alloc || alloc.status === 'FOLGA') {
                 const regra = regrasMap?.get(colab.id)
-                const ft = tipoFolga(data, regra, dayAlocs)
+                const ft = tipoFolga(data, regra, dayAlocs, colab.id)
                 return <FolgaRow key={colab.id} colab={colab} folgaType={ft} posto={posto} />
               }
 
