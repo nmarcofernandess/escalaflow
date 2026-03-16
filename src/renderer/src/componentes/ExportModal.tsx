@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react'
-import type { ReactNode } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -75,20 +74,6 @@ export interface ExportToggles {
 // ─── Deprecated Exports (backward compat until callers migrate in Task 9) ────
 
 /** @deprecated Use ExportModalProps with mode='setor' */
-export interface SetorExportItem {
-  id: number
-  nome: string
-  checked: boolean
-  temEscala: boolean
-}
-
-/** @deprecated Use ExportToggles instead */
-export interface EscalaExportContent {
-  ciclo: boolean
-  timeline: boolean
-  funcionarios: boolean
-  avisos: boolean
-}
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -110,21 +95,6 @@ export interface ExportModalProps {
   loading?: boolean
   progress?: number
 
-  // ── Legacy props (backward compat — remove after Task 9 migrates callers) ──
-  /** @deprecated Use mode instead */
-  context?: 'escala' | 'hub'
-  /** @deprecated Modal generates its own title */
-  titulo?: string
-  /** @deprecated Preview is generated internally from escalaData */
-  children?: ReactNode
-  /** @deprecated Unused in new API */
-  formato?: string
-  /** @deprecated Unused in new API */
-  onFormatoChange?: (f: string) => void
-  /** @deprecated Use escalaData toggles (internal state) */
-  conteudoEscala?: EscalaExportContent
-  /** @deprecated Toggles are internal state */
-  onConteudoEscalaChange?: (next: EscalaExportContent) => void
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -140,9 +110,7 @@ export function ExportModal(props: ExportModalProps) {
     progress = 0,
   } = props
 
-  // Detect legacy vs new API
-  const isLegacy = props.context != null || props.children != null
-  const mode = props.mode ?? (isLegacy ? 'setor' : 'setor')
+  const mode = props.mode ?? 'setor'
   const { escalaData, funcionarioData, massaData, onExportMassa } = props
   // ── Mode A state (setor) ─────────────────────────────────────────────────
   const [toggles, setToggles] = useState<ExportToggles>({
@@ -212,74 +180,11 @@ export function ExportModal(props: ExportModalProps) {
   }
 
   // ── Modal title ──────────────────────────────────────────────────────────
-  const titulo = props.titulo
-    ?? (mode === 'setor' && escalaData
+  const titulo = mode === 'setor' && escalaData
       ? `Exportar Escala — ${escalaData.setor.nome}`
       : mode === 'funcionario' && funcionarioData
         ? `Exportar Escala — ${funcionarioData.colaborador.nome}`
-        : 'Exportar em Massa')
-
-  // ── Legacy render path (callers using old context/children/conteudoEscala API) ──
-  if (isLegacy) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>{titulo}</DialogTitle>
-          </DialogHeader>
-
-          <div className="flex flex-1 gap-6 overflow-hidden">
-            {/* Left: Preview (~60%) */}
-            <div className="flex-[3] min-w-0">
-              <ExportPreview loading={loading}>
-                {props.children}
-              </ExportPreview>
-            </div>
-
-            {/* Right: Legacy toggle options */}
-            <div className="flex-[2] space-y-5 overflow-y-auto">
-              <LegacyContentOptions
-                conteudo={props.conteudoEscala}
-                onChange={props.onConteudoEscalaChange}
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
-              Cancelar
-            </Button>
-            {onCSV && (
-              <Button variant="outline" onClick={() => onCSV(toggles, timelineMode)} disabled={loading}>
-                {loading ? (
-                  <Loader2 className="mr-1 size-4 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="mr-1 size-4" />
-                )}
-                CSV
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => onExportHTML?.(toggles, timelineMode)} disabled={loading}>
-              {loading ? (
-                <Loader2 className="mr-1 size-4 animate-spin" />
-              ) : (
-                <Download className="mr-1 size-4" />
-              )}
-              Baixar HTML
-            </Button>
-            <Button onClick={() => onPrint?.(toggles, timelineMode)} disabled={loading}>
-              {loading ? (
-                <Loader2 className="mr-1 size-4 animate-spin" />
-              ) : (
-                <Printer className="mr-1 size-4" />
-              )}
-              Imprimir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    )
-  }
+        : 'Exportar em Massa'
 
   // ── Render: Mode C (massa) — narrow, no preview ─────────────────────────
   if (mode === 'massa') {
@@ -698,65 +603,6 @@ function FuncionarioInfo({
   )
 }
 
-// ─── Legacy Compat: Content Options (used by old callers until Task 9) ───────
-
-/** @deprecated Remove after Task 9 migrates callers */
-function LegacyContentOptions({
-  conteudo,
-  onChange,
-}: {
-  conteudo?: EscalaExportContent
-  onChange?: (next: EscalaExportContent) => void
-}) {
-  const value: EscalaExportContent = conteudo ?? {
-    ciclo: true,
-    timeline: false,
-    funcionarios: false,
-    avisos: false,
-  }
-  const disabled = !onChange
-
-  const toggle = (key: keyof EscalaExportContent, checked: boolean) => {
-    if (!onChange) return
-    onChange({ ...value, [key]: checked })
-  }
-
-  return (
-    <div className="space-y-4">
-      <Label className="text-sm font-medium">Conteudo da exportacao</Label>
-      <div className="rounded-md border">
-        <div className="flex items-center justify-between border-b px-3 py-2">
-          <div>
-            <p className="text-sm font-medium">Ciclo</p>
-            <p className="text-xs text-muted-foreground">Tabela semanal da escala.</p>
-          </div>
-          <Switch checked={value.ciclo} onCheckedChange={(checked) => toggle('ciclo', checked)} disabled={disabled} />
-        </div>
-        <div className="flex items-center justify-between border-b px-3 py-2">
-          <div>
-            <p className="text-sm font-medium">Timeline</p>
-            <p className="text-xs text-muted-foreground">Visao por faixa horaria e cobertura.</p>
-          </div>
-          <Switch checked={value.timeline} onCheckedChange={(checked) => toggle('timeline', checked)} disabled={disabled} />
-        </div>
-        <div className="flex items-center justify-between border-b px-3 py-2">
-          <div>
-            <p className="text-sm font-medium">Por funcionario</p>
-            <p className="text-xs text-muted-foreground">Inclui todos os funcionarios do setor.</p>
-          </div>
-          <Switch checked={value.funcionarios} onCheckedChange={(checked) => toggle('funcionarios', checked)} disabled={disabled} />
-        </div>
-        <div className="flex items-center justify-between px-3 py-2">
-          <div>
-            <p className="text-sm font-medium">Avisos</p>
-            <p className="text-xs text-muted-foreground">Inclui blocos de violacoes.</p>
-          </div>
-          <Switch checked={value.avisos} onCheckedChange={(checked) => toggle('avisos', checked)} disabled={disabled} />
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
