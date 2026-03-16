@@ -100,7 +100,8 @@ import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet } from '@/componentes/SugestaoSheet'
-import { gerarCicloFase1, converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { runPreviewMultiPass, type MultiPassResult } from '@shared/preview-multi-pass'
 import type { EscalaAdvisoryOutput } from '@shared/index'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
@@ -143,7 +144,6 @@ import {
   SetorHorarioSemana,
   RegraHorarioColaborador,
   RuleConfig,
-  buildPreviewDiagnostics,
   listEscalaParticipantes,
   normalizeSetorSimulacaoConfig,
   type PreviewDiagnostic,
@@ -1114,6 +1114,24 @@ export function SetorDetalhe() {
     [orderedColabs, postosAtivos],
   )
 
+  const previewRuleConfig = useMemo<RuleConfig>(() => {
+    const next: RuleConfig = {}
+    for (const regra of regras ?? []) {
+      next[regra.codigo] = regra.status_efetivo
+    }
+    for (const [codigo, status] of Object.entries(solverSessionConfig.rulesOverride)) {
+      next[codigo] = status
+      if (codigo === 'H3_DOM_MAX_CONSEC') {
+        next.H3_DOM_MAX_CONSEC_M = status
+        next.H3_DOM_MAX_CONSEC_F = status
+      }
+    }
+    next.H3_DOM_CICLO_EXATO ??= 'SOFT'
+    next.H3_DOM_MAX_CONSEC_M ??= next.H3_DOM_MAX_CONSEC ?? 'HARD'
+    next.H3_DOM_MAX_CONSEC_F ??= next.H3_DOM_MAX_CONSEC ?? 'HARD'
+    return next
+  }, [regras, solverSessionConfig.rulesOverride])
+
   const simulacaoPreview = useMemo(() => {
     const resultadoErro = (erro: string, sugestao?: string): SimulaCicloOutput => ({
       sucesso: false,
@@ -1147,21 +1165,35 @@ export function SetorDetalhe() {
           folga_fixa_dom: false,
         }))
 
-    const resultado = modoSimulacaoEfetivo === 'SETOR' && setor?.regime_escala !== '5X2'
-      ? resultadoErro(
+    const multiPassResult: MultiPassResult | null =
+      modoSimulacaoEfetivo === 'SETOR' && setor?.regime_escala !== '5X2'
+        ? null
+        : runPreviewMultiPass({
+            fase1Input: {
+              num_postos: effectiveN,
+              trabalham_domingo: effectiveK,
+              num_meses: simulacaoPreviewMeses,
+              folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null || folga.folga_fixa_dom)
+                ? folgasForcadas
+                : undefined,
+              demanda_por_dia: demandaPorDiaPreview,
+            },
+            participants: previewSetorRows.map((row) => ({
+              id: row.titular.id,
+              nome: row.titular.nome,
+              sexo: row.titular.sexo as 'M' | 'F',
+              folga_fixa_dom: row.folgaFixaDom,
+            })),
+            demandaPorDia: demandaPorDiaPreview,
+            trabalhamDomingo: effectiveK,
+            rules: previewRuleConfig,
+          })
+
+    const resultado: SimulaCicloOutput = multiPassResult?.output
+      ?? resultadoErro(
           'Preview Nível 1 disponível apenas para setores 5x2.',
           'Mude para o modo Livre para explorar o ciclo ou gere a escala real pelo solver.',
         )
-      : gerarCicloFase1({
-          num_postos: effectiveN,
-          trabalham_domingo: effectiveK,
-          num_meses: simulacaoPreviewMeses,
-          preflight: false,
-          folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null || folga.folga_fixa_dom)
-            ? folgasForcadas
-            : undefined,
-          demanda_por_dia: demandaPorDiaPreview,
-        })
 
     const savePadrao = modoSimulacaoEfetivo === 'SETOR' && resultado.sucesso
       ? previewSetorRows.flatMap((row, idx) => {
@@ -1196,11 +1228,13 @@ export function SetorDetalhe() {
       previewRows: previewSetorRows,
       foraDoPreview: previewSetorIntermitentes,
       semTitular: previewSetorSemTitular,
+      multiPassResult,
     }
   }, [
     demandaPorDiaPreview,
     modoSimulacaoEfetivo,
     previewLivreFolgas,
+    previewRuleConfig,
     previewSetorIntermitentes,
     previewSetorRows,
     previewSetorSemTitular,
@@ -1211,40 +1245,10 @@ export function SetorDetalhe() {
     simulacaoPreviewMeses,
   ])
 
-  const previewRuleConfig = useMemo<RuleConfig>(() => {
-    const next: RuleConfig = {}
-    for (const regra of regras ?? []) {
-      next[regra.codigo] = regra.status_efetivo
-    }
-    for (const [codigo, status] of Object.entries(solverSessionConfig.rulesOverride)) {
-      next[codigo] = status
-      if (codigo === 'H3_DOM_MAX_CONSEC') {
-        next.H3_DOM_MAX_CONSEC_M = status
-        next.H3_DOM_MAX_CONSEC_F = status
-      }
-    }
-    next.H3_DOM_CICLO_EXATO ??= 'SOFT'
-    next.H3_DOM_MAX_CONSEC_M ??= next.H3_DOM_MAX_CONSEC ?? 'HARD'
-    next.H3_DOM_MAX_CONSEC_F ??= next.H3_DOM_MAX_CONSEC ?? 'HARD'
-    return next
-  }, [regras, solverSessionConfig.rulesOverride])
-
   const previewDiagnostics = useMemo<PreviewDiagnostic[]>(() => {
     if (modoSimulacaoEfetivo !== 'SETOR') return []
-    if (simulacaoPreview.previewRows.length === 0) return []
-    return buildPreviewDiagnostics({
-      output: simulacaoPreview.resultado,
-      participants: simulacaoPreview.previewRows.map((row) => ({
-        id: row.titular.id,
-        nome: row.titular.nome,
-        sexo: row.titular.sexo,
-        folga_fixa_dom: row.folgaFixaDom,
-      })),
-      demandaPorDia: demandaPorDiaPreview,
-      trabalhamDomingo: simulacaoPreview.effectiveK,
-      rules: previewRuleConfig,
-    })
-  }, [demandaPorDiaPreview, modoSimulacaoEfetivo, previewRuleConfig, simulacaoPreview])
+    return simulacaoPreview.multiPassResult?.diagnostics ?? []
+  }, [modoSimulacaoEfetivo, simulacaoPreview])
 
   const previewGate = useMemo<PreviewGate>(
     () => resolvePreviewGate(previewDiagnostics),
