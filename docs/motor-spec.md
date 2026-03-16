@@ -981,6 +981,64 @@ RETORNA:
 
 ---
 
+## Advisory Mode (Phase 1 Standalone)
+
+O solver suporta um modo `advisory_only` que roda apenas a Phase 1 (`solve_folga_pattern`) e retorna imediatamente sem entrar no Phase 2 (horarios completos).
+
+### Quando usar
+
+- Drawer "Sugestao do Sistema" — valida arranjo de folgas em ~10s sem gerar escala completa
+- Pre-validacao antes de gerar — feedback rapido sobre viabilidade
+
+### Como ativar
+
+Passar `config.advisory_only = true` no JSON de input do solver.
+
+### Output
+
+```json
+{
+  "sucesso": true,
+  "status": "ADVISORY_OK",
+  "advisory_pattern": [{"c": 0, "d": 0, "band": 0}, ...],
+  "diagnostico": {
+    "generation_mode": "ADVISORY",
+    "phase1_status": "OK",
+    "capacidade_vs_demanda": {},
+    "tempo_total_s": 0.3
+  },
+  "alocacoes": [],
+  "decisoes": [],
+  "comparacao_demanda": [],
+  "indicadores": {"pontuacao": 0}
+}
+```
+
+- `advisory_pattern`: lista de `{c, d, band}` — c=indice colaborador, d=indice dia, band=0(OFF)/1(MANHA)/2(TARDE)/3(INTEGRAL)
+- `ADVISORY_INFEASIBLE` quando nao encontra arranjo viavel
+- `alocacoes/decisoes/comparacao_demanda` vazios (Phase 2 nao roda)
+
+### Constraints validadas no advisory
+
+| Constraint | Funcao | Igual ao solve normal? |
+|-----------|--------|----------------------|
+| H1 max 6 consecutivos | add_h1_max_dias_consecutivos | Sim |
+| Folga fixa 5x2 | add_folga_fixa_5x2 | Sim |
+| Folga variavel XOR | add_folga_variavel_condicional | Sim |
+| Min headcount/dia | add_min_headcount_per_day | Sim |
+| Domingo ciclo exato | add_domingo_ciclo_hard | Sim |
+| Domingo max consec (H3) | add_dom_max_consecutivo | Sim |
+| Band demand coverage | add_band_demand_coverage | Sim |
+
+### O que NAO eh validado no advisory
+
+- H10 (meta semanal de horas)
+- Interjornada 11h (H2)
+- Almoco (H6)
+- Cobertura por faixa horaria de 15min
+
+---
+
 ## 8. ERROS EXPLICATIVOS
 
 Quando o motor NAO CONSEGUE gerar, retorna erro UTIL:

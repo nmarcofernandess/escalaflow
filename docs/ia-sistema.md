@@ -1283,7 +1283,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `excecoes.atualizar` | `{id, data_inicio?, data_fim?, tipo?, observacao?}` | `Excecao` atualizada | |
 | `excecoes.deletar` | `{id}` | void | Hard DELETE |
 
-#### Escalas (12 handlers)
+#### Escalas (13 handlers)
 
 | Handler | Input | O que retorna | Notas |
 |---------|-------|---------------|-------|
@@ -1299,6 +1299,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 | `escalas.salvarCicloRotativo` | `{setor_id, nome, semanas_no_ciclo, itens[]}` | `CicloModelo` | Cria modelo + itens em transacao |
 | `escalas.listarCiclosRotativos` | `{setor_id}` | `CicloModelo[]` | Ativos, ORDER BY criado_em DESC |
 | `escalas.gerarPorCicloRotativo` | `{ciclo_modelo_id, data_inicio, data_fim}` | `EscalaCompletaV3` | Gera a partir do template + valida |
+| `escalas.advisory` | `EscalaAdvisoryInput` | `EscalaAdvisoryOutput` | Roda advisory solver-backed (Phase 1 only) |
 
 #### Dashboard (1 handler)
 
@@ -1428,6 +1429,9 @@ A IA tem **34 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
 - Dashboard metricas — handler `dashboard.resumo` nao exposto como tool
 - Backup/Restore — handler `dados.exportar/importar` nao exposto
 - Timeline dia (salvar horarios de demanda por drag) — handler `salvarTimelineDia` nao exposto
+
+**IPC endpoints disponiveis (sem tool dedicada):**
+- `escalas.advisory` — roda advisory solver-backed (Phase 1 only). Usado pelo drawer de sugestao, com fallback para IA quando solver nao encontra solucao.
 
 **Impacto pratico:**
 A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoes visuais (timeline drag, export PDF) ou raramente necessarias via chat (ciclo rotativo, backup).
@@ -1931,6 +1935,19 @@ Processa sessoes de chat para manter o contexto gerenciavel:
 - `buildChatMessages()` usa `resumo_compactado` da conversa se disponivel
 - Mensagens antigas sao substituidas pelo resumo, mantendo as ultimas N mensagens completas
 - Permite conversas longas sem estourar contexto do LLM
+
+### 6.16 IA Autostart (pendingAutoMessage)
+
+O sistema pode iniciar o chat IA programaticamente com um prompt pre-preenchido:
+
+1. Qualquer componente chama `useIaStore.getState().setPendingAutoMessage(prompt)`
+2. Abre o painel: `useIaStore.getState().setAberto(true)`
+3. `IaChatView` detecta via useEffect e chama `enviar(prompt)` automaticamente
+4. Mensagem aparece no chat como se o usuario tivesse digitado
+
+**Usos atuais:**
+- Advisory fallback: quando solver nao encontra solucao, abre IA com diagnostico
+- Botao "Analisar com IA" no AvisosSection: envia criterios FAIL como contexto
 
 ---
 

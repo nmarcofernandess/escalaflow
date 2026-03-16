@@ -131,6 +131,37 @@ O gráfico de "Cobertura de Demanda" precisa mostrar a mesma realidade dos KPIs.
 
 5. **Proposta de arquitetura concreta.** Me dê um plano implementável. Não teoria — código. Quais funções mudam, qual o novo fluxo de dados, como o gráfico fica consistente.
 
+## Advisory System (2026-03-15)
+
+Alem do solver Python e do validador TypeScript, o sistema agora tem uma 3a camada de validacao: o **advisory solver-backed**.
+
+### Como funciona
+
+1. O drawer "Sugestao do Sistema" roda o solver em modo `advisory_only` (Phase 1 apenas)
+2. Phase 1 valida folgas, cobertura diaria, domingos consecutivos, ciclo — sem horarios
+3. O resultado eh normalizado para `PreviewDiagnostic[]` pelo `advisory-controller.ts`
+4. Diagnosticos do advisory TEM PRECEDENCIA sobre os do preview TS para mesmos codigos
+5. Se advisory falha, fallback automatico para IA com diagnostico em contexto
+
+### Convergencia preview TS ↔ advisory solver
+
+O preview TS (instantaneo) e o advisory solver (10-30s) agora convergem:
+
+- `preview-multi-pass.ts` tenta strict → relaxed baseado em HARD/SOFT config
+- `buildPreviewDiagnostics` valida com as mesmas regras H3 que o solver
+- Quando advisory roda, seus diagnosticos substituem os do preview para mesmos criterios
+- O painel de Avisos unificado (`AvisosSection`) mostra a melhor verdade disponivel
+
+### Arquivos chave
+
+| Arquivo | Papel |
+|---------|-------|
+| `src/main/motor/advisory-controller.ts` | Orquestra pipeline advisory |
+| `src/shared/preview-multi-pass.ts` | Multi-pass TS (strict → relaxed) |
+| `src/shared/preview-diagnostics.ts` | Validacao rule-aware |
+| `src/renderer/src/lib/build-avisos.ts` | Merge avisos (advisory substitui preview) |
+| `tests/main/solver-advisory-parity.spec.ts` | Parity test Phase 1 ↔ TS |
+
 ## Restrições
 
 - O solver Python existe porque OR-Tools CP-SAT é ordens de magnitude mais eficiente que qualquer solução TS
