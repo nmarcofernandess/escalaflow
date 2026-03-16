@@ -89,6 +89,21 @@ export function buildPreviewAvisos({
     })
   }
 
+  // Advisory diagnostics tem precedencia sobre preview diagnostics com mesmo codigo base
+  if (advisoryDiagnostics && advisoryDiagnostics.length > 0) {
+    const advisoryBaseCodes = new Set(
+      advisoryDiagnostics.map((d) => d.code.replace('ADVISORY_', '')),
+    )
+    // Remove preview diagnostics que o advisory ja cobre
+    const filtered = entries.filter((e) => {
+      if (!e.id.startsWith('diagnostic_')) return true
+      const baseCode = e.id.replace('diagnostic_', '')
+      return !advisoryBaseCodes.has(baseCode)
+    })
+    entries.length = 0
+    entries.push(...filtered)
+  }
+
   if (advisoryDiagnostics) {
     for (const diagnostic of advisoryDiagnostics) {
       entries.push({

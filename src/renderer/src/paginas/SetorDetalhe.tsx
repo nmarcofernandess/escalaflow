@@ -1252,8 +1252,20 @@ export function SetorDetalhe() {
   )
 
   const abrirAnaliseIa = useCallback(() => {
+    const failedCriteria = advisoryResult
+      ? advisoryResult.current.criteria
+          .filter((c) => c.status === 'FAIL')
+          .map((c) => c.title)
+      : previewDiagnostics
+          .filter((d) => d.severity === 'error')
+          .map((d) => d.title)
+
+    if (failedCriteria.length > 0) {
+      const prompt = `Analise os problemas da escala do setor ${setor?.nome ?? ''}: ${failedCriteria.join('; ')}`
+      useIaStore.getState().setPendingAutoMessage(prompt)
+    }
     useIaStore.getState().setAberto(true)
-  }, [])
+  }, [advisoryResult, previewDiagnostics, setor?.nome])
 
   const previewAutoOverrides = useMemo<RuleConfig>(() => {
     const next: RuleConfig = {}
