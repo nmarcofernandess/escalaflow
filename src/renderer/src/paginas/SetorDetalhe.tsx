@@ -101,8 +101,7 @@ import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet } from '@/componentes/SugestaoSheet'
 import { gerarCicloFase1, converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
-import { calcularSugestaoFolgas, type SugestaoFolgaItem } from '@shared/sugestao-folgas'
-import type { EscalaAdvisoryOutput, AdvisoryCriterion } from '@shared/index'
+import type { EscalaAdvisoryOutput } from '@shared/index'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
@@ -347,22 +346,6 @@ function resolveOverrideField(
     : fallback
 }
 
-function traduzirResultadoSugestao(resultado: string): string {
-  if (resultado === 'Cobertura OK (todos os dias)') {
-    return 'A proposta cobre todos os dias da semana no nivel diario.'
-  }
-  if (resultado.startsWith('Deficit em ')) {
-    return resultado.replace('Deficit em', 'Cobertura ainda insuficiente em').replace(' dia(s): ', ': ')
-  }
-  if (resultado === 'Sem TT') {
-    return 'Nao houve semana com trabalho em todos os dias para a mesma pessoa.'
-  }
-  if (resultado === 'H1 OK') {
-    return 'Nao apareceu risco rapido de descanso insuficiente entre jornadas.'
-  }
-  return resultado
-}
-
 // ─── Main Component ────────────────────────────────────────────────────
 export function SetorDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -458,6 +441,8 @@ export function SetorDetalhe() {
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
   const [sugestaoOpen, setSugestaoOpen] = useState(false)
+  const [advisoryResult, setAdvisoryResult] = useState<EscalaAdvisoryOutput | null>(null)
+  const [advisoryLoading, setAdvisoryLoading] = useState(false)
   const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
   const [solverConfigOpen, setSolverConfigOpen] = useState(false)
   const [solverSessionConfig, setSolverSessionConfig] = useState<SolverSessionConfig>({
@@ -1879,63 +1864,63 @@ export function SetorDetalhe() {
       semTitular: simulacaoPreview.semTitular,
       foraDoPreview: simulacaoPreview.foraDoPreview,
       setorNome: setor?.nome,
+      advisoryDiagnostics: advisoryResult?.normalized_diagnostics,
     })
-  }, [avisosOperacao, previewDiagnostics, setor?.nome, simulacaoPreview.foraDoPreview, simulacaoPreview.semTitular, storePreviewAvisos])
+  }, [advisoryResult?.normalized_diagnostics, avisosOperacao, previewDiagnostics, setor?.nome, simulacaoPreview.foraDoPreview, simulacaoPreview.semTitular, storePreviewAvisos])
 
-  const sugestaoFolgasData = useMemo(() => {
-    if (modoSimulacaoEfetivo !== 'SETOR') return { sugestoes: [] as SugestaoFolgaItem[], resultados: [] as string[] }
+  // ── Advisory: solver-backed suggestion pipeline ──────────────────────
+  const handleSugerir = useCallback(async () => {
+    if (advisoryLoading || !setorId) return
+    setSugestaoOpen(true)
+    setAdvisoryLoading(true)
+    setAdvisoryResult(null)
 
-    const colabsInput = previewSetorRows.map((row) => ({
-      id: row.titular.id,
-      nome: row.titular.nome,
-      posto_apelido: row.funcao.apelido,
-      fixa_atual: row.fixaAtual,
-      variavel_atual: row.variavelAtual,
-      tipo_trabalhador: row.titular.tipo_trabalhador ?? 'CLT',
-      folga_fixa_dom: row.folgaFixaDom,
-    }))
+    try {
+      const pinnedFolgaExterno = simulacaoPreview.mode === 'SETOR' && simulacaoPreview.resultado.sucesso
+        ? converterPreviewParaPinned(
+            simulacaoPreview.resultado,
+            simulacaoPreview.previewRows.map((row) => ({ funcao: row.funcao, titular: row.titular })),
+          )
+        : []
 
-    const resultado = calcularSugestaoFolgas({
-      colaboradores: colabsInput,
-      demandaPorDia: demandaPorDiaPreview,
-      N: simulacaoPreview.effectiveN,
-    })
+      const currentFolgas = previewSetorRows.map((row) => ({
+        colaborador_id: row.titular.id,
+        fixa: row.fixaAtual,
+        variavel: row.variavelAtual,
+        origem_fixa: (row.overrideFixaLocal ? 'OVERRIDE_LOCAL' : 'COLABORADOR') as 'COLABORADOR' | 'OVERRIDE_LOCAL',
+        origem_variavel: (row.overrideVariavelLocal ? 'OVERRIDE_LOCAL' : 'COLABORADOR') as 'COLABORADOR' | 'OVERRIDE_LOCAL',
+      }))
 
-    return {
-      sugestoes: resultado.sugestoes,
-      resultados: resultado.resultados.map(traduzirResultadoSugestao),
+      const result = await escalasService.advisory({
+        setor_id: setorId,
+        data_inicio: periodoGeracao.data_inicio,
+        data_fim: periodoGeracao.data_fim,
+        pinned_folga_externo: pinnedFolgaExterno,
+        current_folgas: currentFolgas,
+      })
+
+      setAdvisoryResult(result)
+
+      // Auto-fallback to IA when solver cannot find viable arrangement
+      if (result.fallback?.should_open_ia) {
+        setSugestaoOpen(false)
+        toast.info('Abrindo IA com o diagnostico do solver...')
+        const prompt = `O setor precisa de ajuda com a escala do periodo ${periodoGeracao.data_inicio} a ${periodoGeracao.data_fim}. O solver nao encontrou arranjo viavel: ${result.fallback.reason}`
+        useIaStore.getState().setPendingAutoMessage(prompt)
+        useIaStore.getState().setAberto(true)
+      }
+    } catch (err) {
+      toast.error('Erro ao analisar sugestao')
+      console.error(err)
+    } finally {
+      setAdvisoryLoading(false)
     }
-  }, [demandaPorDiaPreview, modoSimulacaoEfetivo, previewSetorRows, simulacaoPreview.effectiveN])
+  }, [advisoryLoading, setorId, simulacaoPreview, previewSetorRows, periodoGeracao])
 
-  // Bridge: convert old sugestaoFolgasData → EscalaAdvisoryOutput for new SugestaoSheet
-  const sugestaoAdvisory = useMemo((): EscalaAdvisoryOutput | null => {
-    const { sugestoes, resultados } = sugestaoFolgasData
-    if (sugestoes.length === 0) return null
-    const bridgeCriteria: AdvisoryCriterion[] = resultados.map((r, i) => ({
-      code: 'COBERTURA_DIA' as const,
-      status: 'PASS' as const,
-      title: r,
-      detail: '',
-      source: 'DIAGNOSTIC' as const,
-    }))
-    return {
-      status: 'PROPOSAL_VALID',
-      normalized_diagnostics: [],
-      current: { criteria: [] },
-      proposal: {
-        diff: sugestoes.map((s) => ({
-          colaborador_id: s.colaborador_id,
-          nome: s.nome,
-          posto_apelido: '',
-          fixa_atual: s.fixa_atual,
-          fixa_proposta: s.fixa_proposta,
-          variavel_atual: s.variavel_atual,
-          variavel_proposta: s.variavel_proposta,
-        })),
-        criteria: bridgeCriteria,
-      },
-    }
-  }, [sugestaoFolgasData])
+  // Invalidate advisory when preview rows change (folga edits, etc)
+  useEffect(() => {
+    setAdvisoryResult(null)
+  }, [previewSetorRows])
 
   // ── Export data for the new ExportModal mode='setor' ──────────────────
   const escalaExportData = useMemo((): EscalaExportData | undefined => {
@@ -2905,6 +2890,7 @@ export function SetorDetalhe() {
                         onClick={handleGerar}
                         disabled={
                           gerando ||
+                          advisoryLoading ||
                           !empresa ||
                           (tiposContrato?.length ?? 0) === 0 ||
                           (orderedColabs?.length ?? 0) === 0
@@ -2978,8 +2964,8 @@ export function SetorDetalhe() {
                         frameBorderClassName={previewCardTone.frame}
                         coverageActions={{
                           showSuggest: modoSimulacaoEfetivo === 'SETOR',
-                          suggestDisabled: sugestaoFolgasData.sugestoes.length === 0,
-                          onSuggest: modoSimulacaoEfetivo === 'SETOR' ? () => setSugestaoOpen(true) : undefined,
+                          suggestDisabled: advisoryLoading,
+                          onSuggest: modoSimulacaoEfetivo === 'SETOR' ? handleSugerir : undefined,
                           onResetAutomatico: () => handleResetarSimulacao('automatico'),
                           onRestaurarColaboradores: modoSimulacaoEfetivo === 'SETOR'
                             ? () => handleResetarSimulacao('colaboradores')
@@ -3011,20 +2997,20 @@ export function SetorDetalhe() {
                 </div>
               )}
 
-              {/* Sheet de sugestao (C7) */}
+              {/* Sheet de sugestao — advisory pipeline */}
               <SugestaoSheet
                 open={sugestaoOpen}
                 onOpenChange={setSugestaoOpen}
-                loading={false}
-                advisory={sugestaoAdvisory}
+                loading={advisoryLoading}
+                advisory={advisoryResult}
                 onAceitar={async () => {
+                  if (!advisoryResult?.proposal) return
                   try {
-                    const diff = sugestaoAdvisory?.proposal?.diff ?? []
                     atualizarSimulacaoConfig((prev) => ({
                       ...prev,
                       setor: {
                         ...prev.setor,
-                        overrides_locais: diff.reduce((acc, d) => {
+                        overrides_locais: advisoryResult.proposal!.diff.reduce((acc, d) => {
                           const nextOverride = mergeOverrideLocalWithBase(d.colaborador_id, {
                             fixa: d.fixa_proposta,
                             variavel: d.variavel_proposta,
@@ -3040,11 +3026,15 @@ export function SetorDetalhe() {
                     }))
                     toast.success('Sugestao aplicada na simulacao')
                     setSugestaoOpen(false)
+                    setAdvisoryResult(null)
                   } catch {
                     toast.error('Erro ao aplicar sugestao')
                   }
                 }}
-                onDescartar={() => setSugestaoOpen(false)}
+                onDescartar={() => {
+                  setSugestaoOpen(false)
+                  setAdvisoryResult(null)
+                }}
               />
 
               {escalaTab === 'oficial' && (
