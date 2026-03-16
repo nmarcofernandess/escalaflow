@@ -34,7 +34,6 @@ import {
   Save,
   Check,
   AlertTriangle,
-  Info,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
@@ -101,10 +100,10 @@ import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet, type SugestaoFolga } from '@/componentes/SugestaoSheet'
-import { gerarCicloFase1, converterNivel1ParaEscala, converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { gerarCicloFase1, converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { calcularSugestaoFolgas } from '@shared/sugestao-folgas'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
-import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
+import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
@@ -125,6 +124,7 @@ import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
 import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
 import { getPresetLabel, resolvePresetRange, type EscalaPeriodoPreset } from '@/lib/escala-periodo-preset'
 import { resolveEscalaEquipe } from '@/lib/escala-team'
+import { buildPreviewAvisos } from '@/lib/build-avisos'
 import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
 import { exportarService } from '@/servicos/exportar'
@@ -143,10 +143,17 @@ import {
   Excecao,
   SetorHorarioSemana,
   RegraHorarioColaborador,
+  RuleConfig,
+  buildPreviewDiagnostics,
+  listEscalaParticipantes,
   normalizeSetorSimulacaoConfig,
+  type PreviewDiagnostic,
+  type PreviewGate,
   type SetorSimulacaoConfig,
   type SetorSimulacaoMode,
+  type SetorSimulacaoOverrideLocal,
   type InfeasibleError,
+  resolvePreviewGate,
 } from '@shared/index'
 
 // ─── DnD: Sortable row for posto hierarchy reorder ──────────────────
@@ -304,6 +311,7 @@ type SetorFormData = z.output<typeof setorSchema>
 
 const PREVIEW_DIAS_UTEIS: Exclude<DiaSemana, 'DOM'>[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
 const DEFAULT_SIMULACAO_LIVRE_N = 5
+const PREVIEW_OWNED_STORE_WARNING_IDS = new Set(['k_limitado', 'subdimensionamento', 'deficit_cobertura'])
 
 function diaSemanaParaIdxPreview(dia: DiaSemana | null | undefined): number | null {
   if (!dia || dia === 'DOM') return null
@@ -313,6 +321,47 @@ function diaSemanaParaIdxPreview(dia: DiaSemana | null | undefined): number | nu
 function idxPreviewParaDiaSemana(idx: number | null | undefined): Exclude<DiaSemana, 'DOM'> | null {
   if (idx == null) return null
   return PREVIEW_DIAS_UTEIS[idx] ?? null
+}
+
+function buildDemandaPorDiaFromDraft(draft: SemanaDraft): number[] {
+  return DIAS_SEMANA.map((dia) => {
+    const diaCfg = draft.dias[dia]
+    const segmentos = diaCfg.usa_padrao ? draft.padrao.segmentos : diaCfg.segmentos
+    return segmentos.reduce((max, segmento) => Math.max(max, segmento.min_pessoas), 0)
+  })
+}
+
+function hasOwnOverrideField(
+  overrideLocal: SetorSimulacaoOverrideLocal | undefined,
+  field: 'fixa' | 'variavel',
+): boolean {
+  return overrideLocal != null && Object.prototype.hasOwnProperty.call(overrideLocal, field)
+}
+
+function resolveOverrideField(
+  overrideLocal: SetorSimulacaoOverrideLocal | undefined,
+  field: 'fixa' | 'variavel',
+  fallback: DiaSemana | null,
+): DiaSemana | null {
+  return hasOwnOverrideField(overrideLocal, field)
+    ? overrideLocal?.[field] ?? null
+    : fallback
+}
+
+function traduzirResultadoSugestao(resultado: string): string {
+  if (resultado === 'Cobertura OK (todos os dias)') {
+    return 'A proposta cobre todos os dias da semana no nivel diario.'
+  }
+  if (resultado.startsWith('Deficit em ')) {
+    return resultado.replace('Deficit em', 'Cobertura ainda insuficiente em').replace(' dia(s): ', ': ')
+  }
+  if (resultado === 'Sem TT') {
+    return 'Nao houve semana com trabalho em todos os dias para a mesma pessoa.'
+  }
+  if (resultado === 'H1 OK') {
+    return 'Nao apareceu risco rapido de descanso insuficiente entre jornadas.'
+  }
+  return resultado
 }
 
 // ─── Main Component ────────────────────────────────────────────────────
@@ -341,6 +390,7 @@ export function SetorDetalhe() {
   const tiposContrato = useAppDataStore((s) => s.tiposContrato)
   const funcoes = useAppDataStore((s) => s.postos)
   const excecoesAtivas = useAppDataStore((s) => s.excecoes)
+  const regras = useAppDataStore((s) => s.regras)
   const regrasPadrao = useAppDataStore((s) => s.regrasPadrao)
 
   // Notify store which sector is active (loads data if changed)
@@ -361,6 +411,7 @@ export function SetorDetalhe() {
   // ─── Save & Dirty ────────────────────────────────────────────────────
   const demandaEditorRef = useRef<DemandaEditorRef>(null)
   const [demandaDirty, setDemandaDirty] = useState(false)
+  const [demandaDraftPreview, setDemandaDraftPreview] = useState<SemanaDraft | null>(null)
   const [salvandoTudo, setSalvandoTudo] = useState(false)
   const isDirty = setorForm.formState.isDirty || demandaDirty
 
@@ -401,7 +452,6 @@ export function SetorDetalhe() {
   // e tambem na EscalaPagina (ver todos). Separados dos avisos por pessoa.
   const [avisosOperacao, setAvisosOperacao] = useState<AvisoEscala[]>([])
   const solverScrollRef = useRef<HTMLDivElement>(null)
-  const [escalaCompleta, setEscalaCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [oficialCompleta, setOficialCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [historicoCompleta, setHistoricoCompleta] = useState<EscalaCompletaV3 | null>(null)
   const [historicoSelecionadaId, setHistoricoSelecionadaId] = useState<number | null>(null)
@@ -419,7 +469,6 @@ export function SetorDetalhe() {
   const [rawLivreN, setRawLivreN] = useState(String(DEFAULT_SIMULACAO_LIVRE_N))
   const [rawLivreK, setRawLivreK] = useState(String(sugerirK(DEFAULT_SIMULACAO_LIVRE_N, 7)))
   const [simulacaoConfigSaving, setSimulacaoConfigSaving] = useState(false)
-  const [folgasSetorEditadas, setFolgasSetorEditadas] = useState<Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>>(new Map())
 
   const [exportOpen, setExportOpen] = useState(false)
   const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
@@ -846,7 +895,7 @@ export function SetorDetalhe() {
   const escalaOficialAtual = escalasOrdenadas.find((escala) => escala.status === 'OFICIAL') ?? null
   const escalasHistorico = useMemo(() => {
     const oficialAtualId = escalaOficialAtual?.id ?? null
-    return escalasOrdenadas.filter((escala) => escala.status !== 'RASCUNHO' && escala.id !== oficialAtualId)
+    return escalasOrdenadas.filter((escala) => escala.status !== 'OFICIAL' && escala.id !== oficialAtualId)
   }, [escalaOficialAtual?.id, escalasOrdenadas])
 
   type EscalaTab = 'simulacao' | 'oficial' | 'historico'
@@ -856,7 +905,7 @@ export function SetorDetalhe() {
     : (escalaSelecionada as EscalaTab)
 
   const activeEscalaCompleta: EscalaCompletaV3 | null =
-    escalaTab === 'simulacao' ? escalaCompleta :
+    escalaTab === 'simulacao' ? null :
     escalaTab === 'oficial' ? oficialCompleta :
     historicoCompleta
 
@@ -864,11 +913,6 @@ export function SetorDetalhe() {
     if (orderedColabs.length > 0) return orderedColabs
     return colaboradores ?? []
   }, [colaboradores, orderedColabs])
-
-  const equipeEscalaSimulacao = useMemo(
-    () => resolveEscalaEquipe(escalaCompleta, orderedColabs, postosOrdenados),
-    [escalaCompleta, orderedColabs, postosOrdenados],
-  )
 
   const equipeEscalaOficial = useMemo(
     () => resolveEscalaEquipe(oficialCompleta, orderedColabs, postosOrdenados),
@@ -884,18 +928,6 @@ export function SetorDetalhe() {
     () => resolveEscalaEquipe(exportDetalhe, exportColaboradoresBase, postosOrdenados),
     [exportColaboradoresBase, exportDetalhe, postosOrdenados],
   )
-
-  const escalaGridData = useMemo(() => {
-    if (!escalaCompleta) return null
-    return escalaParaCicloGrid(
-      escalaCompleta.escala,
-      escalaCompleta.alocacoes,
-      equipeEscalaSimulacao.colaboradores,
-      equipeEscalaSimulacao.funcoes,
-      regrasPadrao ?? [],
-      demandas ?? [],
-    )
-  }, [escalaCompleta, equipeEscalaSimulacao, regrasPadrao, demandas])
 
   const oficialGridData = useMemo(() => {
     if (!oficialCompleta) return null
@@ -926,86 +958,6 @@ export function SetorDetalhe() {
     if (periodoPreset === '1_ANO') return 12
     return 3
   }, [periodoPreset])
-
-  // Preview Nivel 1: grid T/F simples antes de rodar solver
-  const previewNivel1 = useMemo(() => {
-    if (escalaCompleta || carregandoTabEscala) return null
-    if (setor?.regime_escala !== '5X2') return null
-    if (!funcoesList.length || !orderedColabs.length) return null
-
-    const DIAS_IDX: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
-    const postosElegiveis = funcoesList
-      .filter(f => f.ativo)
-      .sort((a, b) => a.ordem - b.ordem)
-      .map(f => {
-        const titular = orderedColabs.find(c => c.funcao_id === f.id)
-        return titular && (titular.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE'
-          ? { funcao: f, titular }
-          : null
-      })
-      .filter(Boolean) as Array<{ funcao: typeof funcoesList[0]; titular: typeof orderedColabs[0] }>
-
-    if (postosElegiveis.length < 2) return null
-
-    const N = postosElegiveis.length
-    const kMaxSemTT = Math.floor(N / 2)
-    const kDom = Math.max(0, ...(demandas ?? [])
-      .filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
-      .map(d => d.min_pessoas))
-    const kReal = kDom > 0 ? kDom : sugerirK(N)
-    const K = Math.min(kReal, kMaxSemTT)
-    const kFoiLimitado = kReal > kMaxSemTT
-
-    const folgasForcadas = postosElegiveis.map(p => {
-      const regra = regrasPadrao?.find(r => r.colaborador_id === p.titular.id)
-      const fixa = regra?.folga_fixa_dia_semana ?? null
-      const variavel = regra?.folga_variavel_dia_semana ?? null
-      const isFixaDom = fixa === 'DOM'
-      return {
-        // DOM nao existe em DIAS_IDX (0-5=SEG-SAB) → indexOf retornaria -1 → bug
-        // Quando fixa=DOM, usa folga_fixa_dom=true em vez de indice
-        folga_fixa_dia: fixa && !isFixaDom ? DIAS_IDX.indexOf(fixa) : null,
-        folga_variavel_dia: variavel ? DIAS_IDX.indexOf(variavel as DiaSemana) : null,
-        folga_fixa_dom: isFixaDom,
-      }
-    })
-
-    const hasForcadas = folgasForcadas.some(f =>
-      f.folga_fixa_dia != null || f.folga_variavel_dia != null || f.folga_fixa_dom
-    )
-
-    const output = gerarCicloFase1({
-      num_postos: N,
-      trabalham_domingo: K,
-      num_meses: simulacaoPreviewMeses,
-      preflight: true,
-      folgas_forcadas: hasForcadas ? folgasForcadas : undefined,
-      demanda_por_dia: derivados?.demandaPorDia,
-    })
-
-    if (!output.sucesso) return null
-    return {
-      ...converterNivel1ParaEscala(output, postosElegiveis, setorId, periodoGeracao),
-      output,
-      postosElegiveis,
-      avisos: [
-        ...(kFoiLimitado ? [`Demanda domingo = ${kReal}, mas maximo sem 2 domingos seguidos = ${kMaxSemTT} (com ${N} postos). Cobertura de domingo pode ficar abaixo da demanda.`] : []),
-      ],
-    }
-  }, [escalaCompleta, carregandoTabEscala, setor, funcoesList, orderedColabs,
-      demandas, regrasPadrao, periodoGeracao, setorId, simulacaoPreviewMeses])
-
-  const previewGridData = useMemo(() => {
-    if (!previewNivel1) return null
-    return escalaParaCicloGrid(
-      previewNivel1.escala,
-      previewNivel1.alocacoes,
-      orderedColabs,
-      funcoesList.filter(f => f.ativo),
-      previewNivel1.regras,
-      demandas ?? [],
-    )
-  }, [previewNivel1, orderedColabs, funcoesList, demandas])
 
   const simulacaoConfigBase = useMemo(
     () => normalizeSetorSimulacaoConfig(setor?.simulacao_config_json, { hasActivePostos: postosAtivos.length > 0 }),
@@ -1040,39 +992,92 @@ export function SetorDetalhe() {
     })
   }, [persistirSimulacaoConfig, postosAtivos.length, simulacaoConfigBase])
 
+  const overridesLocaisSetor = useMemo(
+    () => new Map(
+      Object.entries(simulacaoConfig.setor.overrides_locais).flatMap(([key, value]) => (
+        /^\d+$/.test(key) ? [[Number(key), value] as const] : []
+      )),
+    ),
+    [simulacaoConfig.setor.overrides_locais],
+  )
+
+  const mergeOverrideLocalWithBase = useCallback((
+    colaboradorId: number,
+    nextResolved: { fixa: DiaSemana | null; variavel: DiaSemana | null },
+  ): SetorSimulacaoOverrideLocal | null => {
+    const baseFixa = regrasMap.get(colaboradorId)?.folga_fixa_dia_semana ?? null
+    const baseVariavel = regrasMap.get(colaboradorId)?.folga_variavel_dia_semana ?? null
+    const nextOverride: SetorSimulacaoOverrideLocal = {}
+
+    if (nextResolved.fixa !== baseFixa) nextOverride.fixa = nextResolved.fixa
+    if (nextResolved.variavel !== baseVariavel) nextOverride.variavel = nextResolved.variavel
+
+    return Object.keys(nextOverride).length > 0 ? nextOverride : null
+  }, [regrasMap])
+
+  useEffect(() => {
+    setDemandaDraftPreview(null)
+  }, [setorId])
+
+  const demandaPorDiaDraft = useMemo(
+    () => demandaDraftPreview ? buildDemandaPorDiaFromDraft(demandaDraftPreview) : null,
+    [demandaDraftPreview],
+  )
+
   const demandaDomingoSetor = useMemo(
-    () => Math.max(
+    () => demandaPorDiaDraft?.[6] ?? Math.max(
       0,
       ...((demandas ?? [])
         .filter((demanda) => demanda.dia_semana === 'DOM' || demanda.dia_semana === null)
         .map((demanda) => demanda.min_pessoas)),
     ),
-    [demandas],
+    [demandaPorDiaDraft, demandas],
+  )
+
+  const demandaPorDiaPreview = useMemo(() => {
+    if (demandaPorDiaDraft) return demandaPorDiaDraft
+    if (derivados?.demandaPorDia?.length === 7) return derivados.demandaPorDia
+    const demanda = [0, 0, 0, 0, 0, 0, 0]
+    for (const item of demandas ?? []) {
+      if (item.dia_semana == null) {
+        for (let idx = 0; idx < 7; idx += 1) {
+          demanda[idx] = Math.max(demanda[idx] ?? 0, item.min_pessoas)
+        }
+        continue
+      }
+      const index = DIAS_SEMANA.indexOf(item.dia_semana)
+      if (index >= 0) demanda[index] = Math.max(demanda[index] ?? 0, item.min_pessoas)
+    }
+    return demanda
+  }, [demandaPorDiaDraft, demandas, derivados?.demandaPorDia])
+
+  const storePreviewAvisos = useMemo(
+    () => (derivados?.avisos ?? []).filter((aviso) => !PREVIEW_OWNED_STORE_WARNING_IDS.has(aviso.id)),
+    [derivados?.avisos],
   )
 
   const setorSimulacaoInfo = useMemo(() => {
-    const N = postosAtivos.length
+    const participantesPreview = listEscalaParticipantes(orderedColabs, postosAtivos)
+      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
+    const N = participantesPreview.length
     if (N < 1) {
       return {
         n: 0,
         k: 0,
-        origemN: 'N = 0 postos ativos.',
-        origemK: 'Sem postos ativos: cadastre postos ou use o modo Livre.',
+        origemN: 'N = 0 participantes ativos com posto.',
+        origemK: 'Sem participantes ativos no setor: anexe titulares aos postos ou use o modo Livre.',
       }
     }
 
-    // kMaxSemTT: maximo de pessoas no domingo sem 2 domingos seguidos (TT)
-    const kMaxSemTT = Math.floor(N / 2)
-
     if (demandaDomingoSetor > 0) {
-      const kEfetivo = Math.min(demandaDomingoSetor, kMaxSemTT)
+      const kEfetivo = Math.min(demandaDomingoSetor, N)
       const limitado = kEfetivo < demandaDomingoSetor
       return {
         n: N,
         k: kEfetivo,
-        origemN: `N pelo setor: ${N} posto(s) ativo(s).`,
+        origemN: `N pelo setor: ${N} participante(s) ativo(s) com posto.`,
         origemK: limitado
-          ? `K: demanda DOM=${demandaDomingoSetor}, limitado a ${kEfetivo} (sem TT com ${N} postos).`
+          ? `K: demanda DOM=${demandaDomingoSetor}, limitado a ${kEfetivo} porque o setor tem ${N} participante(s) ativos.`
           : `K pelo setor: pico de demanda em DOM/padrao = ${demandaDomingoSetor}.`,
       }
     }
@@ -1081,10 +1086,10 @@ export function SetorDetalhe() {
     return {
       n: N,
       k: sugerido,
-      origemN: `N pelo setor: ${N} posto(s) ativo(s).`,
+      origemN: `N pelo setor: ${N} participante(s) ativo(s) com posto.`,
       origemK: `Sem demanda DOM/padrao cadastrada: usando K sugerido ${sugerido}.`,
     }
-  }, [demandaDomingoSetor, postosAtivos.length])
+  }, [demandaDomingoSetor, orderedColabs, postosAtivos])
 
   const modoSimulacaoEfetivo: SetorSimulacaoMode = simulacaoConfig.mode
 
@@ -1094,47 +1099,44 @@ export function SetorDetalhe() {
   )
 
   const previewSetorRows = useMemo(() => {
-    return postosAtivos.map((funcao) => {
-      const titular = ocupanteMap.get(funcao.id) ?? null
-      const regra = titular ? regrasMap.get(titular.id) ?? null : null
-      const editada = folgasSetorEditadas.get(funcao.id)
-      const fixaAtual = editada?.fixa ?? regra?.folga_fixa_dia_semana ?? null
-      const variavelAtual = editada?.variavel ?? regra?.folga_variavel_dia_semana ?? null
-      const bloqueio =
-        titular && (titular.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE'
-          ? 'Intermitente'
-          : fixaAtual === 'DOM'
-            ? 'Folga fixa em DOM'
-            : null
+    return listEscalaParticipantes(orderedColabs, postosAtivos)
+      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
+      .map(({ funcao, colaborador }) => {
+        const regra = regrasMap.get(colaborador.id) ?? null
+        const overrideLocal = overridesLocaisSetor.get(colaborador.id)
+        const baseFixa = regra?.folga_fixa_dia_semana ?? null
+        const baseVariavel = regra?.folga_variavel_dia_semana ?? null
+        const fixaAtual = resolveOverrideField(overrideLocal, 'fixa', baseFixa)
+        const variavelAtual = resolveOverrideField(overrideLocal, 'variavel', baseVariavel)
+        return {
+          funcao,
+          titular: colaborador,
+          fixaAtual,
+          variavelAtual,
+          overrideFixaLocal: fixaAtual !== baseFixa,
+          overrideVariavelLocal: variavelAtual !== baseVariavel,
+          baseFixaColaborador: fixaAtual === baseFixa && baseFixa != null,
+          baseVariavelColaborador: variavelAtual === baseVariavel && baseVariavel != null,
+          folgaFixaDom: fixaAtual === 'DOM',
+          folgaForcada: {
+            folga_fixa_dia: diaSemanaParaIdxPreview(fixaAtual),
+            folga_variavel_dia: diaSemanaParaIdxPreview(variavelAtual),
+            folga_fixa_dom: fixaAtual === 'DOM',
+          },
+        }
+      })
+  }, [orderedColabs, overridesLocaisSetor, postosAtivos, regrasMap])
 
-      return {
-        funcao,
-        titular,
-        bloqueio,
-        folgaForcada: {
-          folga_fixa_dia: bloqueio ? null : diaSemanaParaIdxPreview(fixaAtual),
-          folga_variavel_dia: bloqueio ? null : diaSemanaParaIdxPreview(variavelAtual),
-        },
-      }
-    })
-  }, [folgasSetorEditadas, ocupanteMap, postosAtivos, regrasMap])
-
-  const rascunhoAtual = useMemo(
-    () => escalasOrdenadas.find((escala) => escala.status === 'RASCUNHO') ?? null,
-    [escalasOrdenadas],
+  const previewSetorSemTitular = useMemo(
+    () => Math.max(0, postosAtivos.length - listEscalaParticipantes(orderedColabs, postosAtivos).length),
+    [orderedColabs, postosAtivos],
   )
 
-  const carregandoPreviewSimulacao = (
-    carregandoSetor ||
-    Boolean(
-      escalaTab === 'simulacao' &&
-      rascunhoAtual &&
-      (
-        carregandoTabEscala ||
-        !escalaCompleta ||
-        escalaCompleta.escala.id !== rascunhoAtual.id
-      )
-    )
+  const previewSetorIntermitentes = useMemo(
+    () => listEscalaParticipantes(orderedColabs, postosAtivos)
+      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE')
+      .length,
+    [orderedColabs, postosAtivos],
   )
 
   const simulacaoPreview = useMemo(() => {
@@ -1159,17 +1161,15 @@ export function SetorDetalhe() {
     const effectiveN = modoSimulacaoEfetivo === 'SETOR' ? setorSimulacaoInfo.n : simulacaoConfig.livre.n
     const effectiveK = modoSimulacaoEfetivo === 'SETOR' ? setorSimulacaoInfo.k : simulacaoConfig.livre.k
     const rowLabels = modoSimulacaoEfetivo === 'SETOR'
-      ? previewSetorRows.map((row) => row.titular?.nome ?? row.funcao.apelido)
+      ? previewSetorRows.map((row) => row.titular.nome)
       : Array.from({ length: simulacaoConfig.livre.n }, (_, idx) => `Pessoa ${idx + 1}`)
-    const blockedRows = modoSimulacaoEfetivo === 'SETOR'
-      ? previewSetorRows.flatMap((row, idx) => row.bloqueio ? [idx] : [])
-      : []
 
     const folgasForcadas = modoSimulacaoEfetivo === 'SETOR'
       ? previewSetorRows.map((row) => row.folgaForcada)
       : previewLivreFolgas.map((folga) => ({
           folga_fixa_dia: diaSemanaParaIdxPreview(folga.fixa),
           folga_variavel_dia: diaSemanaParaIdxPreview(folga.variavel),
+          folga_fixa_dom: false,
         }))
 
     const resultado = modoSimulacaoEfetivo === 'SETOR' && setor?.regime_escala !== '5X2'
@@ -1181,27 +1181,27 @@ export function SetorDetalhe() {
           num_postos: effectiveN,
           trabalham_domingo: effectiveK,
           num_meses: simulacaoPreviewMeses,
-          preflight: true,
-          folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null)
+          preflight: false,
+          folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null || folga.folga_fixa_dom)
             ? folgasForcadas
             : undefined,
+          demanda_por_dia: demandaPorDiaPreview,
         })
 
     const savePadrao = modoSimulacaoEfetivo === 'SETOR' && resultado.sucesso
       ? previewSetorRows.flatMap((row, idx) => {
-          if (!row.titular || row.bloqueio) return []
           const previewRow = resultado.grid[idx]
           if (!previewRow) return []
           return [{
             colaborador_id: row.titular.id,
-            folga_fixa_dia_semana: idxPreviewParaDiaSemana(previewRow.folga_fixa_dia),
+            folga_fixa_dia_semana: row.folgaFixaDom ? 'DOM' as DiaSemana : idxPreviewParaDiaSemana(previewRow.folga_fixa_dia),
             folga_variavel_dia_semana: idxPreviewParaDiaSemana(previewRow.folga_variavel_dia),
           }]
         })
       : []
 
     const pinnedRows = modoSimulacaoEfetivo === 'SETOR' && resultado.sucesso
-      ? previewSetorRows.flatMap((row, idx) => row.titular && !row.bloqueio ? [{ rowIndex: idx, colaboradorId: row.titular.id }] : [])
+      ? previewSetorRows.map((row, idx) => ({ rowIndex: idx, colaboradorId: row.titular.id }))
       : []
 
     return {
@@ -1209,7 +1209,6 @@ export function SetorDetalhe() {
       effectiveN,
       effectiveK,
       rowLabels,
-      blockedRows,
       resultado,
       origemN: modoSimulacaoEfetivo === 'SETOR'
         ? setorSimulacaoInfo.origemN
@@ -1219,10 +1218,106 @@ export function SetorDetalhe() {
         : `K livre salvo neste setor: ${simulacaoConfig.livre.k}.`,
       savePadrao,
       pinnedRows,
-      foraDoPreview: previewSetorRows.filter((row) => row.bloqueio).length,
-      semTitular: previewSetorRows.filter((row) => !row.titular).length,
+      previewRows: previewSetorRows,
+      foraDoPreview: previewSetorIntermitentes,
+      semTitular: previewSetorSemTitular,
     }
-  }, [modoSimulacaoEfetivo, previewLivreFolgas, previewSetorRows, setor?.regime_escala, setorSimulacaoInfo, simulacaoConfig.livre.k, simulacaoConfig.livre.n, simulacaoPreviewMeses])
+  }, [
+    demandaPorDiaPreview,
+    modoSimulacaoEfetivo,
+    previewLivreFolgas,
+    previewSetorIntermitentes,
+    previewSetorRows,
+    previewSetorSemTitular,
+    setor?.regime_escala,
+    setorSimulacaoInfo,
+    simulacaoConfig.livre.k,
+    simulacaoConfig.livre.n,
+    simulacaoPreviewMeses,
+  ])
+
+  const previewRuleConfig = useMemo<RuleConfig>(() => {
+    const next: RuleConfig = {}
+    for (const regra of regras ?? []) {
+      next[regra.codigo] = regra.status_efetivo
+    }
+    for (const [codigo, status] of Object.entries(solverSessionConfig.rulesOverride)) {
+      next[codigo] = status
+      if (codigo === 'H3_DOM_MAX_CONSEC') {
+        next.H3_DOM_MAX_CONSEC_M = status
+        next.H3_DOM_MAX_CONSEC_F = status
+      }
+    }
+    next.H3_DOM_CICLO_EXATO ??= 'SOFT'
+    next.H3_DOM_MAX_CONSEC_M ??= next.H3_DOM_MAX_CONSEC ?? 'HARD'
+    next.H3_DOM_MAX_CONSEC_F ??= next.H3_DOM_MAX_CONSEC ?? 'HARD'
+    return next
+  }, [regras, solverSessionConfig.rulesOverride])
+
+  const previewDiagnostics = useMemo<PreviewDiagnostic[]>(() => {
+    if (modoSimulacaoEfetivo !== 'SETOR') return []
+    if (simulacaoPreview.previewRows.length === 0) return []
+    return buildPreviewDiagnostics({
+      output: simulacaoPreview.resultado,
+      participants: simulacaoPreview.previewRows.map((row) => ({
+        id: row.titular.id,
+        nome: row.titular.nome,
+        sexo: row.titular.sexo,
+        folga_fixa_dom: row.folgaFixaDom,
+      })),
+      demandaPorDia: demandaPorDiaPreview,
+      trabalhamDomingo: simulacaoPreview.effectiveK,
+      rules: previewRuleConfig,
+    })
+  }, [demandaPorDiaPreview, modoSimulacaoEfetivo, previewRuleConfig, simulacaoPreview])
+
+  const previewGate = useMemo<PreviewGate>(
+    () => resolvePreviewGate(previewDiagnostics),
+    [previewDiagnostics],
+  )
+
+  const abrirAnaliseIa = useCallback(() => {
+    useIaStore.getState().setAberto(true)
+  }, [])
+
+  const previewAutoOverrides = useMemo<RuleConfig>(() => {
+    const next: RuleConfig = {}
+    for (const diagnostic of previewDiagnostics) {
+      if (diagnostic.gate !== 'CONFIRM_OVERRIDE' || !diagnostic.overridableBy) continue
+      Object.assign(next, diagnostic.overridableBy)
+    }
+    return next
+  }, [previewDiagnostics])
+
+  const simulacaoGridData = useMemo(() => {
+    if (!simulacaoPreview.resultado.sucesso) return null
+    const grid = simulacaoParaCicloGrid(
+      simulacaoPreview.resultado,
+      simulacaoPreview.rowLabels,
+      demandaPorDiaPreview,
+    )
+
+    if (simulacaoPreview.mode !== 'SETOR') return grid
+
+    return {
+      ...grid,
+      rows: grid.rows.map((row, index) => {
+        const previewRow = simulacaoPreview.previewRows[index]
+        if (!previewRow) return row
+        return {
+          ...row,
+          id: previewRow.titular.id,
+          posto: previewRow.funcao.apelido,
+          fixa: previewRow.folgaFixaDom ? 'DOM' : row.fixa,
+          blocked: false,
+          overrideFixaLocal: previewRow.overrideFixaLocal,
+          overrideVariavelLocal: previewRow.overrideVariavelLocal,
+          baseFixaColaborador: previewRow.baseFixaColaborador,
+          baseVariavelColaborador: previewRow.baseVariavelColaborador,
+        }
+      }),
+    }
+  }, [demandaPorDiaPreview, simulacaoPreview])
 
   // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -1267,10 +1362,14 @@ export function SetorDetalhe() {
         setHistoricoSelecionadaId(id)
         return
       }
+      setHistoricoSelecionadaId(escalasHistorico[0].id)
+      setEscalaSelecionada(`historico:${escalasHistorico[0].id}`)
+      return
     }
-    setHistoricoSelecionadaId(escalasHistorico[0].id)
-    setEscalaSelecionada(`historico:${escalasHistorico[0].id}`)
-  }, [escalasHistorico, escalaSelecionada])
+    if (!historicoSelecionadaId || !escalasHistorico.some((e) => e.id === historicoSelecionadaId)) {
+      setHistoricoSelecionadaId(escalasHistorico[0].id)
+    }
+  }, [escalasHistorico, escalaSelecionada, historicoSelecionadaId])
 
   const carregarDetalheEscala = useCallback(async (escalaId: number) => {
     try {
@@ -1503,7 +1602,7 @@ export function SetorDetalhe() {
     }))
   }, [atualizarSimulacaoConfig, simulacaoConfig.livre.n])
 
-  const handleResetarSimulacao = useCallback(() => {
+  const handleResetarSimulacao = useCallback((_mode: 'automatico' | 'colaboradores' = 'automatico') => {
     setPreviewSelectedWeek(0)
     if (simulacaoPreview.mode === 'LIVRE') {
       const nextK = sugerirK(DEFAULT_SIMULACAO_LIVRE_N, 7)
@@ -1517,19 +1616,27 @@ export function SetorDetalhe() {
           folgas_forcadas: [],
         },
       }))
+      toast.success('Simulacao livre resetada')
       return
     }
 
-    setFolgasSetorEditadas(new Map())
-    // Forçar re-render da config persistida (limpar folgas_setor no banco)
     atualizarSimulacaoConfig((prev) => ({
       ...prev,
-      folgas_setor: {},
+      setor: {
+        ...prev.setor,
+        overrides_locais: {},
+      },
     }))
+    toast.success(
+      _mode === 'colaboradores'
+        ? 'Folgas restauradas a partir dos colaboradores'
+        : 'Simulacao voltou ao automatico',
+    )
   }, [atualizarSimulacaoConfig, simulacaoPreview.mode])
 
-  const handlePreviewFolgaChange = useCallback((rowIndex: number, field: 'fixa' | 'variavel', value: DiaSemana | null) => {
+  const handlePreviewFolgaChange = useCallback((colaboradorId: number, field: 'fixa' | 'variavel', value: DiaSemana | null) => {
     if (simulacaoPreview.mode === 'LIVRE') {
+      const rowIndex = colaboradorId
       const nextFolgas = Array.from(
         { length: simulacaoConfig.livre.n },
         (_, idx) => simulacaoConfig.livre.folgas_forcadas[idx] ?? { fixa: null, variavel: null },
@@ -1549,18 +1656,30 @@ export function SetorDetalhe() {
       return
     }
 
-    const row = previewSetorRows[rowIndex]
-    if (!row) return
-    setFolgasSetorEditadas((prev) => {
-      const next = new Map(prev)
-      const current = next.get(row.funcao.id) ?? { fixa: null, variavel: null }
-      next.set(row.funcao.id, {
-        ...current,
-        [field]: value,
-      })
-      return next
+    atualizarSimulacaoConfig((prev) => {
+      const baseFixa = regrasMap.get(colaboradorId)?.folga_fixa_dia_semana ?? null
+      const baseVariavel = regrasMap.get(colaboradorId)?.folga_variavel_dia_semana ?? null
+      const current = prev.setor.overrides_locais[String(colaboradorId)]
+      const nextResolved = {
+        fixa: field === 'fixa' ? value : resolveOverrideField(current, 'fixa', baseFixa),
+        variavel: field === 'variavel' ? value : resolveOverrideField(current, 'variavel', baseVariavel),
+      }
+      const nextOverride = mergeOverrideLocalWithBase(colaboradorId, nextResolved)
+      const nextOverrides = { ...prev.setor.overrides_locais }
+      if (nextOverride) {
+        nextOverrides[String(colaboradorId)] = nextOverride
+      } else {
+        delete nextOverrides[String(colaboradorId)]
+      }
+      return {
+        ...prev,
+        setor: {
+          ...prev.setor,
+          overrides_locais: nextOverrides,
+        },
+      }
     })
-  }, [atualizarSimulacaoConfig, previewSetorRows, simulacaoConfig.livre.folgas_forcadas, simulacaoConfig.livre.n, simulacaoPreview.mode])
+  }, [atualizarSimulacaoConfig, mergeOverrideLocalWithBase, regrasMap, simulacaoConfig.livre.folgas_forcadas, simulacaoConfig.livre.n, simulacaoPreview.mode])
 
   // ─── Geracao inline ──────────────────────────────────────────────────
   const handleGerar = async () => {
@@ -1573,6 +1692,31 @@ export function SetorDetalhe() {
     if (dataInicio > dataFim) {
       toast.error('A data final precisa ser maior ou igual a data inicial')
       return
+    }
+
+    if (modoSimulacaoEfetivo === 'SETOR' && previewDiagnostics.length > 0) {
+      const previewAvisosOperacao: AvisoEscala[] = previewDiagnostics.map((diagnostic) => ({
+        id: `preview_${diagnostic.code}`,
+        nivel: diagnostic.severity === 'error' ? 'erro' : diagnostic.severity === 'warning' ? 'aviso' : 'info',
+        titulo: diagnostic.title,
+        detalhe: diagnostic.detail,
+        origem: 'operacao',
+      }))
+      setAvisosOperacao(previewAvisosOperacao)
+
+      if (previewGate === 'BLOCK') {
+        toastInfeasible(previewDiagnostics[0]?.title ?? 'Preview bloqueou a geracao.', () => useIaStore.getState().setAberto(true))
+        return
+      }
+
+      if (previewGate === 'CONFIRM_OVERRIDE') {
+        const confirmed = window.confirm(
+          `${previewDiagnostics[0]?.title ?? 'O preview detectou um bloqueio relaxavel.'}\n\n${previewDiagnostics.map((item) => `- ${item.detail}`).join('\n')}\n\nDeseja gerar assim mesmo em modo exploratorio?`,
+        )
+        if (!confirmed) {
+          return
+        }
+      }
     }
 
     // Salva tudo antes de gerar (garante que demandas estao no banco)
@@ -1610,13 +1754,20 @@ export function SetorDetalhe() {
     setSolverLogs([])
     setGerando(true)
     try {
-      const rulesOverride = Object.keys(solverSessionConfig.rulesOverride).length > 0
-        ? solverSessionConfig.rulesOverride
+      const mergedRulesOverride = {
+        ...previewAutoOverrides,
+        ...solverSessionConfig.rulesOverride,
+      }
+      const rulesOverride = Object.keys(mergedRulesOverride).length > 0
+        ? mergedRulesOverride
         : undefined
 
       // Convert preview T/F to pinned format so solver skips Phase 1
-      const pinnedFolgaExterno = previewNivel1
-        ? converterPreviewParaPinned(previewNivel1.output, previewNivel1.postosElegiveis)
+      const pinnedFolgaExterno = simulacaoPreview.mode === 'SETOR' && simulacaoPreview.resultado.sucesso
+        ? converterPreviewParaPinned(
+            simulacaoPreview.resultado,
+            simulacaoPreview.previewRows.map((row) => ({ funcao: row.funcao, titular: row.titular })),
+          )
         : undefined
 
       const result = await escalasService.gerar(setorId, {
@@ -1627,8 +1778,10 @@ export function SetorDetalhe() {
         rulesOverride,
         pinnedFolgaExterno,
       })
-      setEscalaCompleta(result)
-      toast.success('Escala gerada')
+      setHistoricoCompleta(result)
+      setHistoricoSelecionadaId(result.escala.id)
+      setEscalaSelecionada(`historico:${result.escala.id}`)
+      toast.success('Rascunho gerado e enviado para o historico')
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : String(err)
 
@@ -1665,16 +1818,21 @@ export function SetorDetalhe() {
     }
   }
 
+  const rascunhoSelecionado = useMemo(
+    () => historicoCompleta?.escala.status === 'RASCUNHO' ? historicoCompleta : null,
+    [historicoCompleta],
+  )
+
   const handleOficializar = async () => {
-    if (!escalaCompleta) return
+    if (!rascunhoSelecionado) return
     setOficializando(true)
     try {
-      await escalasService.oficializar(escalaCompleta.escala.id)
-      const detalheOficial = await escalasService.buscar(escalaCompleta.escala.id)
+      await escalasService.oficializar(rascunhoSelecionado.escala.id)
+      const detalheOficial = await escalasService.buscar(rascunhoSelecionado.escala.id)
       setOficialCompleta(detalheOficial)
       setEscalaSelecionada('oficial')
       toast.success('Escala oficializada')
-      setEscalaCompleta(null)
+      setHistoricoCompleta(null)
     } catch (err) {
       const msg = mapError(err) || 'Erro ao oficializar'
       if (msg.includes('ESCALA_DESATUALIZADA')) {
@@ -1688,18 +1846,78 @@ export function SetorDetalhe() {
   }
 
   const handleDescartar = async () => {
-    if (!escalaCompleta) return
+    if (!rascunhoSelecionado) return
     setDescartando(true)
     try {
-      await escalasService.deletar(escalaCompleta.escala.id)
+      await escalasService.deletar(rascunhoSelecionado.escala.id)
       toast.success('Escala descartada')
-      setEscalaCompleta(null)
+      setHistoricoCompleta(null)
+      setEscalaSelecionada('simulacao')
     } catch (err) {
       toast.error(mapError(err) || 'Erro ao descartar')
     } finally {
       setDescartando(false)
     }
   }
+
+  const previewCardTone = useMemo(() => {
+    if (previewGate === 'BLOCK' || previewGate === 'CONFIRM_OVERRIDE') {
+      return {
+        frame: 'border-destructive/40',
+      }
+    }
+
+    const hasWarnings =
+      previewDiagnostics.some((item) => item.severity === 'warning')
+      || storePreviewAvisos.some((item) => item.nivel === 'aviso')
+      || avisosOperacao.some((item) => item.nivel === 'aviso')
+
+    if (hasWarnings) {
+      return {
+        frame: 'border-warning/40',
+      }
+    }
+
+    return {
+      frame: 'border-success/40',
+    }
+  }, [avisosOperacao, previewDiagnostics, previewGate, storePreviewAvisos])
+
+  const previewAvisos = useMemo<Aviso[]>(() => {
+    return buildPreviewAvisos({
+      previewDiagnostics,
+      storePreviewAvisos,
+      avisosOperacao,
+      semTitular: simulacaoPreview.semTitular,
+      foraDoPreview: simulacaoPreview.foraDoPreview,
+      setorNome: setor?.nome,
+    })
+  }, [avisosOperacao, previewDiagnostics, setor?.nome, simulacaoPreview.foraDoPreview, simulacaoPreview.semTitular, storePreviewAvisos])
+
+  const sugestaoFolgasData = useMemo(() => {
+    if (modoSimulacaoEfetivo !== 'SETOR') return { sugestoes: [] as SugestaoFolga[], resultados: [] as string[] }
+
+    const colabsInput = previewSetorRows.map((row) => ({
+      id: row.titular.id,
+      nome: row.titular.nome,
+      posto_apelido: row.funcao.apelido,
+      fixa_atual: row.fixaAtual,
+      variavel_atual: row.variavelAtual,
+      tipo_trabalhador: row.titular.tipo_trabalhador ?? 'CLT',
+      folga_fixa_dom: row.folgaFixaDom,
+    }))
+
+    const resultado = calcularSugestaoFolgas({
+      colaboradores: colabsInput,
+      demandaPorDia: demandaPorDiaPreview,
+      N: simulacaoPreview.effectiveN,
+    })
+
+    return {
+      sugestoes: resultado.sugestoes,
+      resultados: resultado.resultados.map(traduzirResultadoSugestao),
+    }
+  }, [demandaPorDiaPreview, modoSimulacaoEfetivo, previewSetorRows, simulacaoPreview.effectiveN])
 
   const hasConteudoSetorial = useCallback((conteudo: EscalaExportContent) => {
     return conteudo.ciclo || conteudo.timeline || conteudo.avisos
@@ -1936,22 +2154,15 @@ export function SetorDetalhe() {
 
   // Auto-load escala mais recente (por criada_em, independente de status)
   useEffect(() => {
-    if (!escalas?.length || escalaCompleta) return
+    if (!escalas?.length) return
     const maisRecente = [...escalas].sort((a, b) => b.criada_em.localeCompare(a.criada_em))[0]
     if (!maisRecente) return
     const valor = maisRecente.status === 'RASCUNHO'
-      ? 'simulacao'
+      ? `historico:${maisRecente.id}`
       : maisRecente.status === 'OFICIAL'
         ? 'oficial'
         : `historico:${maisRecente.id}`
     setEscalaSelecionada(valor)
-    if (maisRecente.status === 'RASCUNHO') {
-      setCarregandoTabEscala(true)
-      escalasService.buscar(maisRecente.id)
-        .then(setEscalaCompleta)
-        .catch(() => {})
-        .finally(() => setCarregandoTabEscala(false))
-    }
   }, [escalas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSalvarPostoDialog = async () => {
@@ -2700,6 +2911,7 @@ export function SetorDetalhe() {
                   horariosSemana={horariosSemana ?? []}
                   totalColaboradores={colaboradores?.length ?? 0}
                   onDirtyChange={setDemandaDirty}
+                  onDraftChange={setDemandaDraftPreview}
                 />
               </CardContent>
             </Card>
@@ -2766,72 +2978,81 @@ export function SetorDetalhe() {
                   </DropdownMenu>
                 </div>
 
-                {/* Action buttons (consolidated) */}
-                {activeEscalaCompleta && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => abrirModalExportacao(activeEscalaCompleta)}
-                    >
-                      Exportar
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/setores/${setorId}/escala?escalaId=${activeEscalaCompleta.escala.id}&origem=${escalaTab}`}>
-                        Ver completo
-                      </Link>
-                    </Button>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {escalaTab === 'simulacao' && (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setSolverConfigOpen(true)}
+                            aria-label="Configurar simulacao"
+                          >
+                            <SlidersHorizontal className="size-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Configurar simulacao</TooltipContent>
+                      </Tooltip>
+                      <Button
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={handleGerar}
+                        disabled={
+                          gerando ||
+                          !empresa ||
+                          (tiposContrato?.length ?? 0) === 0 ||
+                          (orderedColabs?.length ?? 0) === 0
+                        }
+                        title={
+                          !empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0
+                            ? 'Complete os itens em "Antes de gerar" abaixo'
+                            : undefined
+                        }
+                      >
+                        {gerando ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Play className="size-3.5" />
+                        )}
+                        Gerar Escala
+                      </Button>
+                    </>
+                  )}
+
+                  {escalaTab === 'historico' && historicoCompleta?.escala.status === 'RASCUNHO' && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando}>
+                        {oficializando ? 'Oficializando...' : 'Oficializar'}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando}>
+                        {descartando ? 'Descartando...' : 'Descartar'}
+                      </Button>
+                    </>
+                  )}
+
+                  {activeEscalaCompleta && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => abrirModalExportacao(activeEscalaCompleta)}
+                      >
+                        Exportar
+                      </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/setores/${setorId}/escala?escalaId=${activeEscalaCompleta.escala.id}&origem=${escalaTab}`}>
+                          Ver completo
+                        </Link>
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {escalaTab === 'simulacao' && (
                 <div className="space-y-4">
-                  {/* Barra de controle */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setSolverConfigOpen(true)}>
-                      <SlidersHorizontal className="size-3" />
-                      Configurar
-                    </Button>
-                    <div className="flex-1" />
-                    <Button
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={handleGerar}
-                      disabled={
-                        gerando ||
-                        !empresa ||
-                        (tiposContrato?.length ?? 0) === 0 ||
-                        (orderedColabs?.length ?? 0) === 0
-                      }
-                      title={
-                        !empresa || (tiposContrato?.length ?? 0) === 0 || (orderedColabs?.length ?? 0) === 0
-                          ? 'Complete os itens em "Antes de gerar" abaixo'
-                          : undefined
-                      }
-                    >
-                      {gerando ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : escalaCompleta ? (
-                        <RotateCcw className="size-3.5" />
-                      ) : (
-                        <Play className="size-3.5" />
-                      )}
-                      {escalaCompleta ? 'Regerar' : 'Gerar Escala'}
-                    </Button>
-                    {escalaCompleta && (
-                      <>
-                        <Button variant="outline" size="sm" onClick={handleOficializar} disabled={oficializando}>
-                          {oficializando ? 'Oficializando...' : 'Oficializar'}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={handleDescartar} disabled={descartando}>
-                          {descartando ? 'Descartando...' : 'Descartar'}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-
                   <PreflightChecklist items={[
                     { ok: !!empresa, label: 'Empresa configurada', linkTo: '/empresa' },
                     { ok: (tiposContrato?.length ?? 0) > 0, label: 'Tipo de contrato cadastrado', linkTo: '/tipos-contrato' },
@@ -2839,153 +3060,86 @@ export function SetorDetalhe() {
                     { ok: (demandas?.length ?? 0) > 0, label: 'Demanda cadastrada (faixas horarias)' },
                   ]} />
 
-                  {escalaCompleta ? (
+                  {simulacaoPreview.resultado.sucesso && simulacaoGridData ? (
                     <div className="space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold">Ciclo Rotativo</p>
-                        <StatusBadge status="RASCUNHO" />
-                        <Badge variant="outline" className={cn(
-                          escalaCompleta.violacoes.length > 0 ? 'border-warning/20 text-warning' : 'border-success/20 text-success',
-                        )}>
-                          {escalaCompleta.violacoes.length > 0 ? `${escalaCompleta.violacoes.length} aviso(s)` : 'Sem avisos relevantes'}
-                        </Badge>
-                        {escalaCompleta.escala.criada_em && (
-                          <span className="text-xs text-muted-foreground">Gerado em {formatarDataHora(escalaCompleta.escala.criada_em)}</span>
-                        )}
-                      </div>
-                      {escalaGridData && (
-                        <CicloGrid data={escalaGridData} mode="view" />
-                      )}
-                      {escalaCompleta.comparacao_demanda.length > 0 && (
-                        <CoberturaChart
-                          comparacao={escalaCompleta.comparacao_demanda}
-                          indicadores={escalaCompleta.indicadores}
-                          className="rounded-md border p-3"
-                        />
-                      )}
-                    </div>
-                  ) : previewNivel1 ? (
-                    <div className="space-y-3">
-                      {/* Avisos de operacao (preflight blockers + solver errors) */}
-                      {avisosOperacao.length > 0 && (
-                        <AvisosSection
-                          avisos={avisosOperacao.map(a => ({
-                            id: a.id,
-                            nivel: a.nivel === 'erro' ? 'error' as const : a.nivel === 'aviso' ? 'warning' as const : 'info' as const,
-                            titulo: a.titulo,
-                            descricao: a.detalhe ?? '',
-                            contexto_ia: `Aviso de operacao: ${a.titulo}. ${a.detalhe ?? ''}`,
-                          }))}
-                          onPedirSugestao={() => useIaStore.getState().setAberto(true)}
-                        />
-                      )}
-
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold">Ciclo Rotativo</p>
                         <Badge variant="outline" className="text-xs">Preview</Badge>
                       </div>
-
-                      {/* Preview condicional: esconder grid se tem erros criticos nos derivados */}
-                      {derivados?.avisos?.some(a => a.nivel === 'erro') ? (
-                        <div className="rounded-lg border border-dashed border-destructive/30 px-4 py-5">
-                          <p className="text-sm font-medium text-destructive">
-                            Resolva os problemas abaixo antes de visualizar o ciclo.
-                          </p>
-                        </div>
-                      ) : previewGridData ? (
-                        <CicloGrid data={previewGridData} mode="edit" />
-                      ) : null}
-
-                      {(() => {
-                        // Combinar avisos do store (derivados — ricos, com id unico) + preview (strings brutas)
-                        const storeAvisos: Aviso[] = (derivados?.avisos ?? []).map(a => ({
-                          id: a.id,
-                          nivel: a.nivel === 'erro' ? 'error' as const : a.nivel === 'aviso' ? 'warning' as const : 'info' as const,
-                          titulo: a.titulo,
-                          descricao: a.detalhe ?? '',
-                          contexto_ia: `Aviso do setor ${setor?.nome ?? ''}: ${a.titulo}. ${a.detalhe ?? ''}`,
-                        }))
-                        // Avisos do preview que nao estao no store (evitar duplicata)
-                        const storeIds = new Set(storeAvisos.map(a => a.id))
-                        const previewExtras: Aviso[] = (previewNivel1.avisos ?? [])
-                          .filter((_, idx) => !storeIds.has(`preview-${idx}`))
-                          .map((msg, idx) => ({
-                            id: `preview-extra-${idx}`,
-                            nivel: 'warning' as const,
-                            titulo: msg.split('.')[0] || msg,
-                            descricao: msg,
-                            contexto_ia: `Preview do ciclo: ${msg}`,
-                          }))
-                        const todosAvisos = [...storeAvisos, ...previewExtras]
-                        return <AvisosSection avisos={todosAvisos} onPedirSugestao={() => setSugestaoOpen(true)} />
-                      })()}
+                      <CicloGrid
+                        data={simulacaoGridData}
+                        mode="edit"
+                        onFolgaChange={handlePreviewFolgaChange}
+                        frameBorderClassName={previewCardTone.frame}
+                        coverageActions={{
+                          showSuggest: modoSimulacaoEfetivo === 'SETOR',
+                          suggestDisabled: sugestaoFolgasData.sugestoes.length === 0,
+                          onSuggest: modoSimulacaoEfetivo === 'SETOR' ? () => setSugestaoOpen(true) : undefined,
+                          onResetAutomatico: () => handleResetarSimulacao('automatico'),
+                          onRestaurarColaboradores: modoSimulacaoEfetivo === 'SETOR'
+                            ? () => handleResetarSimulacao('colaboradores')
+                            : undefined,
+                        }}
+                      />
+                      <AvisosSection
+                        avisos={previewAvisos}
+                        onAnalisarIa={abrirAnaliseIa}
+                      />
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed px-4 py-5">
                       <p className="text-sm font-medium text-foreground">
-                        {setor?.regime_escala === '6X1'
-                          ? 'Preview disponivel apenas para setores 5x2. Use Gerar Escala.'
-                          : 'Configure postos e demandas para ver o preview do ciclo.'}
+                        {simulacaoPreview.resultado.erro ?? (
+                          setor?.regime_escala === '6X1'
+                            ? 'Preview disponivel apenas para setores 5x2. Use Gerar Escala.'
+                            : 'Configure postos e demandas para ver o preview do ciclo.'
+                        )}
                       </p>
+                      {previewAvisos.length > 0 && (
+                        <AvisosSection
+                          avisos={previewAvisos}
+                          onAnalisarIa={abrirAnaliseIa}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
               )}
 
               {/* Sheet de sugestao (C7) */}
-              {(() => {
-                const sugestaoData = (() => {
-                  if (!orderedColabs || !derivados) return { sugestoes: [], resultados: [] }
-                  const colabsInput = orderedColabs
-                    .filter((c: Colaborador) => c.funcao_id != null)
-                    .map((c: Colaborador) => {
-                      const regra = regrasPadrao?.find(r => r.colaborador_id === c.id)
-                      const posto = funcoesList.find(f => f.id === c.funcao_id)
-                      return {
-                        id: c.id,
-                        nome: c.nome,
-                        posto_apelido: posto?.apelido ?? '',
-                        fixa_atual: (regra?.folga_fixa_dia_semana ?? null) as DiaSemana | null,
-                        variavel_atual: (regra?.folga_variavel_dia_semana ?? null) as DiaSemana | null,
-                        tipo_trabalhador: c.tipo_trabalhador ?? 'CLT',
-                        folga_fixa_dom: regra?.folga_fixa_dia_semana === 'DOM',
-                      }
-                    })
-                  return calcularSugestaoFolgas({
-                    colaboradores: colabsInput,
-                    demandaPorDia: derivados.demandaPorDia,
-                    N: derivados.N,
-                  })
-                })()
-                return (
-                  <SugestaoSheet
-                    open={sugestaoOpen}
-                    onOpenChange={setSugestaoOpen}
-                    sugestoes={sugestaoData.sugestoes}
-                    resultados={sugestaoData.resultados}
-                    onAceitar={async () => {
-                      try {
-                        const padrao = sugestaoData.sugestoes
-                          .filter(s => s.fixa_proposta || s.variavel_proposta)
-                          .map(s => ({
-                            colaborador_id: s.colaborador_id,
-                            folga_fixa_dia_semana: s.fixa_proposta,
-                            folga_variavel_dia_semana: s.variavel_proposta,
-                          }))
-                        if (padrao.length > 0) {
-                          await colaboradoresService.salvarPadraoFolgas(padrao, true)
-                          useAppDataStore.getState().invalidate(['regrasPadrao'])
-                        }
-                        toast.success('Sugestao aplicada')
-                        setSugestaoOpen(false)
-                      } catch {
-                        toast.error('Erro ao aplicar sugestao')
-                      }
-                    }}
-                    onDescartar={() => setSugestaoOpen(false)}
-                  />
-                )
-              })()}
+              <SugestaoSheet
+                open={sugestaoOpen}
+                onOpenChange={setSugestaoOpen}
+                sugestoes={sugestaoFolgasData.sugestoes}
+                resultados={sugestaoFolgasData.resultados}
+                onAceitar={async () => {
+                  try {
+                    atualizarSimulacaoConfig((prev) => ({
+                      ...prev,
+                      setor: {
+                        ...prev.setor,
+                        overrides_locais: sugestaoFolgasData.sugestoes.reduce((acc, sugestao) => {
+                          const nextOverride = mergeOverrideLocalWithBase(sugestao.colaborador_id, {
+                            fixa: sugestao.fixa_proposta,
+                            variavel: sugestao.variavel_proposta,
+                          })
+                          if (nextOverride) {
+                            acc[String(sugestao.colaborador_id)] = nextOverride
+                          } else {
+                            delete acc[String(sugestao.colaborador_id)]
+                          }
+                          return acc
+                        }, { ...prev.setor.overrides_locais }),
+                      },
+                    }))
+                    toast.success('Sugestao aplicada na simulacao')
+                    setSugestaoOpen(false)
+                  } catch {
+                    toast.error('Erro ao aplicar sugestao')
+                  }
+                }}
+                onDescartar={() => setSugestaoOpen(false)}
+              />
 
               {escalaTab === 'oficial' && (
                 <div className="space-y-4">
@@ -3058,6 +3212,13 @@ export function SetorDetalhe() {
                           </div>
                           {historicoGridData && (
                             <CicloGrid data={historicoGridData} mode="view" />
+                          )}
+                          {historicoCompleta.comparacao_demanda.length > 0 && (
+                            <CoberturaChart
+                              comparacao={historicoCompleta.comparacao_demanda}
+                              indicadores={historicoCompleta.indicadores}
+                              className="rounded-md border p-3"
+                            />
                           )}
                         </div>
                       ) : null}

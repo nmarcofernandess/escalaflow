@@ -1,13 +1,21 @@
+import { Lightbulb, RotateCcw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import {
   DIAS_CURTOS,
+  type CicloGridCoverageActions,
   DIAS_HEADER,
   DIAS_ORDEM,
   LEGENDA_SIMBOLOS,
@@ -22,22 +30,43 @@ import type { DiaSemana } from '@shared/index'
 interface CicloGridProps {
   data: CicloGridData
   mode: 'edit' | 'view'
+  /** 'app' = interactive with sticky cols + scroll. 'export' = static, paginated for print. */
+  variant?: 'app' | 'export'
   onFolgaChange?: (
     colaboradorId: number,
-    field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana',
+    field: 'fixa' | 'variavel',
     value: DiaSemana | null,
   ) => void
   className?: string
+  frameBorderClassName?: string
+  coverageActions?: CicloGridCoverageActions
 }
+
+// ─── Layout constants ────────────────────────────────────────────────────────
+
+// App variant widths (original)
+const LABEL_COL_WIDTH = 130
+const FOLGA_COL_WIDTH = 84
+const VAR_COL_LEFT = LABEL_COL_WIDTH
+const FIXO_COL_LEFT = LABEL_COL_WIDTH + FOLGA_COL_WIDTH
+
+// Export variant widths (compact for A4 landscape)
+const EXPORT_LABEL_COL_WIDTH = 90
+const EXPORT_FOLGA_COL_WIDTH = 30
+
+// Max weeks per block when variant='export'
+const MAX_WEEKS_PER_BLOCK = 4
 
 // ─── Internal: FolgaSelect ────────────────────────────────────────────────────
 
 interface FolgaSelectProps {
   colaboradorId: number
-  field: 'folga_fixa_dia_semana' | 'folga_variavel_dia_semana'
+  field: 'fixa' | 'variavel'
   value: DiaSemana | null
   /** Valor do outro campo (fixa ou variavel) — impede selecionar o mesmo dia */
   otherValue?: DiaSemana | null
+  overrideLocal?: boolean
+  baseColaborador?: boolean
   mode: 'edit' | 'view'
   blocked: boolean
   onFolgaChange?: CicloGridProps['onFolgaChange']
@@ -48,14 +77,17 @@ function FolgaSelect({
   field,
   value,
   otherValue,
+  overrideLocal = false,
+  baseColaborador = false,
   mode,
   blocked,
   onFolgaChange,
 }: FolgaSelectProps) {
   const isEditable = mode === 'edit' && !blocked && onFolgaChange != null
+  const label = value ? DIAS_CURTOS[value] : '-'
 
   const dias = DIAS_ORDEM.filter((dia) => {
-    if (field === 'folga_variavel_dia_semana') return dia !== 'DOM'
+    if (field === 'variavel') return dia !== 'DOM'
     // Impedir fixa == variavel (mesmo dia)
     if (otherValue && otherValue === dia) return false
     return true
@@ -87,8 +119,16 @@ function FolgaSelect({
         )
       }}
     >
-      <SelectTrigger className="h-7 w-[62px] px-2 text-xs">
-        <SelectValue />
+      <SelectTrigger
+        className={cn(
+          'h-7 w-[62px] px-2 text-xs',
+          baseColaborador && !overrideLocal && 'border-primary text-primary',
+          overrideLocal && 'border-foreground text-foreground',
+        )}
+      >
+        <span className={cn('truncate', !value && 'text-muted-foreground')}>
+          {label}
+        </span>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="__none__" className="text-xs">
@@ -106,8 +146,17 @@ function FolgaSelect({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridProps) {
+export function CicloGrid({
+  data,
+  mode,
+  variant = 'app',
+  onFolgaChange,
+  className,
+  frameBorderClassName,
+  coverageActions,
+}: CicloGridProps) {
   const { rows, cobertura, demanda, cicloSemanas } = data
+  const isExport = variant === 'export'
 
   // Total number of weeks shown = derived from rows[0].semanas.length (or 0)
   const totalSemanas = rows.length > 0 ? rows[0].semanas.length : 0
@@ -129,248 +178,416 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   // Is this the last day of a full cycle? (end of cicloSemanas-th week)
+  // Note: semanaIdx here is ABSOLUTE (0-based across all weeks), not relative to a block.
   function isCycleEnd(semanaIdx: number, diaIdx: number): boolean {
-    // The last day of week (semanaIdx+1) when (semanaIdx+1) % cicloSemanas === 0
     const weekNumber = semanaIdx + 1 // 1-based
     return weekNumber % cicloSemanas === 0 && diaIdx === 6
   }
 
-  // Is this the first day of a new week (adds wkb border-left)?
-  function isWeekStart(semanaIdx: number): boolean {
-    return semanaIdx > 0
+  // Is this the first day of a new week within a block (adds border-left)?
+  // localSemanaIdx is 0-based within the block.
+  function isWeekStartInBlock(localSemanaIdx: number): boolean {
+    return localSemanaIdx > 0
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────────
+  const showCoverageSuggest = !isExport && mode === 'edit' && coverageActions?.showSuggest && coverageActions.onSuggest != null
+  const showCoverageReset = !isExport && mode === 'edit'
+    && (coverageActions?.onResetAutomatico != null || coverageActions?.onRestaurarColaboradores != null)
 
-  return (
-    <div className={cn('flex flex-col gap-3', className)}>
-      {/* Grid wrapper — border + rounded + horizontal scroll */}
-      <div className="print-colors overflow-x-auto rounded-md border border-border">
-        {/*
-          We intentionally use a raw <table> here (not the shadcn Table wrapper)
-          because the shadcn Table wraps in an overflow-auto div which conflicts
-          with our own scroll container and breaks sticky columns.
-        */}
-        <table className="w-full caption-bottom border-collapse whitespace-nowrap" style={{ fontSize: 14 }}>
-          {/* ── THEAD ── */}
-          <thead>
-            {/* Row 1: transparent — "Ciclo de N semanas" + S1, S2, ... labels */}
-            <tr>
-              {/* Sticky col 1: label */}
-              <th
-                className="sticky left-0 z-20 bg-background pl-2.5 pr-1 pt-2 pb-0.5 text-left text-xs font-medium text-muted-foreground"
-                style={{ width: 130, minWidth: 130 }}
-              >
-                Ciclo de {cicloSemanas} semanas
-              </th>
-              {/* Sticky col 2: Var (empty in row 1) */}
-              <th
-                className="sticky z-20 bg-background pt-2 pb-0.5"
-                style={{ left: 130, width: 50, minWidth: 50 }}
-              />
-              {/* Sticky col 3: Fixo (empty in row 1) */}
-              <th
-                className="sticky z-20 bg-background pt-2 pb-0.5 border-r border-border"
-                style={{ left: 180, width: 50, minWidth: 50 }}
-              />
-              {/* Week span headers: S1, S2, ... */}
-              {Array.from({ length: totalSemanas }).map((_, semanaIdx) => (
+  // ─── renderTableBlock ───────────────────────────────────────────────────────
+  // Renders a single <table> for weeks [startWeek, endWeek) (0-based indices).
+  // For variant='app', called once with (0, totalSemanas).
+  // For variant='export', called per block.
+
+  function renderTableBlock(startWeek: number, endWeek: number) {
+    const blockWeekCount = endWeek - startWeek
+
+    // Layout values depend on variant
+    const labelW = isExport ? EXPORT_LABEL_COL_WIDTH : LABEL_COL_WIDTH
+    const folgaW = isExport ? EXPORT_FOLGA_COL_WIDTH : FOLGA_COL_WIDTH
+    const varLeft = labelW
+    const fixoLeft = labelW + folgaW
+
+    return (
+      <table
+        className={cn(
+          'w-full caption-bottom border-collapse whitespace-nowrap',
+          isExport && 'print-colors',
+        )}
+        style={{
+          fontSize: isExport ? 10 : 14,
+          tableLayout: isExport ? 'fixed' : undefined,
+        }}
+      >
+        {/* ── THEAD ── */}
+        <thead>
+          {/* Row 1: "Ciclo de N semanas" + S1, S2, ... labels */}
+          <tr>
+            {/* Col 1: label */}
+            <th
+              className={cn(
+                'pl-2.5 pr-1 pt-2 pb-0.5 text-left text-xs font-medium text-muted-foreground',
+                !isExport && 'sticky left-0 z-20 bg-background',
+              )}
+              style={isExport
+                ? { width: labelW }
+                : { width: labelW, minWidth: labelW }}
+            >
+              Ciclo de {cicloSemanas} semanas
+            </th>
+            {/* Col 2: Var (empty in row 1) */}
+            <th
+              className={cn(
+                'pt-2 pb-0.5',
+                !isExport && 'sticky z-20 bg-background',
+              )}
+              style={isExport
+                ? { width: folgaW }
+                : { left: varLeft, width: folgaW, minWidth: folgaW }}
+            />
+            {/* Col 3: Fixo (empty in row 1) */}
+            <th
+              className={cn(
+                'pt-2 pb-0.5 border-r border-border',
+                !isExport && 'sticky z-20 bg-background',
+              )}
+              style={isExport
+                ? { width: folgaW }
+                : { left: fixoLeft, width: folgaW, minWidth: folgaW }}
+            />
+            {/* Week span headers: S{n}, S{n+1}, ... */}
+            {Array.from({ length: blockWeekCount }).map((_, localIdx) => {
+              const absIdx = startWeek + localIdx
+              return (
                 <th
-                  key={semanaIdx}
+                  key={absIdx}
                   colSpan={7}
                   className={cn(
                     'pt-2 pb-0.5 text-center text-xs font-normal text-muted-foreground',
-                    isWeekStart(semanaIdx) && 'border-l border-border',
-                    // cycle-end marker on the header span (right border of last week in cycle)
-                    (semanaIdx + 1) % cicloSemanas === 0 && 'border-r-2 border-r-purple-500',
+                    isWeekStartInBlock(localIdx) && 'border-l border-border',
+                    (absIdx + 1) % cicloSemanas === 0 && 'border-r-2 border-r-purple-500',
                   )}
                 >
-                  S{semanaIdx + 1}
+                  S{absIdx + 1}
                 </th>
-              ))}
-            </tr>
+              )
+            })}
+          </tr>
 
-            {/* Row 2: with bg-muted — empty | Var | Fixo | S T Q Q S S D... */}
-            <tr className="border-b border-border bg-muted">
-              {/* Sticky col 1: empty */}
-              <th
-                className="sticky left-0 z-20 bg-muted pl-2.5 pr-1 py-2 text-left"
-                style={{ width: 130, minWidth: 130 }}
-              />
-              {/* Sticky col 2: "Var" */}
-              <th
-                className="sticky z-20 bg-muted px-1 py-2 text-center text-xs font-medium text-muted-foreground"
-                style={{ left: 130, width: 50, minWidth: 50 }}
-              >
-                Var
-              </th>
-              {/* Sticky col 3: "Fixo" */}
-              <th
-                className="sticky z-20 bg-muted px-1 py-2 text-center text-xs font-medium text-muted-foreground border-r border-border"
-                style={{ left: 180, width: 50, minWidth: 50 }}
-              >
-                Fixo
-              </th>
-              {/* Day headers for every week */}
-              {Array.from({ length: totalSemanas }).map((_, semanaIdx) =>
-                DIAS_HEADER.map((letra, diaIdx) => {
-                  const isDom = diaIdx === 6
-                  const isFirst = diaIdx === 0 && isWeekStart(semanaIdx)
-                  const isCycleEndCell = isCycleEnd(semanaIdx, diaIdx)
-                  return (
-                    <th
-                      key={`${semanaIdx}-${diaIdx}`}
-                      className={cn(
-                        'px-[3px] py-2 text-center text-xs font-medium text-muted-foreground',
-                        isDom && 'font-semibold text-warning',
-                        isFirst && 'border-l border-border',
-                        isCycleEndCell && 'border-r-2 border-r-purple-500',
-                      )}
-                    >
-                      {letra}
-                    </th>
-                  )
-                }),
+          {/* Row 2: bg-muted — empty | Var | Fixo | S T Q Q S S D... */}
+          <tr className="border-b border-border bg-muted">
+            {/* Col 1: empty */}
+            <th
+              className={cn(
+                'pl-2.5 pr-1 py-2 text-left',
+                !isExport && 'sticky left-0 z-20 bg-muted',
               )}
-            </tr>
-          </thead>
+              style={isExport
+                ? { width: labelW }
+                : { width: labelW, minWidth: labelW }}
+            />
+            {/* Col 2: "Var" */}
+            <th
+              className={cn(
+                'px-1 py-2 text-center text-xs font-medium text-muted-foreground',
+                !isExport && 'sticky z-20 bg-muted',
+              )}
+              style={isExport
+                ? { width: folgaW }
+                : { left: varLeft, width: folgaW, minWidth: folgaW }}
+            >
+              Var
+            </th>
+            {/* Col 3: "Fixo" */}
+            <th
+              className={cn(
+                'px-1 py-2 text-center text-xs font-medium text-muted-foreground border-r border-border',
+                !isExport && 'sticky z-20 bg-muted',
+              )}
+              style={isExport
+                ? { width: folgaW }
+                : { left: fixoLeft, width: folgaW, minWidth: folgaW }}
+            >
+              Fixo
+            </th>
+            {/* Day headers for every week in this block */}
+            {Array.from({ length: blockWeekCount }).map((_, localIdx) => {
+              const absIdx = startWeek + localIdx
+              return DIAS_HEADER.map((letra, diaIdx) => {
+                const isDom = diaIdx === 6
+                const isFirst = diaIdx === 0 && isWeekStartInBlock(localIdx)
+                const isCycleEndCell = isCycleEnd(absIdx, diaIdx)
+                return (
+                  <th
+                    key={`${absIdx}-${diaIdx}`}
+                    className={cn(
+                      'px-[3px] py-2 text-center text-xs font-medium text-muted-foreground',
+                      isDom && 'font-semibold text-warning',
+                      isFirst && 'border-l border-border',
+                      isCycleEndCell && 'border-r-2 border-r-purple-500',
+                    )}
+                  >
+                    {letra}
+                  </th>
+                )
+              })
+            })}
+          </tr>
+        </thead>
 
-          {/* ── TBODY ── */}
-          <tbody>
-            {/* Colaborador rows */}
-            {rows.map((row) => (
-              <tr
-                key={row.id}
-                className="group border-b border-border/50 transition-colors hover:bg-muted"
+        {/* ── TBODY ── */}
+        <tbody>
+          {/* Colaborador rows */}
+          {rows.map((row) => (
+            <tr
+              key={row.id}
+              className={cn(
+                'border-b border-border/50',
+                !isExport && 'group transition-colors hover:bg-muted',
+              )}
+            >
+              {/* Col 1: Name + Posto */}
+              <td
+                className={cn(
+                  'pl-2.5 pr-1 py-1.5 text-left',
+                  !isExport && 'sticky left-0 z-10 bg-background',
+                )}
+                style={isExport
+                  ? { width: labelW }
+                  : { width: labelW, minWidth: labelW }}
               >
-                {/* Col 1: Name + Posto (sticky) */}
-                <td
-                  className="sticky left-0 z-10 bg-background pl-2.5 pr-1 py-1.5 text-left"
-                  style={{ width: 130, minWidth: 130 }}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-[13px] font-medium text-foreground" style={{ lineHeight: 1.3 }}>{row.nome}</span>
-                    <span className="text-[11px] text-muted-foreground" style={{ lineHeight: 1.3 }}>{row.posto}</span>
-                  </div>
-                </td>
+                <div className="flex flex-col">
+                  <span
+                    className={cn(
+                      'font-medium text-foreground',
+                      isExport ? 'text-[10px]' : 'text-[13px]',
+                    )}
+                    style={{ lineHeight: 1.3 }}
+                  >
+                    {row.nome}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-muted-foreground',
+                      isExport ? 'text-[8px]' : 'text-[11px]',
+                    )}
+                    style={{ lineHeight: 1.3 }}
+                  >
+                    {row.posto}
+                  </span>
+                </div>
+              </td>
 
-                {/* Col 2: Var folga select (sticky) */}
-                <td
-                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle"
-                  style={{ left: 130, width: 50, minWidth: 50 }}
-                >
+              {/* Col 2: Var folga */}
+              <td
+                className={cn(
+                  'px-1 py-1.5 text-center align-middle',
+                  !isExport && 'sticky z-10 bg-background',
+                )}
+                style={isExport
+                  ? { width: folgaW }
+                  : { left: varLeft, width: folgaW, minWidth: folgaW }}
+              >
+                {isExport ? (
+                  <span className={cn('text-[9px]', row.variavel ? 'text-foreground' : 'text-muted-foreground')}>
+                    {row.variavel ? DIAS_CURTOS[row.variavel] : '-'}
+                  </span>
+                ) : (
                   <FolgaSelect
                     colaboradorId={row.id}
-                    field="folga_variavel_dia_semana"
+                    field="variavel"
                     value={row.variavel}
                     otherValue={row.fixa}
+                    overrideLocal={row.overrideVariavelLocal}
+                    baseColaborador={row.baseVariavelColaborador}
                     mode={mode}
                     blocked={row.blocked}
                     onFolgaChange={onFolgaChange}
                   />
-                </td>
+                )}
+              </td>
 
-                {/* Col 3: Fixo folga select (sticky) */}
-                <td
-                  className="sticky z-10 bg-background px-1 py-1.5 text-center align-middle border-r border-border"
-                  style={{ left: 180, width: 50, minWidth: 50 }}
-                >
+              {/* Col 3: Fixo folga */}
+              <td
+                className={cn(
+                  'px-1 py-1.5 text-center align-middle border-r border-border',
+                  !isExport && 'sticky z-10 bg-background',
+                )}
+                style={isExport
+                  ? { width: folgaW }
+                  : { left: fixoLeft, width: folgaW, minWidth: folgaW }}
+              >
+                {isExport ? (
+                  <span className={cn('text-[9px]', row.fixa ? 'text-foreground' : 'text-muted-foreground')}>
+                    {row.fixa ? DIAS_CURTOS[row.fixa] : '-'}
+                  </span>
+                ) : (
                   <FolgaSelect
                     colaboradorId={row.id}
-                    field="folga_fixa_dia_semana"
+                    field="fixa"
                     value={row.fixa}
                     otherValue={row.variavel}
+                    overrideLocal={row.overrideFixaLocal}
+                    baseColaborador={row.baseFixaColaborador}
                     mode={mode}
                     blocked={row.blocked}
                     onFolgaChange={onFolgaChange}
                   />
-                </td>
-
-                {/* Symbol cells for each day of each week */}
-                {row.semanas.map((semana, semanaIdx) =>
-                  semana.map((simbolo, diaIdx) => {
-                    const config = SIMBOLO_CONFIG[simbolo as Simbolo] ?? SIMBOLO_CONFIG['.']
-                    const isFirst = diaIdx === 0 && isWeekStart(semanaIdx)
-                    const isCycleEndCell = isCycleEnd(semanaIdx, diaIdx)
-                    return (
-                      <td
-                        key={`${semanaIdx}-${diaIdx}`}
-                        className={cn(
-                          'px-[3px] py-1.5 text-center align-middle',
-                          isFirst && 'border-l border-border',
-                          isCycleEndCell && 'border-r-2 border-r-purple-500',
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            'inline-block min-w-[30px] rounded py-1 px-0.5 text-xs font-semibold',
-                            config.cell,
-                          )}
-                        >
-                          {simbolo === '.' ? '\u00B7' : simbolo === '-' ? '\u2013' : simbolo}
-                        </span>
-                      </td>
-                    )
-                  }),
                 )}
-              </tr>
-            ))}
-
-            {/* COBERTURA row */}
-            <tr className="border-t-2 border-border">
-              {/* Label (sticky) */}
-              <td
-                className="sticky left-0 z-10 bg-background pl-2.5 pr-1 py-2 text-left text-xs font-semibold text-blue-500 border-t-2 border-border"
-                style={{ width: 130, minWidth: 130 }}
-              >
-                COBERTURA
               </td>
-              {/* Empty Var cell (sticky) */}
-              <td
-                className="sticky z-10 bg-background px-1 py-2 border-t-2 border-border"
-                style={{ left: 130, width: 50, minWidth: 50 }}
-              />
-              {/* Empty Fixo cell (sticky) */}
-              <td
-                className="sticky z-10 bg-background px-1 py-2 border-r border-border border-t-2"
-                style={{ left: 180, width: 50, minWidth: 50 }}
-              />
 
-              {/* Coverage cells */}
-              {Array.from({ length: totalSemanas }).map((_, semanaIdx) =>
-                Array.from({ length: 7 }).map((_, diaIdx) => {
-                  const cob = cobertura[semanaIdx]?.[diaIdx] ?? 0
-                  const dem = demanda[diaIdx] ?? 0
-                  const isDeficit = cob < dem
-                  const isOk = dem > 0 && cob >= dem
-                  const isFirst = diaIdx === 0 && isWeekStart(semanaIdx)
-                  const isCycleEndCell = isCycleEnd(semanaIdx, diaIdx)
+              {/* Symbol cells for each day of each week in this block */}
+              {row.semanas.slice(startWeek, endWeek).map((semana, localIdx) => {
+                const absIdx = startWeek + localIdx
+                return semana.map((simbolo, diaIdx) => {
+                  const config = SIMBOLO_CONFIG[simbolo as Simbolo] ?? SIMBOLO_CONFIG['.']
+                  const isFirst = diaIdx === 0 && isWeekStartInBlock(localIdx)
+                  const isCycleEndCell = isCycleEnd(absIdx, diaIdx)
                   return (
                     <td
-                      key={`cov-${semanaIdx}-${diaIdx}`}
+                      key={`${absIdx}-${diaIdx}`}
                       className={cn(
-                        'px-[3px] py-2 text-center align-middle text-xs font-bold',
+                        'px-[3px] py-1.5 text-center align-middle',
                         isFirst && 'border-l border-border',
                         isCycleEndCell && 'border-r-2 border-r-purple-500',
-                        isDeficit && 'text-destructive',
-                        isOk && 'text-success',
-                        !isDeficit && !isOk && 'text-foreground',
                       )}
                     >
-                      {cob}
-                      <span className="text-[10px] font-normal text-muted-foreground">
-                        /{dem}
+                      <span
+                        className={cn(
+                          'inline-block rounded px-0.5 text-xs font-semibold',
+                          isExport ? 'py-0.5' : 'min-w-[30px] py-1',
+                          config.cell,
+                        )}
+                      >
+                        {simbolo === '.' ? '\u00B7' : simbolo === '-' ? '\u2013' : simbolo}
                       </span>
                     </td>
                   )
-                }),
-              )}
+                })
+              })}
             </tr>
-          </tbody>
-        </table>
-      </div>
+          ))}
 
-      {/* ── Legenda ── */}
+          {/* COBERTURA row */}
+          <tr className="border-t-2 border-border">
+            {/* Label */}
+            <td
+              className={cn(
+                'pl-2.5 pr-1 py-2 text-left text-xs font-semibold text-blue-600 dark:text-blue-500 border-t-2 border-border',
+                !isExport && 'sticky left-0 z-10 bg-background',
+              )}
+              style={isExport
+                ? { width: labelW }
+                : { width: labelW, minWidth: labelW }}
+            >
+              COBERTURA
+            </td>
+            {/* Empty Var cell */}
+            <td
+              className={cn(
+                'px-1 py-2 border-t-2 border-border',
+                !isExport && 'sticky z-10 bg-background',
+              )}
+              style={isExport
+                ? { width: folgaW }
+                : { left: varLeft, width: folgaW, minWidth: folgaW }}
+            >
+              {showCoverageSuggest && (
+                <div className="flex justify-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-warning hover:text-warning"
+                    title="Sugerir ajustes"
+                    onClick={coverageActions!.onSuggest}
+                    disabled={coverageActions?.suggestDisabled}
+                  >
+                    <Lightbulb className="size-4" />
+                    Sugerir
+                  </Button>
+                </div>
+              )}
+            </td>
+            {/* Empty Fixo cell */}
+            <td
+              className={cn(
+                'px-1 py-2 border-r border-border border-t-2',
+                !isExport && 'sticky z-10 bg-background',
+              )}
+              style={isExport
+                ? { width: folgaW }
+                : { left: fixoLeft, width: folgaW, minWidth: folgaW }}
+            >
+              {showCoverageReset && (
+                <div className="flex justify-center">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        title="Resetar simulacao"
+                      >
+                        <RotateCcw className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {coverageActions?.onResetAutomatico && (
+                        <DropdownMenuItem onClick={coverageActions.onResetAutomatico}>
+                          Voltar ao automatico
+                        </DropdownMenuItem>
+                      )}
+                      {coverageActions?.onRestaurarColaboradores && (
+                        <DropdownMenuItem onClick={coverageActions.onRestaurarColaboradores}>
+                          Restaurar dos colaboradores
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
+            </td>
+
+            {/* Coverage cells for weeks in this block */}
+            {Array.from({ length: blockWeekCount }).map((_, localIdx) => {
+              const absIdx = startWeek + localIdx
+              return Array.from({ length: 7 }).map((_, diaIdx) => {
+                const cob = cobertura[absIdx]?.[diaIdx] ?? 0
+                const dem = demanda[diaIdx] ?? 0
+                const isDeficit = cob < dem
+                const isOk = dem > 0 && cob >= dem
+                const isFirst = diaIdx === 0 && isWeekStartInBlock(localIdx)
+                const isCycleEndCell = isCycleEnd(absIdx, diaIdx)
+                return (
+                  <td
+                    key={`cov-${absIdx}-${diaIdx}`}
+                    className={cn(
+                      'px-[3px] py-2 text-center align-middle text-xs font-bold',
+                      isFirst && 'border-l border-border',
+                      isCycleEndCell && 'border-r-2 border-r-purple-500',
+                      isDeficit && 'text-destructive',
+                      isOk && 'text-success',
+                      !isDeficit && !isOk && 'text-foreground',
+                    )}
+                  >
+                    {cob}
+                    <span className="text-[10px] font-normal text-muted-foreground">
+                      /{dem}
+                    </span>
+                  </td>
+                )
+              })
+            })}
+          </tr>
+        </tbody>
+      </table>
+    )
+  }
+
+  // ─── renderLegenda ──────────────────────────────────────────────────────────
+
+  function renderLegenda() {
+    return (
       <div className="flex flex-wrap items-center gap-3.5 text-xs text-muted-foreground">
         {LEGENDA_SIMBOLOS.map((sim) => {
           const config = SIMBOLO_CONFIG[sim]
@@ -391,7 +608,7 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
 
         {/* Fim do ciclo */}
         <span className="flex items-center gap-1.5 border-l border-border pl-3">
-          <span className="h-[14px] w-[3px] rounded-sm bg-purple-500" />
+          <span className="h-[14px] w-[3px] rounded-sm bg-purple-500 dark:bg-purple-400" />
           Fim do ciclo
         </span>
 
@@ -404,6 +621,66 @@ export function CicloGrid({ data, mode, onFolgaChange, className }: CicloGridPro
           Deficit
         </span>
       </div>
+    )
+  }
+
+  // ─── Render (export variant — paginated) ────────────────────────────────────
+
+  if (isExport && totalSemanas > MAX_WEEKS_PER_BLOCK) {
+    const blocks: { start: number; end: number }[] = []
+    for (let i = 0; i < totalSemanas; i += MAX_WEEKS_PER_BLOCK) {
+      blocks.push({ start: i, end: Math.min(i + MAX_WEEKS_PER_BLOCK, totalSemanas) })
+    }
+
+    return (
+      <div className={cn('flex flex-col gap-3', className)}>
+        {blocks.map((block, blockIdx) => (
+          <div
+            key={blockIdx}
+            style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
+          >
+            {blocks.length > 1 && (
+              <div className="mb-1 pl-1.5 text-[10px] font-semibold text-muted-foreground">
+                S{block.start + 1} &ndash; S{block.end}
+              </div>
+            )}
+            <div className="print-colors rounded-md border border-border">
+              {renderTableBlock(block.start, block.end)}
+            </div>
+          </div>
+        ))}
+        {renderLegenda()}
+      </div>
+    )
+  }
+
+  // ─── Render (export variant — single block, <= 4 weeks) ─────────────────────
+
+  if (isExport) {
+    return (
+      <div className={cn('flex flex-col gap-3', className)}>
+        <div className="print-colors rounded-md border border-border">
+          {renderTableBlock(0, totalSemanas)}
+        </div>
+        {renderLegenda()}
+      </div>
+    )
+  }
+
+  // ─── Render (app variant — original behavior) ──────────────────────────────
+
+  return (
+    <div className={cn('flex flex-col gap-3', className)}>
+      {/* Grid wrapper — border + rounded + horizontal scroll */}
+      <div className={cn('print-colors overflow-x-auto rounded-md border', frameBorderClassName ?? 'border-border')}>
+        {/*
+          We intentionally use a raw <table> here (not the shadcn Table wrapper)
+          because the shadcn Table wraps in an overflow-auto div which conflicts
+          with our own scroll container and breaks sticky columns.
+        */}
+        {renderTableBlock(0, totalSemanas)}
+      </div>
+      {renderLegenda()}
     </div>
   )
 }
