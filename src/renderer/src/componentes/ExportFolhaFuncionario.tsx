@@ -295,7 +295,7 @@ function WeekTable({
                       fontWeight: 600,
                     })}
                   >
-                    {fmtTime(a.hora_inicio)} \u2013 {fmtTime(a.hora_fim)}
+                    {`${fmtTime(a.hora_inicio)} \u2013 ${fmtTime(a.hora_fim)}`}
                   </td>
                   <td style={tdStyle({})}>{almoco}</td>
                   <td
