@@ -2,6 +2,7 @@ interface BuildStandaloneHtmlOptions {
   title?: string
   extraCss?: string
   forceLight?: boolean
+  pageOrientation?: 'landscape' | 'portrait'
 }
 
 function collectDocumentCss(): string {
@@ -52,6 +53,7 @@ ${appCss}
       margin: 0;
       padding: 0;
     }
+    @page { size: A4 ${options.pageOrientation ?? 'landscape'}; margin: 10mm; }
     @media print {
       body {
         -webkit-print-color-adjust: exact;

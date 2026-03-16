@@ -296,6 +296,81 @@ async function autoDefinirFolgasPendentesPosOficializacao(escalaId: number, seto
   }
 }
 
+async function aplicarFolgasLocaisPosOficializacao(
+  setorId: number,
+  overridesLocais: Record<string, { fixa?: DiaSemana | null; variavel?: DiaSemana | null }> | undefined,
+): Promise<void> {
+  const entries = Object.entries(overridesLocais ?? {}).filter(([key]) => /^\d+$/.test(key))
+  if (entries.length === 0) return
+
+  const colaboradorIds = entries.map(([key]) => Number(key))
+  const colaboradoresAtivos = await queryAll<{ id: number }>(
+    `SELECT id
+     FROM colaboradores
+     WHERE setor_id = ? AND ativo = TRUE AND id IN (${colaboradorIds.map(() => '?').join(', ')})`,
+    setorId,
+    ...colaboradorIds,
+  )
+  const ativos = new Set(colaboradoresAtivos.map((item) => item.id))
+
+  for (const [key, override] of entries) {
+    const colaboradorId = Number(key)
+    if (!ativos.has(colaboradorId)) continue
+
+    const existe = await queryOne<{
+      id: number
+      folga_fixa_dia_semana: DiaSemana | null
+      folga_variavel_dia_semana: DiaSemana | null
+    }>(
+      'SELECT id, folga_fixa_dia_semana, folga_variavel_dia_semana FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL',
+      colaboradorId,
+    )
+
+    const nextFixa = Object.prototype.hasOwnProperty.call(override, 'fixa')
+      ? override.fixa ?? null
+      : (existe?.folga_fixa_dia_semana ?? null)
+    const nextVariavel = Object.prototype.hasOwnProperty.call(override, 'variavel')
+      ? override.variavel ?? null
+      : (existe?.folga_variavel_dia_semana ?? null)
+
+    if (existe) {
+      await execute(
+        `UPDATE colaborador_regra_horario
+         SET folga_fixa_dia_semana = ?, folga_variavel_dia_semana = ?, ativo = TRUE
+         WHERE id = ?`,
+        nextFixa,
+        nextVariavel,
+        existe.id,
+      )
+      continue
+    }
+
+    await execute(
+      `INSERT INTO colaborador_regra_horario
+       (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana)
+       VALUES (?, NULL, TRUE, NULL, NULL, NULL, NULL, ?, ?)`,
+      colaboradorId,
+      nextFixa,
+      nextVariavel,
+    )
+  }
+}
+
+async function limparOverridesLocaisSetor(setorId: number): Promise<void> {
+  const setor = await queryOne<{ simulacao_config_json?: string | null }>(
+    'SELECT simulacao_config_json FROM setores WHERE id = ?',
+    setorId,
+  )
+  const config = normalizeSetorSimulacaoConfig(setor?.simulacao_config_json ?? null)
+  if (Object.keys(config.setor.overrides_locais).length === 0) return
+  config.setor.overrides_locais = {}
+  await execute(
+    'UPDATE setores SET simulacao_config_json = ? WHERE id = ?',
+    stringifySetorSimulacaoConfig(config),
+    setorId,
+  )
+}
+
 // =============================================================================
 // EMPRESA (2 handlers)
 // =============================================================================
@@ -1169,14 +1244,25 @@ const escalasOficializar = t.procedure
     await execute("UPDATE escalas SET status = 'OFICIAL' WHERE id = ?", input.id)
     await atualizarEscalaEquipeSnapshot(input.id, escala.setor_id)
 
+    if (escala.simulacao_config_json) {
+      const cfg = parseEscalaSimulacaoConfig(escala.simulacao_config_json ?? null)
+      await aplicarFolgasLocaisPosOficializacao(escala.setor_id, cfg.setor_overrides_locais)
+    }
+
     try {
       await autoDefinirFolgasPendentesPosOficializacao(input.id, escala.setor_id)
     } catch (err) {
       console.warn('[escalas.oficializar] Falha ao auto-definir folgas fixa/variavel:', err)
     }
 
+    try {
+      await limparOverridesLocaisSetor(escala.setor_id)
+    } catch (err) {
+      console.warn('[escalas.oficializar] Falha ao limpar overrides locais do setor:', err)
+    }
+
     const result = await queryOne('SELECT * FROM escalas WHERE id = ?', input.id)
-    broadcastInvalidation(['escalas'])
+    broadcastInvalidation(['escalas', 'regras_padrao', 'setores'], escala.setor_id)
     return result
   })
 
@@ -1345,9 +1431,6 @@ const escalasGerar = t.procedure
       throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
 
-    // Limpar rascunhos anteriores deste setor (max 1 rascunho por setor)
-    await execute(`DELETE FROM escalas WHERE setor_id = ? AND status = 'RASCUNHO'`, setorId)
-
     const escalaId = await persistirSolverResult(
       setorId, input.data_inicio, input.data_fim,
       solverResult, inputHash, regimesOverride,
@@ -1496,7 +1579,7 @@ const exportSalvarHTML = t.procedure
   })
 
 const exportImprimirPDF = t.procedure
-  .input<{ html: string; filename?: string }>()
+  .input<{ html: string; filename?: string; landscape?: boolean }>()
   .action(async ({ input }): Promise<{ filepath: string } | null> => {
     const win = new BrowserWindow({
       show: false,
@@ -1510,6 +1593,7 @@ const exportImprimirPDF = t.procedure
 
       const pdfBuffer = await win.webContents.printToPDF({
         pageSize: 'A4',
+        landscape: input.landscape ?? true,
         printBackground: true,
         margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
       })
@@ -3340,15 +3424,9 @@ const iaConversasExportar = t.procedure
 const iaSessaoProcessar = t.procedure
   .input<{ conversa_id: string }>()
   .action(async ({ input }) => {
-    const { extractMemories } = await import('./ia/session-processor')
-    const { buildModelFactory } = await import('./ia/config')
+    const { extractMemories, indexSession } = await import('./ia/session-processor')
 
-    // Carrega config
-    const config = await queryOne<import('@shared/index').IaConfiguracao>(
-      'SELECT * FROM configuracao_ia LIMIT 1')
-    if (!config) return { ok: true }
-
-    // Carrega conversa + mensagens
+    // Carrega conversa + mensagens (nao depende de config IA)
     const conversa = await queryOne<{ id: string; titulo: string }>(
       'SELECT id, titulo FROM ia_conversas WHERE id = ?', input.conversa_id)
     if (!conversa) return { ok: true }
@@ -3368,13 +3446,22 @@ const iaSessaoProcessar = t.procedure
       timestamp: m.timestamp,
     }))
 
-    // Smart Extraction — só se toggle ON + API configurada
-    if (config.memoria_automatica) {
+    // 1. Session Indexing — SEMPRE roda (embedding local, gratis)
+    try {
+      await indexSession(input.conversa_id, conversa.titulo, mensagens)
+    } catch (err) {
+      console.warn('[Session] indexSession falhou:', (err as Error).message)
+    }
+
+    // 2. Smart Extraction — so se toggle ON + API configurada (pago)
+    const config = await queryOne<import('@shared/index').IaConfiguracao>(
+      'SELECT * FROM configuracao_ia LIMIT 1')
+    if (config?.memoria_automatica) {
+      const { buildModelFactory } = await import('./ia/config')
       const factory = buildModelFactory(config)
       if (factory) {
         try {
           await extractMemories(input.conversa_id, mensagens, factory.createModel, factory.modelo)
-          console.log('[Session] Extracted memories:', conversa.titulo)
         } catch (err) {
           console.warn('[Session] extractMemories falhou:', (err as Error).message)
         }
