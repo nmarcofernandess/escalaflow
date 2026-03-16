@@ -6,7 +6,7 @@ Instruções para Claude Code ao trabalhar neste repositório.
 
 ## Contexto do Projeto
 
-**EscalaFlow** é um app desktop offline para geração automática de escalas de trabalho em supermercados. Desenvolvido para o RH do Supermercado Fernandes (pais do Marco) — usuários não técnicos.
+**EscalaFlow** é um app desktop offline para geração automática de escalas de trabalho em varejo. Desenvolvido para gestores de RH — usuários não técnicos.
 
 - **Produto offline** — sem login, sem internet, sem servidor, sem SaaS
 - **Motor Python (OR-Tools CP-SAT)** — o coração do sistema, via bridge TS → Python
@@ -90,17 +90,18 @@ escalaflow/
 │   ├── e2e/                     # Playwright E2E tests
 │   └── renderer/                # Component tests
 │
-├── docs/                        # Documentação técnica
-│   ├── COMO_FAZER_RELEASE.md    # Guia de release e auto-update
-│   ├── MOTOR_V3_RFC.md          # RFC canônico do motor (20 HARD, SOFT, explicabilidade)
-│   ├── BUILD_V2_ESCALAFLOW.md   # Arquitetura v2 (referência histórica)
-│   └── flowai/                  # Docs do sistema de IA (tools, prompts, evals)
+├── docs/                        # Documentação técnica (canônica)
+│   ├── motor-regras.md          # RFC canônico do motor (20 HARD, SOFT, explicabilidade)
+│   ├── motor-spec.md            # Spec técnica do motor (edge cases, entrada/saída)
+│   ├── release.md               # Guia de release e auto-update
+│   ├── solver-consistency.md    # Guia de teste de paridade solver/validador
+│   ├── ia-sistema.md            # Como o sistema de IA funciona
+│   └── ia-resumo-aba.md         # Resumo aba usuário vs IA
 │
 ├── .github/
 │   └── workflows/
 │       └── release.yml          # CI/CD: build Mac + Windows via GitHub Actions (trigger: tag v*)
 │
-├── specs/                       # Specs e logs de implementação por feature
 ├── electron-builder.yml         # Config de build e publish (GitHub Releases)
 ├── electron.vite.config.ts      # Config electron-vite (main + preload + renderer)
 └── package.json
@@ -336,7 +337,7 @@ Provider `'local'` roda inferência in-process via `node-llama-cpp` — sem inte
 |----------|--------|-------|
 | Empresa | `empresa` | Singleton (1 registro) |
 | TipoContrato | `tipos_contrato` | Templates CLT 44h, 36h, 30h, Estagiário 20h |
-| Setor | `setores` | Departamentos do supermercado |
+| Setor | `setores` | Departamentos da empresa |
 | Demanda | `demandas` | Cobertura mínima por faixa horária/dia |
 | Colaborador | `colaboradores` | Funcionários (setor + contrato) |
 | Excecao | `excecoes` | Férias, atestado, bloqueio |
@@ -469,7 +470,7 @@ npm run release:mac      # build + upload direto pro GitHub (gera YAMLs automati
 
 O app verifica atualizações automaticamente ao iniciar (5s de delay).
 
-**Guia completo:** `docs/COMO_FAZER_RELEASE.md`
+**Guia completo:** `docs/release.md`
 
 ### Arquivos chave do auto-update
 
@@ -671,22 +672,14 @@ escalaflow-backup-2026-03-13T14-30-00-000.zip
 
 ---
 
-## Ciclo V3 — Estado atual (2026-03-14)
+## Ciclo V3 — Estado atual
 
-O sistema de ciclos passou por refatoracao significativa. Estado REAL:
+O sistema de ciclos passou por refatoracao significativa:
 
 - **domingo_ciclo**: removido do `RegraHorarioColaborador`. Calculado automaticamente pela bridge (`calcularCicloDomingo`).
 - **XOR folga variavel**: offset NEGATIVO (mesma semana). `constraints.py` OFFSET = {SEG:-6..SAB:-1}.
-- **H3_DOM_MAX_CONSEC**: regra existe no seed mas `add_dom_max_consecutivo` esta IMPORTADO MAS NUNCA CHAMADO no solver.
-- **pinned_folga_externo**: tipo existe no TS (bridge + tipc) mas NAO IMPLEMENTADO no Python.
-- **folga_fixa=DOM**: caso especial NAO tratado no solver (bomba logica). Ver `docs/ANALYST_PAINEL_UNICO_ESCALA.md` secao 35.
+- **folga_fixa=DOM**: guards implementados no solver, bridge e TS.
 - **Preview Nivel 1**: funciona no SetorDetalhe via `previewNivel1` useMemo + `converterNivel1ParaEscala`.
-- **SimuladorCicloGrid**: ainda importado mas deveria ser substituido pelo CicloGrid unificado.
-- **autoFolgaInteligente**: NAO EXISTE (so pseudo-codigo no doc).
-- **Context Provider**: NAO EXISTE. 50+ useApiData independentes. Dados stale.
-
-Spec completa: `docs/ANALYST_PAINEL_UNICO_ESCALA.md` (38 secoes)
-Warlog: `specs/WARLOG_PAINEL_UNICO.md` (30 tasks)
 
 ## Checklist antes de commitar
 

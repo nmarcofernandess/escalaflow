@@ -193,6 +193,7 @@ export function MemoriaPagina() {
   }
 
   // --- Graph ---
+  const [filtroGraph, setFiltroGraph] = useState<'todos' | 'usuario' | 'sistema'>('todos')
   const [graphStats, setGraphStats] = useState<{
     entities_count: number
     relations_count: number
@@ -212,11 +213,12 @@ export function MemoriaPagina() {
   const graphContainerRef = useRef<HTMLDivElement>(null)
   const [graphWidth, setGraphWidth] = useState(800)
 
-  const carregarGraphStats = async () => {
+  const graphOrigem = filtroGraph === 'todos' ? undefined : filtroGraph
+
+  const carregarGraphStats = async (origem?: 'usuario' | 'sistema') => {
     try {
-      const stats = await servicoConhecimento.graphStats()
+      const stats = await servicoConhecimento.graphStats(origem ?? graphOrigem)
       setGraphStats(stats)
-      // Init active types from stats
       if (stats.tipos.length > 0) {
         setActiveTypes(stats.tipos.map(t => t.tipo))
       }
@@ -225,10 +227,10 @@ export function MemoriaPagina() {
     }
   }
 
-  const carregarGraphData = async () => {
+  const carregarGraphData = async (origem?: 'usuario' | 'sistema') => {
     setLoadingGraph(true)
     try {
-      const result = await servicoConhecimento.graphData(undefined, 300)
+      const result = await servicoConhecimento.graphData(origem ?? graphOrigem, 300)
       setGraphNodes(result.nodes)
       setGraphLinks(result.links)
     } catch {
@@ -242,7 +244,9 @@ export function MemoriaPagina() {
   useEffect(() => {
     carregarGraphStats()
     carregarGraphData()
-  }, [])
+    setSelectedNode(null)
+    setExploredData(null)
+  }, [filtroGraph])
 
   // Measure container width for responsive graph
   useEffect(() => {
@@ -558,9 +562,32 @@ export function MemoriaPagina() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Network className="size-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Grafo de Conhecimento</span>
+                  <div className="flex items-center gap-3">
+                    <Select value={filtroGraph} onValueChange={(v) => setFiltroGraph(v as 'todos' | 'usuario' | 'sistema')}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">
+                          <span className="flex items-center gap-1.5">
+                            <Network className="size-3.5" />
+                            Todos
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="usuario">
+                          <span className="flex items-center gap-1.5">
+                            <User className="size-3.5" />
+                            Minhas Relacoes
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="sistema">
+                          <span className="flex items-center gap-1.5">
+                            <BookOpen className="size-3.5" />
+                            Sistema
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                     {graphStats && graphStats.entities_count > 0 && (
                       <Badge variant="outline" className="text-xs">
                         {graphStats.entities_count} entidades · {graphStats.relations_count} relacoes
@@ -568,31 +595,33 @@ export function MemoriaPagina() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        setRebuildingGraph(true)
-                        try {
-                          const result = await servicoConhecimento.rebuildGraph('usuario')
-                          toast.success(`Grafo atualizado: ${result.entities_count} entidades, ${result.relations_count} relacoes`)
-                          await carregarGraphStats()
-                          await carregarGraphData()
-                        } catch (err: any) {
-                          toast.error('Erro ao gerar grafo', { description: err?.message })
-                        } finally {
-                          setRebuildingGraph(false)
-                        }
-                      }}
-                      disabled={rebuildingGraph}
-                    >
-                      {rebuildingGraph ? (
-                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="mr-1.5 size-3.5" />
-                      )}
-                      {rebuildingGraph ? 'Analisando...' : 'Atualizar Relacoes'}
-                    </Button>
-                    {import.meta.env.DEV && (
+                    {filtroGraph !== 'sistema' && (
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          setRebuildingGraph(true)
+                          try {
+                            const result = await servicoConhecimento.rebuildGraph('usuario')
+                            toast.success(`Grafo atualizado: ${result.entities_count} entidades, ${result.relations_count} relacoes`)
+                            await carregarGraphStats()
+                            await carregarGraphData()
+                          } catch (err: any) {
+                            toast.error('Erro ao gerar grafo', { description: err?.message })
+                          } finally {
+                            setRebuildingGraph(false)
+                          }
+                        }}
+                        disabled={rebuildingGraph}
+                      >
+                        {rebuildingGraph ? (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-1.5 size-3.5" />
+                        )}
+                        {rebuildingGraph ? 'Analisando...' : 'Atualizar Relacoes'}
+                      </Button>
+                    )}
+                    {import.meta.env.DEV && filtroGraph === 'sistema' && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -612,7 +641,7 @@ export function MemoriaPagina() {
                         disabled={rebuildingGraph}
                       >
                         <Network className="mr-1.5 size-3.5" />
-                        Rebuild Sistema
+                        Rebuild Graph
                       </Button>
                     )}
                   </div>

@@ -1,6 +1,6 @@
 # EscalaFlow
 
-App desktop offline para geração automática de escalas de trabalho em supermercados, com motor de compliance CLT/CCT e assistente IA integrado para gestores de RH não técnicos.
+App desktop offline para geração automática de escalas de trabalho em varejo, com motor de compliance CLT/CCT e assistente IA integrado para gestores de RH não técnicos.
 
 ---
 
@@ -273,7 +273,7 @@ Com 0 violações HARD, clique em **Oficializar**. A escala é travada e pode se
 | H6 | Estagiário nunca trabalha domingo/feriado |
 | H7 | Menor aprendiz: nunca noturno (22h–5h), nunca hora extra |
 | H8 | Grid 15 minutos em toda alocação |
-| H9–H18 | Regras adicionais CLT/CCT (ver `docs/MOTOR_V3_RFC.md`) |
+| H9–H18 | Regras adicionais CLT/CCT (ver `docs/motor-regras.md`) |
 
 ### SOFT (alertas, não bloqueiam)
 
@@ -283,7 +283,7 @@ Desvio de meta semanal, preferência de dia/turno, cobertura de demanda, consist
 
 Padrões operacionais indesejáveis detectados e penalizados pelo motor.
 
-**RFC completo:** `docs/MOTOR_V3_RFC.md`
+**RFC completo:** `docs/motor-regras.md`
 
 ---
 
@@ -295,7 +295,7 @@ Padrões operacionais indesejáveis detectados e penalizados pelo motor.
 |----------|--------|-----------|
 | Empresa | `empresa` | Config global (singleton) |
 | TipoContrato | `tipos_contrato` | Templates: CLT 44h, 36h, 30h, Estagiário 20h |
-| Setor | `setores` | Departamentos do supermercado |
+| Setor | `setores` | Departamentos da empresa |
 | Demanda | `demandas` | Faixas horárias com mínimo de pessoas |
 | Colaborador | `colaboradores` | Funcionários vinculados a setor + contrato |
 | Excecao | `excecoes` | Férias, atestado, bloqueio |
@@ -345,8 +345,7 @@ escalaflow/
 │   ├── solver-cli.ts            # CLI dev do motor (npm run solver:cli)
 │   └── ...                      # db-reset, knowledge-seed, etc
 ├── tests/                       # Unit (vitest), evals IA, E2E (Playwright)
-├── docs/                        # RFCs, guias, arquitetura
-├── specs/                       # Specs por feature
+├── docs/                        # Docs canônicos (motor, release, IA)
 │
 ├── .github/workflows/
 │   └── release.yml              # CI/CD: Mac + Windows via GitHub Actions
@@ -387,8 +386,9 @@ O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui 
 | Arquivo | Conteúdo |
 |---------|----------|
 | `.claude/CLAUDE.md` | Instruções para Claude Code |
-| `docs/MOTOR_V3_RFC.md` | RFC canônico do motor (20 HARD, SOFT, antipatterns) |
-| `docs/COMO_FAZER_RELEASE.md` | Guia completo de releases e auto-update |
-| `docs/BUILD_V2_ESCALAFLOW.md` | Arquitetura v2 (referência histórica) |
-| `docs/flowai/` | Docs do sistema de IA (tools, prompts, evals) |
-| `specs/` | Specs e logs de cada feature implementada |
+| `docs/motor-regras.md` | RFC canônico do motor (20 HARD, SOFT, antipatterns) |
+| `docs/motor-spec.md` | Spec técnica do motor (edge cases, entrada/saída) |
+| `docs/release.md` | Guia completo de releases e auto-update |
+| `docs/solver-consistency.md` | Guia de teste de paridade solver/validador |
+| `docs/ia-sistema.md` | Como o sistema de IA funciona |
+| `docs/ia-resumo-aba.md` | Resumo aba usuário vs IA |

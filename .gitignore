@@ -5,6 +5,9 @@ Thumbs.db
 # Superpowers brainstorm mockups
 .superpowers/
 
+# Docs archive (symlink to devkit)
+.docsescalaflow
+
 # Node
 node_modules/
 .npm
@@ -62,6 +65,8 @@ horario/teste/__pycache__/
 .vscode/
 *.swp
 *.swo
+*.code-workspace
+.mcp.json
 
 # Misc
 *.log
