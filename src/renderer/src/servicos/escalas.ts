@@ -3,6 +3,8 @@ import type {
   Escala,
   EscalaCompletaV3,
   EscalaPreflightResult,
+  EscalaAdvisoryInput,
+  EscalaAdvisoryOutput,
   AjustarAlocacaoRequest,
   StatusEscala,
   RegimeEscala,
@@ -67,4 +69,7 @@ export const escalasService = {
   onSolverLog: (cb: (line: string) => void): (() => void) => {
     return window.electron.ipcRenderer.on('solver-log', cb) as unknown as () => void
   },
+
+  advisory: (input: EscalaAdvisoryInput) =>
+    client['escalas.advisory'](input) as Promise<EscalaAdvisoryOutput>,
 }

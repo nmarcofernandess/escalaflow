@@ -7,6 +7,7 @@ import os from 'node:os'
 import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
 import { validarEscalaV3 } from './motor/validador'
 import { buildSolverInput, computeSolverScenarioHash, runSolver, persistirSolverResult, cancelSolver } from './motor/solver-bridge'
+import { runAdvisory } from './motor/advisory-controller'
 import { inferGenerationModeForOverrides } from './motor/rule-policy'
 import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
@@ -18,6 +19,7 @@ import { resolveMcpPath, isMcpSource } from './mcp-path'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
+  EscalaAdvisoryInput,
   PinnedCell,
   Escala,
   Alocacao,
@@ -2408,6 +2410,12 @@ const escalasGerarPorCicloRotativo = t.procedure
     return validacao
   })
 
+const escalasAdvisory = t.procedure
+  .input<EscalaAdvisoryInput>()
+  .action(async ({ input }) => {
+    return runAdvisory(input)
+  })
+
 // =============================================================================
 // IA CONFIGURAÇÃO
 // =============================================================================
@@ -4221,6 +4229,7 @@ export const router = {
   'escalas.salvarCicloRotativo': escalasSalvarCicloRotativo,
   'escalas.listarCiclosRotativos': escalasListarCiclosRotativos,
   'escalas.gerarPorCicloRotativo': escalasGerarPorCicloRotativo,
+  'escalas.advisory': escalasAdvisory,
   // Dashboard
   'dashboard.resumo': dashboardResumo,
   // Export
