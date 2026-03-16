@@ -585,17 +585,6 @@ export function ExportarEscala({
         />
       )}
 
-      {/* ── Dynamic @page CSS ─────────────────────────────────────────── */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-@media print {
-  @page { size: A4 ${mode === 'funcionario' ? 'portrait' : 'landscape'}; margin: 10mm; }
-  body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-}
-          `.trim(),
-        }}
-      />
     </div>
   )
 }
