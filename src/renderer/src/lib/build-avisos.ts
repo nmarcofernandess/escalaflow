@@ -14,6 +14,7 @@ export interface BuildPreviewAvisosParams {
   semTitular: number
   foraDoPreview: number
   setorNome?: string
+  advisoryDiagnostics?: PreviewDiagnostic[]
 }
 
 /**
@@ -34,6 +35,7 @@ export function buildPreviewAvisos({
   semTitular,
   foraDoPreview,
   setorNome,
+  advisoryDiagnostics,
 }: BuildPreviewAvisosParams): Aviso[] {
   const entries: Aviso[] = []
 
@@ -85,6 +87,18 @@ export function buildPreviewAvisos({
       descricao: aviso.detalhe ?? '',
       contexto_ia: `Aviso de operacao: ${aviso.titulo}. ${aviso.detalhe ?? ''}`,
     })
+  }
+
+  if (advisoryDiagnostics) {
+    for (const diagnostic of advisoryDiagnostics) {
+      entries.push({
+        id: `advisory_${diagnostic.code}`,
+        nivel: diagnostic.severity === 'error' ? 'error' : diagnostic.severity === 'warning' ? 'warning' : 'info',
+        titulo: diagnostic.title,
+        descricao: diagnostic.detail,
+        contexto_ia: `Diagnostico do advisory solver: ${diagnostic.title}. ${diagnostic.detail}`,
+      })
+    }
   }
 
   return [...new Map(entries.map((item) => [item.id, item])).values()]
