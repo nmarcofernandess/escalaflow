@@ -1,4 +1,5 @@
 import type { EscalaCompletaV3, Setor, Colaborador } from '@shared/index'
+import type { Aviso } from '@/componentes/AvisosSection'
 
 const SEP = ';'
 
@@ -77,6 +78,7 @@ export function gerarCSVAlocacoes(
 export function gerarCSVViolacoes(
   escalas: EscalaCompletaV3[],
   setores: Setor[],
+  avisos?: Aviso[],
 ): string {
   const setorMap = new Map(setores.map((s) => [s.id, s.nome]))
 
@@ -89,6 +91,22 @@ export function gerarCSVViolacoes(
     for (const v of ec.violacoes) {
       lines.push(
         row([v.colaborador_nome, setorNome, v.regra, v.severidade, v.data, v.mensagem]),
+      )
+    }
+  }
+
+  // Append operational alerts after violations
+  if (avisos && avisos.length > 0) {
+    for (const a of avisos) {
+      lines.push(
+        row([
+          '',
+          setores[0]?.nome ?? '',
+          a.id,
+          a.nivel,
+          '',
+          a.titulo + (a.descricao ? ': ' + a.descricao : ''),
+        ]),
       )
     }
   }
