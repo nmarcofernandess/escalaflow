@@ -16,11 +16,13 @@ import {
   Save,
   Check,
   Loader2,
+  Download,
 } from 'lucide-react'
 import { CORES_EXCECAO } from '@/lib/cores'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -64,6 +66,11 @@ import { PageHeader } from '@/componentes/PageHeader'
 // SaveIndicator removido — save via botao principal
 // useAutoSave removido — save via botao principal
 import { EmptyState } from '@/componentes/EmptyState'
+import { useExportFuncionario } from '@/hooks/useExportFuncionario'
+import { ExportModal } from '@/componentes/ExportModal'
+import { ExportarEscala } from '@/componentes/ExportarEscala'
+import { buildStandaloneHtml } from '@/lib/export-standalone-html'
+import { exportarService } from '@/servicos/exportar'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { setoresService } from '@/servicos/setores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
@@ -151,19 +158,14 @@ function RestricaoRadio({
   ]
   return (
     <div className="space-y-3">
-      <div className="flex gap-4">
+      <RadioGroup value={value} onValueChange={(v) => onChange(v as TipoRestricao)} className="flex gap-4">
         {opcoes.map(opt => (
-          <label key={opt.v} className="flex cursor-pointer items-center gap-1.5 text-sm">
-            <input
-              type="radio"
-              className="accent-primary"
-              checked={value === opt.v}
-              onChange={() => onChange(opt.v)}
-            />
-            {opt.label}
-          </label>
+          <div key={opt.v} className="flex items-center gap-1.5">
+            <RadioGroupItem value={opt.v} id={`restricao-${opt.v}`} />
+            <Label htmlFor={`restricao-${opt.v}`} className="text-sm cursor-pointer">{opt.label}</Label>
+          </div>
         ))}
-      </div>
+      </RadioGroup>
       {value !== 'nenhum' && (
         <Input
           type="time"
@@ -313,6 +315,10 @@ export function ColaboradorDetalhe() {
     domingo_forcar_folga: false,
   })
 
+  // Export state
+  const [exportOpen, setExportOpen] = useState(false)
+  const { loading: exportLoading, data: exportData, hasOficial, verificar: verificarExport, carregar: carregarExport } = useExportFuncionario()
+
   // Data loading
   const { data: colab, loading: loadingColab } = useApiData<Colaborador>(
     () => colaboradoresService.buscar(colabId),
@@ -368,6 +374,11 @@ export function ColaboradorDetalhe() {
       })
     }
   }, [colab, colabForm])
+
+  // Check if setor has OFICIAL escala (for export button visibility)
+  useEffect(() => {
+    if (colab) verificarExport(colab.setor_id)
+  }, [colab, verificarExport])
 
   // Carregar regras de horario + excecoes por data
   useEffect(() => {
@@ -639,6 +650,82 @@ export function ColaboradorDetalhe() {
     }
   }
 
+  // ─── Export handlers ─────────────────────────────────────────────
+  const handleOpenExport = useCallback(async () => {
+    if (!colab) return
+    const result = await carregarExport(colab.id, colab.setor_id)
+    if (result) setExportOpen(true)
+  }, [colab, carregarExport])
+
+  const handleExportHTML = useCallback(async () => {
+    if (!exportData) return
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const markup = renderToStaticMarkup(
+      <ExportarEscala
+        escala={exportData.escala}
+        alocacoes={exportData.alocacoes}
+        colaboradores={[exportData.colaborador]}
+        setor={exportData.setor}
+        violacoes={exportData.violacoes}
+        tipoContrato={exportData.tipoContrato}
+        regrasPadrao={exportData.regra ? [exportData.regra] : []}
+        mode="funcionario"
+        colaboradorId={exportData.colaborador.id}
+        mostrarAvisos
+      />,
+    )
+    const fullHTML = buildStandaloneHtml(markup, {
+      title: `Escala - ${exportData.colaborador.nome}`,
+      pageOrientation: 'portrait',
+    })
+    const slug = exportData.colaborador.nome.toLowerCase().replace(/\s+/g, '-')
+    try {
+      const result = await exportarService.salvarHTML(fullHTML, `escala-funcionario-${slug}.html`)
+      if (result) toast.success('HTML salvo com sucesso')
+    } catch {
+      toast.error('Erro ao exportar HTML')
+    }
+  }, [exportData])
+
+  const handlePrint = useCallback(async () => {
+    if (!exportData) return
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const markup = renderToStaticMarkup(
+      <ExportarEscala
+        escala={exportData.escala}
+        alocacoes={exportData.alocacoes}
+        colaboradores={[exportData.colaborador]}
+        setor={exportData.setor}
+        violacoes={exportData.violacoes}
+        tipoContrato={exportData.tipoContrato}
+        regrasPadrao={exportData.regra ? [exportData.regra] : []}
+        mode="funcionario"
+        colaboradorId={exportData.colaborador.id}
+        mostrarAvisos
+      />,
+    )
+    const fullHTML = buildStandaloneHtml(markup, {
+      title: `Escala - ${exportData.colaborador.nome}`,
+      pageOrientation: 'portrait',
+    })
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+    document.body.appendChild(iframe)
+    const iframeDoc = iframe.contentDocument ?? iframe.contentWindow?.document
+    if (!iframeDoc) {
+      toast.error('Erro ao preparar impressao.')
+      document.body.removeChild(iframe)
+      return
+    }
+    iframeDoc.open()
+    iframeDoc.write(fullHTML)
+    iframeDoc.close()
+    setTimeout(() => {
+      iframe.contentWindow?.print()
+      setTimeout(() => document.body.removeChild(iframe), 1000)
+    }, 250)
+  }, [exportData])
+
   if (loadingColab) {
     return (
       <div className="flex flex-1 flex-col">
@@ -687,6 +774,16 @@ export function ColaboradorDetalhe() {
               )}
               {salvandoTudo ? 'Salvando...' : isDirty ? 'Salvar' : 'Salvo'}
             </Button>
+            {hasOficial && (
+              <Button variant="outline" size="sm" onClick={handleOpenExport} disabled={exportLoading}>
+                {exportLoading ? (
+                  <Loader2 className="mr-1 size-3.5 animate-spin" />
+                ) : (
+                  <Download className="mr-1 size-3.5" />
+                )}
+                Exportar Escala
+              </Button>
+            )}
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5" disabled={isPreviewMode}>
@@ -1442,6 +1539,18 @@ export function ColaboradorDetalhe() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Export Modal */}
+      {exportData && (
+        <ExportModal
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          mode="funcionario"
+          funcionarioData={exportData}
+          onExportHTML={handleExportHTML}
+          onPrint={handlePrint}
+        />
+      )}
     </div>
   )
 }

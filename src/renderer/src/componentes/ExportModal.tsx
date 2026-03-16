@@ -103,10 +103,10 @@ export interface ExportModalProps {
   massaData?: MassaExportData
   onExportMassa?: (setorIds: number[], incluirAvisos: boolean) => void
 
-  // Shared callbacks
-  onExportHTML?: () => void
-  onPrint?: () => void
-  onCSV?: () => void
+  // Shared callbacks — new API passes current toggle state; legacy callers can ignore params
+  onExportHTML?: (toggles?: ExportToggles, timelineMode?: 'barras' | 'grid') => void
+  onPrint?: (toggles?: ExportToggles, timelineMode?: 'barras' | 'grid') => void
+  onCSV?: (toggles?: ExportToggles, timelineMode?: 'barras' | 'grid') => void
   loading?: boolean
   progress?: number
 
@@ -250,7 +250,7 @@ export function ExportModal(props: ExportModalProps) {
               Cancelar
             </Button>
             {onCSV && (
-              <Button variant="outline" onClick={onCSV} disabled={loading}>
+              <Button variant="outline" onClick={() => onCSV(toggles, timelineMode)} disabled={loading}>
                 {loading ? (
                   <Loader2 className="mr-1 size-4 animate-spin" />
                 ) : (
@@ -259,7 +259,7 @@ export function ExportModal(props: ExportModalProps) {
                 CSV
               </Button>
             )}
-            <Button variant="outline" onClick={onExportHTML} disabled={loading}>
+            <Button variant="outline" onClick={() => onExportHTML?.(toggles, timelineMode)} disabled={loading}>
               {loading ? (
                 <Loader2 className="mr-1 size-4 animate-spin" />
               ) : (
@@ -267,7 +267,7 @@ export function ExportModal(props: ExportModalProps) {
               )}
               Baixar HTML
             </Button>
-            <Button onClick={onPrint} disabled={loading}>
+            <Button onClick={() => onPrint?.(toggles, timelineMode)} disabled={loading}>
               {loading ? (
                 <Loader2 className="mr-1 size-4 animate-spin" />
               ) : (
@@ -468,7 +468,7 @@ export function ExportModal(props: ExportModalProps) {
             {onCSV && (
               <Button
                 variant="outline"
-                onClick={onCSV}
+                onClick={() => onCSV(toggles, timelineMode)}
                 disabled={loading || !hasAnyToggleOn}
               >
                 {loading ? (
@@ -481,7 +481,7 @@ export function ExportModal(props: ExportModalProps) {
             )}
             <Button
               variant="outline"
-              onClick={onExportHTML}
+              onClick={() => onExportHTML?.(toggles, timelineMode)}
               disabled={loading || !hasAnyToggleOn}
             >
               {loading ? (
@@ -492,7 +492,7 @@ export function ExportModal(props: ExportModalProps) {
               Baixar HTML
             </Button>
             <Button
-              onClick={onPrint}
+              onClick={() => onPrint?.(toggles, timelineMode)}
               disabled={loading || !hasAnyToggleOn}
             >
               {loading ? (
@@ -510,7 +510,7 @@ export function ExportModal(props: ExportModalProps) {
             </Button>
             <Button
               variant="outline"
-              onClick={onExportHTML}
+              onClick={() => onExportHTML?.(toggles, timelineMode)}
               disabled={loading}
             >
               {loading ? (
@@ -521,7 +521,7 @@ export function ExportModal(props: ExportModalProps) {
               Baixar HTML
             </Button>
             <Button
-              onClick={onPrint}
+              onClick={() => onPrint?.(toggles, timelineMode)}
               disabled={loading}
             >
               {loading ? (

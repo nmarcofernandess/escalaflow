@@ -7,17 +7,14 @@ import { CicloGrid } from '@/componentes/CicloGrid'
 import { escalaParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
-import { ExportModal, type EscalaExportContent } from '@/componentes/ExportModal'
+import { ExportModal } from '@/componentes/ExportModal'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatarData } from '@/lib/formatadores'
-import { useAppVersion } from '@/hooks/useAppVersion'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { resolveEscalaEquipe } from '@/lib/escala-team'
-import { gerarHTMLFuncionario } from '@/lib/gerarHTMLFuncionario'
-import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from '@/lib/gerarCSV'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { exportarService } from '@/servicos/exportar'
@@ -39,11 +36,6 @@ interface EscalaOperacionalItem {
   setor: Setor
   escalas: Escala[]
   selectedEscalaId: number | null
-}
-
-interface ExportTarget {
-  setorId: number
-  escalaId: number
 }
 
 function prioridadeStatus(status: string): number {
@@ -71,10 +63,6 @@ function escolherEscalaPadrao(escalas: Escala[]): number | null {
   return escalas[0]?.id ?? null
 }
 
-function hasConteudoSetorial(conteudo: EscalaExportContent): boolean {
-  return conteudo.ciclo || conteudo.timeline || conteudo.avisos
-}
-
 export function EscalasHub() {
   const [loadingSetores, setLoadingSetores] = useState(true)
   const [loadingMetaSetores, setLoadingMetaSetores] = useState<Set<number>>(new Set())
@@ -90,16 +78,10 @@ export function EscalasHub() {
   const [horariosBySetor, setHorariosBySetor] = useState<Map<number, SetorHorarioSemana[]>>(new Map())
   const [regrasBySetor, setRegrasBySetor] = useState<Map<number, RegraHorarioColaborador[]>>(new Map())
 
-  const [exportOpen, setExportOpen] = useState(false)
-  const [exportTarget, setExportTarget] = useState<ExportTarget | null>(null)
-  const [conteudoExport, setConteudoExport] = useState<EscalaExportContent>({
-    ciclo: true,
-    timeline: false,
-    funcionarios: false,
-    avisos: false,
-  })
-
-  const appVersion = useAppVersion()
+  // Mass export state
+  const [massaOpen, setMassaOpen] = useState(false)
+  const [massaLoading, setMassaLoading] = useState(false)
+  const [massaProgress, setMassaProgress] = useState(0)
 
   async function ensureSetorMetaLoaded(setorId: number) {
     const hasAllMeta =
@@ -197,18 +179,6 @@ export function EscalasHub() {
     setExpandedSetores(next)
   }
 
-  function handleAbrirExport(setorId: number, escalaId: number) {
-    setExportTarget({ setorId, escalaId })
-    setConteudoExport({
-      ciclo: true,
-      timeline: false,
-      funcionarios: false,
-      avisos: false,
-    })
-    void ensureEscalaDetalheLoaded(setorId, escalaId)
-    setExportOpen(true)
-  }
-
   useEffect(() => {
     async function load() {
       setLoadingSetores(true)
@@ -255,265 +225,103 @@ export function EscalasHub() {
     void load()
   }, [])
 
-  const exportContext = useMemo(() => {
-    if (!exportTarget) return null
-    const item = items.find((it) => it.setor.id === exportTarget.setorId)
-    if (!item) return null
-
-    const setor = item.setor
-    const detalhe = escalaDetalheByEscalaId.get(exportTarget.escalaId) ?? null
-    const equipeEscala = resolveEscalaEquipe(
-      detalhe,
-      colaboradoresBySetor.get(exportTarget.setorId) ?? [],
-      funcoesBySetor.get(exportTarget.setorId) ?? [],
-    )
-    const horariosSemana = horariosBySetor.get(exportTarget.setorId) ?? []
-    const regrasPadrao = regrasBySetor.get(exportTarget.setorId) ?? []
-    const regrasMap = new Map<number, RegraHorarioColaborador>()
-    for (const regra of regrasPadrao) regrasMap.set(regra.colaborador_id, regra)
-
-    return {
-      setor,
-      detalhe,
-      colaboradores: equipeEscala.colaboradores,
-      funcoes: equipeEscala.funcoes,
-      horariosSemana,
-      regrasPadrao,
-      regrasMap,
-    }
-  }, [colaboradoresBySetor, escalaDetalheByEscalaId, exportTarget, funcoesBySetor, horariosBySetor, items, regrasBySetor])
-
-  const exportLoading = Boolean(
-    exportOpen
-      && exportTarget
-      && (
-        loadingMetaSetores.has(exportTarget.setorId)
-        || loadingEscalas.has(exportTarget.escalaId)
-        || !exportContext?.detalhe
-      ),
-  )
-
-  function renderExportSetorial(conteudo: EscalaExportContent) {
-    if (!exportContext?.detalhe) return null
-    if (!hasConteudoSetorial(conteudo)) return null
-
-    const modo: 'ciclo' | 'detalhado' = conteudo.timeline ? 'detalhado' : 'ciclo'
-    return {
-      modo,
-      jsx: (
-        <ExportarEscala
-          escala={exportContext.detalhe.escala}
-          alocacoes={exportContext.detalhe.alocacoes}
-          colaboradores={exportContext.colaboradores}
-          setor={exportContext.setor}
-          violacoes={exportContext.detalhe.violacoes}
-          tiposContrato={tiposContrato}
-          funcoes={exportContext.funcoes}
-          horariosSemana={exportContext.horariosSemana}
-          regrasPadrao={exportContext.regrasPadrao}
-          modo={modo}
-          incluirAvisos={conteudo.avisos}
-          incluirCiclo={conteudo.ciclo}
-          incluirTimeline={conteudo.timeline}
-          modoRender="download"
-        />
-      ),
-    }
-  }
-
-  function buildHTMLFuncionario(colabId: number, incluirAvisos: boolean) {
-    if (!exportContext?.detalhe) return null
-    const colab = exportContext.colaboradores.find((c) => c.id === colabId)
-    if (!colab) return null
-    const tc = tiposContrato.find((tipo) => tipo.id === colab.tipo_contrato_id)
-    const regra = exportContext.regrasMap.get(colabId)
-    const html = gerarHTMLFuncionario({
-      nome: colab.nome,
-      contrato: tc?.nome ?? '',
-      horasSemanais: tc?.horas_semanais ?? colab.horas_semanais,
-      setor: exportContext.setor.nome,
-      periodo: {
-        inicio: exportContext.detalhe.escala.data_inicio,
-        fim: exportContext.detalhe.escala.data_fim,
-      },
-      alocacoes: exportContext.detalhe.alocacoes.filter((a) => a.colaborador_id === colabId),
-      violacoes: incluirAvisos
-        ? exportContext.detalhe.violacoes.filter((v) => v.colaborador_id === colabId)
-        : [],
-      regra: regra
-        ? {
-          folga_fixa_dia_semana: regra.folga_fixa_dia_semana ?? null,
-          folga_variavel_dia_semana: regra.folga_variavel_dia_semana ?? null,
-        }
-        : undefined,
-      version: appVersion ?? undefined,
+  // Build massaSetores from items for the ExportModal mode='massa'
+  const massaSetores = useMemo(() => {
+    return items.map((item) => {
+      const escalaAtual = getSelectedEscala(item)
+      return {
+        id: item.setor.id,
+        nome: item.setor.nome,
+        status: escalaAtual?.status ?? null,
+      }
     })
-    return { html, colaboradorNome: colab.nome }
-  }
+  }, [items])
 
-  async function handleExportHTMLFromModal() {
-    if (!exportContext?.detalhe) return
+  async function handleExportMassa(setorIds: number[], incluirAvisos: boolean) {
+    setMassaLoading(true)
+    setMassaProgress(0)
 
-    const incluirSetorial = hasConteudoSetorial(conteudoExport)
-    const incluirFuncionarios = conteudoExport.funcionarios
+    const arquivos: { nome: string; html: string }[] = []
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    let completed = 0
 
-    if (!incluirSetorial && !incluirFuncionarios) {
-      toast.error('Ative Ciclo, Timeline ou Por funcionario para exportar HTML.')
-      return
-    }
+    try {
+      for (const setorId of setorIds) {
+        const item = items.find((it) => it.setor.id === setorId)
+        if (!item) continue
 
-    if (incluirSetorial) {
-      const payload = renderExportSetorial(conteudoExport)
-      if (!payload) {
-        toast.error('Selecione Ciclo e/ou Timeline para exportar HTML setorial.')
-        return
-      }
+        // Find the OFICIAL escala for this setor
+        const oficialEscala = item.escalas.find((e) => e.status === 'OFICIAL')
+        if (!oficialEscala) continue
 
-      const { renderToStaticMarkup } = await import('react-dom/server')
-      const html = renderToStaticMarkup(payload.jsx)
-      const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${exportContext.setor.nome}` })
-      const slug = exportContext.setor.nome.toLowerCase().replace(/\s+/g, '-')
-      const prefix = payload.modo === 'ciclo' ? 'escala-ciclo' : 'escala-detalhada'
-      try {
-        const result = await exportarService.salvarHTML(fullHTML, `${prefix}-${slug}.html`)
-        if (result) toast.success(payload.modo === 'detalhado' ? 'HTML detalhado salvo com sucesso' : 'HTML salvo com sucesso')
-      } catch {
-        toast.error(payload.modo === 'detalhado' ? 'Erro ao exportar HTML detalhado' : 'Erro ao exportar HTML')
-      }
-    }
+        // Load full escala data
+        const detalhe = await escalasService.buscar(oficialEscala.id)
 
-    if (incluirFuncionarios) {
-      const arquivos = exportContext.colaboradores
-        .map((colab) => {
-          const payload = buildHTMLFuncionario(colab.id, conteudoExport.avisos)
-          if (!payload) return null
-          return {
-            nome: payload.colaboradorNome.replace(/\s+/g, '_'),
-            html: payload.html,
-          }
+        // Load setor meta (colaboradores, funcoes, horarios, regras) if not cached
+        const [colaboradores, funcoes, horariosSemana, regrasPadrao] = await Promise.all([
+          colaboradoresBySetor.has(setorId)
+            ? Promise.resolve(colaboradoresBySetor.get(setorId)!)
+            : colaboradoresService.listar({ setor_id: setorId, ativo: true }),
+          funcoesBySetor.has(setorId)
+            ? Promise.resolve(funcoesBySetor.get(setorId)!)
+            : funcoesService.listar(setorId).catch(() => [] as Funcao[]),
+          horariosBySetor.has(setorId)
+            ? Promise.resolve(horariosBySetor.get(setorId)!)
+            : setoresService.listarHorarioSemana(setorId).catch(() => [] as SetorHorarioSemana[]),
+          regrasBySetor.has(setorId)
+            ? Promise.resolve(regrasBySetor.get(setorId)!)
+            : colaboradoresService.listarRegrasPadraoSetor(setorId).catch(() => [] as RegraHorarioColaborador[]),
+        ])
+
+        const equipeEscala = resolveEscalaEquipe(detalhe, colaboradores, funcoes)
+
+        // Render to HTML
+        const jsx = (
+          <ExportarEscala
+            escala={detalhe.escala}
+            alocacoes={detalhe.alocacoes}
+            colaboradores={equipeEscala.colaboradores}
+            setor={item.setor}
+            violacoes={detalhe.violacoes}
+            tiposContrato={tiposContrato}
+            funcoes={equipeEscala.funcoes}
+            horariosSemana={horariosSemana}
+            regrasPadrao={regrasPadrao}
+            mostrarCiclo
+            mostrarSemanal
+            mostrarAvisos={incluirAvisos}
+          />
+        )
+
+        const html = renderToStaticMarkup(jsx)
+        const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${item.setor.nome}` })
+        const slug = item.setor.nome.toLowerCase().replace(/\s+/g, '-')
+
+        arquivos.push({
+          nome: `escala-${slug}`,
+          html: fullHTML,
         })
-        .filter((item): item is { nome: string; html: string } => item != null)
+
+        completed++
+        setMassaProgress((completed / setorIds.length) * 100)
+      }
 
       if (arquivos.length === 0) {
-        toast.error('Nao foi possivel montar exportacao por funcionario.')
-      } else {
-        try {
-          const result = await exportarService.batchHTML(arquivos)
-          if (result) toast.success(`${result.count} arquivo(s) de funcionario salvos em ${result.pasta}`)
-        } catch {
-          toast.error('Erro ao exportar funcionarios em lote')
-        }
-      }
-    }
-
-    setExportOpen(false)
-  }
-
-  async function handlePrintFromModal() {
-    if (!exportContext?.detalhe) return
-
-    const payload = renderExportSetorial(conteudoExport)
-    if (payload) {
-      const printWindow = window.open('', '_blank')
-      if (!printWindow) {
-        toast.error('Bloqueio de popup detectado. Permita popups para imprimir.')
+        toast.error('Nenhuma escala oficial encontrada para exportar.')
         return
       }
 
-      const { renderToStaticMarkup } = await import('react-dom/server')
-      const html = renderToStaticMarkup(payload.jsx)
-      const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${exportContext.setor.nome}` })
-      printWindow.document.write(fullHTML)
-      printWindow.document.close()
-      printWindow.focus()
-      setTimeout(() => printWindow.print(), 250)
-      setExportOpen(false)
-      return
+      const result = await exportarService.batchHTML(arquivos)
+      if (result) {
+        toast.success(`${result.count} escala(s) exportada(s) em ${result.pasta}`)
+        setMassaOpen(false)
+      }
+    } catch (err) {
+      toast.error(`Erro ao exportar em massa: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+    } finally {
+      setMassaLoading(false)
+      setMassaProgress(0)
     }
-
-    if (conteudoExport.funcionarios) {
-      toast.error('Impressao por funcionario em lote nao esta disponivel. Use Baixar HTML.')
-      return
-    }
-
-    toast.error('Ative Ciclo e/ou Timeline para imprimir.')
-  }
-
-  async function handleCSVFromModal() {
-    if (!exportContext?.detalhe) return
-
-    const blocos: string[] = []
-    const incluirEscala = conteudoExport.ciclo || conteudoExport.timeline || conteudoExport.funcionarios
-    if (incluirEscala) {
-      blocos.push(gerarCSVAlocacoes([exportContext.detalhe], [exportContext.setor], exportContext.colaboradores))
-      blocos.push(gerarCSVComparacaoDemanda([exportContext.detalhe], [exportContext.setor]))
-    }
-    if (conteudoExport.avisos) {
-      blocos.push(gerarCSVViolacoes([exportContext.detalhe], [exportContext.setor]))
-    }
-
-    if (blocos.length === 0) {
-      toast.error('Selecione ao menos um conteúdo para exportar CSV.')
-      return
-    }
-
-    const csv = blocos.join('\n\n')
-    const slug = exportContext.setor.nome.toLowerCase().replace(/\s+/g, '-')
-    try {
-      const result = await exportarService.salvarCSV(csv, `escala-${slug}.csv`)
-      if (result) toast.success('CSV salvo com sucesso')
-      setExportOpen(false)
-    } catch {
-      toast.error('Erro ao exportar CSV')
-    }
-  }
-
-  function renderExportPreview() {
-    if (!exportContext?.detalhe) {
-      return (
-        <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          Carregando preview da escala...
-        </div>
-      )
-    }
-
-    const incluirSetorial = hasConteudoSetorial(conteudoExport)
-
-    return (
-      <div className="space-y-3">
-        {incluirSetorial ? (
-          <ExportarEscala
-            escala={exportContext.detalhe.escala}
-            alocacoes={exportContext.detalhe.alocacoes}
-            colaboradores={exportContext.colaboradores}
-            setor={exportContext.setor}
-            violacoes={exportContext.detalhe.violacoes}
-            tiposContrato={tiposContrato}
-            funcoes={exportContext.funcoes}
-            horariosSemana={exportContext.horariosSemana}
-            regrasPadrao={exportContext.regrasPadrao}
-            modo={conteudoExport.timeline ? 'detalhado' : 'ciclo'}
-            incluirAvisos={conteudoExport.avisos}
-            incluirCiclo={conteudoExport.ciclo}
-            incluirTimeline={conteudoExport.timeline}
-          />
-        ) : (
-          <div className="rounded-md border bg-background p-4">
-            <p className="text-sm font-medium">Preview setorial desativada</p>
-            <p className="mt-1 text-xs text-muted-foreground">Ative Ciclo, Timeline ou Avisos para visualizar aqui.</p>
-          </div>
-        )}
-
-        {conteudoExport.funcionarios && (
-          <div className="rounded-md border bg-background p-4">
-            <p className="text-sm font-medium">Por funcionario ativo</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Serao gerados arquivos para todos os {exportContext.colaboradores.length} funcionario(s) do setor.
-            </p>
-          </div>
-        )}
-      </div>
-    )
   }
 
   return (
@@ -523,6 +331,12 @@ export function EscalasHub() {
           { label: 'Dashboard', href: '/' },
           { label: 'Escalas' },
         ]}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setMassaOpen(true)}>
+            <Download className="mr-1 size-3.5" />
+            Exportar em Massa
+          </Button>
+        }
       />
 
       <div className="flex-1 space-y-4 p-6">
@@ -544,7 +358,7 @@ export function EscalasHub() {
         ) : (
           <div className="space-y-4">
             {items.map((item) => {
-              const { setor, escalas, selectedEscalaId } = item
+              const { setor, selectedEscalaId } = item
               const selectedEscala = getSelectedEscala(item)
               const isExpanded = expandedSetores.has(setor.id)
               const detalhe = selectedEscalaId != null ? escalaDetalheByEscalaId.get(selectedEscalaId) : null
@@ -600,23 +414,12 @@ export function EscalasHub() {
 
                       <div className="flex flex-wrap items-center gap-2">
                         {selectedEscala ? (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleAbrirExport(setor.id, selectedEscala.id)}
-                              className="gap-1.5"
-                            >
-                              <Download className="size-3.5" />
-                              Exportar
-                            </Button>
-                            <Button variant="outline" size="sm" asChild>
-                              <Link to={`/setores/${setor.id}/escala?escalaId=${selectedEscala.id}`}>
-                                Ver tudo
-                                <ExternalLink className="ml-1 size-3.5" />
-                              </Link>
-                            </Button>
-                          </>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link to={`/setores/${setor.id}/escala?escalaId=${selectedEscala.id}`}>
+                              Ver tudo
+                              <ExternalLink className="ml-1 size-3.5" />
+                            </Link>
+                          </Button>
                         ) : (
                           <Button variant="outline" size="sm" asChild>
                             <Link to={`/setores/${setor.id}`}>
@@ -675,24 +478,14 @@ export function EscalasHub() {
       </div>
 
       <ExportModal
-        open={exportOpen}
-        onOpenChange={(open) => {
-          setExportOpen(open)
-          if (!open) setExportTarget(null)
-        }}
-        context="escala"
-        titulo={exportContext ? `Exportar Escala — ${exportContext.setor.nome}` : 'Exportar Escala'}
-        formato="conteudo"
-        onFormatoChange={() => {}}
-        conteudoEscala={conteudoExport}
-        onConteudoEscalaChange={setConteudoExport}
-        onExportHTML={handleExportHTMLFromModal}
-        onPrint={handlePrintFromModal}
-        onCSV={handleCSVFromModal}
-        loading={exportLoading}
-      >
-        {renderExportPreview()}
-      </ExportModal>
+        open={massaOpen}
+        onOpenChange={setMassaOpen}
+        mode="massa"
+        massaData={{ setores: massaSetores }}
+        onExportMassa={handleExportMassa}
+        loading={massaLoading}
+        progress={massaProgress}
+      />
     </div>
   )
 }
