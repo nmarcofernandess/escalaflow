@@ -294,7 +294,7 @@ export function EscalasHub() {
         )
 
         const html = renderToStaticMarkup(jsx)
-        const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${item.setor.nome}` })
+        const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${item.setor.nome}`, forceLight: true })
         const slug = item.setor.nome.toLowerCase().replace(/\s+/g, '-')
 
         arquivos.push({

@@ -455,7 +455,7 @@ export function EscalaPagina() {
     }
     const { renderToStaticMarkup } = await import('react-dom/server')
     const html = renderToStaticMarkup(jsx)
-    const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${setor.nome}` })
+    const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${setor.nome}`, forceLight: true })
     const slug = setor.nome.toLowerCase().replace(/\s+/g, '-')
     const prefix = toggles.timeline ? 'escala-detalhada' : 'escala-ciclo'
     try {
@@ -476,7 +476,7 @@ export function EscalaPagina() {
     }
     const { renderToStaticMarkup } = await import('react-dom/server')
     const html = renderToStaticMarkup(jsx)
-    const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${setor.nome}` })
+    const fullHTML = buildStandaloneHtml(html, { title: `Escala - ${setor.nome}`, forceLight: true })
     const iframe = document.createElement('iframe')
     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
     document.body.appendChild(iframe)

@@ -677,6 +677,7 @@ export function ColaboradorDetalhe() {
     const fullHTML = buildStandaloneHtml(markup, {
       title: `Escala - ${exportData.colaborador.nome}`,
       pageOrientation: 'portrait',
+      forceLight: true,
     })
     const slug = exportData.colaborador.nome.toLowerCase().replace(/\s+/g, '-')
     try {
@@ -707,6 +708,7 @@ export function ColaboradorDetalhe() {
     const fullHTML = buildStandaloneHtml(markup, {
       title: `Escala - ${exportData.colaborador.nome}`,
       pageOrientation: 'portrait',
+      forceLight: true,
     })
     const iframe = document.createElement('iframe')
     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
