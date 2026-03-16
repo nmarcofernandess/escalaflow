@@ -30,17 +30,17 @@ export interface ColaboradorCardProps {
   className?: string
 }
 
-// Dot separator — matches mockup .meta .dot { color:#3f3f46 }
+// Dot separator
 function Dot() {
-  return <span className="text-zinc-700">·</span>
+  return <span className="text-muted-foreground">·</span>
 }
 
 // Status badge — matches mockup .badge { font-size:9px; border-radius:9999px }
 function StatusBadgeInline({ tipo }: { tipo: string }) {
   const styles: Record<string, string> = {
-    FERIAS: 'border-amber-500/40 text-amber-500',
-    ATESTADO: 'border-red-500/40 text-red-500',
-    BLOQUEIO: 'border-zinc-500/40 text-zinc-500',
+    FERIAS: 'border-amber-500/40 text-amber-600 dark:text-amber-500',
+    ATESTADO: 'border-red-500/40 text-red-600 dark:text-red-500',
+    BLOQUEIO: 'border-muted-foreground/40 text-muted-foreground',
   }
   const labels: Record<string, string> = {
     FERIAS: 'Férias',
@@ -50,7 +50,7 @@ function StatusBadgeInline({ tipo }: { tipo: string }) {
   return (
     <span className={cn(
       'inline-flex items-center text-[9px] font-medium px-1.5 py-px rounded-full border whitespace-nowrap',
-      styles[tipo] ?? 'border-zinc-600 text-zinc-400',
+      styles[tipo] ?? 'border-border text-muted-foreground',
     )}>
       {labels[tipo] ?? tipo}
     </span>
@@ -70,13 +70,12 @@ export function ColaboradorCard({
   disabled,
   className,
 }: ColaboradorCardProps) {
-  // Card container — matches mockup: 220px, border zinc-800, rounded-lg, padding 10px 14px
   const cardClass = cn(
-    'rounded-lg border border-zinc-800 px-3.5 py-2.5 text-left transition-colors',
-    !excecaoTipo && 'hover:bg-white/[0.03]',
-    excecaoTipo === 'FERIAS' && 'border-amber-500/30 bg-amber-500/[0.03] hover:bg-amber-500/[0.07]',
-    excecaoTipo === 'ATESTADO' && 'border-red-500/30 bg-red-500/[0.03] hover:bg-red-500/[0.07]',
-    excecaoTipo === 'BLOQUEIO' && 'border-zinc-600/30 bg-zinc-500/[0.03] hover:bg-zinc-500/[0.07]',
+    'rounded-lg border border-border px-3.5 py-2.5 text-left transition-colors',
+    !excecaoTipo && 'hover:bg-accent',
+    excecaoTipo === 'FERIAS' && 'border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 dark:bg-amber-500/[0.03] dark:hover:bg-amber-500/[0.07]',
+    excecaoTipo === 'ATESTADO' && 'border-red-500/30 bg-red-500/5 hover:bg-red-500/10 dark:bg-red-500/[0.03] dark:hover:bg-red-500/[0.07]',
+    excecaoTipo === 'BLOQUEIO' && 'border-muted-foreground/20 bg-muted/50 hover:bg-muted',
     disabled && 'opacity-50 pointer-events-none',
     className,
   )
@@ -97,28 +96,28 @@ export function ColaboradorCard({
     const label = isReserva ? 'Reserva' : status
     metaParts.push(
       <span key="s" className={cn(
-        status === 'Ativo' && !isReserva && 'text-emerald-400',
-        isReserva && 'text-zinc-400',
-        status === 'Ferias' && 'text-amber-500',
-        status === 'Atestado' && 'text-red-500',
-        status === 'Bloqueio' && 'text-zinc-500',
+        status === 'Ativo' && !isReserva && 'text-emerald-600 dark:text-emerald-400',
+        isReserva && 'text-muted-foreground',
+        status === 'Ferias' && 'text-amber-600 dark:text-amber-500',
+        status === 'Atestado' && 'text-red-600 dark:text-red-500',
+        status === 'Bloqueio' && 'text-muted-foreground',
       )}>
         {label}
       </span>
     )
   }
   if (extra) {
-    metaParts.push(<span key="e" className="text-zinc-600">{extra}</span>)
+    metaParts.push(<span key="e" className="text-muted-foreground">{extra}</span>)
   }
 
   const inner = (
     <div className={rightContent ? 'flex items-center justify-between gap-2' : undefined}>
       <div className="min-w-0 flex-1">
         {/* L1: Nome — 13px medium, truncate */}
-        <p className="truncate text-[13px] font-medium text-zinc-50">{nome}</p>
+        <p className="truncate text-[13px] font-medium text-foreground">{nome}</p>
         {/* L2: Meta — 11px, flex, dot-separated */}
         {metaParts.length > 0 && (
-          <div className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-500 overflow-hidden">
+          <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground overflow-hidden">
             {metaParts.map((part, i) => (
               <span key={i} className="contents">
                 {i > 0 && <Dot />}

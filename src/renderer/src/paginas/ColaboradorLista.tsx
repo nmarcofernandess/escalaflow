@@ -23,6 +23,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -355,7 +356,7 @@ export function ColaboradorLista() {
               <div className="space-y-3">
                 <p className="text-xs font-medium text-muted-foreground">Filtrar por</p>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Setor</label>
+                  <Label className="text-xs text-muted-foreground">Setor</Label>
                   <Select value={setorFilter} onValueChange={setSetorFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todos os setores" />
@@ -371,7 +372,7 @@ export function ColaboradorLista() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Contrato</label>
+                  <Label className="text-xs text-muted-foreground">Contrato</Label>
                   <Select value={contratoFilter} onValueChange={setContratoFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todos contratos" />
@@ -387,7 +388,7 @@ export function ColaboradorLista() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Situacao</label>
+                  <Label className="text-xs text-muted-foreground">Situacao</Label>
                   <Select value={situacaoFilter} onValueChange={(v) => setSituacaoFilter(v as SituacaoFilter)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todas situacoes" />
@@ -402,7 +403,7 @@ export function ColaboradorLista() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Sexo</label>
+                  <Label className="text-xs text-muted-foreground">Sexo</Label>
                   <Select value={sexoFilter} onValueChange={setSexoFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todos" />

@@ -9,6 +9,10 @@ export interface CicloGridRow {
   variavel: DiaSemana | null
   fixa: DiaSemana | null
   blocked: boolean
+  overrideVariavelLocal?: boolean
+  overrideFixaLocal?: boolean
+  baseVariavelColaborador?: boolean
+  baseFixaColaborador?: boolean
   semanas: Simbolo[][]
 }
 
@@ -17,6 +21,14 @@ export interface CicloGridData {
   cobertura: number[][]
   demanda: number[]
   cicloSemanas: number
+}
+
+export interface CicloGridCoverageActions {
+  showSuggest?: boolean
+  suggestDisabled?: boolean
+  onSuggest?: () => void
+  onResetAutomatico?: () => void
+  onRestaurarColaboradores?: () => void
 }
 
 export const DIAS_ORDEM: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
@@ -37,8 +49,8 @@ export const SIMBOLO_CONFIG: Record<Simbolo, {
     label: 'Trabalho',
   },
   FF: {
-    cell: 'bg-slate-200 text-slate-700 font-semibold dark:bg-slate-700 dark:text-slate-200',
-    swatch: 'bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-200',
+    cell: 'bg-muted text-muted-foreground font-semibold',
+    swatch: 'bg-muted/80 text-muted-foreground',
     label: 'Folga fixa',
   },
   FV: {
@@ -52,13 +64,13 @@ export const SIMBOLO_CONFIG: Record<Simbolo, {
     label: 'Dom trabalhado',
   },
   DF: {
-    cell: 'bg-blue-100 text-blue-700 font-semibold ring-1 ring-inset ring-blue-400 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-600',
-    swatch: 'bg-blue-200 text-blue-700 ring-1 ring-inset ring-blue-400 dark:bg-blue-800 dark:text-blue-300',
+    cell: 'bg-primary/10 text-primary font-semibold ring-1 ring-inset ring-primary/30',
+    swatch: 'bg-primary/20 text-primary ring-1 ring-inset ring-primary/30',
     label: 'Dom folga',
   },
   I: {
-    cell: 'bg-rose-100 text-rose-700 font-semibold dark:bg-rose-900 dark:text-rose-200',
-    swatch: 'bg-rose-200 text-rose-700 dark:bg-rose-700 dark:text-rose-200',
+    cell: 'bg-destructive/10 text-destructive font-semibold',
+    swatch: 'bg-destructive/20 text-destructive',
     label: 'Indisponivel',
   },
   '.': {

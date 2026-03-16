@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -184,6 +185,7 @@ interface DemandaEditorProps {
   horariosSemana: SetorHorarioSemana[]
   totalColaboradores: number
   onDirtyChange?: (dirty: boolean) => void
+  onDraftChange?: (draft: SemanaDraft) => void
 }
 
 export interface DemandaEditorRef {
@@ -254,6 +256,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
   horariosSemana,
   totalColaboradores,
   onDirtyChange,
+  onDraftChange,
 }, ref) {
   const [activeTab, setActiveTab] = useState<'padrao' | DiaSemana>('padrao')
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
@@ -410,6 +413,10 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       onDirtyChange?.(false)
     },
   }), [draft, onDirtyChange])
+
+  useEffect(() => {
+    onDraftChange?.(draft)
+  }, [draft, onDraftChange])
 
   const currentConfig = useMemo(() => {
     if (activeTab === 'padrao') {
@@ -843,13 +850,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       boundsCloseMin: operationalCloseMin,
     })
 
-    const colors = [
-      'bg-emerald-500/30 border-emerald-600/30',
-      'bg-blue-500/30 border-blue-600/30',
-      'bg-purple-500/30 border-purple-600/30',
-      'bg-amber-500/30 border-amber-600/30',
-      'bg-pink-500/30 border-pink-600/30',
-    ][index % 5]
+    const colors = 'bg-primary/30 border-primary/30'
 
     return (
       <div key={`ghost-${dem.id}`} className="relative h-10 pointer-events-none opacity-40">
@@ -1034,7 +1035,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-64 p-4 space-y-4">
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground">Horario do dia</label>
+          <Label className="text-xs text-muted-foreground">Horario do dia</Label>
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
             <Input
               type="time"
@@ -1124,7 +1125,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
 
             <div
               className={cn(
-                'absolute top-0 h-full rounded-md border border-sky-600 bg-sky-500/80 text-white shadow-sm flex items-center select-none',
+                'absolute top-0 h-full rounded-md border border-secondary-foreground/30 bg-secondary text-secondary-foreground shadow-sm flex items-center select-none',
                 isResizingOp && 'ring-2 ring-primary shadow-lg cursor-col-resize',
                 operacionalPopoverOpen && 'ring-2 ring-primary/60 shadow-lg',
               )}
@@ -1136,14 +1137,14 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                 onPointerDown={handleOpResizeLeft}
               >
                 <div className="flex gap-[3px]">
-                  <div className="w-px h-3.5 rounded-full bg-white" />
-                  <div className="w-px h-3.5 rounded-full bg-white" />
+                  <div className="w-px h-3.5 rounded-full bg-secondary-foreground/50" />
+                  <div className="w-px h-3.5 rounded-full bg-secondary-foreground/50" />
                 </div>
               </div>
 
               <div className="flex flex-1 items-center gap-2 overflow-hidden px-5 text-xs font-medium min-w-0">
                 <span className="shrink-0 opacity-70 font-normal">Horário de trabalho</span>
-                <span className="text-white/40 shrink-0">·</span>
+                <span className="text-secondary-foreground/40 shrink-0">·</span>
                 <span className="truncate font-semibold tracking-wide">
                   {opHoraAbertura} – {opHoraFechamento}
                 </span>
@@ -1161,8 +1162,8 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                 onPointerDown={handleOpResizeRight}
               >
                 <div className="flex gap-[3px]">
-                  <div className="w-px h-3.5 rounded-full bg-white" />
-                  <div className="w-px h-3.5 rounded-full bg-white" />
+                  <div className="w-px h-3.5 rounded-full bg-secondary-foreground/50" />
+                  <div className="w-px h-3.5 rounded-full bg-secondary-foreground/50" />
                 </div>
               </div>
             </div>
@@ -1246,7 +1247,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                       count > 0
                         ? 'bg-primary/20 dark:bg-primary/15 border-t border-primary/30'
                         : isGap
-                          ? 'bg-amber-500/20 dark:bg-amber-500/15 border-t border-amber-500/30'
+                          ? 'bg-warning/20 border-t border-warning/30'
                           : 'bg-transparent',
                     )}
                     style={{ height: `${h}%`, minHeight: count > 0 || isGap ? '4px' : 0 }}
@@ -1323,7 +1324,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
             <TabsTrigger value="padrao" className="relative">
               Padrao
               {hasGapPadrao && (
-                <span className="absolute top-1 right-1 size-1.5 rounded-full bg-amber-500" aria-hidden />
+                <span className="absolute top-1 right-1 size-1.5 rounded-full bg-warning" aria-hidden />
               )}
             </TabsTrigger>
             {DIAS_SEMANA.map((dia) => (
@@ -1335,7 +1336,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                 {diaComGapCobertura[dia] && (
                   <span
                     className={cn(
-                      'absolute top-1 size-1.5 rounded-full bg-amber-500',
+                      'absolute top-1 size-1.5 rounded-full bg-warning',
                       diaComDivergencia[dia] ? 'right-3' : 'right-1',
                     )}
                     aria-hidden

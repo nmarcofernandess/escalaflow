@@ -22,8 +22,8 @@ interface CoberturaChartProps {
 type ViewMode = 'semana' | 'mes' | 'tudo'
 
 const chartConfig = {
-  necessario: { label: 'Necessario', color: 'hsl(220 70% 50%)' },
-  coberto: { label: 'Coberto', color: 'hsl(160 60% 45%)' },
+  necessario: { label: 'Necessario', color: 'hsl(var(--primary))' },
+  coberto: { label: 'Coberto', color: 'hsl(var(--success))' },
 } satisfies ChartConfig
 
 function formatDate(dateStr: string): string {
@@ -158,13 +158,15 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
           {selectedDate && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mr-1 h-auto gap-1 px-1.5 py-0.5 text-xs text-muted-foreground"
               onClick={() => setSelectedDate(null)}
-              className="mr-1 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="size-3.5" />
               Voltar
-            </button>
+            </Button>
           )}
           <div>
             <span className="text-2xl font-bold tabular-nums">
@@ -288,7 +290,7 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
                     y={y}
                     textAnchor={viewMode === 'semana' ? 'middle' : 'end'}
                     fontSize={11}
-                    fill={hasDeficit ? 'hsl(0 72% 51%)' : 'currentColor'}
+                    fill={hasDeficit ? 'hsl(var(--destructive))' : 'currentColor'}
                     className={hasDeficit ? '' : 'fill-muted-foreground'}
                     transform={viewMode === 'semana' ? undefined : `rotate(-40, ${x}, ${y})`}
                   >

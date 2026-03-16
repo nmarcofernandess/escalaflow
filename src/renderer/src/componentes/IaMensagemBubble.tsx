@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Copy, Check, Pencil, RefreshCw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { IaMensagem } from '@shared/index'
 
@@ -70,32 +71,20 @@ export function IaMensagemBubble({ msg, onEdit, onRegenerate, showActions = true
             </span>
           )}
 
-          <button
-            onClick={handleCopy}
-            className="size-6 rounded-md flex items-center justify-center hover:bg-muted-foreground/10 transition-colors"
-            title="Copiar"
-          >
+          <Button variant="ghost" size="icon" className="size-6" onClick={handleCopy} title="Copiar">
             {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5 text-muted-foreground/50" />}
-          </button>
+          </Button>
 
           {isUser && onEdit && (
-            <button
-              onClick={() => onEdit(msg)}
-              className="size-6 rounded-md flex items-center justify-center hover:bg-muted-foreground/10 transition-colors"
-              title="Editar e reenviar"
-            >
+            <Button variant="ghost" size="icon" className="size-6" onClick={() => onEdit(msg)} title="Editar e reenviar">
               <Pencil className="size-3.5 text-muted-foreground/50" />
-            </button>
+            </Button>
           )}
 
           {onRegenerate && !isTool && (
-            <button
-              onClick={() => onRegenerate(msg)}
-              className="size-6 rounded-md flex items-center justify-center hover:bg-muted-foreground/10 transition-colors"
-              title="Regenerar"
-            >
+            <Button variant="ghost" size="icon" className="size-6" onClick={() => onRegenerate(msg)} title="Regenerar">
               <RefreshCw className="size-3.5 text-muted-foreground/50" />
-            </button>
+            </Button>
           )}
         </div>
       )}

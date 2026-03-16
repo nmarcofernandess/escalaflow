@@ -506,11 +506,11 @@ export function ConfiguracoesPagina() {
     ? selectedProviderAvailability.available
       ? {
         label: 'Ativa',
-        className: 'border-green-500/50 text-green-600 dark:text-green-400',
+        className: 'border-green-500/50 dark:border-green-500/30 text-green-600 dark:text-green-400',
       }
       : {
         label: 'Inativa',
-        className: 'border-amber-500/50 text-amber-600 dark:text-amber-400',
+        className: 'border-amber-500/50 dark:border-amber-500/30 text-amber-600 dark:text-amber-400',
       }
     : {
       label: 'Sem IA disponível',
@@ -842,7 +842,6 @@ export function ConfiguracoesPagina() {
                 {[
                   { value: 'zinc', label: 'Zinc', preview: 'hsl(222.2 47.4% 11.2%)' },
                   { value: 'blue', label: 'Azul', preview: 'hsl(221.2 83.2% 53.3%)' },
-                  { value: 'green', label: 'Verde', preview: 'hsl(142.1 76.2% 36.3%)' },
                   { value: 'violet', label: 'Violeta', preview: 'hsl(262.1 83.3% 57.8%)' },
                 ].map(({ value, label, preview }) => {
                   const isSelected = colorTheme === value
@@ -850,7 +849,7 @@ export function ConfiguracoesPagina() {
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setColorTheme(value as 'zinc' | 'blue' | 'green' | 'violet')}
+                      onClick={() => setColorTheme(value as 'zinc' | 'blue' | 'violet')}
                       className={cn(
                         'relative flex flex-col items-center gap-3 rounded-lg border p-4 transition-colors hover:bg-accent',
                         isSelected && 'ring-2 ring-ring ring-offset-2 ring-offset-background'
@@ -920,12 +919,12 @@ export function ConfiguracoesPagina() {
                 )}
                 {updateStatus === 'downloading' && (
                   <div className="flex items-center gap-3">
-                    <Loader2 className="size-4 animate-spin text-blue-500" />
+                    <Loader2 className="size-4 animate-spin text-blue-600 dark:text-blue-400" />
                     <div className="space-y-1">
                       <p className="text-sm">Baixando atualizacao... {downloadProgress}%</p>
                       <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                          className="h-full rounded-full bg-blue-600 dark:bg-blue-500 transition-all duration-300"
                           style={{ width: `${downloadProgress}%` }}
                         />
                       </div>
@@ -1090,7 +1089,7 @@ export function ConfiguracoesPagina() {
                 {iaStatusBadge.label}
               </Badge>
               {iaProvider === 'local' && (
-                <Badge variant="outline" className="border-sky-500/40 text-sky-600 dark:border-sky-400/40 dark:text-sky-300">
+                <Badge variant="outline" className="border-primary/40 text-primary">
                   Beta
                 </Badge>
               )}

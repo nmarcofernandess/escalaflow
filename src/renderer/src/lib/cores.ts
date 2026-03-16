@@ -20,7 +20,7 @@ export const CORES_ALOCACAO = {
   TRABALHO:
     'bg-success/10 text-success border-success/20',
   TRABALHO_DOMINGO:
-    'bg-sky-100 dark:bg-sky-950/30 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+    'bg-primary/10 text-primary border-primary/20',
   FOLGA:
     'bg-muted/60 dark:bg-muted/40 text-muted-foreground border-border dark:border-muted-foreground/20',
   INDISPONIVEL:
@@ -48,10 +48,10 @@ export const CORES_VIOLACAO = {
   },
 } as const
 
-/** Gender avatar colors — visual, not semantic */
+/** Gender avatar colors — secondary/muted semântico */
 export const CORES_GENERO = {
-  F: 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300',
-  M: 'bg-sky-100 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300',
+  F: 'bg-secondary text-secondary-foreground',
+  M: 'bg-muted text-muted-foreground',
 } as const
 
 /** Knowledge Graph entity type colors (hex for Canvas) */
@@ -65,26 +65,10 @@ export const ENTITY_TYPE_COLORS: Record<string, string> = {
   conceito: '#6b7280',
 }
 
-/** Contract type colors for timeline bars — visual rotation, not semantic */
-export const CORES_CONTRATO: Record<string, { bar: string; text: string; border: string }> = {
-  'CLT 44h': {
-    bar: 'bg-emerald-500/80 dark:bg-emerald-600/70',
-    text: 'text-white dark:text-emerald-100',
-    border: 'border-emerald-600 dark:border-emerald-500',
-  },
-  'CLT 36h': {
-    bar: 'bg-blue-500/80 dark:bg-blue-600/70',
-    text: 'text-white dark:text-blue-100',
-    border: 'border-blue-600 dark:border-blue-500',
-  },
-  'Estagiario 20h': {
-    bar: 'bg-purple-500/80 dark:bg-purple-600/70',
-    text: 'text-white dark:text-purple-100',
-    border: 'border-purple-600 dark:border-purple-500',
-  },
-  DEFAULT: {
-    bar: 'bg-slate-500/80 dark:bg-slate-600/70',
-    text: 'text-white dark:text-slate-100',
-    border: 'border-slate-600 dark:border-slate-500',
-  },
-}
+/** Cor única semântica para barras de turno na timeline */
+export const COR_TURNO = {
+  bar: 'bg-primary/80',
+  text: 'text-primary-foreground',
+  border: 'border-primary',
+  handle: 'bg-primary-foreground/30',
+} as const

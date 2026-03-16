@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
@@ -90,10 +91,10 @@ export function IaModelPill({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-md px-2 py-1 hover:bg-muted">
+        <Button variant="ghost" size="sm" className="h-auto gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
           <span className="truncate max-w-[160px]">{modeloLabel || modelo || 'Modelo'}</span>
           <ChevronDown className="size-3 shrink-0" />
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72" align="end" sideOffset={8}>
         {content}

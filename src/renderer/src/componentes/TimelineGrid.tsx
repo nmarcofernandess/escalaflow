@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { CORES_CONTRATO, CORES_GENERO } from '@/lib/cores'
+import { COR_TURNO, CORES_GENERO } from '@/lib/cores'
 import { toMinutes, formatarMinutos, iniciais, formatarData } from '@/lib/formatadores'
 
 const SLOT_SIZE = 15 // minutes per slot
@@ -157,12 +157,8 @@ export function TimelineGrid({
     return !(lunchStart <= slotStartMin && lunchEnd > slotStartMin)
   }
 
-  // Helper: get bar color from contract type
-  function getBarColor(tipoContratoId: number): { bar: string; text: string; border: string } {
-    const contrato = contratoMap.get(tipoContratoId)
-    if (!contrato) return CORES_CONTRATO.DEFAULT
-    return CORES_CONTRATO[contrato.nome] || CORES_CONTRATO.DEFAULT
-  }
+  // Cor única semântica para todas as barras de turno
+  const colors = COR_TURNO
 
   // Day navigation
   const prevDay = () => {
@@ -223,15 +219,7 @@ export function TimelineGrid({
     return data
   }, [totalSlots, setor.hora_abertura, dow, sortedColaboradores, alocacaoMap, demandas])
 
-  // Collect unique contract types for legend
-  const contractTypes = useMemo(() => {
-    const types = new Set<string>()
-    for (const colab of colaboradores) {
-      const contrato = contratoMap.get(colab.tipo_contrato_id)
-      if (contrato) types.add(contrato.nome)
-    }
-    return Array.from(types)
-  }, [colaboradores, contratoMap])
+  // (paleta por contrato removida — cor unica primary pra todos)
 
   // Hour boundary indices for vertical guides
   const hourBoundaries = useMemo(() => {
@@ -341,7 +329,7 @@ export function TimelineGrid({
           {sortedColaboradores.map((colab, rowIndex) => {
             const allocsToday = alocacaoMap.get(String(colab.id)) || []
             const contrato = contratoMap.get(colab.tipo_contrato_id)
-            const colors = getBarColor(colab.tipo_contrato_id)
+            // colors = COR_TURNO (definido acima — cor unica pra todos os contratos)
             const isViolatedRow = violatedCells.has(`${colab.id}-${currentDate}`)
             const hasWork = allocsToday.some((a) => a.status === 'TRABALHO')
             const isFolga = !hasWork && allocsToday.some((a) => a.status === 'FOLGA')
@@ -620,17 +608,10 @@ export function TimelineGrid({
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
-        {contractTypes.map((nome) => {
-          const colors = CORES_CONTRATO[nome] || CORES_CONTRATO.DEFAULT
-          return (
-            <div key={nome} className="flex items-center gap-1.5">
-              <div
-                className={cn('h-3 w-5 rounded border shadow-sm', colors.bar, colors.border)}
-              />
-              {nome}
-            </div>
-          )
-        })}
+        <div className="flex items-center gap-1.5">
+          <div className={cn('h-3 w-5 rounded border shadow-sm', colors.bar, colors.border)} />
+          Trabalho
+        </div>
 
         <div className="flex items-center gap-1.5">
           <div className="h-3 w-5 rounded border border-dashed border-muted-foreground/20 bg-muted/40 dark:bg-muted/30" />

@@ -73,7 +73,7 @@ function badgeTipo(tipo: string) {
   if (tipo === 'sistema') {
     return <Badge variant="secondary" className="text-xs">Sistema</Badge>
   }
-  return <Badge className="bg-green-600 text-xs hover:bg-green-700">Manual</Badge>
+  return <Badge className="bg-success text-success-foreground text-xs hover:bg-success/90">Manual</Badge>
 }
 
 export function MemoriaPagina() {

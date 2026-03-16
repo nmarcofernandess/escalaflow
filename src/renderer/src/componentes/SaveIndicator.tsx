@@ -14,7 +14,7 @@ export function SaveIndicator({ status, error }: SaveIndicatorProps) {
   }
 
   if (status === 'saved') {
-    return <Check className="size-3 text-green-500 animate-in fade-in duration-200" />
+    return <Check className="size-3 text-success animate-in fade-in duration-200" />
   }
 
   if (status === 'error') {

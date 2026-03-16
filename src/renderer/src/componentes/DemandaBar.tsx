@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { toMinutes, formatarMinutos, minutesToTime } from '@/lib/formatadores'
 import {
@@ -14,47 +15,19 @@ import {
 } from '@/lib/timeline-demanda'
 import type { Demanda } from '@shared/index'
 
-const CORES_FAIXA = [
-  {
-    bar: 'bg-emerald-500/80 dark:bg-emerald-600/60',
-    text: 'text-white dark:text-emerald-100',
-    border: 'border-emerald-600 dark:border-emerald-500',
-    handle: 'bg-emerald-700/60 dark:bg-emerald-400/40',
-    badge: 'bg-emerald-700/80 dark:bg-emerald-500/60',
-  },
-  {
-    bar: 'bg-blue-500/80 dark:bg-blue-600/60',
-    text: 'text-white dark:text-blue-100',
-    border: 'border-blue-600 dark:border-blue-500',
-    handle: 'bg-blue-700/60 dark:bg-blue-400/40',
-    badge: 'bg-blue-700/80 dark:bg-blue-500/60',
-  },
-  {
-    bar: 'bg-purple-500/80 dark:bg-purple-600/60',
-    text: 'text-white dark:text-purple-100',
-    border: 'border-purple-600 dark:border-purple-500',
-    handle: 'bg-purple-700/60 dark:bg-purple-400/40',
-    badge: 'bg-purple-700/80 dark:bg-purple-500/60',
-  },
-  {
-    bar: 'bg-amber-500/80 dark:bg-amber-600/60',
-    text: 'text-white dark:text-amber-100',
-    border: 'border-amber-600 dark:border-amber-500',
-    handle: 'bg-amber-700/60 dark:bg-amber-400/40',
-    badge: 'bg-amber-700/80 dark:bg-amber-500/60',
-  },
-  {
-    bar: 'bg-pink-500/80 dark:bg-pink-600/60',
-    text: 'text-white dark:text-pink-100',
-    border: 'border-pink-600 dark:border-pink-500',
-    handle: 'bg-pink-700/60 dark:bg-pink-400/40',
-    badge: 'bg-pink-700/80 dark:bg-pink-500/60',
-  },
-] as const
+/** Cor única semântica para barras de demanda */
+const COR_DEMANDA = {
+  bar: 'bg-primary/80',
+  text: 'text-primary-foreground',
+  border: 'border-primary',
+  handle: 'bg-primary-foreground/30',
+  badge: 'bg-primary-foreground/20',
+} as const
 
 interface DemandaBarProps {
   demanda: Demanda
-  index: number
+  /** @deprecated Não mais utilizado (cor única primary) */
+  index?: number
   openMin: number
   closeMin: number
   boundsOpenMin?: number
@@ -78,7 +51,6 @@ interface DemandaBarProps {
 
 export function DemandaBar({
   demanda,
-  index,
   openMin,
   closeMin,
   boundsOpenMin,
@@ -94,7 +66,7 @@ export function DemandaBar({
 }: DemandaBarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
-  const colors = CORES_FAIXA[index % CORES_FAIXA.length]
+  const colors = COR_DEMANDA
   const minBound = boundsOpenMin ?? openMin
   const maxBound = boundsCloseMin ?? closeMin
 
@@ -290,7 +262,7 @@ export function DemandaBar({
         <PopoverContent side="top" align="end" className="w-64 p-4 space-y-4">
           {/* Time inputs */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Horario</label>
+            <Label className="text-xs text-muted-foreground">Horario</Label>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
               <Input
                 type="time"
@@ -319,7 +291,7 @@ export function DemandaBar({
 
           {/* People stepper */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Min. pessoas</label>
+            <Label className="text-xs text-muted-foreground">Min. pessoas</Label>
             <div className="flex items-center justify-center gap-3">
               <Button
                 type="button"

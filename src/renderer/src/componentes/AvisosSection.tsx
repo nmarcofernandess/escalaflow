@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, Lightbulb } from 'lucide-react'
+import { AlertTriangle, Info, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -19,28 +19,28 @@ export interface Aviso {
 
 interface AvisosSectionProps {
   avisos: Aviso[]
-  onPedirSugestao?: () => void
+  onAnalisarIa?: () => void
 }
 
 const NIVEL_CONFIG = {
   error: {
     icon: AlertTriangle,
-    card: 'border bg-rose-500/10 border-rose-500/20 text-rose-500',
-    icon_class: 'text-rose-500',
+    card: 'border bg-rose-500/10 border-rose-500/20 dark:border-rose-500/15 text-rose-700 dark:text-rose-400',
+    icon_class: 'text-rose-600 dark:text-rose-400',
   },
   warning: {
     icon: AlertTriangle,
-    card: 'border bg-yellow-500/10 border-yellow-500/20 text-yellow-500',
-    icon_class: 'text-yellow-500',
+    card: 'border bg-yellow-500/10 border-yellow-500/20 dark:border-yellow-500/15 text-yellow-800 dark:text-yellow-400',
+    icon_class: 'text-yellow-600 dark:text-yellow-400',
   },
   info: {
     icon: Info,
-    card: 'border bg-indigo-500/10 border-indigo-500/20 text-indigo-400',
-    icon_class: 'text-indigo-400',
+    card: 'border bg-indigo-500/10 border-indigo-500/20 dark:border-indigo-500/15 text-indigo-700 dark:text-indigo-400',
+    icon_class: 'text-indigo-600 dark:text-indigo-400',
   },
 } as const
 
-export function AvisosSection({ avisos, onPedirSugestao }: AvisosSectionProps) {
+export function AvisosSection({ avisos, onAnalisarIa }: AvisosSectionProps) {
   if (avisos.length === 0) return null
 
   return (
@@ -50,10 +50,10 @@ export function AvisosSection({ avisos, onPedirSugestao }: AvisosSectionProps) {
           Avisos ({avisos.length})
         </span>
         <div className="flex-1" />
-        {onPedirSugestao && (
-          <Button variant="outline" size="sm" onClick={onPedirSugestao}>
-            <Lightbulb className="size-4" />
-            Pedir sugestao
+        {onAnalisarIa && (
+          <Button variant="outline" size="sm" onClick={onAnalisarIa}>
+            <Sparkles className="size-4" />
+            Analisar com IA
           </Button>
         )}
       </div>

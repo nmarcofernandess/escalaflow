@@ -89,16 +89,15 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
 
   return (
     <>
-      <button
+      <Button
         type="button"
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-md border border-input bg-background transition-colors hover:bg-accent',
-          value && 'border-primary/50',
-        )}
+        variant="outline"
+        size="icon"
+        className={cn('size-9 shrink-0', value && 'border-primary/50')}
         onClick={() => setOpen(true)}
       >
         <SetorIcon name={value} className="size-4 text-muted-foreground" />
-      </button>
+      </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
@@ -110,19 +109,18 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
             {SETOR_ICONS.map(({ name: iconName, icon: Icon, label }) => (
               <Tooltip key={iconName}>
                 <TooltipTrigger asChild>
-                  <button
+                  <Button
                     type="button"
-                    className={cn(
-                      'flex size-10 items-center justify-center rounded-md transition-colors hover:bg-accent',
-                      value === iconName && 'bg-accent ring-2 ring-primary',
-                    )}
+                    variant="ghost"
+                    size="icon"
+                    className={cn('size-10', value === iconName && 'bg-accent ring-2 ring-primary')}
                     onClick={() => {
                       onChange(iconName)
                       setOpen(false)
                     }}
                   >
                     <Icon className="size-5" />
-                  </button>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">
                   {label}

@@ -102,24 +102,6 @@
   --sidebar-primary-foreground: 240 5.9% 10%;
 }
 
-/* Green theme - Light */
-[data-color-theme="green"] {
-  --primary: 142.1 76.2% 36.3%;
-  --primary-foreground: 355.7 100% 97.3%;
-  --ring: 142.1 76.2% 36.3%;
-  --sidebar-primary: 142.1 76.2% 36.3%;
-  --sidebar-primary-foreground: 355.7 100% 97.3%;
-}
-
-/* Green theme - Dark */
-.dark[data-color-theme="green"] {
-  --primary: 142.1 70.6% 45.3%;
-  --primary-foreground: 144.9 80.4% 10%;
-  --ring: 142.1 70.6% 45.3%;
-  --sidebar-primary: 142.1 70.6% 45.3%;
-  --sidebar-primary-foreground: 144.9 80.4% 10%;
-}
-
 /* Violet theme - Light */
 [data-color-theme="violet"] {
   --primary: 262.1 83.3% 57.8%;

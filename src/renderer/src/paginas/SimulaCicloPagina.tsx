@@ -158,11 +158,11 @@ export function SimulaCicloPagina() {
         {!resultado.sucesso && (
           <Card className="border-red-500/30">
             <CardContent className="flex items-start gap-3 pt-6">
-              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-400" />
+              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
               <div>
-                <p className="font-medium text-red-400">{resultado.erro}</p>
+                <p className="font-medium text-destructive">{resultado.erro}</p>
                 {resultado.sugestao && (
-                  <p className="mt-1 text-sm text-zinc-400">{resultado.sugestao}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{resultado.sugestao}</p>
                 )}
               </div>
             </CardContent>
@@ -193,7 +193,7 @@ export function SimulaCicloPagina() {
                 <p
                   className={cn(
                     'mt-0.5 text-lg font-semibold',
-                    resultado.stats.sem_TT ? 'text-emerald-500' : 'text-amber-500',
+                    resultado.stats.sem_TT ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500',
                   )}
                 >
                   {resultado.stats.sem_TT
@@ -213,7 +213,7 @@ export function SimulaCicloPagina() {
                 <p
                   className={cn(
                     'mt-0.5 text-lg font-semibold',
-                    resultado.stats.sem_H1_violation ? 'text-emerald-500' : 'text-red-500',
+                    resultado.stats.sem_H1_violation ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-600 dark:text-red-500',
                   )}
                 >
                   {resultado.stats.h1_violacoes === 0
@@ -246,7 +246,7 @@ export function SimulaCicloPagina() {
             </Card>
 
             {/* Info */}
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Info className="size-4 shrink-0" />
               <span>
                 Exibindo {semanasExibidas} semanas (3 meses). Padrão repete a cada {resultado.ciclo_semanas} semanas.

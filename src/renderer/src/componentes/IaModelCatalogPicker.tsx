@@ -189,7 +189,7 @@ export function IaModelCatalogPicker({
                         className={cn(
                           'size-4',
                           allFilteredAreFavs && toggleableFiltered.length > 0
-                            ? 'fill-yellow-400 text-yellow-400'
+                            ? 'fill-yellow-400 text-yellow-400 dark:fill-yellow-500 dark:text-yellow-500'
                             : 'text-muted-foreground/50'
                         )}
                       />
@@ -247,7 +247,7 @@ export function IaModelCatalogPicker({
                             className={cn(
                               'size-4',
                               isFav
-                                ? 'fill-yellow-400 text-yellow-400'
+                                ? 'fill-yellow-400 text-yellow-400 dark:fill-yellow-500 dark:text-yellow-500'
                                 : 'text-muted-foreground/30'
                             )}
                           />

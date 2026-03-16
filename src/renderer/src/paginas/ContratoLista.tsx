@@ -6,6 +6,7 @@ import { FileText, Plus, Edit, Trash2, Info, Search, Clock, Calendar, Timer, Set
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -606,7 +607,7 @@ export function ContratoLista() {
           ) : showPerfilForm ? (
             <div className="space-y-3 py-2">
               <div>
-                <label className="text-xs font-medium">Nome do Perfil</label>
+                <Label className="text-xs">Nome do Perfil</Label>
                 <Input
                   value={perfilForm.nome}
                   onChange={(e) => setPerfilForm({ ...perfilForm, nome: e.target.value })}
@@ -615,7 +616,7 @@ export function ContratoLista() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium">Inicio</label>
+                  <Label className="text-xs">Inicio</Label>
                   <Input
                     type="time"
                     value={perfilForm.inicio}
@@ -623,7 +624,7 @@ export function ContratoLista() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium">Fim</label>
+                  <Label className="text-xs">Fim</Label>
                   <Input
                     type="time"
                     value={perfilForm.fim}
@@ -632,7 +633,7 @@ export function ContratoLista() {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium">Preferencia de Turno</label>
+                <Label className="text-xs">Preferencia de Turno</Label>
                 <Select
                   value={perfilForm.preferencia_turno_soft || '_none'}
                   onValueChange={(v) => setPerfilForm({ ...perfilForm, preferencia_turno_soft: v === '_none' ? '' : v })}

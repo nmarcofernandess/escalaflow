@@ -15,7 +15,7 @@ const DIAS_SEMANA_CURTO = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
 
 function getStatusClasses(status: string, dayOfWeek: number): string {
   if (status === 'TRABALHO' && dayOfWeek === 0) {
-    return CORES_ALOCACAO.TRABALHO_DOMINGO + ' hover:bg-sky-200 dark:hover:bg-sky-900/40'
+    return CORES_ALOCACAO.TRABALHO_DOMINGO + ' hover:bg-primary/20'
   }
   if (status === 'TRABALHO') {
     return CORES_ALOCACAO.TRABALHO + ' hover:bg-success/20'
@@ -430,17 +430,17 @@ export function EscalaGrid({
           FOLGA
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="size-3 rounded border border-sky-200 dark:border-sky-800 bg-sky-100 dark:bg-sky-950/30" />
+          <div className="size-3 rounded border border-primary/20 bg-primary/10" />
           DOMINGO (trab.)
         </div>
         {regrasMap && regrasMap.size > 0 && (
           <>
             <div className="flex items-center gap-1.5">
-              <div className="size-3 rounded border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center text-[7px] font-bold text-blue-600 dark:text-blue-400">F</div>
+              <div className="size-3 rounded border border-muted-foreground/20 bg-muted flex items-center justify-center text-[7px] font-bold text-muted-foreground">F</div>
               Folga Fixa
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="size-3 rounded border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 flex items-center justify-center text-[7px] font-bold text-purple-600 dark:text-purple-400">V</div>
+              <div className="size-3 rounded border border-warning/30 bg-warning/10 flex items-center justify-center text-[7px] font-bold text-warning">V</div>
               Folga Variavel
             </div>
           </>
