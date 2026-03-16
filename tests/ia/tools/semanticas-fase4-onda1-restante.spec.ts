@@ -122,20 +122,19 @@ function setupOnda1Mocks(state: {
   queryMocks.execute.mockImplementation(async (sql: string, ...params: unknown[]) => {
     const n = sql.replace(/\s+/g, ' ').trim()
 
-    // salvar_regra: INSERT
+    // salvar_regra: INSERT (columns: colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana)
     if (n.includes('INSERT INTO colaborador_regra_horario')) {
       const newRegra = {
         id: regraIdCounter++,
         colaborador_id: Number(params[0]),
         dia_semana_regra: params[1] ?? null,
-        ativo: params[2] ?? 1,
+        ativo: params[2] ?? true,
         perfil_horario_id: params[3] ?? null,
         inicio: params[4] ?? null,
         fim: params[5] ?? null,
         preferencia_turno_soft: params[6] ?? null,
-        domingo_ciclo_trabalho: params[7] ?? 2,
-        domingo_ciclo_folga: params[8] ?? 1,
-        folga_fixa_dia_semana: params[9] ?? null,
+        folga_fixa_dia_semana: params[7] ?? null,
+        folga_variavel_dia_semana: params[8] ?? null,
       }
       regras.push(newRegra)
       return { changes: 1 }
@@ -210,7 +209,7 @@ describe('executeTool ferramentas semânticas Fase 4 (Onda 1 restante)', () => {
     expect(result.ok).toBe(false)
     expect(result.blockers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ codigo: 'DOMINGO_SEM_COLABORADORES' }),
+        expect.objectContaining({ codigo: 'CAPACIDADE_COLETIVA_INSUFICIENTE' }),
       ]),
     )
     expect(result._meta).toEqual(expect.objectContaining({ validation_level: 'completo' }))

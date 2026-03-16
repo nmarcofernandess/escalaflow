@@ -92,11 +92,15 @@ function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
 // ---------------------------------------------------------------------------
 // Broadcast de invalidação — notifica renderer que dados mudaram (via IA tools)
 // ---------------------------------------------------------------------------
-const requireElectron = createRequire(import.meta.url)
-const { BrowserWindow } = requireElectron('electron') as typeof import('electron')
+let _BrowserWindow: typeof import('electron').BrowserWindow | undefined
+try {
+  const requireElectron = createRequire(import.meta.url)
+  _BrowserWindow = (requireElectron('electron') as typeof import('electron')).BrowserWindow
+} catch { /* vitest / non-electron env */ }
 
 function broadcastInvalidation(entidades: string[], setor_id?: number) {
-  for (const win of BrowserWindow.getAllWindows()) {
+  if (!_BrowserWindow?.getAllWindows) return
+  for (const win of _BrowserWindow.getAllWindows()) {
     win.webContents.send('data:invalidated', { entidades, setor_id })
   }
 }
