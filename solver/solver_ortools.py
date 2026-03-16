@@ -363,7 +363,9 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
 
     config = data.get("config", {})
     rules = config.get("rules", {})
-    h3_status = rules.get("H3_DOM_MAX_CONSEC", "HARD")
+    h3_cycle_status = rules.get("H3_DOM_CICLO_EXATO", "SOFT")
+    h3_status_m = rules.get("H3_DOM_MAX_CONSEC_M", rules.get("H3_DOM_MAX_CONSEC", "HARD"))
+    h3_status_f = rules.get("H3_DOM_MAX_CONSEC_F", rules.get("H3_DOM_MAX_CONSEC", "HARD"))
 
     # Compute grid info for half-demand
     empresa = data["empresa"]
@@ -423,12 +425,17 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
     )
     add_min_headcount_per_day(model, works_day, C, D, peak_demand, blocked_days)
 
-    # HARD: domingo ciclo
-    add_domingo_ciclo_hard(model, works_day, colabs, C, sunday_indices, blocked_days)
+    # HARD: domingo ciclo exato
+    if h3_cycle_status == "HARD":
+        add_domingo_ciclo_hard(model, works_day, colabs, C, sunday_indices, blocked_days)
 
-    # H3: max domingos consecutivos (mulher=1, homem=2) — policy-driven.
-    if h3_status == "HARD":
-        add_dom_max_consecutivo(model, works_day, colabs, C, sunday_indices, blocked_days)
+    # H3: max domingos consecutivos por sexo — policy-driven.
+    if h3_status_m == "HARD" or h3_status_f == "HARD":
+        add_dom_max_consecutivo(
+            model, works_day, colabs, C, sunday_indices, blocked_days,
+            hard_m=h3_status_m == "HARD",
+            hard_f=h3_status_f == "HARD",
+        )
 
     # HARD: band demand coverage (morning/afternoon halves)
     morning_demand, afternoon_demand = _compute_half_demand(
@@ -832,11 +839,17 @@ def build_model(
 
     # H3: Max domingos consecutivos — policy-driven.
     # SOFT ainda nao tem penalidade dedicada; nesse modo a hard constraint fica desligada.
-    h3_status = rule_is('H3_DOM_MAX_CONSEC', 'HARD')
-    if h3_status == 'HARD' and "ALL_PRODUCT_RULES" not in relax:
-        add_dom_max_consecutivo(model, works_day, colabs, C, sunday_indices, blocked_days)
-    elif h3_status == 'SOFT':
-        pass
+    h3_cycle_status = rule_is('H3_DOM_CICLO_EXATO', 'SOFT')
+    h3_status_m = rule_is('H3_DOM_MAX_CONSEC_M', rule_is('H3_DOM_MAX_CONSEC', 'HARD'))
+    h3_status_f = rule_is('H3_DOM_MAX_CONSEC_F', rule_is('H3_DOM_MAX_CONSEC', 'HARD'))
+    if h3_cycle_status == 'HARD' and "ALL_PRODUCT_RULES" not in relax:
+        add_domingo_ciclo_hard(model, works_day, colabs, C, sunday_indices, blocked_days)
+    if (h3_status_m == 'HARD' or h3_status_f == 'HARD') and "ALL_PRODUCT_RULES" not in relax:
+        add_dom_max_consecutivo(
+            model, works_day, colabs, C, sunday_indices, blocked_days,
+            hard_m=h3_status_m == 'HARD',
+            hard_f=h3_status_f == 'HARD',
+        )
 
     obj_terms_list: list = []  # penalties das versoes SOFT das HARD rules
 
@@ -856,7 +869,7 @@ def build_model(
 
     # H2: ALWAYS HARD (safety — CLT Art. 66)
     add_h2_interjornada(model, work, C, D, S, grid_min=grid_min)
-    # H3 hard/soft is resolved above via h3_status.
+    # H3 ciclo exato + domingos consecutivos sao resolvidos acima.
     # H4: ALWAYS HARD (safety — CLT Art. 59)
     add_h4_max_jornada_diaria(model, work, colabs, C, D, S, grid_min)
     # H5: ALWAYS HARD (exceptions are physical absence)
@@ -1703,6 +1716,9 @@ def solve(data: dict) -> dict:
 
         return best_result if best_result else {"sucesso": False, "status": "TIMEOUT"}
 
+    # ---- Advisory-only mode: run Phase 1 and return immediately ----
+    advisory_only = config.get("advisory_only", False)
+
     # ---- Phase 1: Folga Pattern (lightweight model) ----
     # Check for external pinned_folga (from Nível 1 simulation)
     external_pinned = config.get("pinned_folga_externo")
@@ -1747,6 +1763,52 @@ def solve(data: dict) -> dict:
         else:
             phase1_diag = {"phase1_status": "INFEASIBLE" if phase1_result is None else "SKIPPED"}
             log("Padrao de folgas nao encontrado — usando distribuicao automatica")
+
+    if advisory_only:
+        log("Modo advisory: retornando resultado da Phase 1")
+        advisory_diag = {
+            "generation_mode": "ADVISORY",
+            "capacidade_vs_demanda": capacidade_diag,
+            "cycle_length_weeks": cycle_weeks,
+            "tempo_total_s": round(time.time() - t_global_start, 1),
+        }
+        advisory_diag.update(phase1_diag)
+
+        if pinned_folga is not None:
+            # Serialize pattern as list of {c, d, band} for JSON
+            pattern_list = [
+                {"c": c, "d": d, "band": band}
+                for (c, d), band in sorted(pinned_folga.items())
+            ]
+            return {
+                "sucesso": True,
+                "status": "ADVISORY_OK",
+                "advisory_pattern": pattern_list,
+                "diagnostico": advisory_diag,
+                "alocacoes": [],
+                "decisoes": [],
+                "comparacao_demanda": [],
+                "indicadores": {
+                    "pontuacao": 0, "cobertura_percent": 0,
+                    "violacoes_hard": 0, "violacoes_soft": 0,
+                    "equilibrio": 0,
+                },
+            }
+        else:
+            return {
+                "sucesso": False,
+                "status": "ADVISORY_INFEASIBLE",
+                "advisory_pattern": [],
+                "diagnostico": advisory_diag,
+                "alocacoes": [],
+                "decisoes": [],
+                "comparacao_demanda": [],
+                "indicadores": {
+                    "pontuacao": 0, "cobertura_percent": 0,
+                    "violacoes_hard": 0, "violacoes_soft": 0,
+                    "equilibrio": 0,
+                },
+            }
 
     # ---- Pass 1: Normal (with Phase 1 folga pinned) ----
     result = _run_with_continuation(
