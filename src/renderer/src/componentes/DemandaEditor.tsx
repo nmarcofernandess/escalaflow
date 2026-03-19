@@ -184,6 +184,7 @@ interface DemandaEditorProps {
   demandas: Demanda[]
   horariosSemana: SetorHorarioSemana[]
   totalColaboradores: number
+  saving?: boolean
   onDirtyChange?: (dirty: boolean) => void
   onDraftChange?: (draft: SemanaDraft) => void
 }
@@ -255,6 +256,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
   demandas,
   horariosSemana,
   totalColaboradores,
+  saving = false,
   onDirtyChange,
   onDraftChange,
 }, ref) {
@@ -319,16 +321,22 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       horarioMap.set(h.dia_semana, h)
     }
 
-    // Infere padrao: prefere dia_semana=null, senão primeiro dia usa_padrao, senão primeiro com segmentos
-    const firstUsaPadraoDia = DIAS_SEMANA.find((d) => {
+    const firstUsaPadraoDia = DIAS_SEMANA.find((d) => horarioMap.get(d)?.usa_padrao ?? true)
+    const horarioPadraoBase = firstUsaPadraoDia ? horarioMap.get(firstUsaPadraoDia) : undefined
+    const padraoAberturaRaw = horarioPadraoBase?.hora_abertura ?? setor.hora_abertura
+    const padraoFechamentoRaw = horarioPadraoBase?.hora_fechamento ?? setor.hora_fechamento
+    const padraoAberturaMin = Math.max(setorOpenMin, Math.min(toMinutes(padraoAberturaRaw), setorCloseMin - 60))
+    const padraoFechamentoMin = Math.min(setorCloseMin, Math.max(toMinutes(padraoFechamentoRaw), padraoAberturaMin + 60))
+
+    const firstUsaPadraoDiaComSegmentos = DIAS_SEMANA.find((d) => {
       const h = horarioMap.get(d)
       return (h?.usa_padrao ?? true) && byDia[d].length > 0
     })
     const padraoSegmentosBaseRaw =
       padraoLegado.length > 0
         ? [...padraoLegado].sort(sortByInicio)
-        : firstUsaPadraoDia
-          ? cloneSegmentos(byDia[firstUsaPadraoDia], nextTempId)
+        : firstUsaPadraoDiaComSegmentos
+          ? cloneSegmentos(byDia[firstUsaPadraoDiaComSegmentos], nextTempId)
           : (() => {
               const firstComSegmento = DIAS_SEMANA.find((dia) => byDia[dia].length > 0)
               if (firstComSegmento) return cloneSegmentos(byDia[firstComSegmento], nextTempId)
@@ -345,8 +353,8 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
 
     const padraoSegmentosBase = padraoSegmentosBaseRaw
       .map((seg) => {
-        const start = Math.max(setorOpenMin, toMinutes(seg.hora_inicio))
-        const end = Math.min(setorCloseMin, toMinutes(seg.hora_fim))
+        const start = Math.max(padraoAberturaMin, toMinutes(seg.hora_inicio))
+        const end = Math.min(padraoFechamentoMin, toMinutes(seg.hora_fim))
         if (end - start < 30) return null
         return {
           ...seg,
@@ -357,8 +365,8 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       .filter((seg): seg is SegmentoDraft => seg !== null)
 
     const padrao: PadraoDraft = {
-      hora_abertura: setor.hora_abertura,
-      hora_fechamento: setor.hora_fechamento,
+      hora_abertura: minutesToTime(padraoAberturaMin),
+      hora_fechamento: minutesToTime(padraoFechamentoMin),
       segmentos: padraoSegmentosBase,
     }
 
@@ -385,7 +393,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
         .filter((seg): seg is SegmentoDraft => seg !== null)
 
       diasDraft[dia] = {
-        ativo: true,
+        ativo: horario?.ativo ?? true,
         usa_padrao: usaPadrao,
         hora_abertura: minutesToTime(aberturaMin),
         hora_fechamento: minutesToTime(fechamentoMin),
@@ -397,12 +405,16 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
   }, [demandas, horariosSemana, setor.hora_abertura, setor.hora_fechamento])
 
   const [draft, setDraft] = useState<SemanaDraft>(() => buildInitialDraft())
+  const lastHydratedSnapshotKeyRef = useRef(snapshotKey)
 
   useEffect(() => {
+    if (saving) return
+    if (snapshotKey === lastHydratedSnapshotKeyRef.current) return
     setDraft(buildInitialDraft())
     dirtyRef.current = false
     onDirtyChange?.(false)
-  }, [snapshotKey, buildInitialDraft, onDirtyChange])
+    lastHydratedSnapshotKeyRef.current = snapshotKey
+  }, [snapshotKey, buildInitialDraft, onDirtyChange, saving])
 
   // ─── Ref imperativo para o pai (SetorDetalhe) consumir ────────────
   useImperativeHandle(ref, () => ({

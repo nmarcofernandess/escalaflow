@@ -634,7 +634,7 @@ const setoresAtualizar = t.procedure
     }
 
     const result = await queryOne('SELECT * FROM setores WHERE id = ?', input.id)
-    broadcastInvalidation(['setores'], input.id)
+    broadcastInvalidation(['setores', 'setor'], input.id)
     return result
   })
 
@@ -648,7 +648,7 @@ const setoresSalvarSimulacaoConfig = t.procedure
       input.setor_id,
     )
     const result = await queryOne('SELECT * FROM setores WHERE id = ?', input.setor_id)
-    broadcastInvalidation(['setores'], input.setor_id)
+    broadcastInvalidation(['setores', 'setor'], input.setor_id)
     return result
   })
 
@@ -1812,6 +1812,160 @@ const setoresUpsertHorarioSemana = t.procedure
     return result
   })
 
+type TimelineSegmentInput = {
+  hora_inicio: string
+  hora_fim: string
+  min_pessoas: number
+  override: boolean
+}
+
+type TimelineDaySaveInput = {
+  dia_semana: string
+  ativo: boolean
+  usa_padrao: boolean
+  hora_abertura: string
+  hora_fechamento: string
+  segmentos: TimelineSegmentInput[]
+}
+
+type TimelineDayPreparedSave = TimelineDaySaveInput & {
+  normalizados: TimelineSegmentInput[]
+  normalizacao: {
+    slots_total: number
+    slots_overlap_detectados: number
+    slots_sem_demanda: number
+  }
+}
+
+function normalizeTimelineDayForPersistence(input: TimelineDaySaveInput): TimelineDayPreparedSave {
+  const GRID = 15
+  const toMin = (hhmm: string): number => {
+    const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm)
+    if (!m) throw new Error(`Horario invalido: "${hhmm}"`)
+    return Number(m[1]) * 60 + Number(m[2])
+  }
+  const toHHMM = (min: number): string => {
+    const hh = Math.floor(min / 60)
+    const mm = min % 60
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+  }
+
+  const aberturaMin = toMin(input.hora_abertura)
+  const fechamentoMin = toMin(input.hora_fechamento)
+  if (aberturaMin >= fechamentoMin) {
+    throw new Error('Horario invalido: abertura deve ser menor que fechamento')
+  }
+  if (aberturaMin % GRID !== 0 || fechamentoMin % GRID !== 0) {
+    throw new Error(`Horario de abertura/fechamento deve respeitar grid de ${GRID}min`)
+  }
+  const duracaoJanela = fechamentoMin - aberturaMin
+  if (duracaoJanela % GRID !== 0) {
+    throw new Error(`Janela diaria deve ser multipla de ${GRID} minutos`)
+  }
+
+  if (!input.ativo && input.segmentos.length > 0) {
+    throw new Error('Dia inativo nao pode ter segmentos de demanda')
+  }
+
+  const parsedSegments = input.segmentos.map((seg, idx) => {
+    const inicio = toMin(seg.hora_inicio)
+    const fim = toMin(seg.hora_fim)
+
+    if (!Number.isInteger(seg.min_pessoas) || seg.min_pessoas < 1) {
+      throw new Error(`Segmento ${idx + 1}: min_pessoas invalido`)
+    }
+    if (inicio % GRID !== 0 || fim % GRID !== 0) {
+      throw new Error(`Segmento ${idx + 1}: horarios devem respeitar grid de ${GRID}min`)
+    }
+    if (inicio >= fim) {
+      throw new Error(`Segmento ${idx + 1}: hora_inicio deve ser menor que hora_fim`)
+    }
+    if (inicio < aberturaMin || fim > fechamentoMin) {
+      throw new Error(`Segmento ${idx + 1}: fora da janela de abertura/fechamento`)
+    }
+
+    return {
+      inicio,
+      fim,
+      min_pessoas: seg.min_pessoas,
+      override: Boolean(seg.override),
+    }
+  })
+
+  const slotsTotal = input.ativo ? Math.max(0, duracaoJanela / GRID) : 0
+  let slotsOverlapDetectados = 0
+  let slotsPreenchidosComPiso = 0
+
+  const normalizados: TimelineSegmentInput[] = []
+
+  if (input.ativo) {
+    const slotState = Array.from({ length: slotsTotal }, () => ({
+      pessoas: 0,
+      override: false,
+      layers: 0,
+    }))
+
+    for (const seg of parsedSegments) {
+      const startIdx = Math.floor((seg.inicio - aberturaMin) / GRID)
+      const endIdx = Math.floor((seg.fim - aberturaMin) / GRID)
+
+      for (let idx = startIdx; idx < endIdx; idx++) {
+        const slot = slotState[idx]
+        slot.pessoas += seg.min_pessoas
+        slot.override = slot.override || seg.override
+        slot.layers += 1
+      }
+    }
+
+    for (const slot of slotState) {
+      if (slot.layers > 1) slotsOverlapDetectados += 1
+      if (slot.pessoas === 0) slotsPreenchidosComPiso += 1
+    }
+
+    if (slotState.length > 0) {
+      let segStartIdx = 0
+      let segPeople = slotState[0].pessoas
+      let segOverride = slotState[0].override
+
+      for (let idx = 1; idx < slotState.length; idx++) {
+        const slot = slotState[idx]
+        if (slot.pessoas === segPeople && slot.override === segOverride) continue
+
+        if (segPeople > 0) {
+          normalizados.push({
+            hora_inicio: toHHMM(aberturaMin + segStartIdx * GRID),
+            hora_fim: toHHMM(aberturaMin + idx * GRID),
+            min_pessoas: segPeople,
+            override: segOverride,
+          })
+        }
+        segStartIdx = idx
+        segPeople = slot.pessoas
+        segOverride = slot.override
+      }
+
+      if (segPeople > 0) {
+        normalizados.push({
+          hora_inicio: toHHMM(aberturaMin + segStartIdx * GRID),
+          hora_fim: toHHMM(fechamentoMin),
+          min_pessoas: segPeople,
+          override: segOverride,
+        })
+      }
+    }
+  }
+
+  return {
+    ...input,
+    normalizados,
+    normalizacao: {
+      slots_total: slotsTotal,
+      slots_overlap_detectados: slotsOverlapDetectados,
+      slots_sem_demanda: slotsPreenchidosComPiso,
+    },
+  }
+}
+
 /** Salva horário do dia + segmentos de demanda de forma transacional (RFC §11.1) */
 const setoresSalvarTimelineDia = t.procedure
   .input<{
@@ -1824,128 +1978,17 @@ const setoresSalvarTimelineDia = t.procedure
     segmentos: Array<{ hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }>
   }>()
   .action(async ({ input }) => {
-    const GRID = 15 // grid 15min ponta a ponta
-    const toMin = (hhmm: string): number => {
-      const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm)
-      if (!m) throw new Error(`Horario invalido: "${hhmm}"`)
-      return Number(m[1]) * 60 + Number(m[2])
-    }
-    const toHHMM = (min: number): string => {
-      const hh = Math.floor(min / 60)
-      const mm = min % 60
-      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-    }
-
-    const aberturaMin = toMin(input.hora_abertura)
-    const fechamentoMin = toMin(input.hora_fechamento)
-    if (aberturaMin >= fechamentoMin) {
-      throw new Error('Horario invalido: abertura deve ser menor que fechamento')
-    }
-    if (aberturaMin % GRID !== 0 || fechamentoMin % GRID !== 0) {
-      throw new Error(`Horario de abertura/fechamento deve respeitar grid de ${GRID}min`)
-    }
-    const duracaoJanela = fechamentoMin - aberturaMin
-    if (duracaoJanela % GRID !== 0) {
-      throw new Error(`Janela diaria deve ser multipla de ${GRID} minutos`)
-    }
-
     const setor = await queryOne<{ id: number }>('SELECT id FROM setores WHERE id = ?', input.setor_id)
     if (!setor) throw new Error('Setor nao encontrado')
 
-    if (!input.ativo && input.segmentos.length > 0) {
-      throw new Error('Dia inativo nao pode ter segmentos de demanda')
-    }
-
-    type SegmentoNormalizado = {
-      hora_inicio: string
-      hora_fim: string
-      min_pessoas: number
-      override: boolean
-    }
-
-    const parsedSegments = input.segmentos.map((seg, idx) => {
-      const inicio = toMin(seg.hora_inicio)
-      const fim = toMin(seg.hora_fim)
-
-      if (!Number.isInteger(seg.min_pessoas) || seg.min_pessoas < 1) {
-        throw new Error(`Segmento ${idx + 1}: min_pessoas invalido`)
-      }
-      if (inicio % GRID !== 0 || fim % GRID !== 0) {
-        throw new Error(`Segmento ${idx + 1}: horarios devem respeitar grid de ${GRID}min`)
-      }
-      if (inicio >= fim) {
-        throw new Error(`Segmento ${idx + 1}: hora_inicio deve ser menor que hora_fim`)
-      }
-      if (inicio < aberturaMin || fim > fechamentoMin) {
-        throw new Error(`Segmento ${idx + 1}: fora da janela de abertura/fechamento`)
-      }
-
-      return {
-        inicio,
-        fim,
-        min_pessoas: seg.min_pessoas,
-        override: Boolean(seg.override),
-      }
+    const prepared = normalizeTimelineDayForPersistence({
+      dia_semana: input.dia_semana,
+      ativo: input.ativo,
+      usa_padrao: input.usa_padrao,
+      hora_abertura: input.hora_abertura,
+      hora_fechamento: input.hora_fechamento,
+      segmentos: input.segmentos,
     })
-
-    const slotsTotal = input.ativo ? Math.max(0, duracaoJanela / GRID) : 0
-    let slotsOverlapDetectados = 0
-    let slotsPreenchidosComPiso = 0
-
-    let normalizados: SegmentoNormalizado[] = []
-
-    if (input.ativo) {
-      const slotState = Array.from({ length: slotsTotal }, () => ({
-        pessoas: 0,
-        override: false,
-        layers: 0,
-      }))
-
-      for (const seg of parsedSegments) {
-        const startIdx = Math.floor((seg.inicio - aberturaMin) / GRID)
-        const endIdx = Math.floor((seg.fim - aberturaMin) / GRID)
-
-        for (let idx = startIdx; idx < endIdx; idx++) {
-          const slot = slotState[idx]
-          slot.pessoas += seg.min_pessoas
-          slot.override = slot.override || seg.override
-          slot.layers += 1
-        }
-      }
-
-      for (const slot of slotState) {
-        if (slot.layers > 1) slotsOverlapDetectados += 1
-        if (slot.pessoas === 0) slotsPreenchidosComPiso += 1
-      }
-
-      if (slotState.length > 0) {
-        let segStartIdx = 0
-        let segPeople = slotState[0].pessoas
-        let segOverride = slotState[0].override
-
-        for (let idx = 1; idx < slotState.length; idx++) {
-          const slot = slotState[idx]
-          if (slot.pessoas === segPeople && slot.override === segOverride) continue
-
-          normalizados.push({
-            hora_inicio: toHHMM(aberturaMin + segStartIdx * GRID),
-            hora_fim: toHHMM(aberturaMin + idx * GRID),
-            min_pessoas: segPeople,
-            override: segOverride,
-          })
-          segStartIdx = idx
-          segPeople = slot.pessoas
-          segOverride = slot.override
-        }
-
-        normalizados.push({
-          hora_inicio: toHHMM(aberturaMin + segStartIdx * GRID),
-          hora_fim: toHHMM(fechamentoMin),
-          min_pessoas: segPeople,
-          override: segOverride,
-        })
-      }
-    }
 
     await transaction(async () => {
       // 1. Upsert horario do dia
@@ -1971,7 +2014,7 @@ const setoresSalvarTimelineDia = t.procedure
         input.setor_id, input.dia_semana)
 
       // 3. Inserir novos segmentos
-      for (const seg of normalizados) {
+      for (const seg of prepared.normalizados) {
         await execute(`
           INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -1991,14 +2034,123 @@ const setoresSalvarTimelineDia = t.procedure
         input.setor_id, input.dia_semana),
       demandas: await queryAll('SELECT * FROM demandas WHERE setor_id = ? AND dia_semana = ? ORDER BY hora_inicio',
         input.setor_id, input.dia_semana),
-      normalizacao: {
-        slots_total: slotsTotal,
-        slots_overlap_detectados: slotsOverlapDetectados,
-        slots_sem_demanda: slotsPreenchidosComPiso,
-      },
+      normalizacao: prepared.normalizacao,
     }
     broadcastInvalidation(['demandas', 'horario_semana'], input.setor_id)
     return result
+  })
+
+const setoresSalvarTimelineSemana = t.procedure
+  .input<{
+    setor_id: number
+    dias: Array<{
+      dia_semana: string
+      ativo: boolean
+      usa_padrao: boolean
+      hora_abertura: string
+      hora_fechamento: string
+      segmentos: Array<{ hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }>
+    }>
+  }>()
+  .action(async ({ input }) => {
+    if (!Array.isArray(input.dias) || input.dias.length === 0) {
+      throw new Error('Nenhum dia informado para salvar timeline semanal')
+    }
+
+    const setor = await queryOne<{ id: number }>('SELECT id FROM setores WHERE id = ?', input.setor_id)
+    if (!setor) throw new Error('Setor nao encontrado')
+
+    const diasUnicos = new Set<string>()
+    const preparedDays = input.dias.map((dia) => {
+      if (diasUnicos.has(dia.dia_semana)) {
+        throw new Error(`Dia duplicado na timeline semanal: ${dia.dia_semana}`)
+      }
+      diasUnicos.add(dia.dia_semana)
+      return normalizeTimelineDayForPersistence(dia)
+    })
+
+    await transaction(async () => {
+      await execute('DELETE FROM demandas WHERE setor_id = ? AND dia_semana IS NULL', input.setor_id)
+
+      for (const prepared of preparedDays) {
+        await execute(`
+          INSERT INTO setor_horario_semana (setor_id, dia_semana, ativo, usa_padrao, hora_abertura, hora_fechamento)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(setor_id, dia_semana) DO UPDATE SET
+            ativo = excluded.ativo,
+            usa_padrao = excluded.usa_padrao,
+            hora_abertura = excluded.hora_abertura,
+            hora_fechamento = excluded.hora_fechamento
+        `,
+          input.setor_id,
+          prepared.dia_semana,
+          prepared.ativo,
+          prepared.usa_padrao,
+          prepared.hora_abertura,
+          prepared.hora_fechamento,
+        )
+
+        await execute(
+          'DELETE FROM demandas WHERE setor_id = ? AND dia_semana = ?',
+          input.setor_id,
+          prepared.dia_semana,
+        )
+
+        for (const seg of prepared.normalizados) {
+          await execute(`
+            INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+            input.setor_id,
+            prepared.dia_semana,
+            seg.hora_inicio,
+            seg.hora_fim,
+            seg.min_pessoas,
+            seg.override,
+          )
+        }
+      }
+    })
+
+    const [horario_semana, demandas] = await Promise.all([
+      queryAll(`
+        SELECT * FROM setor_horario_semana
+        WHERE setor_id = ?
+        ORDER BY CASE dia_semana
+          WHEN 'SEG' THEN 1
+          WHEN 'TER' THEN 2
+          WHEN 'QUA' THEN 3
+          WHEN 'QUI' THEN 4
+          WHEN 'SEX' THEN 5
+          WHEN 'SAB' THEN 6
+          WHEN 'DOM' THEN 7
+        END
+      `, input.setor_id),
+      queryAll(`
+        SELECT * FROM demandas
+        WHERE setor_id = ?
+        ORDER BY CASE dia_semana
+          WHEN 'SEG' THEN 1
+          WHEN 'TER' THEN 2
+          WHEN 'QUA' THEN 3
+          WHEN 'QUI' THEN 4
+          WHEN 'SEX' THEN 5
+          WHEN 'SAB' THEN 6
+          WHEN 'DOM' THEN 7
+          ELSE 8
+        END, hora_inicio, hora_fim, id
+      `, input.setor_id),
+    ])
+
+    broadcastInvalidation(['demandas', 'horario_semana'], input.setor_id)
+    return {
+      horario_semana,
+      demandas,
+      normalizacao: preparedDays.map((prepared) => ({
+        dia_semana: prepared.dia_semana,
+        ...prepared.normalizacao,
+      })),
+    }
   })
 
 /** Limpa demandas padrao (dia_semana IS NULL) — chamado pelo autosave do DemandaEditor
@@ -4303,6 +4455,7 @@ export const router = {
   'setores.listarHorarioSemana': setoresListarHorarioSemana,
   'setores.upsertHorarioSemana': setoresUpsertHorarioSemana,
   'setores.salvarTimelineDia': setoresSalvarTimelineDia,
+  'setores.salvarTimelineSemana': setoresSalvarTimelineSemana,
   'setores.limparPadraoDemandas': setoresLimparPadraoDemandas,
   'setores.listarDemandasExcecaoData': setoresListarDemandasExcecaoData,
   'setores.salvarDemandaExcecaoData': setoresSalvarDemandaExcecaoData,

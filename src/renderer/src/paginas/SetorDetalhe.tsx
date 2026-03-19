@@ -98,6 +98,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/componentes/PageHeader'
 import type { DemandaEditorRef, SemanaDraft } from '@/componentes/DemandaEditor'
+import { DirtyGuardDialog } from '@/componentes/DirtyGuardDialog'
 import { StatusBadge } from '@/componentes/StatusBadge'
 import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
@@ -114,6 +115,7 @@ import { ExportModal, type EscalaExportData, type ExportToggles } from '@/compon
 import { IconPicker } from '@/componentes/IconPicker'
 import { ColaboradorCard } from '@/componentes/ColaboradorCard'
 import { DemandaEditor } from '@/componentes/DemandaEditor'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { setoresService } from '@/servicos/setores'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
@@ -401,6 +403,7 @@ export function SetorDetalhe() {
   const [demandaDraftPreview, setDemandaDraftPreview] = useState<SemanaDraft | null>(null)
   const [salvandoTudo, setSalvandoTudo] = useState(false)
   const isDirty = setorForm.formState.isDirty || demandaDirty
+  const blocker = useDirtyGuard({ isDirty: isDirty && !salvandoTudo })
   const regimeEfetivo = setorForm.watch('regime_escala') ?? setor?.regime_escala ?? '5X2'
 
   // ─── State ───────────────────────────────────────────────────────────
@@ -1444,35 +1447,36 @@ export function SetorDetalhe() {
   // ─── Handlers ────────────────────────────────────────────────────────
   // ─── Salvar tudo (form + demandas) ──────────────────────────────────
   const salvarDemandas = useCallback(async (draft: SemanaDraft) => {
-    // Limpa entradas dia_semana=null (padrao legado) para evitar double-counting no solver
-    await setoresService.limparPadraoDemandas(setorId)
-    for (const dia of DIAS_SEMANA) {
-      const dd = draft.dias[dia]
-      const usaPadrao = dd.usa_padrao
-      await setoresService.salvarTimelineDia({
-        setor_id: setorId,
-        dia_semana: dia,
-        ativo: dd.ativo,
-        usa_padrao: usaPadrao,
-        hora_abertura: usaPadrao ? draft.padrao.hora_abertura : dd.hora_abertura,
-        hora_fechamento: usaPadrao ? draft.padrao.hora_fechamento : dd.hora_fechamento,
-        segmentos: (usaPadrao ? draft.padrao.segmentos : dd.segmentos).map((s) => ({
-          hora_inicio: s.hora_inicio,
-          hora_fim: s.hora_fim,
-          min_pessoas: s.min_pessoas,
-          override: s.override,
-        })),
-      })
-    }
+    await setoresService.salvarTimelineSemana({
+      setor_id: setorId,
+      dias: DIAS_SEMANA.map((dia) => {
+        const dd = draft.dias[dia]
+        const usaPadrao = dd.usa_padrao
+        return {
+          dia_semana: dia,
+          ativo: dd.ativo,
+          usa_padrao: usaPadrao,
+          hora_abertura: usaPadrao ? draft.padrao.hora_abertura : dd.hora_abertura,
+          hora_fechamento: usaPadrao ? draft.padrao.hora_fechamento : dd.hora_fechamento,
+          segmentos: (usaPadrao ? draft.padrao.segmentos : dd.segmentos).map((s) => ({
+            hora_inicio: s.hora_inicio,
+            hora_fim: s.hora_fim,
+            min_pessoas: s.min_pessoas,
+            override: s.override,
+          })),
+        }
+      }),
+    })
   }, [setorId])
 
-  const handleSalvarTudo = useCallback(async () => {
+  const handleSalvarTudo = useCallback(async (): Promise<boolean> => {
     const formData = setorForm.getValues()
     const nome = formData.nome.trim()
     if (!nome) {
       toast.error('Nome do setor e obrigatorio')
-      return
+      return false
     }
+    const draft = demandaEditorRef.current?.getDraft()
     setSalvandoTudo(true)
     try {
       // 1. Salva form do setor
@@ -1484,7 +1488,6 @@ export function SetorDetalhe() {
         regime_escala: formData.regime_escala,
       })
       // 2. Salva demandas (7 dias)
-      const draft = demandaEditorRef.current?.getDraft()
       if (draft) {
         await salvarDemandas(draft)
         demandaEditorRef.current?.markClean()
@@ -1492,20 +1495,14 @@ export function SetorDetalhe() {
       // Marca form como clean
       setorForm.reset(formData)
       toast.success('Setor salvo')
+      return true
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
+      return false
     } finally {
       setSalvandoTudo(false)
     }
   }, [setorId, setorForm, salvarDemandas])
-
-  // ─── Protecao: aviso ao fechar app com alteracoes ──────────────────
-  useEffect(() => {
-    if (!isDirty) return
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault() }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [isDirty])
 
   const handleSalvarExcDemanda = async () => {
     if (!excDemandaForm.data || !excDemandaForm.hora_inicio || !excDemandaForm.hora_fim) {
@@ -1712,10 +1709,8 @@ export function SetorDetalhe() {
 
     // Salva tudo antes de gerar (garante que demandas estao no banco)
     if (isDirty) {
-      try {
-        await handleSalvarTudo()
-      } catch {
-        toast.error('Erro ao salvar antes de gerar. Tente salvar manualmente.')
+      const saved = await handleSalvarTudo()
+      if (!saved) {
         return
       }
     }
@@ -2983,6 +2978,7 @@ export function SetorDetalhe() {
                   demandas={demandas ?? []}
                   horariosSemana={horariosSemana ?? []}
                   totalColaboradores={colaboradores?.length ?? 0}
+                  saving={salvandoTudo}
                   onDirtyChange={setDemandaDirty}
                   onDraftChange={setDemandaDraftPreview}
                 />
@@ -3432,6 +3428,14 @@ export function SetorDetalhe() {
         onExportHTML={handleExportHTML}
         onPrint={handlePrint}
         onCSV={handleCSV}
+      />
+
+      <DirtyGuardDialog
+        blocker={blocker}
+        onSaveAndExit={async () => {
+          const saved = await handleSalvarTudo()
+          if (!saved) throw new Error('SAVE_FAILED')
+        }}
       />
 
       {/* ─── Excecao Demanda por Data Dialog ─── */}

@@ -7,6 +7,8 @@ import type {
   SetorSimulacaoConfig,
   SalvarTimelineDiaInput,
   SalvarTimelineDiaOutput,
+  SalvarTimelineSemanaInput,
+  SalvarTimelineSemanaOutput,
 } from '@shared/index'
 
 export const setoresService = {
@@ -56,6 +58,9 @@ export const setoresService = {
 
   salvarTimelineDia: (data: SalvarTimelineDiaInput) =>
     client['setores.salvarTimelineDia'](data as any) as Promise<SalvarTimelineDiaOutput>,
+
+  salvarTimelineSemana: (data: SalvarTimelineSemanaInput) =>
+    client['setores.salvarTimelineSemana'](data as any) as Promise<SalvarTimelineSemanaOutput>,
 
   limparPadraoDemandas: (setorId: number) =>
     client['setores.limparPadraoDemandas']({ setor_id: setorId }) as Promise<void>,

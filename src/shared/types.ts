@@ -427,6 +427,22 @@ export interface SalvarTimelineDiaOutput {
   }
 }
 
+export interface SalvarTimelineSemanaInput {
+  setor_id: number
+  dias: Array<Omit<SalvarTimelineDiaInput, 'setor_id'>>
+}
+
+export interface SalvarTimelineSemanaOutput {
+  horario_semana: SetorHorarioSemana[]
+  demandas: Demanda[]
+  normalizacao: Array<{
+    dia_semana: DiaSemana
+    slots_total: number
+    slots_overlap_detectados: number
+    slots_sem_demanda: number
+  }>
+}
+
 // ============================================================================
 // COMPOSTOS — v2 (mantidos pra compat frontend)
 // ============================================================================
