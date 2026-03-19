@@ -1449,6 +1449,16 @@ export function SetorDetalhe() {
   const salvarDemandas = useCallback(async (draft: SemanaDraft) => {
     await setoresService.salvarTimelineSemana({
       setor_id: setorId,
+      padrao: {
+        hora_abertura: draft.padrao.hora_abertura,
+        hora_fechamento: draft.padrao.hora_fechamento,
+        segmentos: draft.padrao.segmentos.map((s) => ({
+          hora_inicio: s.hora_inicio,
+          hora_fim: s.hora_fim,
+          min_pessoas: s.min_pessoas,
+          override: s.override,
+        })),
+      },
       dias: DIAS_SEMANA.map((dia) => {
         const dd = draft.dias[dia]
         const usaPadrao = dd.usa_padrao

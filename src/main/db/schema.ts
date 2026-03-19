@@ -506,6 +506,84 @@ async function migrateLegacyDemandasNullToByDay(): Promise<void> {
   })
 }
 
+async function backfillSetorDemandaPadraoWindow(): Promise<void> {
+  const setores = await queryAll<{
+    id: number
+    demanda_padrao_hora_abertura: string | null
+    demanda_padrao_hora_fechamento: string | null
+    demanda_padrao_segmentos_json: string | null
+  }>('SELECT id, demanda_padrao_hora_abertura, demanda_padrao_hora_fechamento, demanda_padrao_segmentos_json FROM setores')
+
+  for (const setor of setores) {
+    if (
+      setor.demanda_padrao_hora_abertura
+      && setor.demanda_padrao_hora_fechamento
+      && setor.demanda_padrao_segmentos_json
+    ) continue
+
+    const padraoLegacy = await queryAll<{
+      hora_inicio: string
+      hora_fim: string
+      min_pessoas: number
+      override: boolean | null
+    }>(`
+      SELECT hora_inicio, hora_fim, min_pessoas, override
+      FROM demandas
+      WHERE setor_id = $1 AND dia_semana IS NULL
+      ORDER BY hora_inicio, hora_fim, id
+    `, setor.id)
+
+    const horarioPadrao = await queryOne<{ hora_abertura: string; hora_fechamento: string }>(`
+      SELECT hora_abertura, hora_fechamento
+      FROM setor_horario_semana
+      WHERE setor_id = $1 AND usa_padrao = TRUE
+      ORDER BY CASE dia_semana
+        WHEN 'SEG' THEN 1
+        WHEN 'TER' THEN 2
+        WHEN 'QUA' THEN 3
+        WHEN 'QUI' THEN 4
+        WHEN 'SEX' THEN 5
+        WHEN 'SAB' THEN 6
+        WHEN 'DOM' THEN 7
+      END
+      LIMIT 1
+    `, setor.id)
+
+    const abertura = setor.demanda_padrao_hora_abertura
+      ?? padraoLegacy[0]?.hora_inicio
+      ?? horarioPadrao?.hora_abertura
+      ?? null
+    const fechamento = setor.demanda_padrao_hora_fechamento
+      ?? padraoLegacy[padraoLegacy.length - 1]?.hora_fim
+      ?? horarioPadrao?.hora_fechamento
+      ?? null
+    const segmentosJson = setor.demanda_padrao_segmentos_json ?? (
+      padraoLegacy.length > 0
+        ? JSON.stringify(padraoLegacy.map((seg) => ({
+            hora_inicio: seg.hora_inicio,
+            hora_fim: seg.hora_fim,
+            min_pessoas: seg.min_pessoas,
+            override: Boolean(seg.override),
+          })))
+        : null
+    )
+
+    if (!abertura || !fechamento || !segmentosJson) continue
+
+    await execute(
+      `UPDATE setores
+       SET demanda_padrao_hora_abertura = $1,
+           demanda_padrao_hora_fechamento = $2,
+           demanda_padrao_segmentos_json = $3
+       WHERE id = $4`,
+      abertura,
+      fechamento,
+      segmentosJson,
+      setor.id,
+    )
+  }
+}
+
 async function migrateSchema(): Promise<void> {
   // --- v3.1: Empresa columns ---
   await addColumnIfMissing('empresa', 'min_intervalo_almoco_min', 'INTEGER NOT NULL DEFAULT 60')
@@ -518,6 +596,9 @@ async function migrateSchema(): Promise<void> {
 
   // --- v3.1: Demanda override ---
   await addColumnIfMissing('demandas', 'override', 'BOOLEAN NOT NULL DEFAULT FALSE')
+  await addColumnIfMissing('setores', 'demanda_padrao_hora_abertura', 'TEXT')
+  await addColumnIfMissing('setores', 'demanda_padrao_hora_fechamento', 'TEXT')
+  await addColumnIfMissing('setores', 'demanda_padrao_segmentos_json', 'TEXT')
 
   // --- v3.1: Alocacao columns ---
   await addColumnIfMissing('alocacoes', 'hora_almoco_inicio', 'TEXT')
@@ -528,6 +609,7 @@ async function migrateSchema(): Promise<void> {
   await addColumnIfMissing('alocacoes', 'minutos_trabalho', 'INTEGER')
   await addColumnIfMissing('escalas', 'equipe_snapshot_json', 'TEXT')
 
+  await backfillSetorDemandaPadraoWindow()
   await migrateLegacyDemandasNullToByDay()
 
   // --- v4: Funcao cor_hex ---

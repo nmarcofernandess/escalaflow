@@ -34,6 +34,7 @@ import type {
 } from '../shared'
 import {
   inferFolgasFromAlocacoes,
+  stringifyDemandaPadraoSegmentos,
   stringifySetorSimulacaoConfig,
   normalizeSetorSimulacaoConfig,
   type FolgaInferenceAlocacao,
@@ -2043,6 +2044,11 @@ const setoresSalvarTimelineDia = t.procedure
 const setoresSalvarTimelineSemana = t.procedure
   .input<{
     setor_id: number
+    padrao: {
+      hora_abertura: string
+      hora_fechamento: string
+      segmentos: Array<{ hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }>
+    }
     dias: Array<{
       dia_semana: string
       ativo: boolean
@@ -2060,6 +2066,15 @@ const setoresSalvarTimelineSemana = t.procedure
     const setor = await queryOne<{ id: number }>('SELECT id FROM setores WHERE id = ?', input.setor_id)
     if (!setor) throw new Error('Setor nao encontrado')
 
+    const preparedPadrao = normalizeTimelineDayForPersistence({
+      dia_semana: 'PADRAO',
+      ativo: true,
+      usa_padrao: false,
+      hora_abertura: input.padrao.hora_abertura,
+      hora_fechamento: input.padrao.hora_fechamento,
+      segmentos: input.padrao.segmentos,
+    })
+
     const diasUnicos = new Set<string>()
     const preparedDays = input.dias.map((dia) => {
       if (diasUnicos.has(dia.dia_semana)) {
@@ -2070,6 +2085,18 @@ const setoresSalvarTimelineSemana = t.procedure
     })
 
     await transaction(async () => {
+      await execute(
+        `UPDATE setores
+         SET demanda_padrao_hora_abertura = ?,
+             demanda_padrao_hora_fechamento = ?,
+             demanda_padrao_segmentos_json = ?
+         WHERE id = ?`,
+        preparedPadrao.hora_abertura,
+        preparedPadrao.hora_fechamento,
+        stringifyDemandaPadraoSegmentos(preparedPadrao.normalizados),
+        input.setor_id,
+      )
+
       await execute('DELETE FROM demandas WHERE setor_id = ? AND dia_semana IS NULL', input.setor_id)
 
       for (const prepared of preparedDays) {
@@ -2142,7 +2169,7 @@ const setoresSalvarTimelineSemana = t.procedure
       `, input.setor_id),
     ])
 
-    broadcastInvalidation(['demandas', 'horario_semana'], input.setor_id)
+    broadcastInvalidation(['demandas', 'horario_semana', 'setor'], input.setor_id)
     return {
       horario_semana,
       demandas,

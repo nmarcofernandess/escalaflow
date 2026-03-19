@@ -45,6 +45,9 @@ export interface Setor {
   icone: string | null
   hora_abertura: string
   hora_fechamento: string
+  demanda_padrao_hora_abertura?: string | null
+  demanda_padrao_hora_fechamento?: string | null
+  demanda_padrao_segmentos_json?: string | null
   regime_escala: RegimeEscala
   ativo: boolean
   simulacao_config_json?: string | null
@@ -429,6 +432,16 @@ export interface SalvarTimelineDiaOutput {
 
 export interface SalvarTimelineSemanaInput {
   setor_id: number
+  padrao: {
+    hora_abertura: string
+    hora_fechamento: string
+    segmentos: Array<{
+      hora_inicio: string
+      hora_fim: string
+      min_pessoas: number
+      override: boolean
+    }>
+  }
   dias: Array<Omit<SalvarTimelineDiaInput, 'setor_id'>>
 }
 

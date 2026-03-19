@@ -38,6 +38,7 @@ import {
 import { EmptyState } from '@/componentes/EmptyState'
 import { DemandaBar } from '@/componentes/DemandaBar'
 import { useDemandaResize } from '@/hooks/useDemandaResize'
+import { parseDemandaPadraoSegmentos } from '@shared/index'
 import type {
   Setor,
   Demanda,
@@ -283,8 +284,17 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       .map((x) => `${x.dia_semana}-${x.ativo ? 1 : 0}-${x.usa_padrao ? 1 : 0}-${x.hora_abertura}-${x.hora_fechamento}`)
       .sort()
       .join('|')
-    return `${setor.id}::${setor.hora_abertura}-${setor.hora_fechamento}::${d}::${h}`
-  }, [setor.id, setor.hora_abertura, setor.hora_fechamento, demandas, horariosSemana])
+    return `${setor.id}::${setor.hora_abertura}-${setor.hora_fechamento}::${setor.demanda_padrao_hora_abertura ?? ''}-${setor.demanda_padrao_hora_fechamento ?? ''}::${setor.demanda_padrao_segmentos_json ?? ''}::${d}::${h}`
+  }, [
+    setor.id,
+    setor.hora_abertura,
+    setor.hora_fechamento,
+    setor.demanda_padrao_hora_abertura,
+    setor.demanda_padrao_hora_fechamento,
+    setor.demanda_padrao_segmentos_json,
+    demandas,
+    horariosSemana,
+  ])
 
   const buildInitialDraft = useCallback((): SemanaDraft => {
     const maxPositiveId = demandas.reduce((max, d) => Math.max(max, d.id), 0)
@@ -296,6 +306,13 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       SEG: [], TER: [], QUA: [], QUI: [], SEX: [], SAB: [], DOM: [],
     }
 
+    const padraoPersistido = parseDemandaPadraoSegmentos(setor.demanda_padrao_segmentos_json).map((seg) => ({
+      id: nextTempId.current--,
+      hora_inicio: seg.hora_inicio,
+      hora_fim: seg.hora_fim,
+      min_pessoas: seg.min_pessoas,
+      override: seg.override,
+    }))
     const padraoLegado: SegmentoDraft[] = []
     for (const d of demandas) {
       const seg: SegmentoDraft = {
@@ -323,8 +340,23 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
 
     const firstUsaPadraoDia = DIAS_SEMANA.find((d) => horarioMap.get(d)?.usa_padrao ?? true)
     const horarioPadraoBase = firstUsaPadraoDia ? horarioMap.get(firstUsaPadraoDia) : undefined
-    const padraoAberturaRaw = horarioPadraoBase?.hora_abertura ?? setor.hora_abertura
-    const padraoFechamentoRaw = horarioPadraoBase?.hora_fechamento ?? setor.hora_fechamento
+    const padraoBaseParaBounds = padraoPersistido.length > 0 ? padraoPersistido : padraoLegado
+    const padraoLegadoAbertura = padraoBaseParaBounds.length > 0
+      ? padraoBaseParaBounds.reduce((min, seg) => (toMinutes(seg.hora_inicio) < toMinutes(min) ? seg.hora_inicio : min), padraoBaseParaBounds[0]!.hora_inicio)
+      : undefined
+    const padraoLegadoFechamento = padraoBaseParaBounds.length > 0
+      ? padraoBaseParaBounds.reduce((max, seg) => (toMinutes(seg.hora_fim) > toMinutes(max) ? seg.hora_fim : max), padraoBaseParaBounds[0]!.hora_fim)
+      : undefined
+    const padraoAberturaRaw =
+      setor.demanda_padrao_hora_abertura
+      ?? horarioPadraoBase?.hora_abertura
+      ?? padraoLegadoAbertura
+      ?? setor.hora_abertura
+    const padraoFechamentoRaw =
+      setor.demanda_padrao_hora_fechamento
+      ?? horarioPadraoBase?.hora_fechamento
+      ?? padraoLegadoFechamento
+      ?? setor.hora_fechamento
     const padraoAberturaMin = Math.max(setorOpenMin, Math.min(toMinutes(padraoAberturaRaw), setorCloseMin - 60))
     const padraoFechamentoMin = Math.min(setorCloseMin, Math.max(toMinutes(padraoFechamentoRaw), padraoAberturaMin + 60))
 
@@ -333,7 +365,9 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
       return (h?.usa_padrao ?? true) && byDia[d].length > 0
     })
     const padraoSegmentosBaseRaw =
-      padraoLegado.length > 0
+      padraoPersistido.length > 0
+        ? [...padraoPersistido].sort(sortByInicio)
+        : padraoLegado.length > 0
         ? [...padraoLegado].sort(sortByInicio)
         : firstUsaPadraoDiaComSegmentos
           ? cloneSegmentos(byDia[firstUsaPadraoDiaComSegmentos], nextTempId)
@@ -402,7 +436,15 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
     }
 
     return { padrao, dias: diasDraft }
-  }, [demandas, horariosSemana, setor.hora_abertura, setor.hora_fechamento])
+  }, [
+    demandas,
+    horariosSemana,
+    setor.hora_abertura,
+    setor.hora_fechamento,
+    setor.demanda_padrao_hora_abertura,
+    setor.demanda_padrao_hora_fechamento,
+    setor.demanda_padrao_segmentos_json,
+  ])
 
   const [draft, setDraft] = useState<SemanaDraft>(() => buildInitialDraft())
   const lastHydratedSnapshotKeyRef = useRef(snapshotKey)
@@ -817,6 +859,11 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
     }
     return map
   }, [draft])
+
+  const diasUsandoPadrao = useMemo(
+    () => DIAS_SEMANA.filter((dia) => draft.dias[dia].usa_padrao),
+    [draft],
+  )
 
   // ─── Resize hooks ────────────────────────────────────────────────────────────
 
@@ -1398,6 +1445,13 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
 
         <TabsContent value={activeTab} className="mt-3">
           <div className="space-y-3">
+            {activeTab === 'padrao' && (
+              <div className="text-xs text-muted-foreground">
+                {diasUsandoPadrao.length > 0
+                  ? `${diasUsandoPadrao.length} dia(s) estão herdando o padrão no momento.`
+                  : 'Nenhum dia está herdando o padrão no momento.'}
+              </div>
+            )}
             <div className={cn(isDiaHerdandoPadrao && 'pointer-events-none select-none opacity-60')}>
               {viewMode === 'timeline' ? renderTimelineView() : (
                 <>
