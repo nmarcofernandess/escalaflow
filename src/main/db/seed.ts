@@ -375,7 +375,7 @@ async function seedRegrasDefinicao(): Promise<void> {
     ['MIN_DIARIO', 'Jornada minima diaria (4h)', 'Jornadas abaixo de 4h sao microturenos sem valor economico (CLT Art. 58-A ss4).', 'CLT', 'HARD', true, 'Desligar pode gerar microturnos inuteis de poucos minutos.', 16],
 
     // -- SOFT --
-    ['S_DEFICIT', 'Deficit de cobertura', 'Bloqueia geracao quando a cobertura fica abaixo da demanda minima planejada.', 'HARD', 'ON', true, null, 101],
+    ['S_DEFICIT', 'Deficit de cobertura', 'Bloqueia geracao quando a cobertura fica abaixo da demanda minima planejada.', 'SOFT', 'HARD', true, null, 101],
     ['S_SURPLUS', 'Excesso de cobertura', 'Penaliza slots com mais pessoas do que a demanda maxima.', 'SOFT', 'ON', true, null, 102],
     ['S_DOMINGO_CICLO', 'Rodizio justo de domingos', 'Distribui domingos de trabalho de forma equitativa entre a equipe quando o ciclo exato estiver relaxado.', 'SOFT', 'ON', true, null, 103],
     ['S_TURNO_PREF', 'Preferencia de turno por colaborador', 'Tenta acomodar a preferencia de turno (manha/tarde) de cada colaborador.', 'SOFT', 'ON', true, null, 104],

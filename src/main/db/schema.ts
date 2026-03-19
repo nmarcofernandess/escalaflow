@@ -849,5 +849,5 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_V7_KNOWLEDGE)
   await execDDL(DDL_CONFIGURACAO_BACKUP)
   await migrateSchema()
-  console.log('[DB] Tabelas criadas com sucesso (v24 + backup automatico)')
+  console.log('[DB] Tabelas criadas com sucesso (v29)')
 }
