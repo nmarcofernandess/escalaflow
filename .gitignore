@@ -63,10 +63,14 @@ horario/teste/__pycache__/
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 *.code-workspace
 .mcp.json
+
+# Bun cache
+*.bun-build
 
 # Misc
 *.log

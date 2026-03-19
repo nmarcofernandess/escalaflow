@@ -187,7 +187,7 @@ async function main(): Promise<void> {
   lines.push(`import { queryOne, queryAll, execute, transaction } from './query'`)
   lines.push(``)
   lines.push(`// ============================================================================`)
-  lines.push(`// SEED LOCAL — Dados REAIS do Supermercado Fernandes (gitignored)`)
+  lines.push(`// SEED LOCAL — Dados de desenvolvimento (gitignored)`)
   lines.push(`// Fonte: dump banco producao ${today}`)
   lines.push(`// ${setores.length} setores, ${colaboradores.length} colaboradores, ${demandas.length} demandas, ${regrasHorario.length} regras horario`)
   lines.push(`// Gerado automaticamente por: npm run db:extract-seed`)

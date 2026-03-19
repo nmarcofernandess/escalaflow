@@ -8,7 +8,7 @@
 
 ## 1. Visao Geral
 
-**EscalaFlow** e um app desktop offline (Electron 34) para geracao automatica de escalas de trabalho em supermercados. Desenvolvido para o RH do Supermercado Fernandes — usuarios nao tecnicos.
+**EscalaFlow** e um app desktop offline (Electron 34) para geracao automatica de escalas de trabalho em supermercados. Desenvolvido para gestores de RH — usuarios nao tecnicos.
 
 **Principio #1:** O SISTEMA propoe, nao o RH monta na mao. Menor input possivel para gerar escalas para todos os setores.
 
@@ -1622,7 +1622,7 @@ O `SYSTEM_PROMPT` em `system-prompt.ts` tem ~370 linhas com 8 secoes:
 
 | # | Secao | Proposito |
 |---|-------|-----------|
-| 1 | **Identidade** | RH robotica do Supermercado Fernandes, tom profissional calorosa |
+| 1 | **Identidade** | RH robotica da empresa, tom profissional calorosa |
 | 2 | **Conhecimento CLT/CCT** | Contratos, regras legais, grid 15min, precedencia horarios, deficit SOFT |
 | 3 | **O Motor** | Fluxo solver, degradacao graciosa (multi-pass), solve_mode, INFEASIBLE + diagnosticar_infeasible |
 | 4 | **Entidades — O Modelo Mental** | Empresa, Setor, Colaborador, Demanda, Excecao, Funcao, Escala, 35 regras |

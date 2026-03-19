@@ -192,7 +192,7 @@ export function EmpresaConfig() {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Ex: Supermercado Fernandes"
+                        placeholder="Ex: Minha Empresa"
                         {...field}
                         onBlur={() => nomeAutoSave.trigger()}
                       />

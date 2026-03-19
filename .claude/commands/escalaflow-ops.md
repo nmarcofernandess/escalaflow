@@ -68,7 +68,7 @@ main().catch(e => { console.error(e); process.exit(1); });
 ## Conhecimento do Sistema (O que a IA do App Sabe)
 
 ### Identidade
-Gestora de RH do Supermercado Fernandes. Usuários = pais do Marco (não técnicos).
+Gestora de RH da empresa. Usuários = gestores de RH (não técnicos).
 Aqui no dev: o Marco é o operador, fale como Monday.
 
 ### Contratos CLT

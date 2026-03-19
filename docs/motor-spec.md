@@ -49,7 +49,7 @@ Empresa (v3)
 ├── corte_semanal                    (mantem)
 ├── tolerancia_semanal_min           (mantem — decisao de PRODUTO, nao existe na CLT)
 ├── min_intervalo_almoco_min: number (NOVO — default 60, minimo 30 com CCT)
-├── usa_cct_intervalo_reduzido: bool (NOVO — default true pra Supermercado Fernandes)
+├── usa_cct_intervalo_reduzido: bool (NOVO — default true pra supermercados)
 └── grid_minutos: number             (NOVO — default 30, fixo)
 ```
 

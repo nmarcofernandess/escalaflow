@@ -1553,4 +1553,4 @@ ANTES DE COMECAR A CODAR:
 
 *MOTOR v3 RFC CANONICO — v3.1 — 18/02/2026*
 *Patch pragmatico: demanda simplificada, sem perfil termico no R1*
-*EscalaFlow — Supermercado Fernandes*
+*EscalaFlow*
