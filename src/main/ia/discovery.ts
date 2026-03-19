@@ -728,6 +728,8 @@ async function _autoRag(query: string): Promise<string | null> {
         const result = await searchKnowledge(query, { limite: 3 })
         if (result.chunks.length === 0) return null
 
+        const bestScore = Math.max(...result.chunks.map(c => c.score))
+
         // Sobe pro nível da source: só título + context_hint (leve, ~300 chars total)
         // O search roda nos chunks (onde moram embeddings), mas o prompt recebe só o ponteiro
         const sourceIds = [...new Set(result.chunks.map(c => c.source_id))]
@@ -748,7 +750,12 @@ async function _autoRag(query: string): Promise<string | null> {
                 : `- **${s.titulo}**`
         })
 
-        return `\n### Conhecimento relevante (use buscar_conhecimento para detalhes)\n${lines.join('\n')}`
+        const confianca = Math.round(bestScore * 100)
+        const header = confianca >= 60
+            ? `### Conhecimento relevante (confiança: ${confianca}%)`
+            : `### Conhecimento relevante (confiança baixa: ${confianca}% — use buscar_conhecimento com query reformulada para melhores resultados)`
+
+        return `\n${header}\n${lines.join('\n')}`
     } catch {
         return null
     }

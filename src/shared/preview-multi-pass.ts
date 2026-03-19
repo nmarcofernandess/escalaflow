@@ -1,5 +1,5 @@
 import { gerarCicloFase1, type SimulaCicloFase1Input, type SimulaCicloOutput } from './simula-ciclo'
-import { buildPreviewDiagnostics, type PreviewDiagnostic } from './preview-diagnostics'
+import { buildPreviewDiagnostics, type PreviewDiagnostic, type DemandaSegmento } from './preview-diagnostics'
 import type { RuleConfig } from './types'
 
 interface MultiPassParticipant {
@@ -17,6 +17,9 @@ export interface MultiPassInput {
   demandaPorDia: number[]
   trabalhamDomingo: number
   rules: RuleConfig
+  demandaSegmentos?: DemandaSegmento[]
+  horaAbertura?: string
+  horaFechamento?: string
 }
 
 export interface MultiPassResult {
@@ -27,14 +30,17 @@ export interface MultiPassResult {
 }
 
 export function runPreviewMultiPass(input: MultiPassInput): MultiPassResult {
-  const { fase1Input, participants, demandaPorDia, trabalhamDomingo, rules } = input
+  const { fase1Input, participants, demandaPorDia, trabalhamDomingo, rules,
+    demandaSegmentos, horaAbertura, horaFechamento } = input
+
+  const diagExtra = { demandaSegmentos, horaAbertura, horaFechamento }
 
   // --- Pass 1: strict (preflight=true) ---
   const pass1 = gerarCicloFase1({ ...fase1Input, preflight: true })
 
   if (pass1.sucesso) {
     const diagnostics = buildPreviewDiagnostics({
-      output: pass1, participants, demandaPorDia, trabalhamDomingo, rules,
+      output: pass1, participants, demandaPorDia, trabalhamDomingo, rules, ...diagExtra,
     })
     return { output: pass1, diagnostics, pass_usado: 1, relaxed: false }
   }
@@ -51,7 +57,7 @@ export function runPreviewMultiPass(input: MultiPassInput): MultiPassResult {
 
   if (!podeRelaxar) {
     const diagnostics = buildPreviewDiagnostics({
-      output: pass1, participants, demandaPorDia, trabalhamDomingo, rules,
+      output: pass1, participants, demandaPorDia, trabalhamDomingo, rules, ...diagExtra,
     })
     return { output: pass1, diagnostics, pass_usado: 1, relaxed: false }
   }
@@ -60,7 +66,7 @@ export function runPreviewMultiPass(input: MultiPassInput): MultiPassResult {
   const pass2 = gerarCicloFase1({ ...fase1Input, preflight: false })
 
   const diagnostics = buildPreviewDiagnostics({
-    output: pass2, participants, demandaPorDia, trabalhamDomingo, rules,
+    output: pass2, participants, demandaPorDia, trabalhamDomingo, rules, ...diagExtra,
   })
 
   return { output: pass2, diagnostics, pass_usado: 2, relaxed: true }

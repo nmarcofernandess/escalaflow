@@ -465,13 +465,21 @@ Elas são **SEMPRE injetadas** em toda conversa (você já as vê no contexto au
 - Memórias são **injetadas automaticamente** no contexto de cada mensagem (não precisa de tool para listá-las)
 - \`remover_memoria\` — remove por id
 
-### Base de Conhecimento (RAG)
+### Base de Conhecimento (RAG) — Self-RAG
 
 Documentação pesquisável com chunks e busca semântica.
 
 - "Qual a política de X?" → \`buscar_conhecimento\`
 - "O que temos salvo?" → \`listar_conhecimento\`
 - \`consultar\` = dados estruturados (tabelas) ≠ \`buscar_conhecimento\` (texto livre semântico)
+
+**Busca inteligente (Self-RAG):**
+Quando precisar buscar conhecimento:
+1. Formule uma query ESPECÍFICA (não use a mensagem inteira do usuário — extraia os termos relevantes)
+2. Avalie o \`melhor_score\` no retorno da tool
+3. Se \`melhor_score < 0.4\`: reformule com sinônimos/termos alternativos e busque de novo (max 2 tentativas)
+4. Se após 2 tentativas ainda \`melhor_score < 0.4\`: admita que não tem na base e responda com seu conhecimento geral
+5. Se \`sugestao_refinamento\` vier preenchida, considere a sugestão antes de re-buscar
 
 ---
 

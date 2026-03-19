@@ -1,0 +1,1778 @@
+{
+  "version": 1,
+  "generated_by": "claude-opus",
+  "generated_at": "2026-03-18",
+  "sources": [
+    {
+      "relative_path": "sistema/visao-geral.md",
+      "titulo": "sistema — visao-geral",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Apresenta o EscalaFlow como aplicativo desktop offline para geracao automatica de escalas de supermercado, explicando para quem e e como funciona em alto nivel.",
+          "tags": [
+            "escalaflow",
+            "visao geral",
+            "o que e",
+            "como funciona",
+            "escala automatica",
+            "supermercado",
+            "RH",
+            "recursos humanos",
+            "gerar escala",
+            "motor",
+            "OR-Tools",
+            "offline",
+            "desktop",
+            "app",
+            "sistema de escalas",
+            "escalonamento"
+          ],
+          "entidades": [
+            { "nome": "EscalaFlow", "tipo": "conceito" },
+            { "nome": "Motor OR-Tools", "tipo": "conceito" },
+            { "nome": "Escala", "tipo": "conceito" },
+            { "nome": "RH", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "EscalaFlow", "to": "Motor OR-Tools", "tipo_relacao": "depende_de", "peso": 1.0 },
+            { "from": "EscalaFlow", "to": "Escala", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "RH", "to": "EscalaFlow", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Descreve que o EscalaFlow e 100% offline, sem login ou servidor, e detalha a stack tecnologica (Electron, Python OR-Tools, PGlite, React, IA integrada).",
+          "tags": [
+            "offline",
+            "sem internet",
+            "sem login",
+            "sem servidor",
+            "local",
+            "dados locais",
+            "tecnologia",
+            "stack",
+            "electron",
+            "python",
+            "PGlite",
+            "postgres",
+            "react",
+            "IA",
+            "inteligencia artificial",
+            "chat",
+            "assistente",
+            "auto-update",
+            "atualizacao"
+          ],
+          "entidades": [
+            { "nome": "EscalaFlow", "tipo": "conceito" },
+            { "nome": "PGlite", "tipo": "conceito" },
+            { "nome": "Motor OR-Tools", "tipo": "conceito" },
+            { "nome": "IA Assistente", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "EscalaFlow", "to": "PGlite", "tipo_relacao": "depende_de", "peso": 1.0 },
+            { "from": "EscalaFlow", "to": "IA Assistente", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Explica o grid de 15 minutos, o ciclo de vida de uma escala (RASCUNHO, OFICIAL, ARQUIVADA) e os diferenciais do EscalaFlow: automatizacao, explicabilidade, flexibilidade, IA assistente e diagnostico.",
+          "tags": [
+            "grid 15 minutos",
+            "quantizacao",
+            "bloco horario",
+            "ciclo de vida",
+            "rascunho",
+            "oficial",
+            "arquivada",
+            "status escala",
+            "automatizacao",
+            "explicabilidade",
+            "justificativa",
+            "decisao",
+            "diagnostico",
+            "INFEASIBLE",
+            "regras configuraveis",
+            "flexibilidade",
+            "oficializar",
+            "travar escala"
+          ],
+          "entidades": [
+            { "nome": "Grid 15min", "tipo": "conceito" },
+            { "nome": "Escala", "tipo": "conceito" },
+            { "nome": "RASCUNHO", "tipo": "conceito" },
+            { "nome": "OFICIAL", "tipo": "conceito" },
+            { "nome": "ARQUIVADA", "tipo": "conceito" },
+            { "nome": "Explicabilidade", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Escala", "to": "RASCUNHO", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Escala", "to": "OFICIAL", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Escala", "to": "ARQUIVADA", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "EscalaFlow", "to": "Grid 15min", "tipo_relacao": "exige", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "sistema/regras-colaborador.md",
+      "titulo": "sistema — regras-colaborador",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Explica o que sao regras individuais de colaborador, a hierarquia de precedencia (excecao por data > regra individual > perfil contrato > padrao) e exemplos de uso como janela de horario e folga fixa.",
+          "tags": [
+            "regra individual",
+            "colaborador",
+            "horario personalizado",
+            "janela horario",
+            "precedencia",
+            "prioridade regra",
+            "excecao por data",
+            "perfil contrato",
+            "padrao contrato",
+            "regra especifica",
+            "personalizacao",
+            "configuracao funcionario",
+            "horario fixo",
+            "entrada saida"
+          ],
+          "entidades": [
+            { "nome": "Regra Individual", "tipo": "regra" },
+            { "nome": "Hierarquia de Precedencia", "tipo": "conceito" },
+            { "nome": "Excecao por Data", "tipo": "regra" },
+            { "nome": "Perfil de Horario", "tipo": "conceito" },
+            { "nome": "Colaborador", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Excecao por Data", "to": "Regra Individual", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Regra Individual", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Excecao por Data", "to": "Perfil de Horario", "tipo_relacao": "compoe", "peso": 0.5 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Detalha a tool salvar_regra_horario_colaborador com todos os campos disponiveis (inicio, fim, domingo_ciclo, folga_fixa, preferencia_turno, perfil_horario_id) e exemplos praticos de uso.",
+          "tags": [
+            "salvar regra",
+            "tool",
+            "horario colaborador",
+            "inicio",
+            "fim",
+            "domingo ciclo",
+            "folga fixa",
+            "preferencia turno",
+            "perfil horario",
+            "manha",
+            "tarde",
+            "configurar funcionario",
+            "regra recorrente",
+            "dia semana",
+            "folga semanal"
+          ],
+          "entidades": [
+            { "nome": "salvar_regra_horario_colaborador", "tipo": "conceito" },
+            { "nome": "Folga Fixa", "tipo": "regra" },
+            { "nome": "Preferencia de Turno", "tipo": "conceito" },
+            { "nome": "Ciclo de Domingos", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "salvar_regra_horario_colaborador", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "salvar_regra_horario_colaborador", "to": "Folga Fixa", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "salvar_regra_horario_colaborador", "to": "Ciclo de Domingos", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Descreve a tool upsert_regra_excecao_data para overrides pontuais por data especifica, com exemplos de entrada tardia e saida antecipada em um dia especifico.",
+          "tags": [
+            "excecao por data",
+            "override pontual",
+            "dia especifico",
+            "upsert regra",
+            "tool",
+            "horario especial",
+            "data unica",
+            "mudanca de horario",
+            "entrada tardia",
+            "saida antecipada",
+            "ajuste pontual",
+            "excecao temporaria"
+          ],
+          "entidades": [
+            { "nome": "upsert_regra_excecao_data", "tipo": "conceito" },
+            { "nome": "Excecao por Data", "tipo": "regra" },
+            { "nome": "Colaborador", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "upsert_regra_excecao_data", "to": "Excecao por Data", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Excecao por Data", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Explica o ciclo de domingos (trabalho vs folga), padroes comuns (2:1, 1:1, 0:0) e a regra CCT que limita a 2 domingos seguidos sem folga, alem de folga fixa semanal e seu impacto.",
+          "tags": [
+            "ciclo domingo",
+            "domingos consecutivos",
+            "folga domingo",
+            "trabalho domingo",
+            "2:1",
+            "1:1",
+            "CCT",
+            "FecomercioSP",
+            "folga fixa",
+            "dia folga",
+            "folga semanal",
+            "quarta",
+            "segunda",
+            "sabado",
+            "CLT",
+            "dias disponiveis"
+          ],
+          "entidades": [
+            { "nome": "Ciclo de Domingos", "tipo": "regra" },
+            { "nome": "Folga Fixa", "tipo": "regra" },
+            { "nome": "CCT FecomercioSP", "tipo": "legislacao" }
+          ],
+          "relacoes": [
+            { "from": "Ciclo de Domingos", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Folga Fixa", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Tabela de referencia rapida indicando qual tool usar para cada situacao: regra recorrente (salvar_regra_horario_colaborador), pontual (upsert_regra_excecao_data) ou ferias (criar excecao).",
+          "tags": [
+            "quando usar",
+            "qual tool",
+            "referencia rapida",
+            "guia",
+            "regra recorrente",
+            "excecao pontual",
+            "ferias",
+            "ciclo domingo",
+            "folga fixa",
+            "horario manha",
+            "dia especifico",
+            "configurar"
+          ],
+          "entidades": [
+            { "nome": "salvar_regra_horario_colaborador", "tipo": "conceito" },
+            { "nome": "upsert_regra_excecao_data", "tipo": "conceito" },
+            { "nome": "Excecao", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "salvar_regra_horario_colaborador", "to": "Regra Individual", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "upsert_regra_excecao_data", "to": "Excecao por Data", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "sistema/perguntas-frequentes.md",
+      "titulo": "sistema — perguntas-frequentes",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Explica por que a escala nao atinge 100% de cobertura da demanda (restricoes CLT tornam isso matematicamente impossivel) e o que significa INFEASIBLE (impossibilidade matematica, nao bug).",
+          "tags": [
+            "cobertura",
+            "100%",
+            "demanda",
+            "por que nao cobre",
+            "deficit",
+            "INFEASIBLE",
+            "impossivel",
+            "erro",
+            "nao gerou",
+            "falhou",
+            "nao conseguiu",
+            "poucos funcionarios",
+            "restricoes",
+            "CLT",
+            "matematicamente impossivel",
+            "slots",
+            "faixa horaria",
+            "SOFT constraint"
+          ],
+          "entidades": [
+            { "nome": "Cobertura de Demanda", "tipo": "conceito" },
+            { "nome": "INFEASIBLE", "tipo": "conceito" },
+            { "nome": "SOFT Constraint", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Cobertura de Demanda", "to": "SOFT Constraint", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "INFEASIBLE", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Diferenca entre modo Rapido (30s) e Otimizado (120s), flexibilidade de periodo de geracao, e a distincao entre violacoes HARD (CLT obrigatoria) e SOFT (alertas de otimizacao).",
+          "tags": [
+            "modo rapido",
+            "modo otimizado",
+            "30 segundos",
+            "120 segundos",
+            "tempo geracao",
+            "periodo",
+            "mes",
+            "semana",
+            "quinzena",
+            "violacao HARD",
+            "violacao SOFT",
+            "CLT obrigatoria",
+            "alerta",
+            "oficializar",
+            "impedimento"
+          ],
+          "entidades": [
+            { "nome": "Modo Rapido", "tipo": "conceito" },
+            { "nome": "Modo Otimizado", "tipo": "conceito" },
+            { "nome": "Violacao HARD", "tipo": "conceito" },
+            { "nome": "Violacao SOFT", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Violacao HARD", "to": "CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Modo Otimizado", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Explica rules_override para relaxar regras temporariamente, por que aparecem violacoes de domingo/meta semanal apos geracao, e a diferenca entre escala gerada pelo solver vs pelo ciclo.",
+          "tags": [
+            "rules override",
+            "relaxar regra",
+            "temporario",
+            "H1 SOFT",
+            "domingo sem folga",
+            "abaixo meta semanal",
+            "violacao",
+            "passes",
+            "solver",
+            "ciclo",
+            "template",
+            "calendario",
+            "folga compensatoria",
+            "Lei 605",
+            "horarios faltando"
+          ],
+          "entidades": [
+            { "nome": "Rules Override", "tipo": "conceito" },
+            { "nome": "Motor OR-Tools", "tipo": "conceito" },
+            { "nome": "Ciclo", "tipo": "conceito" },
+            { "nome": "H1", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Rules Override", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Rules Override", "to": "H1", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Diferenca entre CLT, Estagiario e Aprendiz, compensacao 9h45 no regime 5X2, e como funciona a regra de domingos por genero (homens 2:1, mulheres 1:1).",
+          "tags": [
+            "CLT",
+            "estagiario",
+            "aprendiz",
+            "tipo trabalhador",
+            "diferenca contrato",
+            "hora extra",
+            "compensacao",
+            "9h45",
+            "5X2",
+            "44 horas",
+            "domingo",
+            "homem",
+            "mulher",
+            "genero",
+            "ciclo 2:1",
+            "ciclo 1:1",
+            "Art 386",
+            "nunca domingo",
+            "nunca feriado",
+            "noturno"
+          ],
+          "entidades": [
+            { "nome": "CLT 44h", "tipo": "contrato" },
+            { "nome": "Estagiario", "tipo": "contrato" },
+            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
+            { "nome": "Compensacao 9h45", "tipo": "regra" },
+            { "nome": "Ciclo de Domingos", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Compensacao 9h45", "to": "CLT 44h", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Estagiario", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 },
+            { "from": "Jovem Aprendiz", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "O que e rank/senioridade, 35 regras do motor (16 CLT + 7 SOFT + 12 ANTIPATTERN), o que e clopening, e o que sao perfis de horario como templates de janela de entrada/saida.",
+          "tags": [
+            "rank",
+            "senioridade",
+            "junior",
+            "senior",
+            "experiencia",
+            "35 regras",
+            "16 CLT",
+            "7 SOFT",
+            "12 antipattern",
+            "clopening",
+            "fechar abrir",
+            "close opening",
+            "desconforto",
+            "perfil horario",
+            "template",
+            "janela entrada",
+            "janela saida",
+            "manha padrao",
+            "flexivel"
+          ],
+          "entidades": [
+            { "nome": "Rank", "tipo": "conceito" },
+            { "nome": "Clopening", "tipo": "regra" },
+            { "nome": "Perfil de Horario", "tipo": "conceito" },
+            { "nome": "Antipattern", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Rank", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Clopening", "to": "Antipattern", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Perfil de Horario", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 5,
+          "resumo": "Desligar regras CLT (editavel=0 nao pode, editavel=1 pode mudar para HARD/SOFT/OFF), e se e possivel desligar regras obrigatorias (cadeado na interface).",
+          "tags": [
+            "desligar regra",
+            "desativar",
+            "editavel",
+            "cadeado",
+            "HARD",
+            "SOFT",
+            "OFF",
+            "configuravel",
+            "obrigatoria",
+            "CLT fixa",
+            "regra empresa",
+            "alterar regra",
+            "mudar status"
+          ],
+          "entidades": [
+            { "nome": "Regra Editavel", "tipo": "conceito" },
+            { "nome": "Regra Fixa", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Regra Fixa", "to": "CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Regra Editavel", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 6,
+          "resumo": "Onde ficam os dados (local no computador, PGlite), como fazer backup (copiar pasta data), como resetar banco, e o que a IA pode fazer no sistema.",
+          "tags": [
+            "dados",
+            "onde ficam",
+            "banco de dados",
+            "local",
+            "backup",
+            "copiar",
+            "resetar",
+            "limpar",
+            "apagar dados",
+            "recomecar",
+            "IA",
+            "chat",
+            "assistente",
+            "o que pode fazer",
+            "funcionalidades IA",
+            "cadastrar",
+            "gerar escala",
+            "explicar"
+          ],
+          "entidades": [
+            { "nome": "PGlite", "tipo": "conceito" },
+            { "nome": "Backup", "tipo": "conceito" },
+            { "nome": "IA Assistente", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "EscalaFlow", "to": "PGlite", "tipo_relacao": "depende_de", "peso": 1.0 },
+            { "from": "IA Assistente", "to": "EscalaFlow", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 7,
+          "resumo": "A IA precisa de internet (funciona via API), pode errar mas usa dados reais, e como funciona a atualizacao automatica do app (auto-update via GitHub Releases sem perder dados).",
+          "tags": [
+            "IA internet",
+            "API",
+            "Gemini",
+            "OpenRouter",
+            "IA offline",
+            "IA errar",
+            "dados reais",
+            "tools",
+            "atualizacao",
+            "auto-update",
+            "nova versao",
+            "instalar",
+            "GitHub Releases",
+            "migration",
+            "schema",
+            "dados preservados"
+          ],
+          "entidades": [
+            { "nome": "IA Assistente", "tipo": "conceito" },
+            { "nome": "Auto-Update", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "IA Assistente", "to": "EscalaFlow", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Auto-Update", "to": "EscalaFlow", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "sistema/fluxos-trabalho.md",
+      "titulo": "sistema — fluxos-trabalho",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Fluxo principal de geracao de escala: pre-requisitos (setor, colaboradores, demandas, excecoes), preflight, geracao pelo motor, resultado como RASCUNHO e modos rapido/otimizado.",
+          "tags": [
+            "gerar escala",
+            "passo a passo",
+            "como gerar",
+            "fluxo principal",
+            "preflight",
+            "verificacao previa",
+            "pre-requisito",
+            "setor",
+            "colaborador",
+            "demanda",
+            "excecao",
+            "motor",
+            "RASCUNHO",
+            "modo rapido",
+            "modo otimizado",
+            "30 segundos",
+            "120 segundos",
+            "cobertura",
+            "violacao"
+          ],
+          "entidades": [
+            { "nome": "Preflight", "tipo": "conceito" },
+            { "nome": "Escala", "tipo": "conceito" },
+            { "nome": "Motor OR-Tools", "tipo": "conceito" },
+            { "nome": "Modo Rapido", "tipo": "conceito" },
+            { "nome": "Modo Otimizado", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Preflight", "to": "Escala", "tipo_relacao": "depende_de", "peso": 1.0 },
+            { "from": "Escala", "to": "Motor OR-Tools", "tipo_relacao": "depende_de", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Rules override para relaxar regras temporariamente, e o fluxo de ajuste de escala existente: mudar status (TRABALHO/FOLGA/INDISPONIVEL), ajustar horarios e validacao pos-ajuste automatica.",
+          "tags": [
+            "rules override",
+            "relaxar",
+            "temporario",
+            "ajustar escala",
+            "editar escala",
+            "mudar status",
+            "TRABALHO",
+            "FOLGA",
+            "INDISPONIVEL",
+            "trocar dia",
+            "mudar horario",
+            "hora inicio",
+            "hora fim",
+            "validacao",
+            "revalidar",
+            "pos-ajuste",
+            "violacao criada"
+          ],
+          "entidades": [
+            { "nome": "Rules Override", "tipo": "conceito" },
+            { "nome": "Ajuste de Escala", "tipo": "conceito" },
+            { "nome": "Alocacao", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Ajuste de Escala", "to": "Escala", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Ajuste de Escala", "to": "Alocacao", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Fluxo de cadastrar ferias (criar excecao tipo FERIAS) e como lidar com INFEASIBLE: causas comuns (poucos colaboradores, muitas excecoes, janelas apertadas) e solucoes praticas.",
+          "tags": [
+            "ferias",
+            "cadastrar ferias",
+            "excecao",
+            "atestado",
+            "bloqueio",
+            "indisponivel",
+            "INFEASIBLE",
+            "nao gerou",
+            "impossivel",
+            "causas",
+            "poucos funcionarios",
+            "muitas ferias",
+            "janela apertada",
+            "solucao",
+            "diagnostico",
+            "relaxar regra",
+            "adicionar gente",
+            "reduzir demanda"
+          ],
+          "entidades": [
+            { "nome": "Excecao", "tipo": "conceito" },
+            { "nome": "Ferias", "tipo": "conceito" },
+            { "nome": "INFEASIBLE", "tipo": "conceito" },
+            { "nome": "Diagnostico", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Ferias", "to": "Excecao", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "INFEASIBLE", "to": "Diagnostico", "tipo_relacao": "depende_de", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Fluxo de importar lista de funcionarios em lote (cadastrar_lote ate 200 por vez) e configurar regras personalizadas por colaborador: janela horario, folga fixa, ciclo domingo, excecao por data.",
+          "tags": [
+            "importar funcionarios",
+            "cadastrar lote",
+            "lista funcionarios",
+            "muitos colaboradores",
+            "200 registros",
+            "importacao",
+            "regra personalizada",
+            "janela horario",
+            "folga fixa",
+            "ciclo domingo",
+            "excecao por data",
+            "hierarquia precedencia",
+            "configurar colaborador"
+          ],
+          "entidades": [
+            { "nome": "Cadastro em Lote", "tipo": "conceito" },
+            { "nome": "Regra Individual", "tipo": "regra" },
+            { "nome": "Hierarquia de Precedencia", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Cadastro em Lote", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Regra Individual", "to": "Hierarquia de Precedencia", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Fluxo de demanda excepcional (Black Friday), verificar horas do setor (equilibrio, hora extra, compliance), oficializar escala (exige 0 violacoes hard) e configurar horario de funcionamento por empresa ou setor.",
+          "tags": [
+            "demanda excepcional",
+            "Black Friday",
+            "dia especial",
+            "mais pessoas",
+            "cobertura extra",
+            "horas setor",
+            "equilibrio",
+            "hora extra",
+            "desvio",
+            "compliance",
+            "oficializar",
+            "travar escala",
+            "0 violacoes",
+            "horario funcionamento",
+            "empresa",
+            "setor",
+            "abre fecha",
+            "override setor"
+          ],
+          "entidades": [
+            { "nome": "Demanda Excepcional", "tipo": "conceito" },
+            { "nome": "Oficializacao", "tipo": "conceito" },
+            { "nome": "Horario de Funcionamento", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Demanda Excepcional", "to": "Escala", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Oficializacao", "to": "Violacao HARD", "tipo_relacao": "exige", "peso": 1.0 },
+            { "from": "Horario de Funcionamento", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "sistema/entidades.md",
+      "titulo": "sistema — entidades",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Entidade Empresa (singleton) com campos corte_semanal, grid_minutos, tolerancia_semanal, intervalo almoco CCT, e entidade Setor com hora abertura/fechamento e override por dia da semana.",
+          "tags": [
+            "empresa",
+            "configuracao global",
+            "singleton",
+            "corte semanal",
+            "semana",
+            "grid minutos",
+            "15 minutos",
+            "tolerancia",
+            "almoco CCT",
+            "intervalo reduzido",
+            "setor",
+            "departamento",
+            "abertura",
+            "fechamento",
+            "horario setor",
+            "override dia semana"
+          ],
+          "entidades": [
+            { "nome": "Empresa", "tipo": "conceito" },
+            { "nome": "Setor", "tipo": "conceito" },
+            { "nome": "Corte Semanal", "tipo": "conceito" },
+            { "nome": "Grid 15min", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Empresa", "to": "Setor", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Empresa", "to": "Grid 15min", "tipo_relacao": "exige", "peso": 1.0 },
+            { "from": "Setor", "to": "Empresa", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Entidade Colaborador com campos nome, setor_id, tipo_contrato_id, tipo_trabalhador, sexo (afeta domingos), horas_semanais, rank, funcao_id, e regras individuais (janela, ciclo, folga fixa, excecao por data).",
+          "tags": [
+            "colaborador",
+            "funcionario",
+            "pessoa",
+            "trabalhador",
+            "setor",
+            "contrato",
+            "tipo trabalhador",
+            "CLT",
+            "estagiario",
+            "aprendiz",
+            "sexo",
+            "homem mulher",
+            "horas semanais",
+            "rank",
+            "senioridade",
+            "funcao",
+            "posto",
+            "regra individual",
+            "janela horario",
+            "ciclo domingo",
+            "folga fixa",
+            "excecao data",
+            "turno preferido"
+          ],
+          "entidades": [
+            { "nome": "Colaborador", "tipo": "conceito" },
+            { "nome": "Regra Individual", "tipo": "regra" },
+            { "nome": "Rank", "tipo": "conceito" },
+            { "nome": "Funcao", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Colaborador", "to": "Setor", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Colaborador", "to": "Regra Individual", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Colaborador", "to": "Funcao", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Entidade Tipo de Contrato com os 5 contratos padrao (CLT 44h, CLT 36h, Estagiario Manha 20h, Estagiario Tarde 30h, Jovem Aprendiz) e suas restricoes legais especificas.",
+          "tags": [
+            "tipo contrato",
+            "contrato",
+            "CLT 44h",
+            "CLT 36h",
+            "estagiario manha",
+            "estagiario tarde",
+            "jovem aprendiz",
+            "20 horas",
+            "30 horas",
+            "36 horas",
+            "44 horas",
+            "regime 5X2",
+            "hora extra",
+            "domingo proibido",
+            "feriado proibido",
+            "noturno proibido",
+            "compensacao"
+          ],
+          "entidades": [
+            { "nome": "CLT 44h", "tipo": "contrato" },
+            { "nome": "CLT 36h", "tipo": "contrato" },
+            { "nome": "Estagiario 20h", "tipo": "contrato" },
+            { "nome": "Estagiario 30h", "tipo": "contrato" },
+            { "nome": "Jovem Aprendiz", "tipo": "contrato" }
+          ],
+          "relacoes": [
+            { "from": "CLT 44h", "to": "Compensacao 9h45", "tipo_relacao": "permite", "peso": 1.0 },
+            { "from": "Estagiario 20h", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 },
+            { "from": "Jovem Aprendiz", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Entidade Demanda (cobertura minima por faixa horaria e dia da semana), demanda excepcional por data (Black Friday), e entidade Excecao (FERIAS, ATESTADO, BLOQUEIO como HARD constraint).",
+          "tags": [
+            "demanda",
+            "cobertura",
+            "quantas pessoas",
+            "faixa horaria",
+            "dia semana",
+            "min pessoas",
+            "demanda excepcional",
+            "Black Friday",
+            "excecao",
+            "ferias",
+            "atestado",
+            "bloqueio",
+            "indisponivel",
+            "afastamento",
+            "HARD constraint",
+            "periodo indisponivel"
+          ],
+          "entidades": [
+            { "nome": "Demanda", "tipo": "conceito" },
+            { "nome": "Demanda Excepcional", "tipo": "conceito" },
+            { "nome": "Excecao", "tipo": "conceito" },
+            { "nome": "Ferias", "tipo": "conceito" },
+            { "nome": "Atestado", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Demanda", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Excecao", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Ferias", "to": "Excecao", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Entidade Funcao/Posto (Caixa, Repositor, Acougueiro) com apelido e cor visual, e entidade Escala com status RASCUNHO/OFICIAL/ARQUIVADA, pontuacao, cobertura_percent e violacoes.",
+          "tags": [
+            "funcao",
+            "posto",
+            "cargo",
+            "caixa",
+            "repositor",
+            "acougueiro",
+            "padeiro",
+            "cor",
+            "identificacao visual",
+            "escala",
+            "resultado",
+            "pontuacao",
+            "score",
+            "qualidade",
+            "cobertura percent",
+            "violacoes hard",
+            "violacoes soft",
+            "equilibrio",
+            "input hash"
+          ],
+          "entidades": [
+            { "nome": "Funcao", "tipo": "funcao" },
+            { "nome": "Escala", "tipo": "conceito" },
+            { "nome": "Pontuacao", "tipo": "conceito" },
+            { "nome": "Cobertura de Demanda", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Funcao", "to": "Setor", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Escala", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Escala", "to": "Cobertura de Demanda", "tipo_relacao": "compoe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 5,
+          "resumo": "Entidade Alocacao (1 dia de 1 pessoa com status TRABALHO/FOLGA/INDISPONIVEL, horarios e almoco), entidade Feriado (com proibido_trabalhar e cct_autoriza), e as 35 regras do motor divididas em CLT, SOFT e ANTIPATTERN.",
+          "tags": [
+            "alocacao",
+            "dia pessoa",
+            "TRABALHO",
+            "FOLGA",
+            "INDISPONIVEL",
+            "hora inicio",
+            "hora fim",
+            "minutos trabalho",
+            "almoco",
+            "funcao dia",
+            "feriado",
+            "proibido trabalhar",
+            "Natal",
+            "Ano Novo",
+            "CCT autoriza",
+            "nacional",
+            "estadual",
+            "municipal",
+            "35 regras",
+            "16 CLT",
+            "7 SOFT",
+            "12 antipattern",
+            "HARD SOFT OFF"
+          ],
+          "entidades": [
+            { "nome": "Alocacao", "tipo": "conceito" },
+            { "nome": "Feriado", "tipo": "feriado" },
+            { "nome": "Regras do Motor", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Alocacao", "to": "Escala", "tipo_relacao": "compoe", "peso": 1.0 },
+            { "from": "Alocacao", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Feriado", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "clt/jornada-regras.md",
+      "titulo": "clt — jornada-regras",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Regras CLT fixas do motor: H2 interjornada 11h (Art 66 CLT), H4 jornada maxima 10h/dia (Art 59 CLT), H5 respeitar excecoes (ferias/atestado/bloqueio).",
+          "tags": [
+            "interjornada",
+            "11 horas",
+            "descanso entre jornadas",
+            "folga entre turnos",
+            "intervalo entre jornadas",
+            "Art 66",
+            "jornada maxima",
+            "10 horas dia",
+            "hora extra limite",
+            "Art 59",
+            "excecao",
+            "ferias",
+            "atestado",
+            "bloqueio",
+            "indisponivel",
+            "H2",
+            "H4",
+            "H5",
+            "regra fixa",
+            "nao editavel"
+          ],
+          "entidades": [
+            { "nome": "Interjornada", "tipo": "regra" },
+            { "nome": "H2", "tipo": "regra" },
+            { "nome": "H4", "tipo": "regra" },
+            { "nome": "H5", "tipo": "regra" },
+            { "nome": "Art. 66 CLT", "tipo": "legislacao" },
+            { "nome": "Art. 59 CLT", "tipo": "legislacao" }
+          ],
+          "relacoes": [
+            { "from": "H2", "to": "Art. 66 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "H4", "to": "Art. 59 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "H2", "to": "Interjornada", "tipo_relacao": "exige", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Regras de estagiario (H11 max horas/dia, H12 max horas/semana, H13 nunca domingo, H14 nunca hora extra) e aprendiz (H15 nunca domingo, H16 nunca feriado, H17 nunca noturno), baseadas na Lei 11.788 e CLT Arts 404/432.",
+          "tags": [
+            "estagiario",
+            "max horas dia",
+            "max horas semana",
+            "4 horas",
+            "6 horas",
+            "20 horas",
+            "30 horas",
+            "nunca domingo",
+            "nunca hora extra",
+            "Lei 11788",
+            "Lei do Estagio",
+            "aprendiz",
+            "jovem aprendiz",
+            "nunca feriado",
+            "nunca noturno",
+            "22h 05h",
+            "horario noturno",
+            "Art 404",
+            "Art 432",
+            "H11",
+            "H12",
+            "H13",
+            "H14",
+            "H15",
+            "H16",
+            "H17"
+          ],
+          "entidades": [
+            { "nome": "H11", "tipo": "regra" },
+            { "nome": "H12", "tipo": "regra" },
+            { "nome": "H13", "tipo": "regra" },
+            { "nome": "H14", "tipo": "regra" },
+            { "nome": "H15", "tipo": "regra" },
+            { "nome": "H16", "tipo": "regra" },
+            { "nome": "H17", "tipo": "regra" },
+            { "nome": "Lei 11.788", "tipo": "legislacao" },
+            { "nome": "Art. 404 CLT", "tipo": "legislacao" }
+          ],
+          "relacoes": [
+            { "from": "H11", "to": "Estagiario", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "H13", "to": "Estagiario", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "H15", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "H16", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "H17", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "H11", "to": "Lei 11.788", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "H18 feriados CCT proibidos (25/12 Natal e 01/01 Ano Novo ninguem trabalha), e regras CLT configuraveis: H1 max 6 dias consecutivos (Art 67 CLT), H6 almoco obrigatorio (Art 71 CLT) com CCT 30min.",
+          "tags": [
+            "feriado proibido",
+            "Natal",
+            "Ano Novo",
+            "25 dezembro",
+            "01 janeiro",
+            "CCT",
+            "H18",
+            "ninguem trabalha",
+            "max 6 dias",
+            "dias consecutivos",
+            "7 dias seguidos",
+            "sem folga",
+            "Art 67",
+            "H1",
+            "almoco",
+            "intervalo almoco",
+            "obrigatorio",
+            "6 horas",
+            "1 hora",
+            "30 minutos",
+            "CCT almoco",
+            "Art 71",
+            "H6",
+            "configuravel"
+          ],
+          "entidades": [
+            { "nome": "H18", "tipo": "regra" },
+            { "nome": "H1", "tipo": "regra" },
+            { "nome": "H6", "tipo": "regra" },
+            { "nome": "Art. 67 CLT", "tipo": "legislacao" },
+            { "nome": "Art. 71 CLT", "tipo": "legislacao" },
+            { "nome": "CCT FecomercioSP", "tipo": "legislacao" }
+          ],
+          "relacoes": [
+            { "from": "H18", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "H1", "to": "Art. 67 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "H6", "to": "Art. 71 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Regras configuraveis H10 (meta semanal de horas com tolerancia +-30min), DIAS_TRABALHO (dias por semana 5X2 ou 6X1), MIN_DIARIO (jornada minima 4h), e regras SOFT: S_DEFICIT, S_SURPLUS, S_DOMINGO_CICLO.",
+          "tags": [
+            "meta semanal",
+            "horas semana",
+            "tolerancia",
+            "30 minutos",
+            "H10",
+            "dias trabalho",
+            "5X2",
+            "6X1",
+            "DIAS_TRABALHO",
+            "jornada minima",
+            "4 horas",
+            "MIN_DIARIO",
+            "deficit cobertura",
+            "excesso cobertura",
+            "S_DEFICIT",
+            "S_SURPLUS",
+            "ciclo domingo SOFT",
+            "S_DOMINGO_CICLO",
+            "configuravel"
+          ],
+          "entidades": [
+            { "nome": "H10", "tipo": "regra" },
+            { "nome": "DIAS_TRABALHO", "tipo": "regra" },
+            { "nome": "MIN_DIARIO", "tipo": "regra" },
+            { "nome": "S_DEFICIT", "tipo": "regra" },
+            { "nome": "S_SURPLUS", "tipo": "regra" },
+            { "nome": "S_DOMINGO_CICLO", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "H10", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "S_DEFICIT", "to": "Cobertura de Demanda", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "S_DOMINGO_CICLO", "to": "Ciclo de Domingos", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Regras SOFT de turno preferido, consistencia de horario e distribuicao justa entre colaboradores, e antipatterns AP1 (clopening), AP2 (almoco simultaneo), AP3 (hora extra evitavel), AP4 (sem fds), AP5 (maratona pico).",
+          "tags": [
+            "turno preferido",
+            "manha tarde",
+            "S_TURNO_PREF",
+            "consistencia",
+            "ioio",
+            "horario variando",
+            "S_CONSISTENCIA",
+            "distribuicao justa",
+            "equilibrio carga",
+            "S_SPREAD",
+            "antipattern",
+            "clopening",
+            "fechar abrir",
+            "AP1",
+            "almoco simultaneo",
+            "AP2",
+            "hora extra evitavel",
+            "AP3",
+            "sem fim semana",
+            "AP4",
+            "maratona pico",
+            "AP5"
+          ],
+          "entidades": [
+            { "nome": "S_TURNO_PREF", "tipo": "regra" },
+            { "nome": "S_CONSISTENCIA", "tipo": "regra" },
+            { "nome": "S_SPREAD", "tipo": "regra" },
+            { "nome": "Clopening", "tipo": "regra" },
+            { "nome": "AP2", "tipo": "regra" },
+            { "nome": "AP3", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "S_TURNO_PREF", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "S_SPREAD", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Clopening", "to": "Interjornada", "tipo_relacao": "depende_de", "peso": 0.5 }
+          ]
+        },
+        {
+          "chunk_index": 5,
+          "resumo": "Antipatterns AP6 (junior sozinho em pico), AP7/AP8 (ioio de horario grave/moderado), AP9 (folga isolada), AP10 (turnos injustos), AP15 (schedule shock), AP16 (fechamento em sequencia), e hierarquia de precedencia de regras.",
+          "tags": [
+            "junior sozinho",
+            "AP6",
+            "inexperiente",
+            "pico",
+            "ioio horario",
+            "AP7",
+            "AP8",
+            "variacao 2h",
+            "folga isolada",
+            "AP9",
+            "folga perdida",
+            "turnos injustos",
+            "AP10",
+            "schedule shock",
+            "AP15",
+            "mudanca brusca",
+            "fechamento sequencia",
+            "AP16",
+            "hierarquia regras",
+            "precedencia",
+            "HARD CLT fixa",
+            "HARD configuravel",
+            "SOFT",
+            "ANTIPATTERN"
+          ],
+          "entidades": [
+            { "nome": "AP6", "tipo": "regra" },
+            { "nome": "AP7", "tipo": "regra" },
+            { "nome": "AP9", "tipo": "regra" },
+            { "nome": "AP10", "tipo": "regra" },
+            { "nome": "AP15", "tipo": "regra" },
+            { "nome": "AP16", "tipo": "regra" },
+            { "nome": "Hierarquia de Regras", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "AP6", "to": "Rank", "tipo_relacao": "depende_de", "peso": 1.0 },
+            { "from": "Hierarquia de Regras", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "clt/intervalos-descanso.md",
+      "titulo": "clt — intervalos-descanso",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Visao geral dos intervalos CLT (intrajornada, interjornada, DSR) e detalhamento do almoco obrigatorio: quando e obrigatorio (acima de 6h), duracao minima/maxima, Art 71 CLT e CCT FecomercioSP permitindo 30min.",
+          "tags": [
+            "intervalo",
+            "almoco",
+            "intrajornada",
+            "obrigatorio",
+            "6 horas",
+            "1 hora",
+            "30 minutos",
+            "2 horas maximo",
+            "Art 71",
+            "CLT",
+            "CCT",
+            "FecomercioSP",
+            "almoco reduzido",
+            "refeicao",
+            "descanso",
+            "repouso",
+            "alimentacao",
+            "jornada continua"
+          ],
+          "entidades": [
+            { "nome": "Almoco", "tipo": "regra" },
+            { "nome": "Art. 71 CLT", "tipo": "legislacao" },
+            { "nome": "CCT FecomercioSP", "tipo": "legislacao" },
+            { "nome": "Intrajornada", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Almoco", "to": "Art. 71 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Almoco", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 0.5 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Impacto do almoco no motor (nao conta como hora trabalhada), horario ideal (11:00-13:30), almoco simultaneo (AP2 max 50% do setor), e intervalo de 15 minutos obrigatorio para jornadas entre 4h e 6h (Art 71 paragrafo 1).",
+          "tags": [
+            "almoco nao conta",
+            "hora trabalhada",
+            "horario almoco",
+            "11h 13h30",
+            "almoco muito cedo",
+            "almoco muito tarde",
+            "almoco simultaneo",
+            "AP2",
+            "50%",
+            "setor descoberto",
+            "intervalo 15 minutos",
+            "jornada 4h 6h",
+            "Art 71 paragrafo 1",
+            "estagiario",
+            "intervalo curto",
+            "pausa",
+            "coffee break"
+          ],
+          "entidades": [
+            { "nome": "Almoco", "tipo": "regra" },
+            { "nome": "AP2", "tipo": "regra" },
+            { "nome": "Intervalo 15min", "tipo": "regra" },
+            { "nome": "Estagiario", "tipo": "contrato" }
+          ],
+          "relacoes": [
+            { "from": "Intervalo 15min", "to": "Estagiario", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "AP2", "to": "Almoco", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Interjornada de 11 horas (Art 66 CLT): regra, exemplos praticos de OK/violacao/limite, e impacto no supermercado (quem fecha as 22h so volta as 09h). Clopening como antipattern quando descanso e menor que 13h.",
+          "tags": [
+            "interjornada",
+            "11 horas",
+            "descanso entre jornadas",
+            "folga entre turnos",
+            "intervalo entre jornadas",
+            "Art 66",
+            "exemplo",
+            "22h 09h",
+            "violacao H2",
+            "fechamento",
+            "supermercado fecha",
+            "clopening",
+            "13 horas",
+            "desconforto",
+            "antipattern AP1",
+            "abrir fechar",
+            "turno noite",
+            "flexibilidade reduzida"
+          ],
+          "entidades": [
+            { "nome": "Interjornada", "tipo": "regra" },
+            { "nome": "Art. 66 CLT", "tipo": "legislacao" },
+            { "nome": "Clopening", "tipo": "regra" },
+            { "nome": "H2", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Interjornada", "to": "Art. 66 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Clopening", "to": "Interjornada", "tipo_relacao": "depende_de", "peso": 1.0 },
+            { "from": "H2", "to": "Interjornada", "tipo_relacao": "exige", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Descanso Semanal Remunerado (DSR): direito a 1 folga por semana preferencialmente domingo (Art 67 CLT, Lei 605/1949), DSR+interjornada=35h (Sumula 110 TST), e implementacao via regra H1 max 6 dias consecutivos.",
+          "tags": [
+            "DSR",
+            "descanso semanal",
+            "repouso semanal",
+            "folga semanal",
+            "24 horas",
+            "Art 67",
+            "Lei 605",
+            "domingo",
+            "preferencial",
+            "35 horas",
+            "Sumula 110",
+            "TST",
+            "H1",
+            "6 dias consecutivos",
+            "7 dia folga",
+            "descanso remunerado",
+            "folga obrigatoria"
+          ],
+          "entidades": [
+            { "nome": "DSR", "tipo": "regra" },
+            { "nome": "Art. 67 CLT", "tipo": "legislacao" },
+            { "nome": "Lei 605/1949", "tipo": "legislacao" },
+            { "nome": "Sumula 110 TST", "tipo": "legislacao" },
+            { "nome": "H1", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "DSR", "to": "Art. 67 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "DSR", "to": "Lei 605/1949", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "H1", "to": "DSR", "tipo_relacao": "exige", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Domingos: trabalho permitido no comercio via CCT, folga compensatoria em 7 dias, ciclo por genero (homens 2:1, mulheres 1:1 Art 386 CLT), SOFT no motor, estagiarios e aprendizes NUNCA trabalham domingo.",
+          "tags": [
+            "domingo",
+            "trabalho domingo",
+            "folga compensatoria",
+            "7 dias",
+            "Lei 605",
+            "ciclo genero",
+            "homem 2:1",
+            "mulher 1:1",
+            "Art 386",
+            "domingos consecutivos",
+            "SOFT constraint",
+            "S_DOMINGO_CICLO",
+            "estagiario nunca",
+            "aprendiz nunca",
+            "HARD constraint domingo",
+            "comercio"
+          ],
+          "entidades": [
+            { "nome": "Ciclo de Domingos", "tipo": "regra" },
+            { "nome": "Art. 386 CLT", "tipo": "legislacao" },
+            { "nome": "S_DOMINGO_CICLO", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Ciclo de Domingos", "to": "Art. 386 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "S_DOMINGO_CICLO", "to": "Ciclo de Domingos", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Estagiario", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 5,
+          "resumo": "Jornada maxima CLT (8h normal, 10h com hora extra, 9h45 compensacao 5X2), limites de estagiarios (4h/20h ou 6h/30h sem hora extra) e aprendizes (6h sem HE), e jornada minima de 4h como decisao de produto.",
+          "tags": [
+            "jornada maxima",
+            "8 horas",
+            "10 horas",
+            "hora extra",
+            "9h45",
+            "compensacao",
+            "5X2",
+            "estagiario 4h",
+            "estagiario 6h",
+            "aprendiz 6h",
+            "nunca hora extra",
+            "jornada minima",
+            "4 horas",
+            "minimo diario",
+            "deslocamento",
+            "custo beneficio"
+          ],
+          "entidades": [
+            { "nome": "Jornada Maxima", "tipo": "regra" },
+            { "nome": "Compensacao 9h45", "tipo": "regra" },
+            { "nome": "Jornada Minima", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Jornada Maxima", "to": "Art. 59 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Compensacao 9h45", "to": "CLT 44h", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 6,
+          "resumo": "Tabela resumo de todos os limites temporais: interjornada 11h, DSR 35h, almoco 1h/30min/2h max, intervalo 15min, max 6 dias, jornada 8h/10h/9h45, clopening 13h.",
+          "tags": [
+            "resumo limites",
+            "tabela",
+            "referencia rapida",
+            "interjornada 11h",
+            "DSR 35h",
+            "almoco 1h",
+            "almoco 30min",
+            "almoco 2h",
+            "15 minutos",
+            "6 dias consecutivos",
+            "8h normal",
+            "10h maxima",
+            "9h45 compensacao",
+            "clopening 13h",
+            "base legal",
+            "Art 66",
+            "Art 67",
+            "Art 71",
+            "Art 59",
+            "Sumula 110"
+          ],
+          "entidades": [
+            { "nome": "Interjornada", "tipo": "regra" },
+            { "nome": "DSR", "tipo": "regra" },
+            { "nome": "Almoco", "tipo": "regra" },
+            { "nome": "Jornada Maxima", "tipo": "regra" },
+            { "nome": "Clopening", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Interjornada", "to": "Art. 66 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "DSR", "to": "Art. 67 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "clt/feriados-cct.md",
+      "titulo": "clt — feriados-cct",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "CCT FecomercioSP explicada: acordo sindical do comercio SP, feriados proibidos (25/12 Natal e 01/01 Ano Novo absolutamente proibidos, sem excecao), por que apenas esses dois.",
+          "tags": [
+            "CCT",
+            "FecomercioSP",
+            "convencao coletiva",
+            "acordo sindical",
+            "comercio",
+            "Sao Paulo",
+            "feriado proibido",
+            "Natal",
+            "25 dezembro",
+            "Ano Novo",
+            "01 janeiro",
+            "proibido trabalhar",
+            "sem excecao",
+            "HARD constraint",
+            "obrigatorio",
+            "legislacao trabalhista"
+          ],
+          "entidades": [
+            { "nome": "CCT FecomercioSP", "tipo": "legislacao" },
+            { "nome": "Natal", "tipo": "feriado" },
+            { "nome": "Ano Novo", "tipo": "feriado" },
+            { "nome": "H18", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "H18", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "H18", "to": "Natal", "tipo_relacao": "proibe", "peso": 1.0 },
+            { "from": "H18", "to": "Ano Novo", "tipo_relacao": "proibe", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Lista completa de feriados nacionais cadastrados no sistema (Carnaval, Tiradentes, Trabalho, Corpus Christi, Independencia, Aparecida, Finados, Proclamacao, Consciencia Negra) e tratamento dos demais feriados como dias normais.",
+          "tags": [
+            "feriados nacionais",
+            "lista feriados",
+            "Carnaval",
+            "Tiradentes",
+            "Dia do Trabalho",
+            "1 maio",
+            "Corpus Christi",
+            "7 setembro",
+            "Independencia",
+            "12 outubro",
+            "Aparecida",
+            "2 novembro",
+            "Finados",
+            "15 novembro",
+            "Proclamacao",
+            "20 novembro",
+            "Consciencia Negra",
+            "Sexta-feira Santa",
+            "feriado movil",
+            "dia normal"
+          ],
+          "entidades": [
+            { "nome": "Feriado Nacional", "tipo": "feriado" },
+            { "nome": "Carnaval", "tipo": "feriado" },
+            { "nome": "Tiradentes", "tipo": "feriado" },
+            { "nome": "Dia do Trabalho", "tipo": "feriado" },
+            { "nome": "Corpus Christi", "tipo": "feriado" }
+          ],
+          "relacoes": [
+            { "from": "Feriado Nacional", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Almoco reduzido pela CCT (30min ao inves de 1h), configuracao no EscalaFlow (usa_cct_intervalo_reduzido), impacto na viabilidade de escalas, e tratamento especial de aprendiz que NUNCA trabalha em NENHUM feriado.",
+          "tags": [
+            "almoco reduzido",
+            "30 minutos",
+            "CCT intervalo",
+            "usa cct intervalo reduzido",
+            "configuracao empresa",
+            "min intervalo almoco",
+            "viabilidade",
+            "INFEASIBLE",
+            "aprendiz feriado",
+            "jovem aprendiz",
+            "nunca feriado",
+            "todos feriados",
+            "Art 404",
+            "Art 432",
+            "proibido",
+            "nenhum feriado"
+          ],
+          "entidades": [
+            { "nome": "Almoco Reduzido CCT", "tipo": "regra" },
+            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
+            { "nome": "H16", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Almoco Reduzido CCT", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "H16", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "EscalaFlow nao calcula folha de pagamento (pagamento dobro feriado, adicional noturno, hora extra, DSR). Domingos e CCT: folga compensatoria 7 dias, ciclo por genero (homens 2:1, mulheres 1:1 Art 386 CLT).",
+          "tags": [
+            "folha pagamento",
+            "nao calcula",
+            "pagamento dobro",
+            "adicional noturno",
+            "hora extra pagamento",
+            "DSR pagamento",
+            "escalonamento",
+            "quem trabalha quando",
+            "domingo CCT",
+            "folga compensatoria",
+            "7 dias",
+            "ciclo homem",
+            "ciclo mulher",
+            "2:1",
+            "1:1",
+            "Art 386"
+          ],
+          "entidades": [
+            { "nome": "Folha de Pagamento", "tipo": "conceito" },
+            { "nome": "Ciclo de Domingos", "tipo": "regra" },
+            { "nome": "Art. 386 CLT", "tipo": "legislacao" }
+          ],
+          "relacoes": [
+            { "from": "EscalaFlow", "to": "Folha de Pagamento", "tipo_relacao": "proibe", "peso": 1.0 },
+            { "from": "Ciclo de Domingos", "to": "Art. 386 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Feriado que cai no domingo (tratado como feriado, nao domingo), pontos praticos de fim de ano (Natal e Ano Novo fechados criam problemas cobertura), Carnaval (decisao da empresa), Black Friday (demanda excepcional) e Semana Santa.",
+          "tags": [
+            "feriado domingo",
+            "feriado cai domingo",
+            "ciclo afetado",
+            "fim de ano",
+            "novembro dezembro",
+            "cobertura",
+            "Carnaval",
+            "nao feriado nacional",
+            "folga convencao",
+            "Black Friday",
+            "demanda excepcional",
+            "Semana Santa",
+            "Sexta-feira Santa",
+            "movil",
+            "planejamento",
+            "escala complexa"
+          ],
+          "entidades": [
+            { "nome": "Black Friday", "tipo": "conceito" },
+            { "nome": "Carnaval", "tipo": "feriado" },
+            { "nome": "Semana Santa", "tipo": "feriado" },
+            { "nome": "Demanda Excepcional", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Black Friday", "to": "Demanda Excepcional", "tipo_relacao": "exige", "peso": 1.0 },
+            { "from": "Natal", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "clt/contratos.md",
+      "titulo": "clt — contratos",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Visao geral dos 4 tipos de contrato padrao do EscalaFlow e detalhamento do CLT 44h: regime 5X2, 44h semanais, max 9h45/dia com compensacao, trabalha domingo, hora extra ate 10h.",
+          "tags": [
+            "tipos contrato",
+            "4 contratos",
+            "CLT 44h",
+            "44 horas",
+            "regime 5X2",
+            "5 dias trabalho",
+            "2 folgas",
+            "9h45",
+            "compensacao",
+            "hora extra",
+            "10h dia",
+            "trabalha domingo",
+            "funcionario regular",
+            "supermercado",
+            "mais comum",
+            "8h48 por dia"
+          ],
+          "entidades": [
+            { "nome": "CLT 44h", "tipo": "contrato" },
+            { "nome": "Compensacao 9h45", "tipo": "regra" },
+            { "nome": "Regime 5X2", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "CLT 44h", "to": "Regime 5X2", "tipo_relacao": "exige", "peso": 1.0 },
+            { "from": "CLT 44h", "to": "Compensacao 9h45", "tipo_relacao": "permite", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Restricoes do CLT 44h (max 6 dias, interjornada 11h, almoco) e detalhamento do CLT 36h: mesmas restricoes legais mas meta semanal de 36h (7h12/dia em media).",
+          "tags": [
+            "CLT 44h restricoes",
+            "6 dias consecutivos",
+            "interjornada 11h",
+            "almoco obrigatorio",
+            "30min CCT",
+            "1h CLT",
+            "intervalo 15min",
+            "CLT 36h",
+            "36 horas",
+            "carga reduzida",
+            "7h12 dia",
+            "mesmas restricoes",
+            "meta menor",
+            "contrato parcial"
+          ],
+          "entidades": [
+            { "nome": "CLT 44h", "tipo": "contrato" },
+            { "nome": "CLT 36h", "tipo": "contrato" },
+            { "nome": "Interjornada", "tipo": "regra" },
+            { "nome": "Almoco", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "CLT 36h", "to": "Regime 5X2", "tipo_relacao": "exige", "peso": 1.0 },
+            { "from": "CLT 36h", "to": "Interjornada", "tipo_relacao": "exige", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Estagiario Manha (20h): max 4h/dia, nunca domingo, nunca hora extra, intervalo 15min obrigatorio, protegido pela Lei 11.788. Estagiario Tarde/Noite (30h): max 6h/dia, mesmas restricoes.",
+          "tags": [
+            "estagiario manha",
+            "20 horas",
+            "4 horas dia",
+            "estagiario tarde",
+            "estagiario noite",
+            "30 horas",
+            "6 horas dia",
+            "nunca domingo",
+            "nunca hora extra",
+            "proibido lei",
+            "Lei 11788",
+            "Lei do Estagio",
+            "intervalo 15min",
+            "sem almoco",
+            "protecao legal",
+            "estagio",
+            "universitario"
+          ],
+          "entidades": [
+            { "nome": "Estagiario 20h", "tipo": "contrato" },
+            { "nome": "Estagiario 30h", "tipo": "contrato" },
+            { "nome": "Lei 11.788", "tipo": "legislacao" },
+            { "nome": "Intervalo 15min", "tipo": "regra" }
+          ],
+          "relacoes": [
+            { "from": "Estagiario 20h", "to": "Lei 11.788", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Estagiario 30h", "to": "Lei 11.788", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Estagiario 20h", "to": "Intervalo 15min", "tipo_relacao": "exige", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Jovem Aprendiz: restricoes mais severas do sistema — nunca domingo, nunca feriado, nunca noturno (22h-05h), nunca hora extra, max 6h/dia. Protegido pela CLT Arts 404, 405, 432.",
+          "tags": [
+            "jovem aprendiz",
+            "aprendiz",
+            "menor aprendiz",
+            "restricoes severas",
+            "nunca domingo",
+            "nunca feriado",
+            "nunca noturno",
+            "22h 05h",
+            "noite proibido",
+            "nunca hora extra",
+            "6 horas dia",
+            "Art 404",
+            "Art 405",
+            "Art 432",
+            "CLT protecao",
+            "programa aprendizagem",
+            "menor idade"
+          ],
+          "entidades": [
+            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
+            { "nome": "Art. 404 CLT", "tipo": "legislacao" },
+            { "nome": "Art. 405 CLT", "tipo": "legislacao" },
+            { "nome": "Art. 432 CLT", "tipo": "legislacao" }
+          ],
+          "relacoes": [
+            { "from": "Jovem Aprendiz", "to": "Art. 404 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Jovem Aprendiz", "to": "Art. 405 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
+            { "from": "Jovem Aprendiz", "to": "Art. 432 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Tabela comparativa dos 5 contratos (horas/semana, max/dia, domingo, feriado, hora extra, noturno, compensacao) e perfis de horario como templates de janela de entrada/saida por contrato.",
+          "tags": [
+            "tabela comparativa",
+            "comparacao contratos",
+            "todos contratos",
+            "CLT 44h",
+            "CLT 36h",
+            "estagiario 20h",
+            "estagiario 30h",
+            "aprendiz",
+            "horas semana",
+            "max dia",
+            "domingo permitido",
+            "feriado permitido",
+            "hora extra permitida",
+            "noturno permitido",
+            "compensacao permitida",
+            "perfil horario",
+            "template janela",
+            "entrada saida",
+            "manha tarde"
+          ],
+          "entidades": [
+            { "nome": "CLT 44h", "tipo": "contrato" },
+            { "nome": "CLT 36h", "tipo": "contrato" },
+            { "nome": "Estagiario 20h", "tipo": "contrato" },
+            { "nome": "Estagiario 30h", "tipo": "contrato" },
+            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
+            { "nome": "Perfil de Horario", "tipo": "conceito" }
+          ],
+          "relacoes": [
+            { "from": "Perfil de Horario", "to": "CLT 44h", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Perfil de Horario", "to": "Estagiario 20h", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
+            { "from": "Perfil de Horario", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

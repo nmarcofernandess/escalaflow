@@ -1,4 +1,15 @@
-import { CheckCircle2, Lightbulb, Loader2, MinusCircle, PlusCircle, XCircle, Zap } from 'lucide-react'
+import {
+  ArrowRight,
+  CheckCircle2,
+  AlertTriangle,
+  Info,
+  Lightbulb,
+  Loader2,
+  PlusCircle,
+  Sparkles,
+  XCircle,
+  Zap,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -8,19 +19,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import type {
-  AdvisoryCriterion,
   AdvisoryDiffItem,
+  AdvisoryStatus,
   DiaSemana,
   EscalaAdvisoryOutput,
+  PreviewDiagnostic,
 } from '@shared/index'
 import { DIAS_CURTOS } from '@/lib/ciclo-grid-types'
 import { cn } from '@/lib/utils'
@@ -34,118 +38,189 @@ interface SugestaoSheetProps {
   advisory: EscalaAdvisoryOutput | null
   onAceitar: () => void
   onDescartar: () => void
+  onAnalisarIa?: () => void
+  /** Contexto: muda titulo e loading text */
+  mode?: 'sugestao' | 'validacao'
+  /** Avisos do TS (preview) — mostrados em secao separada quando mode='validacao' */
+  previewDiagnostics?: PreviewDiagnostic[]
+}
+
+/* ─── Status config ────────────────────────────────────────── */
+
+const STATUS_CONFIG: Record<AdvisoryStatus, {
+  subtitle: string
+  accent: string
+  icon: typeof CheckCircle2
+}> = {
+  CURRENT_VALID: {
+    subtitle: 'O arranjo de folgas esta OK para o periodo selecionado.',
+    accent: 'text-emerald-500',
+    icon: CheckCircle2,
+  },
+  PROPOSAL_VALID: {
+    subtitle: 'O sistema encontrou um arranjo diferente. Veja as diferencas.',
+    accent: 'text-amber-500',
+    icon: Lightbulb,
+  },
+  NO_PROPOSAL: {
+    subtitle: 'Nao foi possivel encontrar um arranjo viavel.',
+    accent: 'text-rose-500',
+    icon: XCircle,
+  },
 }
 
 /* ─── Helpers ───────────────────────────────────────────────── */
-
-const STATUS_SUBTITLE: Record<EscalaAdvisoryOutput['status'], string> = {
-  CURRENT_VALID: 'O arranjo atual esta valido.',
-  PROPOSAL_VALID: 'O sistema encontrou uma proposta melhor.',
-  CURRENT_INVALID: 'O arranjo atual tem problemas.',
-  PROPOSAL_INVALID: 'A proposta encontrada ainda tem pendencias.',
-  NO_PROPOSAL: 'O solver nao encontrou solucao viavel.',
-}
 
 function fmtDia(dia: DiaSemana | null): string {
   return dia ? DIAS_CURTOS[dia] : '-'
 }
 
-/* ─── CriterionRow ──────────────────────────────────────────── */
+/* ─── DiagnosticRow — renders a PreviewDiagnostic ─────────── */
 
-const CRITERION_CONFIG = {
-  PASS: { icon: CheckCircle2, className: 'text-success' },
-  FAIL: { icon: XCircle, className: 'text-destructive' },
-  NOT_EVALUATED: { icon: MinusCircle, className: 'text-muted-foreground' },
+const DIAG_VISUAL = {
+  error: {
+    icon: XCircle,
+    iconClass: 'text-rose-500',
+    bg: 'bg-rose-500/10 border-rose-500/20',
+    textClass: 'text-rose-700 dark:text-rose-400',
+  },
+  warning: {
+    icon: AlertTriangle,
+    iconClass: 'text-amber-500',
+    bg: 'bg-amber-500/10 border-amber-500/20',
+    textClass: 'text-amber-700 dark:text-amber-400',
+  },
+  info: {
+    icon: Info,
+    iconClass: 'text-emerald-500',
+    bg: 'bg-emerald-500/10 border-emerald-500/20',
+    textClass: 'text-emerald-700 dark:text-emerald-400',
+  },
 } as const
 
-function CriterionRow({ criterion }: { criterion: AdvisoryCriterion }) {
-  const config = CRITERION_CONFIG[criterion.status]
-  const Icon = config.icon
+function DiagnosticRow({ diag }: { diag: PreviewDiagnostic }) {
+  const v = DIAG_VISUAL[diag.severity]
+  const Icon = v.icon
 
   return (
-    <div data-status={criterion.status} className="flex items-center gap-2 text-sm">
-      <Icon className={cn('size-4 shrink-0', config.className)} />
-      <span className={config.className}>{criterion.title}</span>
+    <div className={cn('flex items-center gap-3 rounded-lg border px-3 py-2', v.bg)}>
+      <Icon className={cn('size-4 shrink-0', v.iconClass)} />
+      <div className="flex-1 min-w-0">
+        <span className={cn('text-sm font-medium', v.textClass)}>{diag.title}</span>
+        {diag.severity !== 'info' && diag.detail && (
+          <p className="text-xs opacity-70 mt-0.5">{diag.detail}</p>
+        )}
+      </div>
     </div>
   )
 }
 
-/* ─── DiffCell ──────────────────────────────────────────────── */
+/* ─── DiffCell — renders a single FF or FV value with change indicator ── */
 
 function DiffCell({ atual, proposta }: { atual: DiaSemana | null; proposta: DiaSemana | null }) {
+  // Same value — muted
   if (atual === proposta) {
     return <span className="text-muted-foreground">{fmtDia(atual)}</span>
   }
+  // Added (was null, now has value)
   if (!atual && proposta) {
     return (
-      <span className="font-semibold text-success">
-        - &rarr; {fmtDia(proposta)} <PlusCircle className="ml-0.5 inline size-3" />
+      <span className="font-semibold text-emerald-500">
+        {fmtDia(proposta)} <PlusCircle className="ml-0.5 inline size-3" />
       </span>
     )
   }
-  return (
-    <span>
-      <span className="text-muted-foreground">{fmtDia(atual)}</span>
-      <span className="mx-1 text-muted-foreground">&rarr;</span>
-      <span className="font-semibold text-warning">
-        {fmtDia(proposta)} <Zap className="ml-0.5 inline size-3" />
+  // Removed (had value, now null)
+  if (atual && !proposta) {
+    return (
+      <span className="font-semibold text-rose-400">
+        - <XCircle className="ml-0.5 inline size-3" />
       </span>
+    )
+  }
+  // Changed
+  return (
+    <span className="font-semibold text-amber-500">
+      {fmtDia(proposta)} <Zap className="ml-0.5 inline size-3" />
     </span>
   )
 }
 
-/* ─── DiffTable ─────────────────────────────────────────────── */
+/* ─── ProposalSection — tabela lado-a-lado ─────────────────── */
 
-function DiffTable({ diff }: { diff: AdvisoryDiffItem[] }) {
+function ProposalSection({ diff }: { diff: AdvisoryDiffItem[] }) {
+  const changedItems = diff.filter((d) => d.fixa_atual !== d.fixa_proposta || d.variavel_atual !== d.variavel_proposta)
+  const unchangedCount = diff.length - changedItems.length
+
   return (
-    <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Colaborador</TableHead>
-            <TableHead>Variavel</TableHead>
-            <TableHead>Fixo</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {diff.map((d) => (
-            <TableRow key={d.colaborador_id}>
-              <TableCell className="font-medium">{d.nome}</TableCell>
-              <TableCell>
-                <DiffCell atual={d.variavel_atual} proposta={d.variavel_proposta} />
-              </TableCell>
-              <TableCell>
-                <DiffCell atual={d.fixa_atual} proposta={d.fixa_proposta} />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      {/* Legenda */}
-      <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
-        <span>sem icone = manteve</span>
-        <span className="text-warning">
-          <Zap className="mr-0.5 inline size-3" /> mudou
-        </span>
-        <span className="text-success">
-          <PlusCircle className="mr-0.5 inline size-3" /> adicionou
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <Zap className="size-4 text-amber-500" />
+        <h4 className="text-sm font-semibold">Proposta de Ajuste</h4>
+        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+          {changedItems.length} {changedItems.length === 1 ? 'alteracao' : 'alteracoes'}
         </span>
       </div>
-    </>
-  )
-}
 
-/* ─── CriteriaBlock ─────────────────────────────────────────── */
+      {/* Diff table */}
+      <div className="overflow-hidden rounded-lg border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Nome</th>
+              <th className="px-2 py-2 text-center font-medium text-muted-foreground" colSpan={2}>Atual</th>
+              <th className="w-6" />
+              <th className="px-2 py-2 text-center font-medium text-muted-foreground" colSpan={2}>Sugestao</th>
+            </tr>
+            <tr className="border-b bg-muted/20 text-xs text-muted-foreground">
+              <th />
+              <th className="px-2 py-1 text-center font-normal">FF</th>
+              <th className="px-2 py-1 text-center font-normal">FV</th>
+              <th />
+              <th className="px-2 py-1 text-center font-normal">FF</th>
+              <th className="px-2 py-1 text-center font-normal">FV</th>
+            </tr>
+          </thead>
+          <tbody>
+            {changedItems.map((d) => (
+              <tr key={d.colaborador_id} className="border-b bg-amber-500/5">
+                <td className="px-3 py-2 font-medium">{d.nome}</td>
+                <td className="px-2 py-2 text-center text-muted-foreground">{fmtDia(d.fixa_atual)}</td>
+                <td className="px-2 py-2 text-center text-muted-foreground">{fmtDia(d.variavel_atual)}</td>
+                <td className="px-1 py-2 text-center">
+                  <ArrowRight className="mx-auto size-3 text-amber-500" />
+                </td>
+                <td className="px-2 py-2 text-center">
+                  <DiffCell atual={d.fixa_atual} proposta={d.fixa_proposta} />
+                </td>
+                <td className="px-2 py-2 text-center">
+                  <DiffCell atual={d.variavel_atual} proposta={d.variavel_proposta} />
+                </td>
+              </tr>
+            ))}
+            {unchangedCount > 0 && (
+              <tr>
+                <td colSpan={6} className="px-3 py-2 text-xs text-muted-foreground">
+                  {unchangedCount} colaborador{unchangedCount > 1 ? 'es' : ''} sem alteracao
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-function CriteriaBlock({ title, criteria }: { title: string; criteria: AdvisoryCriterion[] }) {
-  return (
-    <div className="space-y-2">
-      <h4 className="text-sm font-medium text-muted-foreground">{title}</h4>
-      <div className="space-y-1">
-        {criteria.map((c) => (
-          <CriterionRow key={c.code} criterion={c} />
-        ))}
+      {/* Legend */}
+      <div className="flex gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Zap className="size-3 text-amber-500" /> mudou
+        </span>
+        <span className="flex items-center gap-1">
+          <PlusCircle className="size-3 text-emerald-500" /> adicionou
+        </span>
+        <span className="flex items-center gap-1">
+          <XCircle className="size-3 text-rose-400" /> removido
+        </span>
       </div>
     </div>
   )
@@ -160,77 +235,137 @@ export function SugestaoSheet({
   advisory,
   onAceitar,
   onDescartar,
+  onAnalisarIa,
+  mode = 'sugestao',
+  previewDiagnostics,
 }: SugestaoSheetProps) {
-  const subtitle =
-    advisory ? STATUS_SUBTITLE[advisory.status] : 'Analisando...'
-
+  const config = advisory ? STATUS_CONFIG[advisory.status] : null
   const hasProposal = !!advisory?.proposal
+  const StatusIcon = config?.icon ?? Lightbulb
+
+  const hasErrors = advisory?.diagnostics.some((d) => d.severity === 'error') ?? false
+  const hasWarnings = advisory?.diagnostics.some((d) => d.severity === 'warning') ?? false
+  const diagnosticsToShow = advisory?.diagnostics.filter((d) => d.severity !== 'info') ?? []
+
+  const titulo = mode === 'validacao' ? 'Validacao do Arranjo' : 'Sugestao do Sistema'
+  const loadingText = mode === 'validacao' ? 'Validando o arranjo...' : 'Analisando o arranjo...'
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="max-h-[70vh] overflow-y-auto">
-        {/* ── 1. Header ─────────────────────────────────── */}
+        {/* Header */}
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <Lightbulb className="size-5" />
-            Sugestao do Sistema
+            {loading ? (
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            ) : (
+              <StatusIcon className={cn('size-5', config?.accent)} />
+            )}
+            {titulo}
           </SheetTitle>
-          <SheetDescription>{loading ? 'Analisando...' : subtitle}</SheetDescription>
+          <SheetDescription>
+            {loading ? loadingText : config?.subtitle ?? ''}
+          </SheetDescription>
         </SheetHeader>
 
-        {/* ── Loading state ─────────────────────────────── */}
+        {/* Loading */}
         {loading && (
           <div className="flex flex-col items-center justify-center gap-3 py-12">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Analisando...</span>
+            <span className="text-sm text-muted-foreground">Analisando o arranjo...</span>
           </div>
         )}
 
-        {/* ── Content (only when not loading and advisory exists) */}
+        {/* Content */}
         {!loading && advisory && (
           <div className="space-y-6 py-4">
-            {/* ── 2. Estado Atual ─────────────────────────── */}
-            <CriteriaBlock title="Estado atual" criteria={advisory.current.criteria} />
-
-            {/* ── 3. Proposta ─────────────────────────────── */}
-            {advisory.proposal && (
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium text-muted-foreground">Proposta de ajuste</h4>
-                <DiffTable diff={advisory.proposal.diff} />
-                <div className="mt-4 space-y-1">
-                  {advisory.proposal.criteria.map((c) => (
-                    <CriterionRow key={c.code} criterion={c} />
+            {/* Diagnostics (errors + warnings only) */}
+            {diagnosticsToShow.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Avisos
+                </h4>
+                <div className="space-y-1.5">
+                  {diagnosticsToShow.map((d, idx) => (
+                    <DiagnosticRow key={`${d.code}-${idx}`} diag={d} />
                   ))}
                 </div>
               </div>
             )}
 
-            {/* ── Fallback message ────────────────────────── */}
-            {advisory.status === 'NO_PROPOSAL' && advisory.fallback && (
-              <p className="text-sm text-muted-foreground">
-                {advisory.fallback.reason || 'O sistema nao encontrou solucao. Use a IA para diagnostico.'}
-              </p>
+            {/* Proposal diff */}
+            {advisory.proposal && (
+              <ProposalSection diff={advisory.proposal.diff} />
+            )}
+
+            {/* Success message when no proposal and no issues */}
+            {!hasProposal && !hasErrors && (
+              <div className="flex flex-col items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-6 py-5 text-center">
+                <CheckCircle2 className="size-8 text-emerald-500" />
+                <div>
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                    Tudo certo!
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    O arranjo de folgas esta OK para o periodo selecionado.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Preview diagnostics (TS) — seção separada quando disponível */}
+            {previewDiagnostics && previewDiagnostics.filter((d) => d.severity !== 'info').length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Avisos do Ciclo
+                </h4>
+                <div className="space-y-1.5">
+                  {previewDiagnostics.filter((d) => d.severity !== 'info').map((d, idx) => (
+                    <DiagnosticRow key={`preview-${d.code}-${idx}`} diag={d} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Error state without proposal — offer IA */}
+            {!hasProposal && hasErrors && onAnalisarIa && (
+              <div className="flex flex-col gap-3 rounded-lg border border-rose-500/20 bg-rose-500/5 px-5 py-4">
+                <p className="text-sm text-rose-700 dark:text-rose-400">
+                  Nao foi possivel montar um arranjo viavel com a equipe e demanda atuais. Use a IA para entender melhor.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onAnalisarIa}
+                  className="w-fit border-rose-500/30 text-rose-700 hover:bg-rose-500/10 dark:text-rose-400"
+                >
+                  <Sparkles className="size-4" />
+                  Analisar com IA
+                </Button>
+              </div>
             )}
           </div>
         )}
 
-        {/* ── 4. Footer ──────────────────────────────────── */}
+        {/* Footer */}
         <SheetFooter className="flex-row gap-2 sm:justify-start">
-          <Button
-            onClick={onAceitar}
-            disabled={!hasProposal || loading}
-            className="bg-success text-success-foreground hover:bg-success/90"
-          >
-            Aceitar sugestao
-          </Button>
+          {hasProposal && (
+            <Button
+              onClick={onAceitar}
+              disabled={loading}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              Aceitar sugestao
+            </Button>
+          )}
           <Button variant="outline" onClick={onDescartar}>
-            Descartar
+            {hasProposal ? 'Descartar' : 'Fechar'}
           </Button>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {!hasProposal && !loading
-              ? 'O sistema nao encontrou solucao. Use a IA para diagnostico.'
-              : 'Aceitar aplica a proposta so na simulacao'}
-          </span>
+          {hasProposal && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              Aceitar aplica a proposta so na simulacao
+            </span>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>

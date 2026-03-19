@@ -3480,16 +3480,21 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             const result = await searchKnowledge(consulta as string, { limite: limite as number | undefined })
             if (result.chunks.length === 0) {
                 return toolOk(
-                  { chunks: [], relations: [], context_for_llm: '' },
+                  { chunks: [], relations: [], context_for_llm: '', melhor_score: 0, sugestao_refinamento: 'Nenhum resultado. Reformule com sinônimos ou termos mais específicos.' },
                   { summary: 'Nenhum conhecimento encontrado para esta busca.', meta: { tool_kind: 'knowledge' } }
                 )
             }
+            const melhor_score = Math.max(...result.chunks.map(c => c.score))
             return toolOk(
               {
                 total: result.chunks.length,
+                melhor_score: Number(melhor_score.toFixed(2)),
                 context_for_llm: result.context_for_llm,
+                sugestao_refinamento: melhor_score < 0.5
+                  ? 'Score baixo. Tente reformular com sinônimos ou termos alternativos e busque novamente.'
+                  : null,
               },
-              { summary: `${result.chunks.length} resultado(s) encontrado(s).`, meta: { tool_kind: 'knowledge' } }
+              { summary: `${result.chunks.length} resultado(s) encontrado(s) (melhor score: ${melhor_score.toFixed(2)}).`, meta: { tool_kind: 'knowledge' } }
             )
         } catch (e: any) {
             return toolError('BUSCAR_CONHECIMENTO_FALHOU', `Erro na busca: ${e.message}`, { correction: 'Tente reformular a consulta ou use termos mais específicos.', meta: { tool_kind: 'knowledge' } })

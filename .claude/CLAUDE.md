@@ -365,23 +365,28 @@ O graph separa entidades por `origem`:
 - **usuario**: extraídas dos docs importados pelo RH. O botão "Analisar Relações" na UI processa apenas estes.
 - **IA**: vê TUDO (ambas origens) via `explorar_relacoes` e RAG enrichment.
 
-**Fluxo dev para popular graph sistema:**
+**Fluxo dev para popular knowledge sistema (enrichment + graph):**
 
-1. Rodar `npm run dev`
-2. Ir em Memória → Documentos → selecionar "Sistema"
-3. Clicar "Rebuild Graph" (botão visível apenas em dev mode)
-4. Aguardar (1 LLM call por chunk dos docs sistema — usa API key configurada)
-5. Resultado exportado automaticamente para `knowledge/sistema/graph-seed.json`
-6. Commitar o JSON — ele é usado pelo seed em produção (sem LLM)
+O sistema usa dois seed JSONs pre-computados — gerados pelo dev, sem LLM em runtime:
 
-**Em produção:** `seed.ts` lê `graph-seed.json` e importa entidades/relações com embeddings locais (grátis). Usuário final nunca toca nisso.
+1. **Enrichment seed** (resumo + tags por chunk): gerado por Claude Code (Opus) que lê os docs, chunkea e gera enrichment inteligente. Salvo em `knowledge/sistema/enrichment-seed.json`
+2. **Graph seed** (entidades + relações): gerado via botão "Rebuild Graph" na UI (DEV mode, filtro Sistema) que usa API LLM. Salvo em `knowledge/sistema/graph-seed.json`
+
+**Quando regerar:**
+- Editou/adicionou docs em `knowledge/` → regerar enrichment-seed (via Claude Code) + graph-seed (via UI)
+- `npm run db:reset` + reiniciar app → seeds são aplicados automaticamente
+
+**Em produção:** `seed.ts` cria chunks → aplica enrichment-seed (re-embeda com tags) → importa graph-seed. Tudo local, sem LLM, sem API key.
+
+**Para docs importados pelo RH (em runtime):** o `autoEnrichAfterIngest` roda automaticamente usando a API key configurada. Zero interação manual.
 
 ### Seeds
 
 | Arquivo | Conteúdo | Git? |
 |---------|----------|------|
-| `src/main/db/seed.ts` | Contratos CLT, feriados, perfis, 35 regras, knowledge docs, graph seed | Tracked |
+| `src/main/db/seed.ts` | Contratos CLT, feriados, perfis, 35 regras, knowledge docs, enrichment seed, graph seed | Tracked |
 | `src/main/db/seed-local.ts` | Empresa exemplo, 2 setores, 13 colaboradores, horários, demandas, API keys | Gitignored |
+| `knowledge/sistema/enrichment-seed.json` | Resumo + tags por chunk, pre-gerados por Claude Opus | Tracked |
 | `knowledge/sistema/graph-seed.json` | Entidades e relações pre-extraídas do graph sistema | Tracked |
 
 - `seed.ts` roda na primeira inicialização (banco vazio)

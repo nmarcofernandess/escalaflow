@@ -800,6 +800,13 @@ async function migrateSchema(): Promise<void> {
   await execute(`DELETE FROM regra_empresa WHERE codigo = 'H3_DOM_MAX_CONSEC'`)
   await execute(`DELETE FROM regra_definicao WHERE codigo = 'H3_DOM_MAX_CONSEC'`)
 
+  // --- v28: enrichment tracking + metadata ---
+  await addColumnIfMissing('knowledge_chunks', 'enriched_at', 'TIMESTAMPTZ')
+  await addColumnIfMissing('knowledge_chunks', 'enrichment_json', 'TEXT')
+
+  // --- v29: S_DEFICIT default SOFT → HARD ---
+  await execute(`UPDATE regra_definicao SET status_sistema = 'HARD', descricao = 'Bloqueia geracao quando a cobertura fica abaixo da demanda minima planejada.' WHERE codigo = 'S_DEFICIT' AND status_sistema = 'SOFT'`)
+
   // --- v27: Re-enable 'session' tipo in knowledge_sources for session indexing ---
   try {
     await execDDL(`ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_tipo_check`)

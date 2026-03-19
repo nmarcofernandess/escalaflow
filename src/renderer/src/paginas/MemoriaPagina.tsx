@@ -192,6 +192,36 @@ export function MemoriaPagina() {
     }
   }
 
+  // --- Enrichment ---
+  const [enriching, setEnriching] = useState(false)
+
+  const handleEnrichRag = async () => {
+    setEnriching(true)
+    try {
+      const result = await (client as any)['knowledge.enrich']({})
+      if (result.chunks_enriquecidos === 0 && result.batches_failed > 0) {
+        toast.error('Enrichment falhou', {
+          description: `${result.batches_failed} batches falharam. Verifique API key e logs no terminal.`,
+        })
+      } else if (result.chunks_enriquecidos === 0) {
+        toast.info('Nada pra enriquecer', {
+          description: 'Todos os chunks ja foram enriquecidos. Use forceAll pra re-processar.',
+        })
+      } else {
+        toast.success('RAG enriquecido!', {
+          description: `${result.chunks_enriquecidos} chunks · ${result.entities_count} entidades · ${result.relations_count} relações${result.batches_failed > 0 ? ` (${result.batches_failed} batches falharam)` : ''}`,
+        })
+      }
+      reload()
+      await carregarGraphStats()
+      await carregarGraphData()
+    } catch (err: any) {
+      toast.error('Erro ao enriquecer', { description: err?.message ?? 'Erro desconhecido' })
+    } finally {
+      setEnriching(false)
+    }
+  }
+
   // --- Graph ---
   const [filtroGraph, setFiltroGraph] = useState<'todos' | 'usuario' | 'sistema'>('todos')
   const [graphStats, setGraphStats] = useState<{
@@ -306,34 +336,45 @@ export function MemoriaPagina() {
 
       <div className="flex flex-col gap-6 p-6">
         <Tabs defaultValue="memorias">
-          <TabsList>
-            <TabsTrigger value="memorias">
-              <Brain className="mr-1.5 size-3.5" />
-              Memorias
-            </TabsTrigger>
-            <TabsTrigger value="documentos">
-              <BookOpen className="mr-1.5 size-3.5" />
-              Documentos
-            </TabsTrigger>
-            <TabsTrigger value="relacoes">
-              <Network className="mr-1.5 size-3.5" />
-              Relacoes
-              {graphStats && graphStats.entities_count > 0 && (
-                <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-xs">
-                  {graphStats.entities_count}
-                </Badge>
-              )}
-            </TabsTrigger>
-            {import.meta.env.DEV && (
-              <TabsTrigger value="avancado">
-                <Zap className="mr-1.5 size-3.5" />
-                Avancado
-                <Badge className="ml-1.5 bg-orange-900/50 px-1.5 py-0 text-[9px] text-orange-400 hover:bg-orange-900/50">
-                  DEV
-                </Badge>
+          <div className="flex items-center justify-between">
+            <TabsList>
+              <TabsTrigger value="memorias">
+                <Brain className="mr-1.5 size-3.5" />
+                Memorias
               </TabsTrigger>
+              <TabsTrigger value="documentos">
+                <BookOpen className="mr-1.5 size-3.5" />
+                Documentos
+              </TabsTrigger>
+              <TabsTrigger value="relacoes">
+                <Network className="mr-1.5 size-3.5" />
+                Relacoes
+                {graphStats && graphStats.entities_count > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-xs">
+                    {graphStats.entities_count}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              {import.meta.env.DEV && (
+                <TabsTrigger value="avancado">
+                  <Zap className="mr-1.5 size-3.5" />
+                  Avancado
+                  <Badge className="ml-1.5 bg-orange-900/50 px-1.5 py-0 text-[9px] text-orange-400 hover:bg-orange-900/50">
+                    DEV
+                  </Badge>
+                </TabsTrigger>
+              )}
+            </TabsList>
+
+            {import.meta.env.DEV && (
+              <Button size="sm" variant="outline" onClick={handleEnrichRag} disabled={enriching}>
+                {enriching
+                  ? <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  : <Sparkles className="mr-1.5 size-3.5" />}
+                {enriching ? 'Enriquecendo...' : 'Enriquecer RAG'}
+              </Button>
             )}
-          </TabsList>
+          </div>
 
           {/* ── TAB MEMORIAS ── */}
           <TabsContent value="memorias" className="mt-4 space-y-4">
@@ -542,9 +583,30 @@ export function MemoriaPagina() {
                   <Zap className="size-4 text-purple-400" />
                   <span className="text-sm font-semibold">RAG Playground</span>
                 </div>
-                <div className="flex gap-4 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span>Modelo: <strong className="text-foreground">e5-base ONNX</strong></span>
                   <span>Embeddings: <strong className="text-foreground">768d</strong></span>
+                  <Separator orientation="vertical" className="h-3" />
+                  {(() => {
+                    const enr = (data as any)?.enrichment as { enriched_count: number; pending_count: number; last_enriched_at: string | null } | undefined
+                    if (!enr) return <span className="text-zinc-600">Nunca enriquecido</span>
+                    return (
+                      <>
+                        <span>
+                          Enriquecidos: <strong className={enr.pending_count === 0 ? 'text-green-400' : 'text-amber-400'}>
+                            {enr.enriched_count}/{enr.enriched_count + enr.pending_count}
+                          </strong>
+                        </span>
+                        {enr.last_enriched_at && (
+                          <span>
+                            Ultimo: <strong className="text-foreground">
+                              {new Date(enr.last_enriched_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </strong>
+                          </span>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
               <Suspense fallback={
@@ -595,32 +657,6 @@ export function MemoriaPagina() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {filtroGraph !== 'sistema' && (
-                      <Button
-                        size="sm"
-                        onClick={async () => {
-                          setRebuildingGraph(true)
-                          try {
-                            const result = await servicoConhecimento.rebuildGraph('usuario')
-                            toast.success(`Grafo atualizado: ${result.entities_count} entidades, ${result.relations_count} relacoes`)
-                            await carregarGraphStats()
-                            await carregarGraphData()
-                          } catch (err: any) {
-                            toast.error('Erro ao gerar grafo', { description: err?.message })
-                          } finally {
-                            setRebuildingGraph(false)
-                          }
-                        }}
-                        disabled={rebuildingGraph}
-                      >
-                        {rebuildingGraph ? (
-                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-1.5 size-3.5" />
-                        )}
-                        {rebuildingGraph ? 'Analisando...' : 'Atualizar Relacoes'}
-                      </Button>
-                    )}
                     {import.meta.env.DEV && filtroGraph === 'sistema' && (
                       <Button
                         size="sm"
@@ -652,7 +688,7 @@ export function MemoriaPagina() {
                   <EmptyState
                     icon={Network}
                     title="Grafo vazio"
-                    description="Clique em 'Atualizar Relacoes' para extrair entidades e relacoes dos seus documentos."
+                    description="Use 'Enriquecer RAG' no topo da pagina para extrair entidades e relacoes dos seus documentos."
                   />
                 ) : (
                   <>

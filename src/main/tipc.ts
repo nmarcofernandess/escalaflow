@@ -3809,7 +3809,22 @@ const knowledgeStats = t.procedure.action(async () => {
       (SELECT COUNT(*)::int FROM knowledge_sources WHERE tipo != 'sistema') as total_usuario
   `)
 
-  return { fontes, totais: totais ?? { total_fontes: 0, total_chunks: 0, total_sistema: 0, total_usuario: 0 } }
+  const enrichment = await queryOne<{
+    enriched_count: number
+    pending_count: number
+    last_enriched_at: string | null
+  }>(`
+    SELECT
+      (SELECT COUNT(*)::int FROM knowledge_chunks WHERE enriched_at IS NOT NULL) as enriched_count,
+      (SELECT COUNT(*)::int FROM knowledge_chunks WHERE enriched_at IS NULL) as pending_count,
+      (SELECT MAX(enriched_at)::text FROM knowledge_chunks) as last_enriched_at
+  `)
+
+  return {
+    fontes,
+    totais: totais ?? { total_fontes: 0, total_chunks: 0, total_sistema: 0, total_usuario: 0 },
+    enrichment: enrichment ?? { enriched_count: 0, pending_count: 0, last_enriched_at: null },
+  }
 })
 
 const knowledgeEscolherArquivo = t.procedure.action(async () => {
@@ -3840,6 +3855,9 @@ const knowledgeImportar = t.procedure
     tipo: 'importacao_usuario',
     arquivo_original: input.caminho_arquivo,
   })
+
+  // Fire-and-forget: enriquece chunks novos em background
+  void autoEnrichAfterIngest()
 
   return result
 })
@@ -3973,8 +3991,57 @@ const knowledgeImportarCompleto = t.procedure
     context_hint: input.quando_consultar,
   })
 
+  // Fire-and-forget: enriquece chunks novos em background
+  void autoEnrichAfterIngest()
+
   return result
 })
+
+// =============================================================================
+// KNOWLEDGE ENRICHMENT — Auto-enrich (fire-and-forget after ingest)
+// =============================================================================
+
+async function autoEnrichAfterIngest(): Promise<void> {
+  try {
+    const config = await queryOne('SELECT * FROM configuracao_ia LIMIT 1') as any
+    if (!config?.ativo || !config?.api_key) return // sem LLM configurada, skip silencioso
+
+    const { buildModelFactory } = await import('./ia/config')
+    const factory = buildModelFactory(config)
+    if (!factory) return
+
+    const { enrichAllChunks } = await import('./knowledge/enrichment')
+    const result = await enrichAllChunks(factory.createModel, factory.modelo)
+    if (result.chunks_enriquecidos > 0) {
+      console.log(`[auto-enrich] ${result.chunks_enriquecidos} chunks enriquecidos em background`)
+    }
+  } catch (err) {
+    console.warn('[auto-enrich] falhou (non-blocking):', (err as Error).message)
+  }
+}
+
+// =============================================================================
+// KNOWLEDGE ENRICHMENT — Self-RAG (manual trigger)
+// =============================================================================
+
+const knowledgeEnrich = t.procedure
+  .input<{ sourceTipo?: string; forceAll?: boolean }>()
+  .action(async ({ input }) => {
+    const { enrichAllChunks } = await import('./knowledge/enrichment')
+    const { buildModelFactory } = await import('./ia/config')
+
+    const config = await requireCloudLlmFeature('Enriquecimento de chunks') as import('@shared/index').IaConfiguracao
+
+    const factory = buildModelFactory(config)
+    if (!factory) throw new Error('Provider cloud inválido para enriquecimento de chunks.')
+
+    const result = await enrichAllChunks(
+      factory.createModel,
+      factory.modelo,
+      { sourceTipo: input?.sourceTipo, forceAll: input?.forceAll },
+    )
+    return result
+  })
 
 // =============================================================================
 // KNOWLEDGE GRAPH — Fase 6
@@ -4076,9 +4143,12 @@ const knowledgeListarChunks = t.procedure
       importance: string
       last_accessed_at: string | null
       access_count: number
+      enriched_at: string | null
+      enrichment_json: string | null
     }>(
       `SELECT id, source_id, conteudo, importance,
-              last_accessed_at::text, COALESCE(access_count, 0)::int as access_count
+              last_accessed_at::text, COALESCE(access_count, 0)::int as access_count,
+              enriched_at::text, enrichment_json
        FROM knowledge_chunks
        WHERE source_id = $1
        ORDER BY id ASC`,
@@ -4347,6 +4417,7 @@ export const router = {
   'knowledge.extrairTexto': knowledgeExtrairTexto,
   'knowledge.gerarMetadataIa': knowledgeGerarMetadataIa,
   'knowledge.importarCompleto': knowledgeImportarCompleto,
+  'knowledge.enrich': knowledgeEnrich,
   'knowledge.rebuildGraph': knowledgeRebuildGraph,
   'knowledge.graphStats': knowledgeGraphStats,
   'knowledge.rebuildAndExportSistema': knowledgeRebuildAndExportSistema,

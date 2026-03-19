@@ -3,25 +3,8 @@ import type { PreviewDiagnostic } from './preview-diagnostics'
 
 export type AdvisoryStatus =
   | 'CURRENT_VALID'
-  | 'CURRENT_INVALID'
   | 'PROPOSAL_VALID'
-  | 'PROPOSAL_INVALID'
   | 'NO_PROPOSAL'
-
-export type AdvisoryCriterionStatus = 'PASS' | 'FAIL' | 'NOT_EVALUATED'
-
-export interface AdvisoryCriterion {
-  code:
-    | 'COBERTURA_DIA'
-    | 'DOMINGOS_CONSECUTIVOS'
-    | 'DOMINGO_EXATO'
-    | 'COBERTURA_FAIXA'
-    | 'DESCANSO_JORNADA'
-  status: AdvisoryCriterionStatus
-  title: string
-  detail: string
-  source: 'PHASE1' | 'PHASE2' | 'DIAGNOSTIC'
-}
 
 export interface AdvisoryDiffItem {
   colaborador_id: number
@@ -49,6 +32,10 @@ export interface EscalaAdvisoryInput {
     origem_variavel: 'COLABORADOR' | 'OVERRIDE_LOCAL'
   }>
   demanda_preview?: SemanaDraftAdvisory | null
+  /** TS preview diagnostics — passados direto pro output unificado */
+  preview_diagnostics?: PreviewDiagnostic[]
+  /** Se true, roda so validacao (com pins), sem proposta free */
+  validate_only?: boolean
 }
 
 export interface SemanaDraftSegmento {
@@ -73,27 +60,26 @@ export interface SemanaDraftAdvisory {
   }>
 }
 
-export interface EscalaAdvisoryOutput {
-  status: AdvisoryStatus
-  normalized_diagnostics: PreviewDiagnostic[]
-  current: {
-    criteria: AdvisoryCriterion[]
-  }
-  proposal?: {
-    diff: AdvisoryDiffItem[]
-    criteria: AdvisoryCriterion[]
-  }
-  fallback?: {
-    should_open_ia: boolean
-    reason: string
-    diagnosis_payload: unknown
-  }
-}
-
+/** @deprecated Mantido pra backward compat com simulacao_config_json persistido. */
 export interface SimulacaoAdvisorySnapshot {
   input_hash: string
   generated_at: string
   origin: 'accepted_suggestion'
   diagnostics: PreviewDiagnostic[]
   advisory_status: AdvisoryStatus
+}
+
+export interface EscalaAdvisoryOutput {
+  status: AdvisoryStatus
+  /** Mensagens unificadas: TS diagnostics + solver extras. Mesmos codigos do TS preview. */
+  diagnostics: PreviewDiagnostic[]
+  /** Diff de proposta (solver ou TS). Presente quando status = PROPOSAL_VALID. */
+  proposal?: {
+    diff: AdvisoryDiffItem[]
+  }
+  fallback?: {
+    should_open_ia: boolean
+    reason: string
+    diagnosis_payload: unknown
+  }
 }

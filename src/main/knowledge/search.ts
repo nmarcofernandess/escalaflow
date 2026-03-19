@@ -90,10 +90,12 @@ async function hybridSearch(
       FROM vector_results v
       FULL OUTER JOIN fts_results f ON v.id = f.id
     )
-    SELECT id, source_id, conteudo, importance, access_count, last_accessed_at, criada_em, score
-    FROM combined
-    WHERE importance = 'high' OR score > 0.6
-    ORDER BY score DESC
+    SELECT c.id, c.source_id, c.conteudo, c.importance, c.access_count, c.last_accessed_at, c.criada_em, c.score,
+           kc.enriched_at::text AS enriched_at, kc.enrichment_json
+    FROM combined c
+    JOIN knowledge_chunks kc ON kc.id = c.id
+    WHERE c.importance = 'high' OR c.score > 0.6
+    ORDER BY c.score DESC
     LIMIT $3
   `, embeddingStr, query, limite)
 
@@ -153,10 +155,12 @@ async function keywordOnlySearch(query: string, limite: number): Promise<SearchR
       FROM fts f
       FULL OUTER JOIN trgm t ON f.id = t.id
     )
-    SELECT id, source_id, conteudo, importance, access_count, last_accessed_at, criada_em, score
-    FROM combined
-    WHERE importance = 'high' OR score > 0.3
-    ORDER BY score DESC
+    SELECT c.id, c.source_id, c.conteudo, c.importance, c.access_count, c.last_accessed_at, c.criada_em, c.score,
+           kc.enriched_at::text AS enriched_at, kc.enrichment_json
+    FROM combined c
+    JOIN knowledge_chunks kc ON kc.id = c.id
+    WHERE c.importance = 'high' OR c.score > 0.3
+    ORDER BY c.score DESC
     LIMIT $2
   `, query, limite)
 

@@ -3,8 +3,13 @@ import { Search, ChevronRight, ChevronDown, Zap, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableRow, TableCell } from '@/components/ui/table'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { servicoConhecimento } from '@/servicos/conhecimento'
 import { cn } from '@/lib/utils'
 
@@ -23,6 +28,8 @@ type ChunkInfo = {
   importance: string
   last_accessed_at: string | null
   access_count: number
+  enriched_at?: string | null
+  enrichment_json?: string | null
 }
 
 type SearchChunk = ChunkInfo & {
@@ -41,24 +48,20 @@ const BADGE_COLORS: Record<string, string> = {
 }
 
 export function RagPlayground() {
-  // --- Sources ---
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [loadingSources, setLoadingSources] = useState(true)
   const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set())
   const [sourceChunks, setSourceChunks] = useState<Record<number, ChunkInfo[]>>({})
   const [filterType, setFilterType] = useState<string>('todos')
 
-  // --- Search ---
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<SearchChunk[]>([])
   const [searchTime, setSearchTime] = useState<number | null>(null)
 
-  // --- Inspector ---
   const [selectedChunk, setSelectedChunk] = useState<SearchChunk | ChunkInfo | null>(null)
   const [selectedSource, setSelectedSource] = useState<SourceInfo | null>(null)
 
-  // Load sources
   useEffect(() => {
     setLoadingSources(true)
     servicoConhecimento.stats()
@@ -66,7 +69,6 @@ export function RagPlayground() {
       .finally(() => setLoadingSources(false))
   }, [])
 
-  // Toggle source expand
   const toggleSource = useCallback(async (source: SourceInfo) => {
     const id = source.id
     setExpandedSources(prev => {
@@ -80,7 +82,6 @@ export function RagPlayground() {
     }
   }, [sourceChunks])
 
-  // Search
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return
     setSearching(true)
@@ -96,12 +97,10 @@ export function RagPlayground() {
     }
   }, [query])
 
-  // Filter sources
   const filteredSources = filterType === 'todos'
     ? sources
     : sources.filter(s => s.tipo === filterType)
 
-  // Group by type
   const grouped = filteredSources.reduce<Record<string, SourceInfo[]>>((acc, s) => {
     const key = s.tipo
     if (!acc[key]) acc[key] = []
@@ -116,13 +115,16 @@ export function RagPlayground() {
     score >= 0.7 ? 'bg-green-400' : score >= 0.5 ? 'bg-amber-400' : 'bg-zinc-600'
 
   return (
-    <div className="grid overflow-hidden rounded-lg border border-border"
-         style={{ gridTemplateColumns: '280px 1fr 340px', height: 'calc(100vh - 220px)' }}>
-
-      {/* LEFT: Source Tree */}
-      <div className="flex flex-col border-r border-border">
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sources & Chunks</span>
+    <Card
+      className="grid overflow-hidden"
+      style={{ gridTemplateColumns: '280px 1fr 340px', height: 'calc(100vh - 220px)' }}
+    >
+      {/* ── LEFT: Source Tree ── */}
+      <div className="flex min-h-0 flex-col border-r">
+        <div className="flex items-center justify-between px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Sources & Chunks
+          </span>
           <Select value={filterType} onValueChange={setFilterType}>
             <SelectTrigger className="h-7 w-[100px] text-xs">
               <SelectValue />
@@ -135,63 +137,79 @@ export function RagPlayground() {
             </SelectContent>
           </Select>
         </div>
-        <ScrollArea className="flex-1">
-          <div className="p-2 space-y-0.5">
-            {Object.entries(grouped).map(([tipo, srcs]) => (
-              <div key={tipo}>
-                {srcs.map(source => (
-                  <div key={source.id}>
-                    <button
-                      className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
-                      onClick={() => toggleSource(source)}
-                    >
-                      {expandedSources.has(source.id)
-                        ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
-                        : <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
-                      <Badge variant="outline" className={cn('text-[9px] px-1.5 py-0 shrink-0', BADGE_COLORS[source.tipo])}>
-                        {source.tipo}
-                      </Badge>
-                      <span className="flex-1 truncate text-xs">{source.titulo}</span>
-                      <span className="text-[10px] text-muted-foreground">{source.chunks_count}</span>
-                    </button>
-                    {expandedSources.has(source.id) && sourceChunks[source.id] && (
-                      <div className="ml-4 space-y-0.5">
-                        {sourceChunks[source.id].map(chunk => (
-                          <button
-                            key={chunk.id}
-                            className={cn(
-                              'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground',
-                              selectedChunk?.id === chunk.id && 'bg-accent text-blue-400',
-                            )}
-                            onClick={() => {
-                              setSelectedChunk(chunk)
-                              setSelectedSource(source)
-                            }}
-                          >
-                            <span className="shrink-0 font-mono text-[10px] text-zinc-600">#{chunk.id}</span>
-                            <span className="truncate">{chunk.conteudo.slice(0, 60)}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+
+        <Separator />
+
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-0.5 p-2">
+            {loadingSources ? (
+              <div className="space-y-2 p-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton key={i} className={cn('h-6', i % 3 === 2 ? 'w-3/4' : 'w-full')} />
                 ))}
-                <div className="my-2 h-px bg-border" />
               </div>
-            ))}
-            {loadingSources && (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              </div>
+            ) : (
+              Object.entries(grouped).map(([tipo, srcs]) => (
+                <div key={tipo}>
+                  {srcs.map(source => (
+                    <Collapsible
+                      key={source.id}
+                      open={expandedSources.has(source.id)}
+                      onOpenChange={() => toggleSource(source)}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent">
+                          {expandedSources.has(source.id)
+                            ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+                            : <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
+                          <Badge variant="outline" className={cn('shrink-0 px-1.5 py-0 text-[9px]', BADGE_COLORS[source.tipo])}>
+                            {source.tipo}
+                          </Badge>
+                          <span className="flex-1 truncate text-xs">{source.titulo}</span>
+                          <span className="text-[10px] text-muted-foreground">{source.chunks_count}</span>
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="ml-4 space-y-0.5">
+                          {sourceChunks[source.id] ? (
+                            sourceChunks[source.id].map(chunk => (
+                              <button
+                                key={chunk.id}
+                                className={cn(
+                                  'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground',
+                                  selectedChunk?.id === chunk.id && 'bg-accent text-blue-400',
+                                )}
+                                onClick={() => {
+                                  setSelectedChunk(chunk)
+                                  setSelectedSource(source)
+                                }}
+                              >
+                                <span className="shrink-0 font-mono text-[10px] text-zinc-600">#{chunk.id}</span>
+                                <span className="truncate">{chunk.conteudo.slice(0, 60)}</span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="space-y-1 py-1">
+                              <Skeleton className="h-5 w-full" />
+                              <Skeleton className="h-5 w-3/4" />
+                              <Skeleton className="h-5 w-1/2" />
+                            </div>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
+                  <Separator className="my-2" />
+                </div>
+              ))
             )}
           </div>
         </ScrollArea>
       </div>
 
-      {/* CENTER: Search + Results */}
-      <div className="flex flex-col">
-        {/* Search bar */}
-        <div className="border-b border-border p-3 space-y-2">
+      {/* ── CENTER: Search + Results ── */}
+      <div className="flex min-h-0 flex-col">
+        <div className="space-y-2 p-3">
           <div className="flex gap-2">
             <Input
               placeholder="Digite uma query pra testar o retrieval..."
@@ -206,16 +224,19 @@ export function RagPlayground() {
           </div>
         </div>
 
-        {/* Results header */}
+        <Separator />
+
         {results.length > 0 && (
-          <div className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-            <span>{results.length} chunks · {searchTime}ms · hybrid search</span>
-            <span className="text-green-400">Embedding: offline (e5-base ONNX)</span>
-          </div>
+          <>
+            <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
+              <span>{results.length} chunks · {searchTime}ms · hybrid search</span>
+              <span className="text-green-500">Embedding: offline (e5-base ONNX)</span>
+            </div>
+            <Separator />
+          </>
         )}
 
-        {/* Results */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-2 p-3">
             {results.length === 0 && !searching && (
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
@@ -224,11 +245,28 @@ export function RagPlayground() {
                 <p className="text-xs">Testa o retrieval hibrido (70% vector + 30% FTS)</p>
               </div>
             )}
+
+            {searching && (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="p-3 shadow-none">
+                    <div className="mb-2 flex items-center justify-between">
+                      <Skeleton className="h-6 w-12" />
+                      <Skeleton className="h-4 w-32" />
+                    </div>
+                    <Skeleton className="mb-1 h-3 w-full" />
+                    <Skeleton className="mb-1 h-3 w-full" />
+                    <Skeleton className="h-3 w-2/3" />
+                  </Card>
+                ))}
+              </div>
+            )}
+
             {results.map(chunk => (
-              <button
+              <Card
                 key={chunk.id}
                 className={cn(
-                  'relative w-full rounded-lg border border-border p-3 text-left transition-colors hover:border-zinc-600',
+                  'relative cursor-pointer shadow-none transition-colors hover:border-zinc-600',
                   selectedChunk?.id === chunk.id && 'border-purple-500 bg-purple-500/5',
                 )}
                 onClick={() => {
@@ -236,46 +274,49 @@ export function RagPlayground() {
                   setSelectedSource(sources.find(s => s.id === chunk.source_id) ?? null)
                 }}
               >
-                {/* Score bar */}
-                <div className={cn('absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg', scoreBarColor(chunk.score))} />
-                {/* Top row */}
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className={cn('text-lg font-bold tabular-nums', scoreColor(chunk.score))}>
-                    {chunk.score.toFixed(2)}
-                  </span>
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <Badge variant="outline" className={cn('text-[8px] px-1 py-0', BADGE_COLORS[chunk.source_tipo])}>
-                      {chunk.source_tipo}
-                    </Badge>
-                    {chunk.source_titulo} · #{chunk.id}
+                <div className={cn('absolute bottom-0 left-0 top-0 w-[3px] rounded-l-xl', scoreBarColor(chunk.score))} />
+                <CardContent className="p-3">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className={cn('text-lg font-bold tabular-nums', scoreColor(chunk.score))}>
+                      {chunk.score.toFixed(2)}
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Badge variant="outline" className={cn('px-1 py-0 text-[8px]', BADGE_COLORS[chunk.source_tipo])}>
+                        {chunk.source_tipo}
+                      </Badge>
+                      {chunk.source_titulo} · #{chunk.id}
+                    </div>
                   </div>
-                </div>
-                {/* Text preview */}
-                <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">
-                  {chunk.conteudo.slice(0, 250)}
-                </p>
-                {/* Meta */}
-                <div className="mt-2 flex gap-3 font-mono text-[10px] text-zinc-600">
-                  <span>score: {chunk.score.toFixed(2)}</span>
-                  <span>imp: {chunk.importance}</span>
-                  {chunk.access_count > 0 && <span>acessos: {chunk.access_count}x</span>}
-                  {chunk.score < 0.5 && <span className="text-red-400">abaixo threshold</span>}
-                </div>
-              </button>
+                  <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">
+                    {chunk.conteudo.slice(0, 250)}
+                  </p>
+                  <div className="mt-2 flex gap-3 font-mono text-[10px] text-zinc-600">
+                    <span>score: {chunk.score.toFixed(2)}</span>
+                    <span>imp: {chunk.importance}</span>
+                    {chunk.access_count > 0 && <span>acessos: {chunk.access_count}x</span>}
+                    {chunk.score < 0.5 && <span className="text-red-400">abaixo threshold</span>}
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </ScrollArea>
       </div>
 
-      {/* RIGHT: Inspector */}
-      <div className="flex flex-col border-l border-border">
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Chunk Inspector</span>
+      {/* ── RIGHT: Inspector ── */}
+      <div className="flex min-h-0 flex-col border-l">
+        <div className="flex items-center justify-between px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Chunk Inspector
+          </span>
           {selectedChunk && (
-            <span className="text-xs text-purple-400">#{selectedChunk.id}</span>
+            <Badge variant="outline" className="text-xs text-purple-400">#{selectedChunk.id}</Badge>
           )}
         </div>
-        <ScrollArea className="flex-1">
+
+        <Separator />
+
+        <ScrollArea className="min-h-0 flex-1">
           {!selectedChunk ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
               <Zap className="mb-3 size-8 opacity-30" />
@@ -285,58 +326,120 @@ export function RagPlayground() {
             <div className="space-y-4 p-3">
               {/* Stats grid */}
               <div className="grid grid-cols-2 gap-1.5">
-                <div className="rounded-md bg-accent p-2.5">
-                  <div className="text-[10px] uppercase text-zinc-500">Chunk ID</div>
+                <Card className="p-2.5 shadow-none">
+                  <div className="text-[10px] uppercase text-muted-foreground">Chunk ID</div>
                   <div className="text-base font-bold">#{selectedChunk.id}</div>
-                </div>
-                <div className="rounded-md bg-accent p-2.5">
-                  <div className="text-[10px] uppercase text-zinc-500">Score</div>
+                </Card>
+                <Card className="p-2.5 shadow-none">
+                  <div className="text-[10px] uppercase text-muted-foreground">Score</div>
                   <div className={cn('text-base font-bold', 'score' in selectedChunk ? scoreColor((selectedChunk as SearchChunk).score) : '')}>
                     {'score' in selectedChunk ? (selectedChunk as SearchChunk).score.toFixed(2) : '\u2014'}
                   </div>
-                </div>
-                <div className="rounded-md bg-accent p-2.5">
-                  <div className="text-[10px] uppercase text-zinc-500">Chars</div>
+                </Card>
+                <Card className="p-2.5 shadow-none">
+                  <div className="text-[10px] uppercase text-muted-foreground">Chars</div>
                   <div className="text-base font-bold">{selectedChunk.conteudo.length}</div>
-                </div>
-                <div className="rounded-md bg-accent p-2.5">
-                  <div className="text-[10px] uppercase text-zinc-500">Source</div>
+                </Card>
+                <Card className="p-2.5 shadow-none">
+                  <div className="text-[10px] uppercase text-muted-foreground">Source</div>
                   <div className="truncate text-xs font-bold">{selectedSource?.titulo ?? '\u2014'}</div>
-                </div>
+                </Card>
               </div>
 
               {/* Full text */}
               <div>
-                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Texto Completo</div>
-                <ScrollArea className="max-h-[200px]">
-                  <div className="whitespace-pre-wrap rounded-md bg-accent p-3 text-xs leading-relaxed text-muted-foreground">
-                    {selectedChunk.conteudo}
-                  </div>
-                </ScrollArea>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Texto Completo
+                </div>
+                <Card className="shadow-none">
+                  <ScrollArea className="max-h-[200px]">
+                    <div className="whitespace-pre-wrap p-3 text-xs leading-relaxed text-muted-foreground">
+                      {selectedChunk.conteudo}
+                    </div>
+                  </ScrollArea>
+                </Card>
               </div>
 
               {/* Metadata */}
               <div>
-                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Metadata</div>
-                <div className="divide-y divide-border rounded-md border border-border">
-                  <div className="flex justify-between px-3 py-1.5 text-xs">
-                    <span className="text-zinc-500">tipo</span>
-                    <span className={BADGE_COLORS[selectedSource?.tipo ?? ''] ?? ''}>{selectedSource?.tipo}</span>
-                  </div>
-                  <div className="flex justify-between px-3 py-1.5 text-xs">
-                    <span className="text-zinc-500">importance</span>
-                    <span className="font-mono text-muted-foreground">{selectedChunk.importance}</span>
-                  </div>
-                  <div className="flex justify-between px-3 py-1.5 text-xs">
-                    <span className="text-zinc-500">access_count</span>
-                    <span className="font-mono text-muted-foreground">{selectedChunk.access_count ?? 0}</span>
-                  </div>
-                  <div className="flex justify-between px-3 py-1.5 text-xs">
-                    <span className="text-zinc-500">last_accessed</span>
-                    <span className="font-mono text-muted-foreground">{selectedChunk.last_accessed_at ?? 'nunca'}</span>
-                  </div>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Metadata
                 </div>
+                <Card className="shadow-none">
+                  <Table>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">tipo</TableCell>
+                        <TableCell className="py-1.5 text-right">
+                          <Badge variant="outline" className={cn('px-1.5 py-0 text-[9px]', BADGE_COLORS[selectedSource?.tipo ?? ''])}>
+                            {selectedSource?.tipo}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">importance</TableCell>
+                        <TableCell className="py-1.5 text-right font-mono text-xs text-muted-foreground">
+                          {selectedChunk.importance}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">access_count</TableCell>
+                        <TableCell className="py-1.5 text-right font-mono text-xs text-muted-foreground">
+                          {selectedChunk.access_count ?? 0}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">last_accessed</TableCell>
+                        <TableCell className="py-1.5 text-right font-mono text-xs text-muted-foreground">
+                          {selectedChunk.last_accessed_at ?? 'nunca'}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow className="border-0">
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">enriched_at</TableCell>
+                        <TableCell className="py-1.5 text-right font-mono text-xs">
+                          {selectedChunk.enriched_at ? (
+                            <span className="text-green-400">
+                              {new Date(selectedChunk.enriched_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-600">pendente</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </Card>
               </div>
+
+              {/* Enrichment */}
+              {(() => {
+                const raw = selectedChunk.enrichment_json
+                if (!raw) return null
+                try {
+                  const enr = JSON.parse(raw) as { resumo: string; tags: string[]; entidades: number; relacoes: number }
+                  return (
+                    <div>
+                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Enrichment
+                      </div>
+                      <Card className="space-y-2 p-3 shadow-none">
+                        <p className="text-xs leading-relaxed text-foreground">{enr.resumo}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {enr.tags.map((tag, i) => (
+                            <Badge key={i} variant="outline" className="px-1.5 py-0 text-[9px] text-purple-400">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                        <div className="flex gap-3 font-mono text-[10px] text-zinc-600">
+                          <span>{enr.entidades} entidades</span>
+                          <span>{enr.relacoes} relações</span>
+                        </div>
+                      </Card>
+                    </div>
+                  )
+                } catch { return null }
+              })()}
 
               {/* Neighbors */}
               {selectedSource && sourceChunks[selectedSource.id] && (
@@ -349,7 +452,7 @@ export function RagPlayground() {
                       <button
                         key={c.id}
                         className={cn(
-                          'flex w-full items-center gap-2 rounded-md bg-accent px-2.5 py-1.5 text-left text-xs hover:bg-accent/80',
+                          'flex w-full items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-accent',
                           c.id === selectedChunk.id && 'ring-1 ring-purple-500',
                         )}
                         onClick={() => setSelectedChunk(c)}
@@ -367,6 +470,6 @@ export function RagPlayground() {
           )}
         </ScrollArea>
       </div>
-    </div>
+    </Card>
   )
 }

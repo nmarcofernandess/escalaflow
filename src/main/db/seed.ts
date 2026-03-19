@@ -118,7 +118,10 @@ export async function seedData(): Promise<void> {
   // -- 6. Knowledge base seed (docs de sistema) --
   await seedKnowledgeBase()
 
-  // -- 7. Graph seed (entidades pre-extraidas — sem LLM) --
+  // -- 7. Enrichment seed (resumo + tags pre-gerados por Claude Opus — sem LLM runtime) --
+  await seedEnrichment()
+
+  // -- 8. Graph seed (entidades pre-extraidas — sem LLM) --
   await seedGraphSistema()
 
   console.log('[SEED] Seed sistema concluido')
@@ -197,6 +200,108 @@ function findMdFiles(dir: string, prefix = ''): { relativePath: string; fullPath
 }
 
 // ============================================================================
+// Enrichment Seed — Resumo + tags pre-gerados por Claude Opus (sem LLM runtime)
+// ============================================================================
+
+async function seedEnrichment(): Promise<void> {
+  try {
+    // Só aplica se existem chunks sem enrichment
+    const pending = await queryOne<{ count: number }>(
+      `SELECT COUNT(*)::int as count FROM knowledge_chunks WHERE enriched_at IS NULL`
+    )
+    if (!pending || pending.count === 0) return
+
+    const path = await import('node:path')
+    const fs = await import('node:fs')
+    const { generatePassageEmbedding } = await import('../knowledge/embeddings')
+
+    const knowledgeDir = resolveKnowledgeDir()
+    const seedPath = path.join(knowledgeDir, 'sistema', 'enrichment-seed.json')
+    if (!fs.existsSync(seedPath)) return
+
+    const raw = fs.readFileSync(seedPath, 'utf-8')
+    const seed = JSON.parse(raw) as {
+      sources: Array<{
+        titulo: string
+        chunks: Array<{
+          chunk_index: number
+          resumo: string
+          tags: string[]
+          entidades?: Array<{ nome: string; tipo: string }>
+          relacoes?: Array<{ from: string; to: string; tipo_relacao: string; peso: number }>
+        }>
+      }>
+    }
+
+    let enrichedCount = 0
+
+    for (const source of seed.sources) {
+      // Encontrar source no banco pelo título
+      const dbSource = await queryOne<{ id: number }>(
+        `SELECT id FROM knowledge_sources WHERE titulo = $1`,
+        source.titulo,
+      )
+      if (!dbSource) continue
+
+      // Carregar chunks desta source em ordem
+      const dbChunks = await queryAll<{ id: number; conteudo: string }>(
+        `SELECT id, conteudo FROM knowledge_chunks WHERE source_id = $1 ORDER BY id ASC`,
+        dbSource.id,
+      )
+
+      for (const enrichment of source.chunks) {
+        const dbChunk = dbChunks[enrichment.chunk_index]
+        if (!dbChunk) continue
+
+        // Construir texto enriquecido pra embedding
+        const tagsStr = enrichment.tags.join(', ')
+        const enrichedText = `[Resumo: ${enrichment.resumo}]\n[Tags: ${tagsStr}]\n\n${dbChunk.conteudo}`
+
+        // Metadata JSON
+        const enrichmentData = JSON.stringify({
+          resumo: enrichment.resumo,
+          tags: enrichment.tags,
+          entidades: enrichment.entidades?.length ?? 0,
+          relacoes: enrichment.relacoes?.length ?? 0,
+        })
+
+        // Re-embedar com texto enriquecido
+        const embedding = await generatePassageEmbedding(enrichedText)
+        const embeddingJson = embedding ? JSON.stringify(embedding) : null
+
+        if (embeddingJson) {
+          await execute(
+            `UPDATE knowledge_chunks
+             SET embedding = $1::vector,
+                 search_tsv = to_tsvector('portuguese', $2),
+                 enrichment_json = $3,
+                 enriched_at = NOW()
+             WHERE id = $4`,
+            embeddingJson, enrichedText, enrichmentData, dbChunk.id,
+          )
+        } else {
+          await execute(
+            `UPDATE knowledge_chunks
+             SET search_tsv = to_tsvector('portuguese', $1),
+                 enrichment_json = $2,
+                 enriched_at = NOW()
+             WHERE id = $3`,
+            enrichedText, enrichmentData, dbChunk.id,
+          )
+        }
+        enrichedCount++
+      }
+    }
+
+    if (enrichedCount > 0) {
+      console.log(`[SEED] Enrichment: ${enrichedCount} chunks enriquecidos com resumo + tags`)
+    }
+  } catch (err) {
+    console.warn('[SEED] Enrichment seed ignorado (não-crítico):', (err as Error).message)
+  }
+}
+
+// ============================================================================
 // Graph Seed — Entidades pre-extraidas do sistema (sem LLM)
 // ============================================================================
 
@@ -270,7 +375,7 @@ async function seedRegrasDefinicao(): Promise<void> {
     ['MIN_DIARIO', 'Jornada minima diaria (4h)', 'Jornadas abaixo de 4h sao microturenos sem valor economico (CLT Art. 58-A ss4).', 'CLT', 'HARD', true, 'Desligar pode gerar microturnos inuteis de poucos minutos.', 16],
 
     // -- SOFT --
-    ['S_DEFICIT', 'Deficit de cobertura', 'Penaliza slots abaixo da demanda minima planejada.', 'SOFT', 'ON', true, null, 101],
+    ['S_DEFICIT', 'Deficit de cobertura', 'Bloqueia geracao quando a cobertura fica abaixo da demanda minima planejada.', 'HARD', 'ON', true, null, 101],
     ['S_SURPLUS', 'Excesso de cobertura', 'Penaliza slots com mais pessoas do que a demanda maxima.', 'SOFT', 'ON', true, null, 102],
     ['S_DOMINGO_CICLO', 'Rodizio justo de domingos', 'Distribui domingos de trabalho de forma equitativa entre a equipe quando o ciclo exato estiver relaxado.', 'SOFT', 'ON', true, null, 103],
     ['S_TURNO_PREF', 'Preferencia de turno por colaborador', 'Tenta acomodar a preferencia de turno (manha/tarde) de cada colaborador.', 'SOFT', 'ON', true, null, 104],

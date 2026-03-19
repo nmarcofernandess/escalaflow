@@ -857,6 +857,8 @@ export interface KnowledgeChunk {
   access_count: number
   last_accessed_at: string | null
   criada_em: string
+  enriched_at?: string | null
+  enrichment_json?: string | null
 }
 
 export interface KnowledgeEntity {

@@ -40,7 +40,23 @@ export const LOCAL_MODELS = {
     url: 'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
     size_bytes: 2_800_000_000,
     ram_minima_gb: 4,
-    descricao: 'Mais leve e rápido. Para computadores com menos RAM.',
+    descricao: 'Equilíbrio entre qualidade e velocidade. Para 4GB+ RAM.',
+  },
+  'qwen3.5-2b': {
+    label: 'Qwen 3.5 2B',
+    filename: 'Qwen3.5-2B-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
+    size_bytes: 1_500_000_000,
+    ram_minima_gb: 3,
+    descricao: 'Leve e rápido. Bom para enrichment com grammar enforcement.',
+  },
+  'qwen3.5-0.8b': {
+    label: 'Qwen 3.5 0.8B',
+    filename: 'Qwen3.5-0.8B-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
+    size_bytes: 580_000_000,
+    ram_minima_gb: 2,
+    descricao: 'Ultra-leve (~580MB). Para tarefas simples e máquinas com pouca RAM.',
   },
 } as const
 
@@ -74,9 +90,11 @@ function isModelDownloaded(modelId: LocalModelId): boolean {
 }
 
 function getActiveLocalModelId(): LocalModelId {
-  // Prefere 9B se baixado, senão 4B
+  // Prefere o maior disponível: 9B > 4B > 2B > 0.8B
   if (isModelDownloaded('qwen3.5-9b')) return 'qwen3.5-9b'
   if (isModelDownloaded('qwen3.5-4b')) return 'qwen3.5-4b'
+  if (isModelDownloaded('qwen3.5-2b')) return 'qwen3.5-2b'
+  if (isModelDownloaded('qwen3.5-0.8b')) return 'qwen3.5-0.8b'
   throw new Error('Nenhum modelo local baixado. Baixe um modelo em Configurações > IA Local.')
 }
 

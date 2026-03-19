@@ -5,17 +5,6 @@
 
 export type DiaStatus = 'T' | 'F'
 
-export interface SimulaCicloInput {
-  num_postos: number
-  trabalham_por_dia: number       // seg-sab
-  trabalham_domingo: number
-  num_semanas: number
-  max_consecutivos?: number       // default: 6 (H1 CLT)
-  domingo_max_consecutivos?: number // default: 2
-  nomes_postos?: string[]
-  regime?: '5X2' | '6X1'
-}
-
 /** Input minimo para fase 1: N pessoas, K no domingo, periodo a exibir */
 export interface SimulaCicloFase1Input {
   num_postos: number
@@ -65,6 +54,14 @@ export interface SimulaCicloStats {
   sem_H1_violation?: boolean
 }
 
+export interface FolgaWarning {
+  pessoa: number         // indice no grid (0..N-1)
+  dia: number            // 0-5 (SEG-SAB)
+  tipo: 'FF_CONFLITO' | 'FV_CONFLITO'
+  coberturaRestante: number
+  demandaDia: number
+}
+
 export interface SimulaCicloOutput {
   sucesso: boolean
   erro?: string
@@ -73,6 +70,7 @@ export interface SimulaCicloOutput {
   cobertura_dia: CoberturaRow[]
   ciclo_semanas: number
   stats: SimulaCicloStats
+  folga_warnings?: FolgaWarning[]
 }
 
 // gcd exported for heuristica K
@@ -149,16 +147,6 @@ function maxConsecutivosCiclo(flat: DiaStatus[], wrap: boolean): number {
     let head = 0
     for (let i = 0; i < flat.length && flat[i] === 'T'; i++) head++
     max = Math.max(max, tail + head)
-  }
-  return max
-}
-
-/** Max consecutive 'T' within a single week slice (no wrap) */
-function maxConsecutivosSemana(dias: DiaStatus[]): number {
-  let max = 0, cur = 0
-  for (const d of dias) {
-    if (d === 'T') { cur++; max = Math.max(max, cur) }
-    else cur = 0
   }
   return max
 }
@@ -276,6 +264,33 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     }
   }
 
+  // --- Warnings acumulados durante toda a geracao ---
+  const folgaWarnings: FolgaWarning[] = []
+
+  // --- Step 1b: Pre-check folgas fixas vs capacidade por dia (nao mata o grid, gera warning) ---
+  const DIA_LABELS_LOCAL: string[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
+  if (input.folgas_forcadas && input.demanda_por_dia && input.demanda_por_dia.length >= 6) {
+    const forcedFolgasByDay = [0, 0, 0, 0, 0, 0]
+    for (const f of input.folgas_forcadas) {
+      if (f.folga_fixa_dia != null && f.folga_fixa_dia >= 0 && f.folga_fixa_dia < 6) {
+        forcedFolgasByDay[f.folga_fixa_dia]++
+      }
+    }
+    for (let d = 0; d < 6; d++) {
+      const maxFolgas = N - (input.demanda_por_dia[d] ?? 0)
+      if (forcedFolgasByDay[d] > maxFolgas) {
+        // Não mata o grid — registra warning e deixa continuar com déficit visível
+        folgaWarnings.push({
+          pessoa: -1, // sentinela: afeta o dia todo, não uma pessoa específica
+          dia: d,
+          tipo: 'FF_CONFLITO',
+          coberturaRestante: N - forcedFolgasByDay[d],
+          demandaDia: input.demanda_por_dia[d] ?? 0,
+        })
+      }
+    }
+  }
+
   // --- Step 2: Folgas semanais 5x2 (2 por semana) ---
   const hasDemanda = input.demanda_por_dia && input.demanda_por_dia.length >= 6
 
@@ -305,11 +320,31 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
       ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, null) : (p % 6))
     folgaCount[base1]++
 
+    // Detect FF assignment causing deficit
+    if (hasDemanda) {
+      const cobRestante = N - folgaCount[base1]
+      const demDia = input.demanda_por_dia![base1] ?? 0
+      if (cobRestante < demDia) {
+        folgaWarnings.push({ pessoa: p, dia: base1, tipo: 'FF_CONFLITO', coberturaRestante: cobRestante, demandaDia: demDia })
+      }
+    }
+
     // folga_fixa_dom: variable loses meaning, use a second fixed weekday
     const base2 = isFixaDom ? null
       : (forcada?.folga_variavel_dia
         ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, base1) : ((p + 3) % 6)))
-    if (base2 != null) folgaCount[base2]++
+    if (base2 != null) {
+      folgaCount[base2]++
+
+      // Detect FV assignment causing deficit
+      if (hasDemanda) {
+        const cobRestante = N - folgaCount[base2]
+        const demDia = input.demanda_por_dia![base2] ?? 0
+        if (cobRestante < demDia) {
+          folgaWarnings.push({ pessoa: p, dia: base2, tipo: 'FV_CONFLITO', coberturaRestante: cobRestante, demandaDia: demDia })
+        }
+      }
+    }
 
     for (let w = 0; w < weeks; w++) {
       const sundayOff = grid[p][w * 7 + 6] === 'F'
@@ -413,239 +448,84 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
       sem_TT: semTT,
       sem_H1_violation: semH1,
     },
+    folga_warnings: folgaWarnings.length > 0 ? folgaWarnings : undefined,
   }
 }
 
-export function gerarCiclo(input: SimulaCicloInput): SimulaCicloOutput {
+// ============================================================================
+// Sugerir TS hierarquico — step-by-step de baixo pra cima
+// ============================================================================
+
+export interface SugerirTSResult {
+  resultado: SimulaCicloOutput
+  /** Quantas pessoas foram liberadas (0 = sem mudanca, N = tudo livre) */
+  liberados: number
+}
+
+/**
+ * Tenta resolver deficits liberando folgas progressivamente de baixo pra cima.
+ * Indice 0 = rank mais alto (preserva). Indice N-1 = rank mais baixo (libera primeiro).
+ * Retorna o PRIMEIRO resultado sem deficit de cobertura.
+ */
+export function sugerirTSHierarquico(input: {
+  folgas: Array<{
+    folga_fixa_dia: number | null
+    folga_variavel_dia: number | null
+    folga_fixa_dom?: boolean
+  }>
+  num_postos: number
+  trabalham_domingo: number
+  num_meses?: number
+  demanda_por_dia?: number[]
+}): SugerirTSResult {
   const N = input.num_postos
-  const M = input.trabalham_por_dia
-  const D = input.trabalham_domingo
-  const weeks = input.num_semanas
-  const maxConsec = input.max_consecutivos ?? 6
-  const maxDomConsec = input.domingo_max_consecutivos ?? 2
-  const regime = input.regime ?? '6X1'
 
-  const nomes = input.nomes_postos?.length === N
-    ? input.nomes_postos
-    : Array.from({ length: N }, (_, i) => `Posto ${i + 1}`)
+  for (let step = 0; step <= N; step++) {
+    const folgas = input.folgas.map((f, idx) => {
+      if (step > 0 && idx >= N - step) {
+        return {
+          folga_fixa_dia: null as number | null,
+          folga_variavel_dia: null as number | null,
+          folga_fixa_dom: f.folga_fixa_dom,
+        }
+      }
+      return { ...f }
+    })
 
-  const emptyOutput = (erro: string, sugestao?: string): SimulaCicloOutput => ({
-    sucesso: false,
-    erro,
-    sugestao,
-    grid: [],
-    cobertura_dia: [],
-    ciclo_semanas: 0,
-    stats: { folgas_por_pessoa_semana: 0, cobertura_min: 0, cobertura_max: 0, h1_violacoes: 0, domingos_consecutivos_max: 0 },
+    const result = gerarCicloFase1({
+      num_postos: N,
+      trabalham_domingo: input.trabalham_domingo,
+      num_meses: input.num_meses,
+      folgas_forcadas: folgas,
+      demanda_por_dia: input.demanda_por_dia,
+    })
+
+    if (!result.sucesso) continue
+
+    const hasDeficit = result.cobertura_dia.some((sem) =>
+      sem.cobertura.some((cob, idx) => cob < (input.demanda_por_dia?.[idx] ?? 0)),
+    )
+
+    if (!hasDeficit) {
+      return { resultado: result, liberados: step }
+    }
+  }
+
+  // Nenhuma tentativa resolveu — retorna tudo livre (preservando folga_fixa_dom)
+  const fallbackFolgas = input.folgas.map((f) => ({
+    folga_fixa_dia: null as number | null,
+    folga_variavel_dia: null as number | null,
+    folga_fixa_dom: f.folga_fixa_dom,
+  }))
+  const fallbackResult = gerarCicloFase1({
+    num_postos: N,
+    trabalham_domingo: input.trabalham_domingo,
+    num_meses: input.num_meses,
+    folgas_forcadas: fallbackFolgas,
+    demanda_por_dia: input.demanda_por_dia,
   })
 
-  // --- Validacoes ---
-  if (N < 1) return emptyOutput('Precisa de pelo menos 1 posto.')
-  if (weeks < 1) return emptyOutput('Precisa de pelo menos 1 semana.')
-  if (M > N) return emptyOutput(`Impossivel: ${M} por dia > ${N} postos.`, `Reduza para ${N} por dia ou adicione postos.`)
-  if (D > N) return emptyOutput(`Impossivel: ${D} no domingo > ${N} postos.`, `Reduza para ${N} no domingo.`)
-  if (M < 0 || D < 0) return emptyOutput('Valores negativos nao permitidos.')
-
-  const folgasSemana = regime === '6X1' ? 1 : 2
-
-  // Capacidade: cada pessoa trabalha (7 - folgasSemana) dias/semana
-  // Precisamos M nos 6 dias uteis + D no domingo
-  const diasTrabalho = 7 - folgasSemana
-  const capacidadeSemanal = N * diasTrabalho
-  const necessidadeSemanal = M * 6 + D
-  if (capacidadeSemanal < necessidadeSemanal) {
-    return emptyOutput(
-      `Capacidade insuficiente: ${N} postos x ${diasTrabalho} dias = ${capacidadeSemanal} pessoa-dias, mas precisa de ${necessidadeSemanal}.`,
-      `Adicione mais postos ou reduza a cobertura.`,
-    )
-  }
-
-  // --- Ciclo minimo ---
-  const cicloSemanas = D > 0 ? N / gcd(N, D) : 1
-  const totalDias = weeks * 7
-
-  // --- Grid flat: grid[posto][dia] ---
-  const grid: DiaStatus[][] = Array.from({ length: N }, () => Array(totalDias).fill('T') as DiaStatus[])
-
-  // --- Step 1: Assign sunday offs (round-robin justo) ---
-  const offsPerSunday = N - D
-  let sundayPointer = 0
-
-  for (let w = 0; w < weeks; w++) {
-    const sundayIdx = w * 7 + 6 // DOM = indice 6 (SEG=0)
-    if (offsPerSunday > 0) {
-      for (let i = 0; i < offsPerSunday; i++) {
-        const posto = (sundayPointer + i) % N
-        grid[posto][sundayIdx] = 'F'
-      }
-      sundayPointer = (sundayPointer + offsPerSunday) % N
-    } else if (D === 0) {
-      // Ninguem trabalha domingo
-      for (let p = 0; p < N; p++) grid[p][sundayIdx] = 'F'
-    }
-  }
-
-  // --- Step 2: Assign weekday offs ---
-  if (regime === '6X1') {
-    // Cada pessoa tem 1 dia base de folga (weekday, round-robin spread nas 6 posicoes SEG-SAB)
-    // Nas semanas onde ja esta off no domingo, o base off da 2 offs (trabalha 5 dias)
-    // Nas semanas onde trabalha domingo, o base off da 1 off (trabalha 6 dias)
-    for (let p = 0; p < N; p++) {
-      const baseOff = p % 6 // 0=SEG, 1=TER, ..., 5=SAB
-      for (let w = 0; w < weeks; w++) {
-        const dayIdx = w * 7 + baseOff
-        grid[p][dayIdx] = 'F'
-      }
-    }
-  } else {
-    // 5x2: cada pessoa tem 2 offs por semana no total
-    // Base: 2 weekday offs espalhados. Quando off no domingo, tirar 1 weekday off.
-    for (let p = 0; p < N; p++) {
-      const base1 = p % 6
-      const base2 = (p + 3) % 6 // gap de 3 dias para espalhar
-
-      for (let w = 0; w < weeks; w++) {
-        const sundayIdx = w * 7 + 6
-        const sundayOff = grid[p][sundayIdx] === 'F'
-
-        if (sundayOff) {
-          // Ja tem 1 off (domingo), precisa de mais 1 weekday off
-          // Escolher o base off que resulta em melhor cobertura
-          const day1 = w * 7 + base1
-          const day2 = w * 7 + base2
-
-          // Contar cobertura sem este posto nos dois dias candidatos
-          let cov1 = 0, cov2 = 0
-          for (let pp = 0; pp < N; pp++) {
-            if (pp === p) continue
-            if (grid[pp][day1] === 'T') cov1++
-            if (grid[pp][day2] === 'T') cov2++
-          }
-          // Manter off no dia com MAIS cobertura (menos impacto)
-          if (cov1 >= cov2) {
-            grid[p][day1] = 'F'
-          } else {
-            grid[p][day2] = 'F'
-          }
-        } else {
-          // Trabalha domingo: precisa de 2 weekday offs
-          grid[p][w * 7 + base1] = 'F'
-          grid[p][w * 7 + base2] = 'F'
-        }
-      }
-    }
-  }
-
-  // --- Step 3: H1 validation + repair ---
-  let h1Violations = 0
-  for (let p = 0; p < N; p++) {
-    // Check consecutive across the full period
-    let consec = 0
-    for (let d = 0; d < totalDias; d++) {
-      if (grid[p][d] === 'T') {
-        consec++
-        if (consec > maxConsec) {
-          h1Violations++
-          // Repair: force off on this day (greedy fix)
-          grid[p][d] = 'F'
-          consec = 0
-        }
-      } else {
-        consec = 0
-      }
-    }
-  }
-
-  // --- Step 4: Domingo max consecutivos check ---
-  let maxDomConsecFound = 0
-  for (let p = 0; p < N; p++) {
-    let consec = 0
-    for (let w = 0; w < weeks; w++) {
-      if (grid[p][w * 7 + 6] === 'T') {
-        consec++
-        maxDomConsecFound = Math.max(maxDomConsecFound, consec)
-      } else {
-        consec = 0
-      }
-    }
-    // Wrap-around check (cycle repeat)
-    if (weeks >= cicloSemanas * 2) {
-      let wrap = 0
-      for (let w = weeks - 1; w >= 0 && grid[p][w * 7 + 6] === 'T'; w--) wrap++
-      for (let w = 0; w < weeks && grid[p][w * 7 + 6] === 'T'; w++) wrap++
-      maxDomConsecFound = Math.max(maxDomConsecFound, wrap)
-    }
-  }
-
-  // --- Build output ---
-  const rows: SimulaCicloRow[] = []
-  const cobertura: CoberturaRow[] = []
-
-  let cobMin = N
-  let cobMax = 0
-  let totalFolgas = 0
-
-  for (let w = 0; w < weeks; w++) {
-    const cob = Array(7).fill(0) as number[]
-    for (let d = 0; d < 7; d++) {
-      for (let p = 0; p < N; p++) {
-        if (grid[p][w * 7 + d] === 'T') cob[d]++
-      }
-      cobMin = Math.min(cobMin, cob[d])
-      cobMax = Math.max(cobMax, cob[d])
-    }
-    cobertura.push({ semana: w + 1, cobertura: cob })
-  }
-
-  for (let p = 0; p < N; p++) {
-    const semanas: SimulaCicloSemana[] = []
-    const folgaCountByWeekday = [0, 0, 0, 0, 0, 0]
-    for (let w = 0; w < weeks; w++) {
-      const dias = grid[p].slice(w * 7, w * 7 + 7) as DiaStatus[]
-      for (let d = 0; d < 6; d++) {
-        if (dias[d] === 'F') folgaCountByWeekday[d]++
-      }
-      const trabDom = dias[6] === 'T'
-      const trabCount = dias.filter(d => d === 'T').length
-      totalFolgas += 7 - trabCount
-
-      // Max consecutivos incluindo contexto das semanas anteriores
-      const startIdx = Math.max(0, w * 7 - maxConsec)
-      const endIdx = Math.min(totalDias, (w + 1) * 7 + maxConsec)
-      const context = grid[p].slice(startIdx, endIdx)
-      const consMax = maxConsecutivosSemana(context)
-
-      semanas.push({
-        dias,
-        trabalhou_domingo: trabDom,
-        dias_trabalhados: trabCount,
-        consecutivos_max: consMax,
-      })
-    }
-    const sorted = folgaCountByWeekday
-      .map((count, dia) => ({ dia, count }))
-      .filter(x => x.count > 0)
-      .sort((a, b) => b.count - a.count)
-    const folga_fixa_dia = sorted[0]?.dia ?? 0
-    const folga_variavel_dia = sorted[1]?.dia ?? null
-    rows.push({ posto: nomes[p], semanas, folga_fixa_dia, folga_variavel_dia })
-  }
-
-  const folgasMedia = totalFolgas / (N * weeks)
-
-  return {
-    sucesso: true,
-    grid: rows,
-    cobertura_dia: cobertura,
-    ciclo_semanas: cicloSemanas,
-    stats: {
-      folgas_por_pessoa_semana: Math.round(folgasMedia * 10) / 10,
-      cobertura_min: cobMin,
-      cobertura_max: cobMax,
-      h1_violacoes: h1Violations,
-      domingos_consecutivos_max: maxDomConsecFound,
-    },
-  }
+  return { resultado: fallbackResult, liberados: N }
 }
 
 // ============================================================================
