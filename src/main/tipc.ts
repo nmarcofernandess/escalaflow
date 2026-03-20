@@ -1134,8 +1134,14 @@ const escalasBuscar = t.procedure
     `, input.id)
 
     const base = await validarEscalaV3(input.id)
+
+    // Attach persisted solver diagnostico (pass_usado, regras_relaxadas, etc.)
+    const diagnosticoFromDb = (escala as any).diagnostico_json
+      ? JSON.parse((escala as any).diagnostico_json)
+      : undefined
+
     const hasSnapshot = snapshotDecisoes.length > 0 || snapshotComparacao.length > 0
-    if (!hasSnapshot) return base
+    if (!hasSnapshot) return { ...base, ...(diagnosticoFromDb ? { diagnostico: diagnosticoFromDb } : {}) }
 
     // Use decisoes from snapshot (solver has rich explanations),
     // but comparacao_demanda ALWAYS from validador TS (consistent with indicadores).
@@ -1154,6 +1160,7 @@ const escalasBuscar = t.procedure
         alternativas_tentadas: d.alternativas_tentadas ?? 0,
       })),
       // comparacao_demanda: from base (validarEscalaV3) — same source as indicadores
+      ...(diagnosticoFromDb ? { diagnostico: diagnosticoFromDb } : {}),
     }
   })
 

@@ -889,6 +889,9 @@ async function migrateSchema(): Promise<void> {
   // --- v29: S_DEFICIT default SOFT → HARD ---
   await execute(`UPDATE regra_definicao SET status_sistema = 'HARD', descricao = 'Bloqueia geracao quando a cobertura fica abaixo da demanda minima planejada.' WHERE codigo = 'S_DEFICIT' AND status_sistema = 'SOFT'`)
 
+  // --- v30: Persistir diagnostico do solver com a escala ---
+  await addColumnIfMissing('escalas', 'diagnostico_json', 'TEXT')
+
   // --- v27: Re-enable 'session' tipo in knowledge_sources for session indexing ---
   try {
     await execDDL(`ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_tipo_check`)

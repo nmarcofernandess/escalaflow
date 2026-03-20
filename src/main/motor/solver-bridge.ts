@@ -1065,17 +1065,19 @@ export async function persistirSolverResult(
   })
 
   return await transaction(async () => {
+    const diagnosticoJson = solverResult.diagnostico ? JSON.stringify(solverResult.diagnostico) : null
     const escalaId = await insertReturningId(`
       INSERT INTO escalas
         (setor_id, data_inicio, data_fim, status, pontuacao,
-         cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json, equipe_snapshot_json)
-      VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?, ?)
+         cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json, equipe_snapshot_json, diagnostico_json)
+      VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       setorId, dataInicio, dataFim,
       ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
       inputHash ?? null,
       simulacaoConfigJson,
       JSON.stringify(equipeSnapshot),
+      diagnosticoJson,
     )
 
     for (const a of solverResult.alocacoes!) {

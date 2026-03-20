@@ -1254,6 +1254,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               ind.cobertura_percent ?? 0,
               ind.cobertura_efetiva_percent ?? ind.cobertura_percent ?? 0,
             )
+            // Read persisted solver diagnostico for relaxation info
+            const diagnosticoJson = (escala as any).diagnostico_json
+            const solverDiag = diagnosticoJson ? JSON.parse(diagnosticoJson) : null
+            const relaxacoesTexto = solverDiag
+              ? textoResumoRelaxacoes(
+                  solverDiag.pass_usado ?? 1,
+                  solverDiag.regras_relaxadas ?? [],
+                  solverDiag.generation_mode,
+                )
+              : null
             const resumo_user = {
               cobertura: coberturaResumo.principal,
               ...(coberturaResumo.secundaria ? { cobertura_secundaria: coberturaResumo.secundaria } : {}),
@@ -1261,6 +1271,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               avisos: textoResumoViolacoesSoft(soft),
               qualidade: ind.pontuacao ?? 0,
               pode_oficializar: podeOficializar,
+              ...(relaxacoesTexto ? { relaxacoes: relaxacoesTexto } : {}),
             }
 
             const payload: Record<string, any> = {
