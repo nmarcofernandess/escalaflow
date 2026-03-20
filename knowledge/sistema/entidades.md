@@ -35,7 +35,7 @@ Campos importantes:
 - **nome**: Nome completo do colaborador
 - **setor_id**: Setor onde trabalha
 - **tipo_contrato_id**: Tipo de contrato (CLT 44h, CLT 36h, Estagiario, etc.)
-- **tipo_trabalhador**: CLT, ESTAGIARIO ou APRENDIZ — chave que define restricoes legais
+- **tipo_trabalhador**: CLT, ESTAGIARIO ou INTERMITENTE — chave que define restricoes legais
 - **sexo**: M ou F — afeta a regra de domingos consecutivos (mulheres max 1, homens max 2)
 - **horas_semanais**: Meta de horas por semana (44, 36, 30 ou 20)
 - **rank**: Senioridade (0 = junior). O motor evita deixar junior sozinho em horario de pico.
@@ -49,7 +49,17 @@ Cada colaborador pode ter regras personalizadas (tabela colaborador_regra_horari
 - **Janela de horario**: Horario minimo e maximo de entrada/saida
 - **Ciclo de domingo**: Quantos domingos trabalha vs folga (padrao: 2 trabalha, 1 folga)
 - **Folga fixa**: Dia da semana em que SEMPRE folga (ex: "toda quarta")
+- **Folga variavel**: Dia condicional que depende do ciclo de domingo (XOR)
 - **Perfil de horario**: Vincula a um perfil padrao do contrato
+
+### Intermitente — Tipo A vs Tipo B
+
+Quando `tipo_trabalhador = 'INTERMITENTE'`, o colaborador trabalha APENAS nos dias que tem regra de horario ativa (regra por dia da semana). Dias sem regra = NT (Nao Trabalha).
+
+- **Tipo A (fixo):** `folga_variavel = NULL`. Trabalha os mesmos dias toda semana. Nao participa do rodizio de domingo. Exemplo: Maria trabalha toda terca e quinta.
+- **Tipo B (rotativo):** `folga_variavel != NULL`. Participa do ciclo de domingo com os CLTs. Quando trabalha domingo, folga no dia variavel; quando nao trabalha domingo, trabalha no dia variavel (XOR). Exemplo: Clara pode trabalhar segunda e domingo, mas nao os dois na mesma semana.
+
+`folga_fixa` e sempre NULL pra intermitente (dias sem regra ja cumprem essa funcao).
 
 Excecoes por data (tabela colaborador_regra_horario_excecao_data):
 - Override pontual: "No dia 15/03, Cleunice so pode de 08:00 a 12:00"

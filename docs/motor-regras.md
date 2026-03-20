@@ -102,7 +102,7 @@ ENTIDADES EXISTENTES (com campos novos):
 │
 ├── Colaborador
 │   ├── ... (mantem tudo)
-│   ├── tipo_trabalhador: 'CLT' | 'ESTAGIARIO' | 'APRENDIZ' (NOVO)
+│   ├── tipo_trabalhador: 'CLT' | 'ESTAGIARIO' | 'INTERMITENTE' (NOVO)
 │   └── funcao_id: INTEGER | null (NOVO — FK pra funcoes)
 │
 ├── Demanda (tabela existente, semantica atualizada)
@@ -301,6 +301,14 @@ Schema (v3.1):
 | H18 | FERIADO_SEM_CCT | Feriado sem CCT proibido | Portaria MTE 3.665 |
 | H19 | FOLGA_COMP_DOM | Folga dom dentro de 7 dias | Lei 605/1949 |
 | H20 | ALMOCO_POSICAO | Almoco nunca 1a/ultima hora | TST 5a Turma |
+
+### Intermitente — Tipo A (fixo) vs Tipo B (rotativo)
+
+O intermitente trabalha APENAS nos dias com regra de horario ativa (`colaborador_regra_horario` por `dia_semana_regra`). Dias sem regra = NT (Nao Trabalha) — HARD, inviolavel. `folga_fixa` e sempre NULL (dias sem regra ja cumprem essa funcao).
+
+**Tipo A (`folga_variavel = NULL`):** Trabalha os mesmos dias toda semana. Fora do pool rotativo de domingo. Se tem regra pra DOM, conta como cobertura garantida (fixa). Constraints de ciclo/XOR/dom_max sao puladas.
+
+**Tipo B (`folga_variavel != NULL`):** Entra no pool rotativo de domingo junto com CLTs. XOR: `trabalha_dom + trabalha_variavel == 1`. `dias_trabalho = dias_ativos - 1` (desconta o dia variavel). Constraints de ciclo, XOR e dom_max se aplicam normalmente. `folga_variavel` so pode apontar pra dia com regra ativa (guard T5 no tipc.ts). Belt-and-suspenders no solver: `work[c,d] = 0` forcado em dias sem regra, mesmo se constraints forem relaxadas.
 
 **Nota H6 — Cliff da Sumula 437:** Motor NUNCA gera jornada entre 361min e 389min (6h01-6h29). Com grid 30min = impossivel (360 ou 390). Guard no codigo mesmo assim.
 

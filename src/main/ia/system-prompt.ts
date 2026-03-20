@@ -27,10 +27,27 @@ Você SABE isso de cor. Não precisa de tool para responder.
 | CLT | CLT 44h | 5X2 | 44h | 9h45 (585min) | Sim | Nenhuma |
 | CLT | CLT 36h | 5X2 | 36h | 9h45 (585min) | Sim | Nenhuma |
 | ESTAGIARIO | Estagiário | 5X2 | 20-30h | 6h (360min) | Não | NUNCA hora extra. PODE domingo (entra no ciclo). |
-| INTERMITENTE | Intermitente | 5X2 | 0+ | 9h45 (585min) | Não | Convocado sob demanda, horas_semanais mínimo 0 |
+| INTERMITENTE | Intermitente | 5X2 | 0+ | 9h45 (585min) | Não | Trabalha em dias definidos por regra de horario. Dois modos: Tipo A (fixo) e Tipo B (rotativo). |
 
 Compensação 9h45: CLT 44h e 36h em regime 5X2 podem fazer até 9h45/dia para compensar o sábado sem trabalho. Estagiários e intermitentes NUNCA compensam.
 Domingo: gerenciado pelo ciclo rotativo do motor e pela policy vigente da regra H3. Estagiário participa do ciclo normalmente.
+
+### Intermitente — Tipo A (fixo) vs Tipo B (rotativo)
+
+O intermitente trabalha APENAS nos dias que tem regra de horario ativa (regra por dia da semana). Dias sem regra = **NT (Nao Trabalha)** — NUNCA e alocado. A distinção entre os dois tipos e automatica:
+
+- **Tipo A (fixo):** folga_variavel = NULL. Trabalha os mesmos dias toda semana. Nao participa do rodizio de domingo. Se tem regra pra DOM, conta como cobertura GARANTIDA (fixa).
+- **Tipo B (rotativo):** folga_variavel != NULL (ex: SEG). Participa do ciclo de domingo junto com os CLTs. Funciona com XOR: quando trabalha DOM, folga no dia variavel; quando nao trabalha DOM, trabalha no dia variavel.
+
+Exemplo Tipo B (Maria Clara, variavel=SEG, regras SEG+DOM):
+- Semana 1: trabalha DOM → folga SEG (FV). Dias sem regra = NT.
+- Semana 2: nao trabalha DOM (DF) → trabalha SEG. Dias sem regra = NT.
+
+Regras:
+- folga_fixa e SEMPRE null pra intermitente (dias sem regra ja sao NT)
+- folga_variavel so pode apontar pra dia que tem regra ativa (guard T5)
+- Tipo B entra no pool rotativo (nDom) e recebe ciclo domingo igual CLT
+- No preview, Tipo A mostra T/NT fixo. Tipo B mostra DT/DF/FV/T/NT com alternancia
 
 ### Regras CLT que você sabe de cor
 
@@ -528,7 +545,7 @@ Regras de ouro:
 
 ## CLT/CCT Essencial
 
-**Contratos:** CLT 44h (5X2, max 9h45/dia), CLT 36h (5X2), Estagiário (max 6h/dia, NUNCA domingo/hora extra), Intermitente (sob demanda, 0+ horas), Aprendiz (NUNCA domingo/feriado/noturno/hora extra).
+**Contratos:** CLT 44h (5X2, max 9h45/dia), CLT 36h (5X2), Estagiário (max 6h/dia, NUNCA hora extra, PODE domingo), Intermitente (dias fixos por regra: Tipo A=fixo, Tipo B=rotativo com folga_variavel e ciclo DOM), Aprendiz (NUNCA domingo/feriado/noturno/hora extra).
 
 **Regras fixas:** Max 6 dias consecutivos, interjornada 11h, max 10h/dia com HE, almoço obrigatório >6h.
 **CCT:** 25/12 e 01/01 proibido trabalhar. Grid 15 minutos em tudo.

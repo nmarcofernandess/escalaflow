@@ -198,7 +198,7 @@ const SalvarRegraHorarioColaboradorSchema = z.object({
   preferencia_turno_soft: z.string().nullable().optional().describe('Preferência soft de turno (ex: MANHA/TARDE/NOITE, conforme convenção local).'),
   folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover (só na regra padrão).'),
   folga_variavel_dia_semana: z.enum(['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']).nullable().optional()
-    .describe('Dia da 2a folga semanal (SEG..SAB, nunca DOM). Se trabalhou domingo, folga neste dia na semana seguinte. NULL para remover. Só na regra padrão.'),
+    .describe('Dia da folga variavel (SEG..SAB, nunca DOM). XOR com domingo: se trabalhou DOM, folga neste dia; se nao, trabalha. Para CLT: 2a folga semanal. Para INTERMITENTE tipo B: ativa participacao no ciclo de domingo (dia deve ter regra de horario ativa). NULL = sem folga variavel (intermitente tipo A). So na regra padrao.'),
 })
 
 // criar colaborador — validação específica para colaboradores
@@ -516,7 +516,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'salvar_regra_horario_colaborador',
-        description: 'Cria/atualiza regra de horário individual. Pode ser padrão (dia_semana_regra omitido = todos os dias) ou específica de um dia (ex: dia_semana_regra="QUA" para só quartas). Campos de ciclo domingo e folga fixa só se aplicam à regra padrão.',
+        description: 'Cria/atualiza regra de horário individual. Pode ser padrão (dia_semana_regra omitido = todos os dias) ou específica de um dia (ex: dia_semana_regra="QUA" para só quartas). Campos de folga fixa/variável só se aplicam à regra padrão. Para INTERMITENTE: regras por dia definem quais dias trabalha (sem regra = NT/não trabalha). Se definir folga_variavel na regra padrão, intermitente vira tipo B (rotativo com ciclo domingo).',
         parameters: toJsonSchema(SalvarRegraHorarioColaboradorSchema)
     },
     {
