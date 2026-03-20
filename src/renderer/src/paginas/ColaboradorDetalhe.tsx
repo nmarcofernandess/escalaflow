@@ -978,7 +978,7 @@ export function ColaboradorDetalhe() {
                     <p className="text-sm font-medium">
                       Preferencias{' '}
                       <span className="text-xs font-normal text-muted-foreground">
-                        (soft constraints - motor tenta respeitar)
+                        (o sistema tenta respeitar)
                       </span>
                     </p>
                     <div className="grid grid-cols-2 gap-4">
@@ -1035,7 +1035,7 @@ export function ColaboradorDetalhe() {
                       />
                     </div>
                     <p className="text-[0.8rem] text-muted-foreground">
-                      O motor de escala tenta respeitar essas preferencias, mas nao
+                      O sistema tenta respeitar essas preferencias, mas nao
                       garante. Se nao conseguir, aparece como alerta amarelo na escala.
                     </p>
                   </div>
@@ -1094,7 +1094,7 @@ export function ColaboradorDetalhe() {
 
                       {/* Seccao A: Restricao de horario padrao */}
                       <div>
-                        <Label className="mb-2 block">Restricao de horario (hard constraint)</Label>
+                        <Label className="mb-2 block">Restricao de horario (regra fixa)</Label>
                         <RestricaoRadio
                           value={regraForm.tipo_restricao}
                           onChange={v => {
@@ -1104,7 +1104,7 @@ export function ColaboradorDetalhe() {
                           onHorarioChange={v => setRegraForm(f => ({ ...f, horario: v }))}
                         />
                         <p className="mt-2 text-[0.75rem] text-muted-foreground">
-                          Sem restricao = motor decide livremente. Entrada fixa = entrada no horario exato. Saida maxima = nao aloca alem deste horario.
+                          Sem restricao = o sistema decide livremente. Entrada fixa = entrada no horario exato. Saida maxima = nao aloca alem deste horario.
                         </p>
                       </div>
 

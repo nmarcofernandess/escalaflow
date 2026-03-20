@@ -1,32 +1,21 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { SugestaoSheet } from '../../src/renderer/src/componentes/SugestaoSheet'
-import type { EscalaAdvisoryOutput } from '../../src/shared/advisory-types'
+import type { EscalaAdvisoryOutputV2 } from '../../src/shared/advisory-types'
 
 /* ─── Mock data ──────────────────────────────────────────────── */
 
-const mockAdvisory: EscalaAdvisoryOutput = {
+const mockAdvisoryV2: EscalaAdvisoryOutputV2 = {
   status: 'PROPOSAL_VALID',
-  normalized_diagnostics: [],
-  current: {
-    criteria: [
-      {
-        code: 'COBERTURA_DIA',
-        status: 'FAIL',
-        title: 'Cobertura insuficiente',
-        detail: 'SEG com deficit',
-        source: 'PHASE1',
-      },
-      {
-        code: 'DOMINGOS_CONSECUTIVOS',
-        status: 'PASS',
-        title: 'Domingos OK',
-        detail: 'Dentro do limite',
-        source: 'PHASE1',
-      },
-    ],
-  },
+  diagnostics: [
+    {
+      code: 'COBERTURA_DIA',
+      severity: 'warning',
+      title: 'Cobertura insuficiente',
+      detail: 'SEG com deficit',
+    },
+  ],
   proposal: {
     diff: [
       {
@@ -39,23 +28,32 @@ const mockAdvisory: EscalaAdvisoryOutput = {
         variavel_proposta: 'SEX',
       },
     ],
-    criteria: [
-      {
-        code: 'COBERTURA_DIA',
-        status: 'PASS',
-        title: 'Proposta cobre todos os dias',
-        detail: 'OK',
-        source: 'PHASE1',
-      },
-      {
-        code: 'DESCANSO_JORNADA',
-        status: 'NOT_EVALUATED',
-        title: 'Descanso nao avaliado',
-        detail: 'So na geracao',
-        source: 'PHASE1',
-      },
-    ],
   },
+  pin_violations: [
+    {
+      colaborador_id: 1,
+      nome: 'Alex',
+      dia: 'SEG',
+      data: '2026-03-02',
+      origin: 'manual',
+      weight: 100,
+      band_expected: 0,
+      band_actual: 3,
+      descricao: 'SEG: folga → integral',
+    },
+    {
+      colaborador_id: 2,
+      nome: 'Maria',
+      dia: 'QUA',
+      data: '2026-03-04',
+      origin: 'auto',
+      weight: 10,
+      band_expected: 0,
+      band_actual: 1,
+      descricao: 'QUA: folga → manha',
+    },
+  ],
+  pin_cost: 110,
 }
 
 const noop = () => {}
@@ -68,9 +66,10 @@ function renderSheet(overrides: Partial<Parameters<typeof SugestaoSheet>[0]> = {
       open={true}
       onOpenChange={noop}
       loading={false}
-      advisory={mockAdvisory}
-      onAceitar={noop}
-      onDescartar={noop}
+      advisory={mockAdvisoryV2}
+      onAceitarEGerar={noop}
+      onGerarMesmoAssim={noop}
+      onCancelar={noop}
       {...overrides}
     />,
   )
@@ -79,96 +78,26 @@ function renderSheet(overrides: Partial<Parameters<typeof SugestaoSheet>[0]> = {
 /* ─── Tests ──────────────────────────────────────────────────── */
 
 describe('SugestaoSheet', () => {
-  describe('criterion data-status attributes', () => {
-    it('FAIL criteria get data-status=FAIL, never PASS', () => {
+  describe('V2 pin violations', () => {
+    it('renders user violations (manual/saved) in the main section', () => {
       renderSheet()
 
-      const failRows = document.querySelectorAll('[data-status="FAIL"]')
-      expect(failRows.length).toBeGreaterThanOrEqual(1)
-
-      for (const row of failRows) {
-        expect(row.getAttribute('data-status')).toBe('FAIL')
-        // Double-check: no green success class on FAIL rows
-        expect(row.querySelector('.text-success')).toBeNull()
-        // Must have destructive (red) styling
-        expect(row.querySelector('.text-destructive')).toBeTruthy()
-      }
+      // Alex's manual violation should be visible
+      expect(screen.getByText('Alex')).toBeInTheDocument()
     })
 
-    it('PASS criteria get data-status=PASS with success styling', () => {
+    it('shows user violation count in header', () => {
       renderSheet()
 
-      const passRows = document.querySelectorAll('[data-status="PASS"]')
-      expect(passRows.length).toBeGreaterThanOrEqual(1)
-
-      for (const row of passRows) {
-        expect(row.getAttribute('data-status')).toBe('PASS')
-        expect(row.querySelector('.text-success')).toBeTruthy()
-        expect(row.querySelector('.text-destructive')).toBeNull()
-      }
+      // Header shows "Mudancas nas suas escolhas (1)" for the manual violation
+      expect(screen.getByText(/Mudancas nas suas escolhas/)).toBeInTheDocument()
     })
 
-    it('NOT_EVALUATED criteria get data-status=NOT_EVALUATED with muted styling', () => {
+    it('shows auto adjustments section (collapsed by default)', () => {
       renderSheet()
 
-      const notEvalRows = document.querySelectorAll('[data-status="NOT_EVALUATED"]')
-      expect(notEvalRows.length).toBeGreaterThanOrEqual(1)
-
-      for (const row of notEvalRows) {
-        expect(row.getAttribute('data-status')).toBe('NOT_EVALUATED')
-        expect(row.querySelector('.text-muted-foreground')).toBeTruthy()
-        // Must NOT have success or destructive styling
-        expect(row.querySelector('.text-success')).toBeNull()
-        expect(row.querySelector('.text-destructive')).toBeNull()
-      }
-    })
-  })
-
-  describe('no false green checks (the core invariant)', () => {
-    it('all-FAIL advisory has zero PASS data-status rows', () => {
-      const allFail: EscalaAdvisoryOutput = {
-        status: 'CURRENT_INVALID',
-        normalized_diagnostics: [],
-        current: {
-          criteria: [
-            {
-              code: 'COBERTURA_DIA',
-              status: 'FAIL',
-              title: 'Cobertura insuficiente',
-              detail: 'Deficit geral',
-              source: 'PHASE1',
-            },
-            {
-              code: 'DOMINGOS_CONSECUTIVOS',
-              status: 'FAIL',
-              title: 'Domingos estourados',
-              detail: '3 consecutivos',
-              source: 'PHASE1',
-            },
-          ],
-        },
-      }
-
-      renderSheet({ advisory: allFail })
-
-      const passRows = document.querySelectorAll('[data-status="PASS"]')
-      expect(passRows.length).toBe(0)
-
-      const failRows = document.querySelectorAll('[data-status="FAIL"]')
-      expect(failRows.length).toBe(2)
-    })
-
-    it('mixed criteria map exactly: each status appears the right number of times', () => {
-      renderSheet()
-
-      // mockAdvisory has: current(1 FAIL, 1 PASS) + proposal(1 PASS, 1 NOT_EVALUATED)
-      const failRows = document.querySelectorAll('[data-status="FAIL"]')
-      const passRows = document.querySelectorAll('[data-status="PASS"]')
-      const notEvalRows = document.querySelectorAll('[data-status="NOT_EVALUATED"]')
-
-      expect(failRows.length).toBe(1) // 1 FAIL in current
-      expect(passRows.length).toBe(2) // 1 PASS in current + 1 PASS in proposal
-      expect(notEvalRows.length).toBe(1) // 1 NOT_EVALUATED in proposal
+      // Auto violations are under "Ajustes automaticos" toggle
+      expect(screen.getByText(/Ajustes automaticos/)).toBeInTheDocument()
     })
   })
 
@@ -176,75 +105,76 @@ describe('SugestaoSheet', () => {
     it('shows spinner and analyzing text when loading', () => {
       renderSheet({ loading: true, advisory: null })
 
-      // "Analisando..." appears in both SheetDescription and the spinner area
-      const matches = screen.getAllByText('Analisando...')
+      // "Analisando o arranjo..." appears in both description and the spinner area
+      const matches = screen.getAllByText('Analisando o arranjo...')
       expect(matches.length).toBeGreaterThanOrEqual(1)
 
       // The spinner container with animate-spin class must be present
       const spinner = document.querySelector('.animate-spin')
       expect(spinner).toBeTruthy()
-
-      // Criteria should NOT be rendered during loading
-      const criterionRows = document.querySelectorAll('[data-status]')
-      expect(criterionRows.length).toBe(0)
     })
 
-    it('does not show criteria when loading even with advisory present', () => {
+    it('does not show violations when loading even with advisory present', () => {
       renderSheet({ loading: true })
 
-      // The component gates on !loading, so criteria should not appear
-      const criterionRows = document.querySelectorAll('[data-status]')
-      expect(criterionRows.length).toBe(0)
+      // The component gates on !loading, so violations should not appear
+      expect(screen.queryByText('Alex')).not.toBeInTheDocument()
     })
   })
 
-  describe('proposal diff table', () => {
-    it('renders collaborator name in diff table', () => {
+  describe('escape hatch buttons', () => {
+    it('shows all 3 buttons: Aceitar e Gerar, Gerar mesmo assim, Cancelar', () => {
       renderSheet()
 
-      expect(screen.getByText('Alex')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Aceitar e Gerar/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Gerar mesmo assim/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Cancelar/i })).toBeInTheDocument()
     })
 
-    it('hides diff table when no proposal', () => {
-      const noProposal: EscalaAdvisoryOutput = {
-        status: 'CURRENT_VALID',
-        normalized_diagnostics: [],
-        current: {
-          criteria: [
-            {
-              code: 'COBERTURA_DIA',
-              status: 'PASS',
-              title: 'Tudo OK',
-              detail: 'Sem problemas',
-              source: 'PHASE1',
-            },
-          ],
-        },
+    it('Aceitar e Gerar is only visible when pin_cost > 0', () => {
+      const noCost: EscalaAdvisoryOutputV2 = {
+        ...mockAdvisoryV2,
+        pin_violations: [],
+        pin_cost: 0,
       }
 
-      renderSheet({ advisory: noProposal })
+      renderSheet({ advisory: noCost })
 
-      expect(screen.queryByText('Proposta de ajuste')).not.toBeInTheDocument()
-      expect(screen.queryByText('Colaborador')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Aceitar e Gerar/i })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Gerar mesmo assim/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Cancelar/i })).toBeInTheDocument()
+    })
+
+    it('buttons are disabled while loading', () => {
+      renderSheet({ loading: true, advisory: null })
+
+      const gerarBtn = screen.getByRole('button', { name: /Gerar mesmo assim/i })
+      expect(gerarBtn).toBeDisabled()
     })
   })
 
-  describe('aceitar button state', () => {
-    it('aceitar button is disabled when no proposal', () => {
-      const noProposal: EscalaAdvisoryOutput = {
+  describe('status config', () => {
+    it('CURRENT_VALID shows success message', () => {
+      const valid: EscalaAdvisoryOutputV2 = {
+        status: 'CURRENT_VALID',
+        diagnostics: [],
+        pin_violations: [],
+        pin_cost: 0,
+      }
+
+      renderSheet({ advisory: valid })
+
+      expect(screen.getByText('Tudo certo!')).toBeInTheDocument()
+    })
+
+    it('NO_PROPOSAL shows error state', () => {
+      const noProposal: EscalaAdvisoryOutputV2 = {
         status: 'NO_PROPOSAL',
-        normalized_diagnostics: [],
-        current: {
-          criteria: [
-            {
-              code: 'COBERTURA_DIA',
-              status: 'FAIL',
-              title: 'Falhou',
-              detail: 'Sem cobertura',
-              source: 'PHASE1',
-            },
-          ],
-        },
+        diagnostics: [
+          { code: 'INFEASIBLE', severity: 'error', title: 'Sem solucao', detail: 'Impossivel' },
+        ],
+        pin_violations: [],
+        pin_cost: 0,
         fallback: {
           should_open_ia: true,
           reason: 'Solver nao encontrou solucao.',
@@ -252,24 +182,65 @@ describe('SugestaoSheet', () => {
         },
       }
 
-      renderSheet({ advisory: noProposal })
+      renderSheet({ advisory: noProposal, onAnalisarIa: noop })
 
-      const aceitarBtn = screen.getByRole('button', { name: /aceitar sugestao/i })
-      expect(aceitarBtn).toBeDisabled()
+      // Error diagnostics are shown
+      expect(screen.getByText('Sem solucao')).toBeInTheDocument()
+      // IA button is shown
+      expect(screen.getByRole('button', { name: /Analisar com IA/i })).toBeInTheDocument()
     })
+  })
 
-    it('aceitar button is disabled while loading', () => {
-      renderSheet({ loading: true, advisory: null })
-
-      const aceitarBtn = screen.getByRole('button', { name: /aceitar sugestao/i })
-      expect(aceitarBtn).toBeDisabled()
-    })
-
-    it('aceitar button is enabled when proposal exists and not loading', () => {
+  describe('diagnostics display', () => {
+    it('shows warning diagnostics', () => {
       renderSheet()
 
-      const aceitarBtn = screen.getByRole('button', { name: /aceitar sugestao/i })
-      expect(aceitarBtn).toBeEnabled()
+      expect(screen.getByText('Cobertura insuficiente')).toBeInTheDocument()
+    })
+
+    it('hides info-level diagnostics', () => {
+      const withInfo: EscalaAdvisoryOutputV2 = {
+        ...mockAdvisoryV2,
+        diagnostics: [
+          { code: 'OK', severity: 'info', title: 'Tudo OK', detail: 'Sem problemas' },
+        ],
+      }
+
+      renderSheet({ advisory: withInfo })
+
+      // Info diagnostics are filtered out from the display
+      expect(screen.queryByText('Tudo OK')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('legacy fallback', () => {
+    it('renders legacy diff table when pin_violations is empty but proposal exists', () => {
+      const legacy: EscalaAdvisoryOutputV2 = {
+        status: 'PROPOSAL_VALID',
+        diagnostics: [],
+        proposal: {
+          diff: [
+            {
+              colaborador_id: 1,
+              nome: 'Alex',
+              posto_apelido: 'Caixa 1',
+              fixa_atual: 'SEG',
+              fixa_proposta: 'QUA',
+              variavel_atual: null,
+              variavel_proposta: null,
+            },
+          ],
+        },
+        // No pin_violations → falls back to legacy table
+        pin_cost: 0,
+      }
+
+      renderSheet({ advisory: legacy })
+
+      // Legacy diff table shows collaborator name
+      expect(screen.getByText('Alex')).toBeInTheDocument()
+      // Shows "Ajustes sugeridos" header
+      expect(screen.getByText('Ajustes sugeridos')).toBeInTheDocument()
     })
   })
 })

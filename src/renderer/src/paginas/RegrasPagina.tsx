@@ -414,7 +414,7 @@ export function RegrasPagina() {
           <>
             <RegraCategoriaCard
               titulo="Regras CLT"
-              descricao="Regras legais trabalhistas. Algumas sao fixas por lei (cadeado), outras podem ser relaxadas para SOFT (gera aviso em vez de bloquear)."
+              descricao="Regras legais trabalhistas. Algumas sao fixas por lei (cadeado), outras podem ser flexibilizadas (gera aviso em vez de bloquear)."
               categoria="CLT"
               regras={regrasData}
               salvandoRegra={salvandoRegra}

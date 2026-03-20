@@ -213,7 +213,7 @@ export function SolverConfigDrawer({
         <SheetHeader className="px-6 pt-6 pb-4 border-b">
           <SheetTitle>Configuracoes de Geracao</SheetTitle>
           <p className="text-sm text-muted-foreground">
-            Ajuste a estrategia do solver e os overrides desta geracao sem mexer nas regras salvas da empresa.
+            Ajuste a estrategia de geracao e as regras temporarias desta escala sem mexer nas regras salvas da empresa.
           </p>
         </SheetHeader>
 

@@ -108,7 +108,7 @@ export function FeriadosPagina() {
               Feriados {anoAtual}
             </CardTitle>
             <CardDescription>
-              O motor nao escala trabalho em feriados proibidos. Adicione municipais se necessario.
+              O sistema nao escala trabalho em feriados proibidos. Adicione municipais se necessario.
             </CardDescription>
           </CardHeader>
           <CardContent>

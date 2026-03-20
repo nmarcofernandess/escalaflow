@@ -3,9 +3,8 @@ import {
   extractFolgaFromPattern,
   computeAdvisoryInputHash,
   convertSemanaDraftToDemanda,
-  normalizeAdvisoryToDiagnostics,
 } from '../../src/main/motor/advisory-controller'
-import type { EscalaAdvisoryInput, EscalaAdvisoryOutput, SemanaDraftAdvisory } from '../../src/shared/advisory-types'
+import type { EscalaAdvisoryInput, SemanaDraftAdvisory } from '../../src/shared/advisory-types'
 
 // ---------------------------------------------------------------------------
 // extractFolgaFromPattern
@@ -312,87 +311,5 @@ describe('convertSemanaDraftToDemanda', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// normalizeAdvisoryToDiagnostics
-// ---------------------------------------------------------------------------
-
-describe('normalizeAdvisoryToDiagnostics', () => {
-  it('maps PASS criteria to info severity + ALLOW gate', () => {
-    const output: EscalaAdvisoryOutput = {
-      status: 'CURRENT_VALID',
-      normalized_diagnostics: [],
-      current: {
-        criteria: [
-          { code: 'COBERTURA_DIA', status: 'PASS', title: 'OK', detail: 'tudo bem', source: 'PHASE1' },
-        ],
-      },
-    }
-
-    const result = normalizeAdvisoryToDiagnostics(output)
-
-    expect(result).toHaveLength(1)
-    expect(result[0]!.severity).toBe('info')
-    expect(result[0]!.gate).toBe('ALLOW')
-    expect(result[0]!.source).toBe('advisory_current')
-  })
-
-  it('maps FAIL criteria to error severity + BLOCK gate', () => {
-    const output: EscalaAdvisoryOutput = {
-      status: 'CURRENT_INVALID',
-      normalized_diagnostics: [],
-      current: {
-        criteria: [
-          { code: 'COBERTURA_DIA', status: 'FAIL', title: 'Falha', detail: 'cobertura ruim', source: 'PHASE1' },
-        ],
-      },
-    }
-
-    const result = normalizeAdvisoryToDiagnostics(output)
-
-    expect(result).toHaveLength(1)
-    expect(result[0]!.severity).toBe('error')
-    expect(result[0]!.gate).toBe('BLOCK')
-  })
-
-  it('skips NOT_EVALUATED criteria', () => {
-    const output: EscalaAdvisoryOutput = {
-      status: 'CURRENT_VALID',
-      normalized_diagnostics: [],
-      current: {
-        criteria: [
-          { code: 'COBERTURA_DIA', status: 'PASS', title: 'OK', detail: 'ok', source: 'PHASE1' },
-          { code: 'COBERTURA_FAIXA', status: 'NOT_EVALUATED', title: 'N/A', detail: 'nao avaliado', source: 'PHASE1' },
-        ],
-      },
-    }
-
-    const result = normalizeAdvisoryToDiagnostics(output)
-
-    expect(result).toHaveLength(1)
-    expect(result[0]!.code).toBe('COBERTURA_DIA')
-  })
-
-  it('includes proposal criteria with advisory_proposal source', () => {
-    const output: EscalaAdvisoryOutput = {
-      status: 'PROPOSAL_VALID',
-      normalized_diagnostics: [],
-      current: {
-        criteria: [
-          { code: 'COBERTURA_DIA', status: 'FAIL', title: 'Fail', detail: 'fail', source: 'PHASE1' },
-        ],
-      },
-      proposal: {
-        diff: [],
-        criteria: [
-          { code: 'COBERTURA_DIA', status: 'PASS', title: 'OK', detail: 'ok', source: 'PHASE1' },
-        ],
-      },
-    }
-
-    const result = normalizeAdvisoryToDiagnostics(output)
-
-    expect(result).toHaveLength(2)
-    expect(result[0]!.source).toBe('advisory_current')
-    expect(result[1]!.source).toBe('advisory_proposal')
-  })
-})
+// normalizeAdvisoryToDiagnostics was removed in V2 (advisory hierarchy refactor).
+// The advisory now uses pin_violations instead of criteria-based diagnostics.
