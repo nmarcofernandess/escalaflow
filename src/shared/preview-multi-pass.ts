@@ -1,5 +1,5 @@
 import { gerarCicloFase1, type SimulaCicloFase1Input, type SimulaCicloOutput } from './simula-ciclo'
-import { buildPreviewDiagnostics, type PreviewDiagnostic, type DemandaSegmento } from './preview-diagnostics'
+import { buildPreviewDiagnostics, type PreviewDiagnostic, type DemandaSegmento, type FolgaOriginEntry } from './preview-diagnostics'
 import type { RuleConfig } from './types'
 
 interface MultiPassParticipant {
@@ -20,6 +20,8 @@ export interface MultiPassInput {
   demandaSegmentos?: DemandaSegmento[]
   horaAbertura?: string
   horaFechamento?: string
+  /** Origin per person's folgas — for origin-aware messages */
+  folgaOrigins?: FolgaOriginEntry[]
 }
 
 export interface MultiPassResult {
@@ -31,9 +33,9 @@ export interface MultiPassResult {
 
 export function runPreviewMultiPass(input: MultiPassInput): MultiPassResult {
   const { fase1Input, participants, demandaPorDia, trabalhamDomingo, rules,
-    demandaSegmentos, horaAbertura, horaFechamento } = input
+    demandaSegmentos, horaAbertura, horaFechamento, folgaOrigins } = input
 
-  const diagExtra = { demandaSegmentos, horaAbertura, horaFechamento }
+  const diagExtra = { demandaSegmentos, horaAbertura, horaFechamento, folgaOrigins }
 
   // --- Pass 1: strict (preflight=true) ---
   const pass1 = gerarCicloFase1({ ...fase1Input, preflight: true })

@@ -13,6 +13,8 @@ export interface PreviewDiagnostic {
   detail: string
   source: 'capacity' | 'domingo_ciclo' | 'domingo_consecutivo' | 'preview' | 'advisory_current' | 'advisory_proposal'
   overridableBy?: RuleConfig
+  /** Action metadata for UI rendering (e.g., navigate to colaborador) */
+  action?: { type: string; target: string; id?: number }
 }
 
 interface PreviewParticipantDiagnosticInput {
@@ -31,6 +33,14 @@ export interface DemandaSegmento {
   min_pessoas: number
 }
 
+export type FolgaOriginKind = 'auto' | 'manual' | 'saved'
+
+export interface FolgaOriginEntry {
+  pessoa: number
+  fixaOrigin: FolgaOriginKind
+  varOrigin: FolgaOriginKind
+}
+
 interface BuildPreviewDiagnosticsInput {
   output: SimulaCicloOutput
   participants: PreviewParticipantDiagnosticInput[]
@@ -41,6 +51,8 @@ interface BuildPreviewDiagnosticsInput {
   demandaSegmentos?: DemandaSegmento[]
   horaAbertura?: string
   horaFechamento?: string
+  /** Origin per person's folgas — for origin-aware messages */
+  folgaOrigins?: FolgaOriginEntry[]
 }
 
 const DIA_LABELS: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
@@ -147,6 +159,7 @@ export function buildPreviewDiagnostics({
   demandaSegmentos,
   horaAbertura,
   horaFechamento,
+  folgaOrigins,
 }: BuildPreviewDiagnosticsInput): PreviewDiagnostic[] {
   const diagnostics: PreviewDiagnostic[] = []
 
@@ -233,7 +246,6 @@ export function buildPreviewDiagnostics({
   if (output.folga_warnings?.length) {
     for (const w of output.folga_warnings) {
       const diaLabel = DIA_LABELS[w.dia] ?? `dia ${w.dia}`
-      const tipoLabel = w.tipo === 'FV_CONFLITO' ? 'variavel' : 'fixa'
 
       if (w.pessoa === -1) {
         // Sentinela: excesso de folgas no dia inteiro (pre-check)
@@ -241,21 +253,57 @@ export function buildPreviewDiagnostics({
           code: 'FOLGA_FIXA_CONFLITO',
           severity: 'warning',
           gate: 'ALLOW',
-          title: `Muitas folgas fixas em ${diaLabel}: sobram ${w.coberturaRestante}, mas a demanda e ${w.demandaDia}.`,
-          detail: `Troque a folga fixa de alguem nesse dia para outro dia da semana.`,
+          title: `Muitas folgas fixas em ${diaLabel}: sobram ${w.coberturaRestante}, demanda e ${w.demandaDia}.`,
+          detail: 'Troque a folga fixa de alguem nesse dia para outro dia da semana.',
           source: 'capacity',
         })
-      } else {
-        const nomePessoa = participants[w.pessoa]?.nome ?? `Pessoa ${w.pessoa + 1}`
+        continue
+      }
+
+      // Determine origin for this person's folga
+      const originInfo = folgaOrigins?.find((o) => o.pessoa === w.pessoa)
+      const origin = w.tipo === 'FV_CONFLITO' ? originInfo?.varOrigin : originInfo?.fixaOrigin
+      const nomePessoa = participants[w.pessoa]?.nome ?? `Pessoa ${w.pessoa + 1}`
+
+      // Auto: skip — auto-redistribution handles this with visual feedback
+      if (origin === 'auto') continue
+
+      // Manual: informative with numbers, no command to change
+      if (origin === 'manual') {
         diagnostics.push({
-          code: w.tipo === 'FV_CONFLITO' ? 'FOLGA_VARIAVEL_CONFLITO' : 'FOLGA_FIXA_CONFLITO',
+          code: 'FOLGA_MANUAL_DEFICIT',
           severity: 'warning',
           gate: 'ALLOW',
-          title: `Folga ${tipoLabel} de ${nomePessoa} em ${diaLabel}: sobram ${w.coberturaRestante}, demanda e ${w.demandaDia}.`,
-          detail: `Troque o dia de folga de ${nomePessoa} para reduzir o deficit.`,
+          title: `Folga de ${nomePessoa} em ${diaLabel} (sua escolha): sobram ${w.coberturaRestante}, demanda e ${w.demandaDia}.`,
+          detail: 'O sistema vai respeitar essa escolha ao gerar a escala.',
           source: 'capacity',
         })
+        continue
       }
+
+      // Saved: structural info with action metadata
+      if (origin === 'saved') {
+        diagnostics.push({
+          code: 'FOLGA_SALVA_DEFICIT',
+          severity: 'info',
+          gate: 'ALLOW',
+          title: `Folga de ${nomePessoa} em ${diaLabel} (cadastro): sobram ${w.coberturaRestante}, demanda e ${w.demandaDia}.`,
+          detail: 'Esta folga esta definida no cadastro do colaborador.',
+          source: 'capacity',
+          action: { type: 'navigate', target: 'colaborador', id: participants[w.pessoa]?.id },
+        })
+        continue
+      }
+
+      // Fallback: no origin info (legacy) — keep original message
+      diagnostics.push({
+        code: w.tipo === 'FV_CONFLITO' ? 'FOLGA_VARIAVEL_CONFLITO' : 'FOLGA_FIXA_CONFLITO',
+        severity: 'warning',
+        gate: 'ALLOW',
+        title: `Folga de ${nomePessoa} em ${diaLabel}: sobram ${w.coberturaRestante}, demanda e ${w.demandaDia}.`,
+        detail: 'Troque o dia de folga para reduzir o deficit.',
+        source: 'capacity',
+      })
     }
   }
 

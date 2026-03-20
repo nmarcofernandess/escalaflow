@@ -1345,6 +1345,17 @@ export function SetorDetalhe() {
             demandaSegmentos: demandaSegmentosPreviewCiclo,
             horaAbertura: horaAberturaPreview,
             horaFechamento: horaFechamentoPreview,
+            folgaOrigins: modoSimulacaoEfetivo === 'SETOR'
+              ? previewSetorRows.map((row, idx) => ({
+                  pessoa: idx,
+                  fixaOrigin: row.overrideFixaLocal ? 'manual' as const
+                    : row.baseFixaColaborador ? 'saved' as const
+                    : 'auto' as const,
+                  varOrigin: row.overrideVariavelLocal ? 'manual' as const
+                    : row.baseVariavelColaborador ? 'saved' as const
+                    : 'auto' as const,
+                }))
+              : undefined,
           })
 
     const resultado: SimulaCicloOutput = multiPassResult?.output
