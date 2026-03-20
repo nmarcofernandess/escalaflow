@@ -1105,7 +1105,9 @@ export function SetorDetalhe() {
       DIAS_SEMANA.map((dia) => [dia, 0]),
     ) as Record<DiaSemana, number>
 
-    for (const { regrasPorDia } of previewSetorIntermitentesRegras) {
+    // Apenas tipo A (fixo) desconta demanda — tipo B participa do ciclo, nao e cobertura garantida
+    for (const { regrasPorDia, ehTipoB } of previewSetorIntermitentesRegras) {
+      if (ehTipoB) continue
       for (const dia of DIAS_SEMANA) {
         if (regrasPorDia.has(dia)) cobertura[dia] += 1
       }
@@ -1143,7 +1145,9 @@ export function SetorDetalhe() {
       const diasAlvo = demanda.dia_semana != null ? [demanda.dia_semana] : DIAS_SEMANA
 
       return diasAlvo.map((dia) => {
-        const coberturaGarantida = previewSetorIntermitentesRegras.reduce((total, { regrasPorDia }) => {
+        // Apenas tipo A (fixo) desconta segmentos — tipo B participa do ciclo
+        const coberturaGarantida = previewSetorIntermitentesRegras.reduce((total, { regrasPorDia, ehTipoB }) => {
+          if (ehTipoB) return total
           return total + (intermitenteRuleCoversSegment(
             regrasPorDia.get(dia),
             demanda.hora_inicio,
