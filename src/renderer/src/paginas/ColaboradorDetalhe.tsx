@@ -200,7 +200,7 @@ type RegraDiaForm = {
   id: number | null
   tipo_restricao: TipoRestricao
   horario: string
-  horario_fim: string // saída (usado por intermitente — entrada + saída obrigatórias)
+  horario_fim: string // saída (intermitente pode deixar ambos vazios = sem restrição)
 }
 
 function getDefaultRegraForm() {
@@ -517,7 +517,7 @@ export function ColaboradorDetalhe() {
       // CLT: deriva inicio/fim do radio (entrada fixa OU saída máxima)
       const inicio = intermitente ? (diaForm.horario || null) : restricaoParaInicioFim(diaForm.tipo_restricao, diaForm.horario).inicio
       const fim = intermitente ? (diaForm.horario_fim || null) : restricaoParaInicioFim(diaForm.tipo_restricao, diaForm.horario).fim
-      if (!inicio && !fim) {
+      if (!intermitente && !inicio && !fim) {
         if (diaForm.id) {
           await colaboradoresService.deletarRegraHorario(diaForm.id)
           needsIdRefresh = true
@@ -568,7 +568,14 @@ export function ColaboradorDetalhe() {
       colabForm.setValue('horas_semanais', horasSemanais)
       colabForm.setValue('tipo_trabalhador', tipoTrabalhador)
       // 2. Salva regra padrao
-      await saveRegraPadrao()
+      await saveRegraPadrao(isIntermitente ? {
+        perfil_horario_id: 'none',
+        tipo_restricao: 'nenhum',
+        horario: '',
+        preferencia_turno_soft: 'none',
+        folga_fixa_dia_semana: 'none',
+        folga_variavel_dia_semana: 'none',
+      } : undefined)
       // 3. Salva regras por dia
       const diaForms = regrasDiaFormRef.current
       for (const dia of DIAS_SEMANA_OPTIONS) {
@@ -1178,7 +1185,7 @@ export function ColaboradorDetalhe() {
                       </Label>
                       <p className="text-[0.75rem] text-muted-foreground">
                         {isIntermitente
-                          ? 'Ative os dias em que este colaborador trabalha e defina o horario.'
+                          ? 'Ative os dias em que este colaborador trabalha. Horario e opcional: vazio = sem restricao dentro do funcionamento do setor.'
                           : 'Ative um dia para definir restricao de horario especifica naquele dia.'}
                       </p>
                     </div>
@@ -1195,7 +1202,7 @@ export function ColaboradorDetalhe() {
                                   enabled: checked,
                                   ...(checked
                                     ? isIntermitente
-                                      ? { tipo_restricao: 'entrada' as TipoRestricao, horario: '08:00', horario_fim: '14:00' }
+                                      ? { tipo_restricao: 'entrada' as TipoRestricao, horario: diaForm.horario, horario_fim: diaForm.horario_fim }
                                       : { tipo_restricao: 'entrada' as TipoRestricao }
                                     : { tipo_restricao: 'nenhum' as TipoRestricao, horario: '', horario_fim: '' }),
                                 }
@@ -1212,6 +1219,7 @@ export function ColaboradorDetalhe() {
                                     <Input
                                       type="time"
                                       value={diaForm.horario}
+                                      placeholder="Sem restricao"
                                       onChange={e => setRegrasDiaForm(prev => ({
                                         ...prev,
                                         [dia.value]: { ...prev[dia.value], horario: e.target.value },
@@ -1225,6 +1233,7 @@ export function ColaboradorDetalhe() {
                                     <Input
                                       type="time"
                                       value={diaForm.horario_fim}
+                                      placeholder="Sem restricao"
                                       onChange={e => setRegrasDiaForm(prev => ({
                                         ...prev,
                                         [dia.value]: { ...prev[dia.value], horario_fim: e.target.value },
@@ -1232,6 +1241,21 @@ export function ColaboradorDetalhe() {
                                       className="w-32"
                                     />
                                   </div>
+                                  <Button
+                                    type="button"
+                                    variant={diaForm.horario || diaForm.horario_fim ? 'outline' : 'secondary'}
+                                    size="sm"
+                                    className="mt-5"
+                                    onClick={() => setRegrasDiaForm(prev => ({
+                                      ...prev,
+                                      [dia.value]: { ...prev[dia.value], horario: '', horario_fim: '' },
+                                    }))}
+                                  >
+                                    Sem restricao
+                                  </Button>
+                                  <span className="mt-5 text-xs text-muted-foreground">
+                                    Vazio = sem restricao
+                                  </span>
                                 </div>
                               ) : (
                                 /* CLT: radio entrada/saída (como hoje) */

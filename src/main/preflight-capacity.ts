@@ -75,10 +75,33 @@ export function enrichPreflightWithCapacityChecks(
     demandByDay.set(day, active)
   }
 
+  const regraPorColabDia = new Map<string, NonNullable<SolverInput['regras_colaborador_dia']>[number]>()
+  for (const regra of input.regras_colaborador_dia ?? []) {
+    regraPorColabDia.set(`${regra.colaborador_id}|${regra.data}`, regra)
+  }
+
   const TIPOS_BLOQUEADOS_DOMINGO = new Set<string>([])
   function bloqueadoDomingo(c: (typeof input.colaboradores)[number]): boolean {
     if (TIPOS_BLOQUEADOS_DOMINGO.has(c.tipo_trabalhador)) return true
     if (c.domingo_ciclo_trabalho != null && c.domingo_ciclo_trabalho <= 0) return true
+    return false
+  }
+
+  function indisponivelPorRegra(
+    c: (typeof input.colaboradores)[number],
+    day: string,
+    label: DiaSemana,
+  ): boolean {
+    const regra = regraPorColabDia.get(`${c.id}|${day}`)
+    if (c.tipo_trabalhador === 'INTERMITENTE') {
+      if (!regra) return true
+      if (regra.folga_fixa) return true
+      if (label === 'DOM' && regra.domingo_forcar_folga) return true
+      return false
+    }
+    if (!regra) return false
+    if (regra.folga_fixa) return true
+    if (label === 'DOM' && regra.domingo_forcar_folga) return true
     return false
   }
 
@@ -87,16 +110,6 @@ export function enrichPreflightWithCapacityChecks(
     if (dayDemand.length === 0) continue
 
     const label = dayLabel(day)
-    if (label === 'DOM' && input.colaboradores.every(bloqueadoDomingo)) {
-      blockers.push({
-        codigo: 'DOMINGO_SEM_COLABORADORES',
-        severidade: 'BLOCKER',
-        mensagem: `Ha demanda no domingo (${day}), mas nenhum colaborador pode trabalhar domingo.`,
-        detalhe: 'Todos sao estagiarios/aprendizes ou tem ciclo domingo=0. Ajuste contratos ou demanda.',
-      })
-      break
-    }
-
     if (holidayForbidden.has(day)) {
       blockers.push({
         codigo: 'DEMANDA_EM_FERIADO_PROIBIDO',
@@ -111,8 +124,19 @@ export function enrichPreflightWithCapacityChecks(
     const availableCount = input.colaboradores.filter((c) => {
       if (label === 'DOM' && bloqueadoDomingo(c)) return false
       if (holidayForbidden.has(day)) return false
+      if (indisponivelPorRegra(c, day, label)) return false
       return !input.excecoes.some((e) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
     }).length
+
+    if (label === 'DOM' && availableCount === 0) {
+      blockers.push({
+        codigo: 'DOMINGO_SEM_COLABORADORES',
+        severidade: 'BLOCKER',
+        mensagem: `Ha demanda no domingo (${day}), mas nenhum colaborador pode trabalhar domingo.`,
+        detalhe: 'Todos estao bloqueados por contrato, ciclo, regra de horario ou excecao nesse domingo.',
+      })
+      break
+    }
 
     if (availableCount < peakDemand) {
       const mensagem = collectiveMessageMode === 'coletiva'

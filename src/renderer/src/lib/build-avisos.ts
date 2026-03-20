@@ -63,9 +63,9 @@ export function buildPreviewAvisos({
     entries.push({
       id: 'preview_intermitentes',
       nivel: 'info',
-      titulo: `${foraDoPreview} participante(s) intermitente(s) ficaram fora do preview.`,
-      descricao: 'Intermitente nao entra no ciclo automatico de folgas do painel setorial.',
-      contexto_ia: 'Participantes intermitentes foram ignorados no preview setorial.',
+      titulo: `${foraDoPreview} participante(s) intermitente(s) ficaram fora do ciclo do preview.`,
+      descricao: 'Intermitente nao entra no rodizio automatico de folgas, mas continua abatendo cobertura nos dias em que estiver habilitado.',
+      contexto_ia: 'Participantes intermitentes ficaram fora das linhas do ciclo, mas ainda contam para cobertura nos dias ativos.',
     })
   }
 

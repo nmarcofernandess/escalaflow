@@ -54,16 +54,29 @@ export function runPreviewMultiPass(input: MultiPassInput): MultiPassResult {
   const h3MascSoft = (rules.H3_DOM_MAX_CONSEC_M ?? rules.H3_DOM_MAX_CONSEC ?? 'HARD') !== 'HARD'
   const h3FemSoft = (rules.H3_DOM_MAX_CONSEC_F ?? rules.H3_DOM_MAX_CONSEC ?? 'HARD') !== 'HARD'
   const podeRelaxar = causaEhTT && (h3MascSoft || h3FemSoft)
+  const pass2 = gerarCicloFase1({ ...fase1Input, preflight: false })
 
   if (!podeRelaxar) {
+    if (pass2.sucesso) {
+      const diagnostics = buildPreviewDiagnostics({
+        output: pass2, participants, demandaPorDia, trabalhamDomingo, rules, ...diagExtra,
+      })
+      diagnostics.unshift({
+        code: 'PREVIEW_ESTRITO_BLOQUEADO',
+        severity: 'error',
+        gate: 'BLOCK',
+        title: 'A geracao ficou bloqueada pelas regras atuais, mas a previa foi mantida visivel.',
+        detail: pass1.erro ?? 'O arranjo estrito nao fecha com as regras atuais.',
+        source: 'preview',
+      })
+      return { output: pass2, diagnostics, pass_usado: 2, relaxed: false }
+    }
+
     const diagnostics = buildPreviewDiagnostics({
       output: pass1, participants, demandaPorDia, trabalhamDomingo, rules, ...diagExtra,
     })
     return { output: pass1, diagnostics, pass_usado: 1, relaxed: false }
   }
-
-  // --- Pass 2: relaxed (preflight=false) ---
-  const pass2 = gerarCicloFase1({ ...fase1Input, preflight: false })
 
   const diagnostics = buildPreviewDiagnostics({
     output: pass2, participants, demandaPorDia, trabalhamDomingo, rules, ...diagExtra,

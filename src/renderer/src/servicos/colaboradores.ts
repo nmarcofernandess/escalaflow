@@ -40,6 +40,9 @@ export const colaboradoresService = {
   listarRegrasPadraoSetor: (setorId: number) =>
     client['colaboradores.listarRegrasPadraoSetor']({ setor_id: setorId }) as Promise<RegraHorarioColaborador[]>,
 
+  listarRegrasHorarioSetor: (setorId: number) =>
+    client['colaboradores.listarRegrasHorarioSetor']({ setor_id: setorId }) as Promise<RegraHorarioColaborador[]>,
+
   // --- Regras de Horario ---
   buscarRegraHorario: (colaboradorId: number) =>
     client['colaboradores.buscarRegraHorario']({ colaborador_id: colaboradorId }) as Promise<RegraHorarioColaborador[]>,

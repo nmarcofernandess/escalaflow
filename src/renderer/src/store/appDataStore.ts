@@ -115,6 +115,7 @@ export interface AppDataStore {
   postos: Funcao[]
   demandas: Demanda[]
   regrasPadrao: RegraHorarioColaborador[]
+  regrasHorario: RegraHorarioColaborador[]
   excecoes: Excecao[]
   escalas: Escala[]
   horarioSemana: SetorHorarioSemana[]
@@ -413,7 +414,7 @@ function calcularDerivados(
 
 type SetorFields = Pick<
   AppDataStore,
-  'setor' | 'colaboradores' | 'postos' | 'demandas' | 'regrasPadrao' | 'excecoes' | 'escalas' | 'horarioSemana' | 'derivados'
+  'setor' | 'colaboradores' | 'postos' | 'demandas' | 'regrasPadrao' | 'regrasHorario' | 'excecoes' | 'escalas' | 'horarioSemana' | 'derivados'
 >
 
 const SETOR_VAZIO: SetorFields = {
@@ -422,6 +423,7 @@ const SETOR_VAZIO: SetorFields = {
   postos: [],
   demandas: [],
   regrasPadrao: [],
+  regrasHorario: [],
   excecoes: [],
   escalas: [],
   horarioSemana: [],
@@ -433,13 +435,14 @@ const SETOR_VAZIO: SetorFields = {
 // ---------------------------------------------------------------------------
 
 async function carregarSetor(setorId: number, feriados: Feriado[]) {
-  const [setor, colaboradores, postos, demandas, regrasPadrao, excecoes, escalas, horarioSemana] =
+  const [setor, colaboradores, postos, demandas, regrasPadrao, regrasHorario, excecoes, escalas, horarioSemana] =
     await Promise.all([
       setoresService.buscar(setorId),
       colaboradoresService.listar({ setor_id: setorId, ativo: true }),
       funcoesService.listar(setorId),
       setoresService.listarDemandas(setorId),
       colaboradoresService.listarRegrasPadraoSetor(setorId),
+      colaboradoresService.listarRegrasHorarioSetor(setorId),
       excecoesService.listarAtivas(),
       escalasService.listarPorSetor(setorId),
       setoresService.listarHorarioSemana(setorId),
@@ -447,7 +450,7 @@ async function carregarSetor(setorId: number, feriados: Feriado[]) {
 
   const derivados = calcularDerivados(postos, colaboradores, demandas, excecoes, feriados, regrasPadrao, escalas)
 
-  return { setor, colaboradores, postos, demandas, regrasPadrao, excecoes, escalas, horarioSemana, derivados }
+  return { setor, colaboradores, postos, demandas, regrasPadrao, regrasHorario, excecoes, escalas, horarioSemana, derivados }
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +468,7 @@ const GLOBAL_LOADERS: Record<string, (set: SetFn) => Promise<void>> = {
 }
 
 // Entidades que afetam derivados — recalcular após reload
-const DERIVADOS_DEPS = new Set(['colaboradores', 'postos', 'funcoes', 'demandas', 'excecoes', 'regras_padrao', 'escalas'])
+const DERIVADOS_DEPS = new Set(['colaboradores', 'postos', 'funcoes', 'demandas', 'excecoes', 'regras_padrao', 'regras_horario', 'escalas'])
 
 const SETOR_LOADERS: Record<string, (set: SetFn, setorId: number) => Promise<void>> = {
   setor: async (set, id) => set({ setor: await setoresService.buscar(id) }),
@@ -474,6 +477,7 @@ const SETOR_LOADERS: Record<string, (set: SetFn, setorId: number) => Promise<voi
   funcoes: async (set, id) => set({ postos: await funcoesService.listar(id) }),
   demandas: async (set, id) => set({ demandas: await setoresService.listarDemandas(id) }),
   regras_padrao: async (set, id) => set({ regrasPadrao: await colaboradoresService.listarRegrasPadraoSetor(id) }),
+  regras_horario: async (set, id) => set({ regrasHorario: await colaboradoresService.listarRegrasHorarioSetor(id) }),
   excecoes: async (set) => set({ excecoes: await excecoesService.listarAtivas() }),
   escalas: async (set, id) => set({ escalas: await escalasService.listarPorSetor(id) }),
   alocacoes: async (set, id) => set({ escalas: await escalasService.listarPorSetor(id) }),
@@ -496,6 +500,7 @@ const ENTITY_ALIASES: Record<string, string> = {
   funcoes: 'funcoes',
   demandas: 'demandas',
   regras_padrao: 'regras_padrao',
+  regras_horario: 'regras_horario',
   colaborador_regra_horario: 'regras_padrao',
   excecoes: 'excecoes',
   escalas: 'escalas',
@@ -504,7 +509,7 @@ const ENTITY_ALIASES: Record<string, string> = {
   setor_horario_semana: 'horario_semana',
   empresa_horario_semana: 'horario_semana',
   demandas_excecao_data: 'demandas',
-  colaborador_regra_horario_excecao_data: 'regras_padrao',
+  colaborador_regra_horario_excecao_data: 'regras_horario',
   contrato_perfis_horario: 'tipos_contrato',
 }
 
@@ -607,6 +612,21 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
     const { reloadEntidade, setorAtivo } = get()
 
     for (const e of entidades) {
+      if (e === 'colaborador_regra_horario') {
+        if (setorAtivo && (!setor_id || setor_id === setorAtivo)) {
+          reloadEntidade('regras_padrao')
+          reloadEntidade('regras_horario')
+        }
+        continue
+      }
+
+      if (e === 'colaborador_regra_horario_excecao_data') {
+        if (setorAtivo && (!setor_id || setor_id === setorAtivo)) {
+          reloadEntidade('regras_horario')
+        }
+        continue
+      }
+
       const key = ENTITY_ALIASES[e] ?? e
 
       if (key in GLOBAL_LOADERS) {

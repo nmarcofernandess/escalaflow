@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { runPreviewMultiPass, type MultiPassInput } from '../../src/shared/preview-multi-pass'
+import { resolveSundayRotatingDemand } from '../../src/shared/sunday-cycle'
 import type { RuleConfig } from '../../src/shared/types'
 
 /** Helper: builds a valid MultiPassInput with sane defaults.
@@ -74,19 +75,18 @@ describe('runPreviewMultiPass', () => {
     }
   })
 
-  it('Fails hard when K > N/2 and H3 HARD', () => {
-    // N=6, K=4 => strict fails, H3 HARD => cannot relax
+  it('Keeps preview visible when K > N/2 and H3 HARD, but blocks generation via diagnostics', () => {
+    // N=6, K=4 => strict fails, H3 HARD => cannot relax generation
     const result = runPreviewMultiPass(makeInput({
       N: 6,
       K: 4,
       rules: { H3_DOM_MAX_CONSEC_M: 'HARD', H3_DOM_MAX_CONSEC_F: 'HARD' },
     }))
 
-    expect(result.pass_usado).toBe(1)
+    expect(result.pass_usado).toBe(2)
     expect(result.relaxed).toBe(false)
-    expect(result.output.sucesso).toBe(false)
-    // Should have PREVIEW_INVALIDO diagnostic from the failed output
-    const previewDiag = result.diagnostics.find(d => d.code === 'PREVIEW_INVALIDO')
+    expect(result.output.sucesso).toBe(true)
+    const previewDiag = result.diagnostics.find(d => d.code === 'PREVIEW_ESTRITO_BLOQUEADO')
     expect(previewDiag).toBeDefined()
     expect(previewDiag!.gate).toBe('BLOCK')
   })
@@ -142,6 +142,38 @@ describe('runPreviewMultiPass', () => {
     expect(cicloDiag).toBeDefined()
     expect(cicloDiag!.severity).toBe('error')
     expect(cicloDiag!.gate).toBe('CONFIRM_OVERRIDE')
+  })
+
+  it('Pass 1 strict stays feasible when a fixed Sunday intermitente removes one DOM slot from the CLT pool', () => {
+    const sunday = resolveSundayRotatingDemand({
+      totalSundayDemand: 3,
+      guaranteedSundayCoverage: 1,
+      rotatingPoolSize: 5,
+    })
+
+    const participants = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      nome: `Pessoa ${i + 1}`,
+      sexo: 'F' as const,
+    }))
+
+    const result = runPreviewMultiPass({
+      fase1Input: {
+        num_postos: 5,
+        trabalham_domingo: sunday.effectiveSundayDemand,
+        demanda_por_dia: [3, 3, 3, 3, 3, 3, sunday.residualSundayDemand],
+      },
+      participants,
+      demandaPorDia: [3, 3, 3, 3, 3, 3, sunday.residualSundayDemand],
+      trabalhamDomingo: sunday.effectiveSundayDemand,
+      rules: { H3_DOM_MAX_CONSEC_F: 'HARD' },
+    })
+
+    expect(sunday.residualSundayDemand).toBe(2)
+    expect(result.pass_usado).toBe(1)
+    expect(result.relaxed).toBe(false)
+    expect(result.output.sucesso).toBe(true)
+    expect(result.diagnostics.find((diag) => diag.code === 'PREVIEW_INVALIDO')).toBeUndefined()
   })
 
   it('Returns diagnostics even when output fails (K > N)', () => {

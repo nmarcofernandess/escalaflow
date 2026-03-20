@@ -1,4 +1,4 @@
-# PLAN: Avisos Lifecycle — Phase-Based Context + Humanizacao
+# PLAN: Avisos Lifecycle — Phase-Based Context + Escopo + Evidencia
 
 > **Status:** PLANEJADO
 > **Criado:** 2026-03-19
@@ -52,15 +52,16 @@ Existem **5 fontes** de mensagens que convergem sem filtro nem lifecycle:
             mostra TUDO misturado      mostra advisory + TS "antes"
 ```
 
-### 1.3 Os dois problemas distintos
+### 1.3 Os problemas distintos de verdade
 
 | # | Problema | Natureza | O que resolve |
 |---|---------|----------|---------------|
 | A | QUANDO mostrar (lifecycle) | Engenharia de estado | Phase-based context |
 | B | O QUE mostrar (conteudo) | Traducao de mensagens | Camada de humanizacao |
-| C | QUANTO confiar (profundidade) | Niveis de validacao | Tag de confianca + dirty tracking |
+| C | QUANTO confiar (profundidade) | Niveis de validacao | Confianca baseada em evidencia |
+| D | SOBRE O QUE o aviso fala (escopo) | Contrato de UI | Separar estado atual vs proposta vs operacao |
 
-Todos sao **necessarios**. A sem B = avisos no momento certo mas incompreensiveis. B sem A = avisos legiveis mas duplicados/stale. A+B sem C = user pensa que "verde no TS" significa "pronto pra gerar" — e descobre os problemas so depois.
+Todos sao **necessarios**. A sem D = a UI mostra a coisa certa na hora errada ou a coisa errada na hora certa. B sem A = avisos legiveis, mas stale. A+B sem C = user pensa que "verde no TS" significa "pronto pra gerar". A+B+C sem D = drawer continua mostrando "antes" e "depois" no mesmo balaio.
 
 ### 1.4 Exemplo concreto: porque A+B nao bastam sem C
 
@@ -129,7 +130,7 @@ Eva(e)   T    F    T    T    T    T    F    ← estagiaria, max 6h/dia
 
 **A tag "Validacao recomendada" e o link entre os dois niveis.** Sem ela, o user nao tem como saber que o verde do TS e raso.
 
-### 1.4 Dois niveis de validacao (nao confundir)
+### 1.5 Dois niveis de validacao (nao confundir)
 
 O sistema tem dois TS de validacao que operam em **niveis diferentes**:
 
@@ -145,8 +146,9 @@ Valida PADRAO DE FOLGAS:                  Valida ALOCACOES REAIS:
   - capacidade (pessoas vs demanda)         - jornada max 10h (H4)
   - equilibrio de folgas                    - dias consecutivos (H1)
   - folga fixa vs variavel                  - excecoes respeitadas (H5)
-                                            - estagiario limites (H15-H16)
-Trabalha com DIAS (T/F)                     - feriados proibidos (H17-H18)
+  - intermitente tipo B no ciclo            - estagiario limites (H15-H16)
+    (folga_variavel != null)                - feriados proibidos (H17-H18)
+Trabalha com DIAS (T/F)                     - intermitente NT em dia sem regra
 Nao sabe de horarios/almoco               Trabalha com HORARIOS (HH:MM)
 Instantaneo (JS puro)                     Precisa de alocacoes do solver
 ```
@@ -164,49 +166,48 @@ O TS Validator (nivel escala) fornece avisos para o **resumo de escala gerada** 
 O sistema de avisos opera como uma **maquina de estados finita deterministica**:
 
 ```
-                    ┌──────────┐
-          ┌────────│  PREVIEW  │◄───────────────┐
-          │        └──────┬───┘                 │
-          │               │                     │
-          │    sugerir()   │  gerar()            │
-          │               │                     │
-          ▼               ▼                     │
-  ┌───────────────┐  ┌────────────┐             │
-  │ ADVISORY_OPEN │  │ GENERATING │             │
-  └───────┬───┬───┘  └──────┬─────┘             │
-          │   │             │                   │
-   aceitar│   │cancelar     │                   │
-          │   │        ┌────┴────┐              │
-          │   │        │         │              │
-          │   │    sucesso    falha             │
-          │   │        │         │              │
-          │   └────────┼────┐    ▼              │
-          │            │    │ ┌──────────┐      │
-          └────────────┘    └►│INFEASIBLE│      │
-                            │ └──────┬───┘      │
-                            │        │          │
-                            │   dismiss/novo    │
-                            │   sugerir         │
-                            │        │          │
-                            └────────┴──────────┘
+                       ┌──────────┐
+             ┌────────│  PREVIEW  │◄────────────────────────┐
+             │        └──────┬───┘                          │
+             │               │                              │
+             │    sugerir()   │  gerar()                     │
+             │               │                              │
+             ▼               ▼                              │
+     ┌───────────────┐  ┌────────────┐                      │
+     │ ADVISORY_OPEN │  │ GENERATING │                      │
+     └─┬──┬──┬───────┘  └──────┬─────┘                      │
+       │  │  │                 │                            │
+       │  │  │no_proposal ┌────┴────┐                       │
+       │  │  │            │         │                       │
+       │  │  │        sucesso    falha                      │
+       │  │  │            │         │                       │
+  aceitar │  │            │         ▼                       │
+       │  │  │            │    ┌──────────┐                 │
+       │  │  └────────────┼───►│          │                 │
+       │  │cancelar       │    │ PREVIEW   │                 │
+       │  └───────────────┼───►│(snapshot) │                 │
+       └──────────────────┘    └──────────┘                 │
+                                                            │
+                          ┌──────────┐                      │
+              falha ─────►│INFEASIBLE│──────────────────────┘
+                          └──────────┘  dismiss/sugerir
 ```
 
-### 2.2 Tabela de transicoes (completa)
+### 2.2 Tabela de transicoes (lifecycle)
 
-| Estado atual | Evento | Proximo estado | Efeito colateral | Confidence |
-|-------------|--------|---------------|------------------|------------|
-| PREVIEW | sugerir() | ADVISORY_OPEN | advisory pipeline roda (TS → solver escalation) | — |
-| PREVIEW | gerar() | GENERATING | — | — |
-| PREVIEW | user_muda_folga() | PREVIEW | recalcula TS Preview | → DIRTY |
-| ADVISORY_OPEN | aceitar() | PREVIEW | aplica overrides, advisoryResult = null | → SOLVER_VALIDATED |
-| ADVISORY_OPEN | cancelar() | PREVIEW | advisoryResult = null | → SOLVER_HAD_WARNINGS* |
-| GENERATING | sucesso | PREVIEW | escala no historico | → SOLVER_VALIDATED |
-| GENERATING | infeasible | INFEASIBLE | infeasibleError = parsed | → UNVALIDATED |
-| GENERATING | erro_generico | PREVIEW | toast de erro | (mantem) |
-| INFEASIBLE | dismiss() | PREVIEW | infeasibleError = null | (mantem) |
-| INFEASIBLE | sugerir() | ADVISORY_OPEN | infeasibleError = null | — |
-
-*Se o advisory retornou com warnings, cancelar mantem `SOLVER_HAD_WARNINGS` — o user sabe que tem algo pendente.
+| Estado atual | Evento | Proximo estado | Efeito colateral |
+|-------------|--------|---------------|------------------|
+| PREVIEW | sugerir() | ADVISORY_OPEN | advisory pipeline roda (TS → solver escalation) |
+| PREVIEW | gerar() | GENERATING | — |
+| PREVIEW | user_muda_folga() | PREVIEW | recalcula TS Preview |
+| ADVISORY_OPEN | aceitar() | PREVIEW | aplica overrides e persiste snapshot com hash do arranjo POS-proposta |
+| ADVISORY_OPEN | cancelar() | PREVIEW | fecha drawer e, se houve warnings, persiste snapshot do hash atual |
+| ADVISORY_OPEN | no_proposal() | PREVIEW | solver nao encontrou solucao; persiste snapshot `HAD_WARNINGS` pro hash atual; drawer fecha com mensagem humanizada |
+| GENERATING | sucesso | PREVIEW | escala no historico + snapshot `VALIDATED` para o hash atual |
+| GENERATING | infeasible | INFEASIBLE | operationFeedback = erro estruturado |
+| GENERATING | erro_generico | PREVIEW | toast de erro |
+| INFEASIBLE | dismiss() | PREVIEW | limpa feedback operacional |
+| INFEASIBLE | sugerir() | ADVISORY_OPEN | limpa feedback operacional e abre pipeline advisory |
 
 **Propriedade critica: toda transicao limpa o estado anterior.** Nao existe caminho onde lixo de um estado anterior sobrevive no proximo.
 
@@ -231,116 +232,138 @@ Os 4 botoes atuais (Sugerir TS, Sugerir Solver, Validar, Gerar) existem por razo
 
 **"Voltar ao automatico"** (reset de overrides) vira item no menu `...` ou botao secundario — e um reset, nao uma sugestao.
 
-### 2.4 Advisory deve incluir TS Preview da PROPOSTA
+### 2.4 Diagnostics da PROPOSTA devem ser derivados no renderer, nao no `advisory-controller`
 
-Problema identificado: se o advisory retorna diagnostics apenas do solver (padrao de folgas), o drawer pode omitir avisos de cobertura/capacidade que o TS Preview detectaria com os overrides propostos.
+Problema identificado: o drawer hoje recebe `advisoryResult` + `previewDiagnostics` atuais e mistura os dois. A intuicao inicial era empurrar o TS Preview da proposta para dentro do `advisory-controller`, mas o codigo real mostra que isso e o lugar errado.
 
-**Solucao:** Antes de retornar, o advisory recalcula o TS Preview com os overrides propostos:
+**Por que backend nao e o lugar certo:**
+
+- O preview atual ja e calculado no renderer com `runPreviewMultiPass(...)` usando `previewSetorRows`, `demandaPorDiaPreviewCiclo`, `demandaSegmentosPreviewCiclo`, `previewRuleConfig` e horario do setor.
+- O `advisory-controller.ts` hoje e solver-centric: ele monta `SolverInput`, roda fases A/B/C e devolve `diagnostics + proposal.diff`. Ele **nao conhece** o estado completo do preview local.
+- Empurrar o TS Preview da proposta pro main duplicaria a logica de simulacao do renderer atraves da fronteira IPC sem necessidade.
+
+**Solucao correta:**
 
 ```
-advisory-controller pipeline:
-  1. Solver Fases A→B→C → proposta de folgas
-  2. Aplicar overrides propostos no previewRows (simulacao local)
-  3. Rodar TS Preview (preview-diagnostics) com o novo arranjo
-  4. UNIFICAR diagnostics do solver + diagnostics do TS Preview da PROPOSTA
-  5. Retornar resultado com diagnostics unificados
+renderer pipeline:
+  1. advisory-controller retorna solver diagnostics + proposal.diff
+  2. SetorDetalhe deriva overrides propostos a partir de proposal.diff
+  3. SetorDetalhe reaplica o mesmo pipeline local do preview (runPreviewMultiPass)
+  4. SugestaoSheet recebe proposalPreviewDiagnostics
+  5. Inline preview continua mostrando apenas diagnostics do estado atual
 ```
 
-Isso garante que a fase ADVISORY_OPEN mostra **1 fonte que contem tudo sobre a PROPOSTA** — sem precisar do TS Preview "antes" como prop separada.
+Isso garante que a fase `ADVISORY_OPEN` mostra uma visao coerente da **PROPOSTA**, sem obrigar o `advisory-controller` a virar espelho do renderer.
 
-**Validacao nivel escala (H6, H2, H4...) NAO entra aqui.** Essas checks precisam de alocacoes reais (horarios, almoco, turnos) que so existem depois de "Gerar Escala". O advisory opera no nivel ciclo (dias T/F), nao no nivel escala.
+**Validacao nivel escala (H6, H2, H4...) NAO entra aqui.** Essas checks precisam de alocacoes reais (horarios, almoco, turnos) que so existem depois de "Gerar Escala". O advisory continua no nivel ciclo (dias T/F).
 
-### 2.5 Derivacao de avisos por fase
+### 2.5 Derivacao de avisos por superficie + escopo
+
+O erro original era tratar tudo como "fase". Mas fase e **quando** a UI esta; escopo e **sobre o que** a mensagem fala.
 
 ```typescript
-// Puro, deterministico, sem efeitos colaterais
-function derivarAvisos(phase: AvisosPhase, ctx: AvisosContext): Aviso[] {
-  switch (phase) {
-    case 'PREVIEW':
-      // Unica fonte: TS Preview do estado ATUAL (reativo, sempre fresh)
-      // Nivel ciclo: cobertura, domingos, capacidade, folgas
-      return humanizar(ctx.previewDiagnostics)
+type AvisosScope =
+  | 'STRUCTURAL'        // sem titular, intermitente sem regra ativa, avisos derivados do setor
+  | 'CURRENT_PREVIEW'   // previewDiagnostics do arranjo ATUAL
+  | 'PROPOSED_PREVIEW'  // previewDiagnostics do arranjo PROPOSTO no drawer
+  | 'OPERATION'         // preflight / generate / infeasible
 
-    case 'ADVISORY_OPEN':
-      // Unica fonte: advisory.diagnostics (ja inclui TS Preview da PROPOSTA)
-      // Nivel ciclo: mesmas checks, mas sobre o arranjo PROPOSTO
-      return humanizar(ctx.advisoryResult.diagnostics)
+type AvisosSurface =
+  | 'INLINE_PREVIEW'
+  | 'SUGESTAO_SHEET'
+  | 'OPERATION_FEEDBACK'
 
-    case 'GENERATING':
-      // Nenhum aviso — loading state
-      return []
+// Shape do feedback operacional (preflight, infeasible, erros de geracao)
+interface OperationFeedback {
+  type: 'INFEASIBLE' | 'PREFLIGHT_BLOCK' | 'PREFLIGHT_WARNING' | 'GENERATE_ERROR'
+  message: string              // mensagem crua do solver/preflight (pra log)
+  details?: string[]           // sugestoes do solver, blockers do preflight
+  setor_id?: number
+}
 
-    case 'INFEASIBLE':
-      // Unica fonte: erro estruturado do solver (humanizado, colapsado)
-      return humanizarInfeasible(ctx.infeasibleError)
-  }
+// humanizar() = map cada PreviewDiagnostic por mapPreviewDiagnosticToAviso (definido em 4.4)
+function derivarInlinePreview(ctx: AvisosContext): Aviso[] {
+  return [
+    ...ctx.structuralAvisos,
+    ...ctx.currentPreviewAvisos.map(mapPreviewDiagnosticToAviso),
+  ]
+}
+
+function derivarSugestaoSheet(ctx: AvisosContext): Aviso[] {
+  return [
+    ...ctx.advisorySolverDiagnostics.map(mapPreviewDiagnosticToAviso),
+    ...ctx.proposalPreviewDiagnostics.map(mapPreviewDiagnosticToAviso),
+  ]
+}
+
+function derivarOperationFeedback(ctx: AvisosContext): Aviso[] {
+  return humanizarOperacao(ctx.operationFeedback)
 }
 ```
 
+**Regra de ouro:** nenhuma superficie pode misturar `CURRENT_PREVIEW` com `PROPOSED_PREVIEW`.
+
 ### 2.6 Prova de corretude
 
-**Propriedade 1 — Sem duplicacao:**
-Cada fase usa exatamente 1 fonte. Impossivel ter a mesma mensagem de 2 fontes diferentes.
+**Propriedade 1 — Sem mistura temporal:**
+O inline preview mostra apenas `STRUCTURAL + CURRENT_PREVIEW`. O drawer mostra apenas `solver diagnostics + PROPOSED_PREVIEW`. O feedback operacional fica separado. "Antes" e "depois" nao aparecem na mesma superficie.
 
 **Propriedade 2 — Sem stale:**
-Avisos sao derivados (useMemo), nao armazenados (useState). Quando a fase muda, o derivado recomputa. Nao existe `setAvisosOperacao` que precisa ser limpo manualmente.
+`currentPreviewDiagnostics` e `proposalPreviewDiagnostics` sao derivados com `useMemo` a partir do estado atual e da proposta atual. Quando proposal ou override mudam, recomputa. Nao existe limpeza manual de array generico.
 
-**Propriedade 3 — Consistencia temporal:**
-Em ADVISORY_OPEN, o user ve diagnostics da PROPOSTA (solver + TS Preview recalculado). Nao ve TS diagnostics do estado anterior. Contradicao impossivel.
+**Propriedade 3 — Reversibilidade real:**
+Cancelar fecha o drawer e volta a mostrar apenas o estado atual. Como a proposta nunca contaminou o inline preview, nao sobra lixo semantico.
 
-**Propriedade 4 — Reversibilidade:**
-Cancelar → fase volta pra PREVIEW → avisos sao recalculados do TS Preview do estado atual → identico ao que era antes de sugerir. Sem residuo.
+**Propriedade 4 — Convergencia ao aceitar:**
+Aceitar aplica `overrides_locais`, a simulacao recalcula e o `CURRENT_PREVIEW` passa a refletir exatamente o arranjo aceito. O "depois" vira o novo "agora" por um unico caminho.
 
-**Propriedade 5 — Convergencia:**
-Aceitar → overrides aplicados → simulacao recalcula → previewDiagnostics atualiza → avisos refletem o novo arranjo. Caminho unico, sem race condition (tudo e derivado sincrono no mesmo render cycle).
-
-**Propriedade 6 — Cobertura de niveis:**
-Nivel ciclo (cobertura, domingos, capacidade) coberto em PREVIEW e ADVISORY_OPEN via TS Preview. Nivel escala (almoco, interjornada, jornada max) coberto apenas apos "Gerar Escala" — no historico de escalas, que ja funciona e nao e afetado por este refactor.
+**Propriedade 5 — Cobertura de niveis preservada:**
+Nivel ciclo continua em `runPreviewMultiPass` e advisory. Nivel escala continua no historico/escala gerada. Nada cruza a fronteira errada.
 
 ### 2.7 O que MORRE
 
 | Componente atual | Destino |
 |-----------------|---------|
-| `useState(avisosOperacao)` | **DELETADO** — substituido por fase INFEASIBLE |
-| `useState(advisoryResult)` | Move pro context como parte do phase state |
-| `buildPreviewAvisos()` (4 fontes, dedup quebrado) | **DELETADO** — substituido por `derivarAvisos()` |
-| `avisosOperacao` como Source 4 no merge | **DELETADO** — nao existe mais merge |
-| `previewDiagnostics` como prop do SugestaoSheet | **REMOVIDO** — advisory ja inclui TS Preview da proposta |
-| Triple-duplication de previewDiagnostics | **IMPOSSIVEL** — 1 fase = 1 fonte |
+| `buildPreviewAvisos()` como merge cego de 4 fontes | **REESCRITO ou DELETADO** — passa a derivar por superficie/escopo |
+| `previewDiagnostics` atuais como prop do `SugestaoSheet` | **REMOVIDO** — drawer recebe `proposalPreviewDiagnostics` |
+| `avisosOperacao: AvisoEscala[]` como lista generica | **SUBSTITUIDO** por `operationFeedback` tipado |
+| Triple-duplication de preview diagnostics | **IMPOSSIVEL** — estado atual e proposta vivem em superficies diferentes |
 | Botao "Sugerir TS" | **ABSORVIDO** pelo "Sugerir" unificado |
 | Botao "Sugerir Solver" | **ABSORVIDO** pelo "Sugerir" unificado |
-| Botao "Validar" | **DELETADO** — sugerir com arranjo OK = CURRENT_VALID |
-| `build-avisos.ts` | **DELETADO** — arquivo inteiro |
-| `REGRAS_TEXTO` em formatadores.ts | **DELETADO** — substituido por humanizar-avisos.ts |
+| Botao "Validar" | **DELETADO** — validar vira um resultado do proprio "Sugerir" |
+| Exigencia de recalcular TS da proposta no backend | **MORRE** — isso fica no renderer, onde o preview ja vive |
 
 ### 2.8 Onde vive no codigo
 
 ```
 src/
 ├── main/motor/
-│   └── advisory-controller.ts   ← MODIFICADO: step 3 roda TS Preview com overrides propostos
+│   └── advisory-controller.ts   ← continua solver-centric; devolve diagnostics + proposal.diff
+│
+├── shared/
+│   ├── advisory-types.ts        ← snapshot de validacao deixa de ser "accepted only"
+│   ├── setor-simulacao.ts       ← persistencia do snapshot no simulacao_config_json
+│   └── advisory-hash.ts (NOVO)  ← hash compartilhado entre main + renderer
 │
 ├── renderer/src/
-│   ├── store/
-│   │   └── avisosStore.ts (NOVO) ← phase FSM + derivarAvisos()
+│   ├── hooks/
+│   │   └── useAvisosController.ts (NOVO) ← phase local + derivacao por superficie/escopo
 │   │
 │   ├── lib/
-│   │   ├── build-avisos.ts       ← DELETADO
-│   │   └── humanizar-avisos.ts (NOVO) ← dicionario + patterns + humanizar()
+│   │   ├── build-avisos.ts      ← reescrito como mapper por escopo OU removido
+│   │   └── humanizar-operacao.ts (NOVO) ← infeasible/preflight/generate sem jargao
 │   │
 │   ├── componentes/
-│   │   ├── AvisosSection.tsx     ← recebe avisos derivados (sem mudanca na interface)
-│   │   └── SugestaoSheet.tsx     ← recebe SO advisory.diagnostics (remove prop previewDiagnostics)
+│   │   ├── AvisosSection.tsx    ← segue simples; recebe avisos ja derivados
+│   │   ├── SugestaoSheet.tsx    ← recebe diagnostics da proposta, nao do estado atual
+│   │   └── ValidationTag.tsx (NOVO) ← badge ao lado de "Preview"
 │   │
 │   └── paginas/
-│       └── SetorDetalhe.tsx      ← simplifica: 2 botoes, chama transition() em vez de setState
-│           - remove useState(avisosOperacao)
-│           - remove buildPreviewAvisos merge
-│           - remove handleSugerirTS, handleValidar separados
-│           - handleSugerir → transition('ADVISORY_OPEN') + pipeline TS→solver
-│           - handleGerarEscala → transition('GENERATING')
-│           - onAceitar → transition('PREVIEW')
-│           - onDescartar → transition('PREVIEW')
+│       └── SetorDetalhe.tsx     ← centraliza:
+│           - pipeline unificado do botao "Sugerir"
+│           - derivacao de proposalPreviewDiagnostics
+│           - operationFeedback separado
+│           - persistencia do validation snapshot
 ```
 
 ---
@@ -354,20 +377,110 @@ Com phase-based context (A) e humanizacao (B), os avisos sao corretos e legiveis
 - TS Preview verde = pre-check rapido (nivel ciclo, dias T/F)
 - Solver verde = validacao real (nivel escala, horarios + restricoes individuais)
 
-Se o user ve verde no TS e assume que pode gerar, vai ter surpresa. Ele precisa de um **indicador visual de profundidade**.
+Se o user ve verde no TS e assume que pode gerar, vai ter surpresa. Ele precisa de um **indicador visual de profundidade**. Mas esse indicador nao pode depender de `setState` manual, senao ele vai mentir na primeira transicao esquecida.
 
-### 3.2 Modelo de confianca
+### 3.2 Confianca baseada em evidencia, nao em transicao manual
+
+O projeto ja tem duas pistas fortes:
+
+- `computeAdvisoryInputHash(...)` existe hoje em `main/motor/advisory-controller.ts`
+- `SetorSimulacaoConfig.advisory` ja existe em `shared/setor-simulacao.ts`, mas esta estreito demais e praticamente morto
+
+Em vez de manter `confidence` como FSM separada, a UI deve **derivar** a confianca comparando:
+
+1. `currentInputHash` do arranjo atual
+2. `validationSnapshot.input_hash` salvo no `simulacao_config_json`
+3. resultado do ultimo solver para aquele hash
+
+### 3.3 Modelo de evidencia
 
 ```typescript
+// shared/advisory-types.ts
+interface ValidationSnapshot {
+  input_hash: string
+  generated_at: string
+  outcome: 'VALIDATED' | 'HAD_WARNINGS'
+  source: 'SUGERIR' | 'GERAR'
+  diagnostics: PreviewDiagnostic[]
+}
+
 type ValidationConfidence =
-  | 'UNVALIDATED'           // ciclo configurado mas nunca validado
-  | 'TS_ONLY'               // TS Preview diz OK, solver nunca rodou pra este arranjo
-  | 'SOLVER_VALIDATED'      // solver validou este arranjo exato — maximo de confianca
-  | 'SOLVER_HAD_WARNINGS'   // solver rodou mas encontrou problemas — user cancelou
-  | 'DIRTY'                 // user mudou algo depois da ultima validacao do solver
+  | 'UNVALIDATED'
+  | 'TS_ONLY'
+  | 'SOLVER_VALIDATED'
+  | 'SOLVER_HAD_WARNINGS'
+  | 'DIRTY'
 ```
 
-### 3.3 Tag visual no header do ciclo
+**Compatibilidade e migracao:**
+
+O tipo atual `SimulacaoAdvisorySnapshot` (marcado `@deprecated`) tem `origin: 'accepted_suggestion'` e `advisory_status: AdvisoryStatus`. Um normalizer deve converter o formato antigo:
+
+```typescript
+function normalizeSnapshot(raw: unknown): ValidationSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  // Formato antigo (SimulacaoAdvisorySnapshot)
+  if (obj.origin === 'accepted_suggestion') {
+    return {
+      input_hash: (obj.input_hash as string) ?? '',
+      generated_at: (obj.accepted_at as string) ?? new Date().toISOString(),
+      outcome: 'VALIDATED',  // aceitou sugestao = validado
+      source: 'SUGERIR',
+      diagnostics: [],
+    }
+  }
+  // Formato novo (ValidationSnapshot)
+  if ('input_hash' in obj && 'outcome' in obj) {
+    return obj as unknown as ValidationSnapshot
+  }
+  return null
+}
+```
+
+Isso vive em `shared/advisory-types.ts` e e chamado na leitura do `simulacao_config_json`.
+
+### 3.4 Derivacao da confianca
+
+```typescript
+function derivarConfidence(params: {
+  previewGate: PreviewGate
+  currentInputHash: string
+  snapshot: ValidationSnapshot | null
+}): ValidationConfidence {
+  const { previewGate, currentInputHash, snapshot } = params
+
+  if (!snapshot) {
+    return previewGate === 'ALLOW' ? 'TS_ONLY' : 'UNVALIDATED'
+  }
+
+  if (snapshot.input_hash !== currentInputHash) {
+    return 'DIRTY'
+  }
+
+  return snapshot.outcome === 'VALIDATED'
+    ? 'SOLVER_VALIDATED'
+    : 'SOLVER_HAD_WARNINGS'
+}
+```
+
+**Ponto importante:** `DIRTY` nao e escrito em lugar nenhum. Ele aparece sozinho quando o hash atual diverge do hash validado.
+
+### 3.5 Quando persistir o snapshot
+
+| Evento | Hash salvo | Outcome |
+|-------|------------|---------|
+| `Sugerir` retorna `CURRENT_VALID` | hash atual | `VALIDATED` |
+| `Sugerir` retorna proposta e user aceita | hash do arranjo POS-proposta (overrides atualizados com proposal.diff) | `VALIDATED` ou `HAD_WARNINGS` conforme diagnostics |
+| `Sugerir` retorna `NO_PROPOSAL` | hash atual | `HAD_WARNINGS` |
+| `Sugerir` retorna avisos e user cancela | hash atual | `HAD_WARNINGS` |
+| `Gerar Escala` com sucesso | hash atual | `VALIDATED` |
+
+**IMPORTANTE sobre hash no aceite:** o snapshot hash deve ser computado a partir do arranjo DEPOIS de aplicar `proposal.diff` nos overrides, nao do input original do advisory call. Caso contrario, `currentInputHash` (pos-aceite) diverge do snapshot hash (pre-aceite) e a tag mostra `DIRTY` imediatamente — exatamente o oposto do desejado.
+
+Isso cobre exatamente o caso patologico do "cancelar e voltar a tudo verde": o user cancelou a mudanca, mas **nao cancela o fato de que o solver achou problema naquele hash**.
+
+### 3.6 Tag visual no header do ciclo
 
 A tag aparece ao lado da tag "Preview" existente no header do setor:
 
@@ -390,108 +503,23 @@ A tag aparece ao lado da tag "Preview" existente no header do setor:
 | SOLVER_HAD_WARNINGS | "Validacao encontrou avisos" | Laranja | ⚠ | "O solver encontrou problemas — clica Sugerir pra ver" |
 | DIRTY | "Validacao recomendada" | Amarelo | ⚠ | "Voce mudou algo — clica Sugerir pra revalidar" |
 
-### 3.4 Transicoes de confianca (FSM)
+**Nota de design:** `UNVALIDATED` e `TS_ONLY` sao intencionalmente indistinguiveis pro usuario (ambos pedem "clica Sugerir"). A diferenca existe internamente pra que `derivarConfidence` saiba se o TS sequer rodou. Nao adicionar tag visual extra pra UNVALIDATED.
 
-```
-                     ┌──────────────┐
-     novo ciclo ────►│ UNVALIDATED  │
-                     └──────┬───────┘
-                            │
-                   TS Preview roda e diz OK
-                            │
-                            ▼
-                     ┌──────────────┐
-              ┌─────│   TS_ONLY    │◄──────────────┐
-              │     └──────┬───────┘               │
-              │            │                       │
-              │     sugerir() →                    │
-              │     solver valida                  │
-              │            │                       │
-              │     ┌──────┴──────┐                │
-              │     │             │                │
-              │  sem avisos    com avisos          │
-              │     │             │                │
-              │     ▼             ▼                │
-              │  ┌──────────┐ ┌─────────────────┐  │
-              │  │ SOLVER   │ │ SOLVER_HAD      │  │
-              │  │VALIDATED │ │ WARNINGS        │  │
-              │  └────┬─────┘ └────────┬────────┘  │
-              │       │                │           │
-              │       └──────┬─────────┘           │
-              │              │                     │
-              │     user muda folga                │
-              │              │                     │
-              │              ▼                     │
-              │       ┌──────────┐                 │
-              └──────►│  DIRTY   │─── TS Preview ──┘
-                      └──────────┘    recalcula OK
-```
+### 3.7 Prova de corretude da dimensao C
 
-### 3.5 Integracao com a FSM de phases (Solucao A)
+**Propriedade 1 — Verdade unica:**
+A confianca deriva de `hash atual + snapshot salvo`, nao de mutacoes manuais em varios handlers. Menos chance de mentira de UI.
 
-As duas FSMs sao **ortogonais** — phase controla O QUE mostrar, confidence controla A TAG:
-
-```typescript
-// No avisosStore.ts
-interface AvisosState {
-  // FSM A — lifecycle
-  phase: 'PREVIEW' | 'ADVISORY_OPEN' | 'GENERATING' | 'INFEASIBLE'
-  advisoryResult: EscalaAdvisoryOutput | null
-  infeasibleError: InfeasibleError | null
-
-  // FSM C — confianca
-  confidence: ValidationConfidence
-
-  // Derivados
-  avisos: Aviso[]           // derivado de phase + dados
-  confidenceTag: TagConfig  // derivado de confidence
-}
-
-// Transicoes de phase ATUALIZAM confidence automaticamente:
-function transition(event: AvisosEvent): void {
-  switch (event) {
-    case 'aceitar':
-      phase = 'PREVIEW'
-      confidence = advisoryResult.diagnostics.some(d => d.severity === 'error')
-        ? 'SOLVER_HAD_WARNINGS'
-        : 'SOLVER_VALIDATED'
-      break
-
-    case 'cancelar':
-      phase = 'PREVIEW'
-      confidence = lastAdvisoryHadWarnings
-        ? 'SOLVER_HAD_WARNINGS'
-        : confidence  // mantem o que era
-      break
-
-    case 'user_muda_folga':
-      // phase nao muda (continua PREVIEW)
-      confidence = 'DIRTY'
-      break
-
-    case 'gerar_sucesso':
-      phase = 'PREVIEW'
-      confidence = 'SOLVER_VALIDATED'
-      break
-  }
-}
-```
-
-### 3.6 Prova de corretude da dimensao C
-
-**Propriedade 1 — Monotonia descendente:**
-Confidence so SOBE (UNVALIDATED → TS_ONLY → SOLVER_VALIDATED) por acao do sistema, e so DESCE por acao do user (mudanca manual → DIRTY). O sistema nunca rebaixa a confianca sem motivo.
-
-**Propriedade 2 — Dirty e conservador:**
-Qualquer mudanca manual no ciclo → DIRTY. Nao importa se a mudanca e "pequena" ou "nao afeta nada". Conservadorismo evita falso positivo (verde quando nao deveria).
+**Propriedade 2 — Dirty conservador:**
+Qualquer mudanca relevante no ciclo muda o hash. Se mudou o hash, a confianca some automaticamente. Nao depende de lembrar de dar `setConfidence('DIRTY')`.
 
 **Propriedade 3 — Informacao nao se perde no cancelar:**
-Se o solver encontrou avisos e o user cancelou, a tag mostra "Validacao encontrou avisos" (laranja) em vez de voltar pra verde/neutro. O user sabe que TEM algo pendente mesmo sem ter aceitado a sugestao.
+Cancelar fecha a proposta, mas o snapshot `HAD_WARNINGS` continua associado ao hash atual. O user volta ao estado anterior sabendo que aquele estado foi questionado pelo solver.
 
-**Propriedade 4 — Convergencia ao verde:**
-O unico caminho pro verde (SOLVER_VALIDATED) e: solver rodar e aprovar o arranjo exato atual, OU gerar escala com sucesso. Nao tem atalho.
+**Propriedade 4 — Verde sem atalho:**
+So existe verde se houver snapshot `VALIDATED` para o hash atual. Verde sem solver vira impossivel por construcao.
 
-### 3.7 UX do fluxo completo com as 3 dimensoes
+### 3.8 UX do fluxo completo com as 3 dimensoes
 
 ```
 1. User configura ciclo de folgas no grid
@@ -536,158 +564,118 @@ O unico caminho pro verde (SOLVER_VALIDATED) e: solver rodar e aprovar o arranjo
 
 ---
 
-## 4. Solucao B: Camada de Humanizacao (renumerada)
+## 4. Solucao B: Camada de Humanizacao (focada, nao barroca)
 
-### 3.1 Principio
+### 4.1 Principio
 
-Toda mensagem que chega de qualquer fonte (solver, TS, preflight) passa por uma funcao `humanizar()` antes de entrar no contexto de avisos. A funcao:
+Nem toda fonte precisa do mesmo tratamento.
 
-1. Traduz termos tecnicos
-2. Formata datas (ISO → "sabado, 15/mar")
-3. Remove jargao interno ("Slot" → "faixa horaria", "INFEASIBLE" → "impossivel gerar")
-4. Colapsa multiplas sugestoes em 1 card com lista
-5. Remove duplicatas semanticas (mesmo problema, fontes diferentes)
+- `PreviewDiagnostic` ja nasce relativamente humano.
+- O maior vazamento de jargao hoje esta em `INFEASIBLE`, `diagnostico_resumido`, sugestoes do solver e feedback operacional.
+- `REGRAS_TEXTO` em `formatadores.ts` e usado por telas de escala/violacoes e **nao precisa entrar neste refactor**.
 
-### 3.2 Mapeamento de traducoes
+Ou seja: a solucao correta nao e criar uma mega-biblioteca de regex para o app inteiro. E atacar o ponto onde a linguagem ainda sangra.
+
+### 4.2 Onde humanizar
+
+| Fonte | Tratamento |
+|------|------------|
+| `PreviewDiagnostic` | mapper fino `PreviewDiagnostic -> Aviso` |
+| `InfeasibleError` estruturado | `humanizarInfeasible()` dedicado |
+| Preflight blockers / warnings | `humanizarOperacao()` |
+| `mapError()` | fallback generico para erros nao estruturados |
+
+### 4.3 Mapeamento minimo necessario
 
 | Original | Humanizado |
 |----------|-----------|
-| `Solver retornou INFEASIBLE: impossivel satisfazer todas as restricoes simultaneamente` | `Nao foi possivel gerar a escala com as regras atuais.` |
-| `Capacidade insuficiente em 2026-03-15: disponiveis=2, minimo requerido=3.` | `Sabado, 15/mar: so 2 pessoas disponiveis, mas a demanda pede 3.` |
-| `QUA (manha: 3, tarde: 2, disponiveis: 1)` | `Quarta: demanda de 3 de manha e 2 de tarde, mas so 1 pessoa disponivel.` |
-| `Slot 12:00-13:00 em 2026-03-12 tem 4 pessoas mas demanda e 2` | `Quinta, 12/mar das 12:00 as 13:00: 4 pessoas alocadas, mas a demanda e de 2.` |
-| `N participante(s) intermitente(s) ficaram fora do preview.` | `N colaborador(es) intermitente(s) nao entram na simulacao automatica.` |
-| `Folga variavel de Ana em QUA: sobram 1, demanda e 2.` | `Quarta com folga da Ana: fica 1 pessoa, mas a demanda e 2.` |
-| `H2B_DSR_INTERJORNADA` (fallback code) | `Descanso entre jornadas insuficiente (minimo 11h)` |
-| `H3_DOM_MAX_CONSEC_F` (fallback code) | `Domingos consecutivos acima do limite (mulheres)` |
+| `INFEASIBLE` | `Nao foi possivel gerar uma escala viavel para este periodo.` |
+| `disponiveis=2, minimo requerido=3` | `2 pessoas disponiveis, mas a demanda pede 3.` |
+| `Slot 12:00-13:00` | `Faixa 12:00 as 13:00` |
+| `preview` | `simulacao` |
+| `diagnostico_resumido` cru | card resumido + lista de sugestoes do solver |
+| `folga_variavel aponta pra dia sem regra` | `A folga variavel de [nome] esta num dia em que ele(a) nao trabalha. Ajuste a regra de horario primeiro.` |
+| `tipo_trabalhador=INTERMITENTE` em diagnostics | Omitir tipo — RH sabe quem e intermitente. Falar nome + situacao. |
 
-### 3.3 Estrutura
+### 4.4 Estrutura
 
 ```typescript
-// src/renderer/src/lib/humanizar-avisos.ts (NOVO)
+// src/renderer/src/lib/humanizar-operacao.ts
 
-// 1. Dicionario de codigos → texto RH
-const CODIGO_PARA_TEXTO: Record<string, string> = {
-  H1_MAX_DIAS_CONSECUTIVOS: 'Limite de dias seguidos de trabalho excedido',
-  H2_DESCANSO_ENTRE_JORNADAS: 'Descanso entre jornadas menor que 11 horas',
-  H2B_DSR_INTERJORNADA: 'Descanso entre jornadas insuficiente',
-  H3_RODIZIO_DOMINGO: 'Rodizio de domingos nao respeitado',
-  H3_DOM_MAX_CONSEC: 'Limite de domingos consecutivos excedido',
-  H3_DOM_MAX_CONSEC_M: 'Domingos consecutivos acima do limite (homens)',
-  H3_DOM_MAX_CONSEC_F: 'Domingos consecutivos acima do limite (mulheres)',
-  H4_MAX_JORNADA_DIARIA: 'Jornada acima do maximo diario (10h)',
-  H5_EXCECAO_NAO_RESPEITADA: 'Excecao (ferias/atestado) nao respeitada',
-  H6_ALMOCO_OBRIGATORIO: 'Almoco obrigatorio nao definido (jornada >6h)',
-  H7_INTERVALO_CURTO: 'Intervalo de 15min obrigatorio nao definido (jornada >4h)',
-  H10_META_SEMANAL: 'Meta de horas semanais nao atingida',
-  H15_ESTAGIARIO_JORNADA: 'Estagiario com jornada acima do limite (6h/dia, 30h/sem)',
-  H16_ESTAGIARIO_HORA_EXTRA: 'Estagiario nao pode fazer hora extra',
-  H17_FERIADO_PROIBIDO: 'Trabalho em feriado proibido (CCT)',
-  H18_FERIADO_SEM_CCT: 'Trabalho em feriado sem autorizacao CCT',
-  H19_FOLGA_COMPENSATORIA_DOM: 'Folga compensatoria de domingo nao concedida',
-  H20_REGRA_HORARIO_INDIVIDUAL: 'Horario individual nao respeitado',
-  DIAS_TRABALHO: 'Numero incorreto de dias de trabalho na semana',
-  MIN_DIARIO: 'Jornada abaixo do minimo diario (4h)',
-  S_DEFICIT: 'Cobertura abaixo da demanda',
-  S_SURPLUS: 'Mais pessoas que o necessario',
-  S_DOMINGO_CICLO: 'Rodizio de domingos desbalanceado',
-  S_TURNO_PREF: 'Preferencia de turno nao atendida',
-  S_CONSISTENCIA: 'Horarios inconsistentes entre dias',
-  S_SPREAD: 'Carga de trabalho desbalanceada na equipe',
-  S_AP1_EXCESS: 'Jornada acima de 8h (dentro do limite legal)',
-  S_CYCLE_CONSISTENCY: 'Horarios divergentes entre ciclos',
-  AP1: 'Clopening — fecha e abre no dia seguinte',
-  AP2: 'Horarios variam muito de um dia pro outro',
-  // ... demais antipatterns
-}
+function mapPreviewDiagnosticToAviso(diag: PreviewDiagnostic): Aviso { ... }
 
-// 2. Regex patterns para substituicao inline
-const HUMANIZADORES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
-  [/Solver retornou INFEASIBLE:?\s*/i, () => ''],
-  [/disponiveis=(\d+)/g, (m) => `${m[1]} pessoas disponiveis`],
-  [/minimo requerido=(\d+)/g, (m) => `demanda pede ${m[1]}`],
-  [/Slot (\d{2}:\d{2})-(\d{2}:\d{2})/g, (m) => `Faixa ${m[1]} as ${m[2]}`],
-  [/(\d{4})-(\d{2})-(\d{2})/g, (m) => formatarDataCurta(m[0])],
-  [/\bpreview\b/gi, () => 'simulacao'],
-]
-
-// 3. Funcao principal
-function humanizar(diagnostics: PreviewDiagnostic[]): Aviso[] { ... }
 function humanizarInfeasible(error: InfeasibleError): Aviso[] { ... }
+
+function humanizarOperacao(feedback: OperationFeedback | null): Aviso[] { ... }
 ```
 
-### 3.4 Prova de corretude
+### 4.5 Prova de corretude
 
-**Propriedade 1 — Idempotente:** Humanizar 2x produz o mesmo resultado (patterns ja humanizados nao matcham de novo).
+**Propriedade 1 — Foco no vazamento real:** O refactor trata exatamente as fontes que hoje vazam jargao para o RH, sem arrastar telas fora do escopo.
 
-**Propriedade 2 — Lossless:** Toda informacao original e preservada, so a forma muda. Numeros, nomes, horarios mantem-se.
+**Propriedade 2 — Fallback seguro:** Se nao houver traducao especifica, a UI usa `mensagem`/`detail` existente ou `mapError()` — nunca codigo cru se houver texto humano disponivel.
 
-**Propriedade 3 — Fallback seguro:** Se um codigo nao tem traducao, `humanizar()` retorna a `mensagem` original (que o validador sempre seta). So usa o dicionario quando `mensagem` esta ausente.
+**Propriedade 3 — Menos superficie de bug:** Humanizacao focada reduz o risco de regex global quebrar mensagens que ja estavam boas.
 
 ---
 
 ## 5. Plano de Execucao
 
-### Fase 1: Context Phase + Botao Unico (resolve lifecycle e UX)
+### Fase 1: Separar superficies e matar a mistura "antes/depois"
 
 | # | Task | Arquivos | Estimativa |
 |---|------|----------|-----------|
-| 1.1 | Criar `avisosStore.ts` com FSM + derivarAvisos() | novo arquivo | pequeno |
-| 1.2 | Mover `advisoryResult` pro store como parte do phase state | SetorDetalhe.tsx | medio |
-| 1.3 | Deletar `useState(avisosOperacao)` | SetorDetalhe.tsx | pequeno |
-| 1.4 | Deletar `build-avisos.ts` (arquivo inteiro) | build-avisos.ts | pequeno |
-| 1.5 | Substituir calls por `transition()` nos 6 pontos | SetorDetalhe.tsx | medio |
-| 1.6 | Unificar botoes: 1 "Sugerir" com escalation TS → solver | SetorDetalhe.tsx | medio |
-| 1.7 | Remover botao "Validar" (sugerir com OK = CURRENT_VALID) | SetorDetalhe.tsx | pequeno |
-| 1.8 | Remover `previewDiagnostics` prop do SugestaoSheet | SugestaoSheet.tsx | pequeno |
-| 1.9 | AvisosSection consume `avisos` derivado do store | AvisosSection.tsx | pequeno |
+| 1.1 | Criar controller local (`useAvisosController.ts` ou reducer em `SetorDetalhe`) | novo arquivo ou pagina | medio |
+| 1.2 | Separar `INLINE_PREVIEW`, `SUGESTAO_SHEET` e `OPERATION_FEEDBACK` | SetorDetalhe.tsx | medio |
+| 1.3 | Trocar `previewDiagnostics` do drawer por `proposalPreviewDiagnostics` | SugestaoSheet.tsx + SetorDetalhe.tsx | pequeno |
+| 1.4 | Substituir `avisosOperacao` generico por `operationFeedback` tipado | SetorDetalhe.tsx | pequeno |
+| 1.5 | Reescrever `buildPreviewAvisos()` por escopo ou remover de vez | build-avisos.ts | medio |
+| 1.6 | Unificar botoes em "Sugerir" + "Gerar Escala" | SetorDetalhe.tsx | medio |
 
-### Fase 2: Advisory inclui TS Preview da proposta (resolve coerencia)
+### Fase 2: Derivar preview da PROPOSTA localmente
 
 | # | Task | Arquivos | Estimativa |
 |---|------|----------|-----------|
-| 2.1 | Apos solver propor, recalcular TS Preview com overrides propostos | advisory-controller.ts | medio |
-| 2.2 | Unificar diagnostics solver + TS Preview em 1 array | advisory-controller.ts | pequeno |
-| 2.3 | Dedup por code (se solver e TS Preview dizem a mesma coisa) | advisory-controller.ts | pequeno |
+| 2.1 | Derivar overrides propostos a partir de `advisoryResult.proposal.diff` | SetorDetalhe.tsx | pequeno |
+| 2.2 | Reusar `runPreviewMultiPass(...)` com esses overrides | SetorDetalhe.tsx | medio |
+| 2.3 | Mostrar no drawer apenas `solver diagnostics + proposalPreviewDiagnostics` | SugestaoSheet.tsx | pequeno |
+| 2.4 | Garantir que inline preview nunca consome diagnostics da proposta | SetorDetalhe.tsx | pequeno |
 
-### Fase 3: Humanizacao (resolve conteudo)
-
-| # | Task | Arquivos | Estimativa |
-|---|------|----------|-----------|
-| 3.1 | Criar `humanizar-avisos.ts` com CODIGO_PARA_TEXTO (35 regras) | novo arquivo | medio |
-| 3.2 | Implementar HUMANIZADORES regex + formatarDataCurta | humanizar-avisos.ts | pequeno |
-| 3.3 | Integrar `humanizar()` na derivarAvisos() do store | avisosStore.ts | pequeno |
-| 3.4 | Deletar `REGRAS_TEXTO` em formatadores.ts | formatadores.ts | pequeno |
-| 3.5 | Humanizar `diagnostico_resumido` no tipc.ts (nunca mais string cru do Python) | tipc.ts | pequeno |
-| 3.6 | Colapsar `sugestoes[]` do solver em 1 card com lista bullet | tipc.ts ou humanizar-avisos.ts | pequeno |
-
-### Fase 4: Tag de Confianca (resolve profundidade)
+### Fase 3: Confianca baseada em hash/snapshot
 
 | # | Task | Arquivos | Estimativa |
 |---|------|----------|-----------|
-| 4.1 | Adicionar `confidence: ValidationConfidence` no avisosStore | avisosStore.ts | pequeno |
-| 4.2 | Transicoes de confidence integradas em transition() | avisosStore.ts | pequeno |
-| 4.3 | Derivar `confidenceTag` (label, cor, icone) do confidence | avisosStore.ts | pequeno |
-| 4.4 | Componente `ValidationTag` (badge ao lado de "Preview") | novo componente | pequeno |
-| 4.5 | Detectar dirty: qualquer mudanca de override/folga → DIRTY | SetorDetalhe.tsx ou store | medio |
-| 4.6 | Cancelar com warnings → SOLVER_HAD_WARNINGS (nao volta pra verde) | avisosStore.ts | pequeno |
+| 3.1 | Mover `computeAdvisoryInputHash` para `shared/advisory-hash.ts`. `advisory-controller.ts` (main) e `SetorDetalhe.tsx` (renderer) importam de shared. O arquivo shared NAO importa de main nem renderer. | novo arquivo + imports | pequeno |
+| 3.2 | Expandir `SimulacaoAdvisorySnapshot` para snapshot de validacao geral | shared/advisory-types.ts | pequeno |
+| 3.3 | Derivar `ValidationConfidence` por `currentHash vs snapshotHash` | SetorDetalhe.tsx ou hook | medio |
+| 3.4 | Persistir snapshot ao aceitar, cancelar com warnings e gerar com sucesso | SetorDetalhe.tsx + salvarSimulacaoConfig | medio |
+| 3.5 | Renderizar `ValidationTag` ao lado de "Preview" | novo componente | pequeno |
+
+### Fase 4: Humanizacao focada
+
+| # | Task | Arquivos | Estimativa |
+|---|------|----------|-----------|
+| 4.1 | Criar `humanizar-operacao.ts` para `InfeasibleError` / preflight / sugestoes | novo arquivo | pequeno |
+| 4.2 | Integrar humanizacao no lane `OPERATION_FEEDBACK` | SetorDetalhe.tsx ou hook | pequeno |
+| 4.3 | Revisar `tipc.ts` e `mapError()` para nao vazar mensagem crua do solver | tipc.ts + formatadores.ts | pequeno |
+| 4.4 | Manter `REGRAS_TEXTO` fora deste refactor | sem mudanca | — |
 
 ### Fase 5: Verificacao
 
 | # | Task |
 |---|------|
-| 5.1 | Testar: sugerir → aceitar → avisos refletem novo arranjo + tag "Validado" (verde) |
-| 5.2 | Testar: sugerir → cancelar → avisos voltam + tag "Validacao encontrou avisos" (laranja) se tinha warnings |
-| 5.3 | Testar: sugerir → cancelar (sem warnings) → tag mantem o que era |
-| 5.4 | Testar: gerar → INFEASIBLE → 1 card sem jargao, sugestoes como lista |
-| 5.5 | Testar: gerar → sucesso → avisos limpos, tag "Validado" (verde) |
-| 5.6 | Testar: abrir escala gerada → avisos do TS Validator (H6, H2, etc.) no resumo |
-| 5.7 | Testar: zero mensagens com "INFEASIBLE", "Slot", "disponiveis=", "preview", codigo raw |
-| 5.8 | Testar: zero duplicacao (mesmo aviso aparece 1x, nao 2-3x) |
-| 5.9 | Testar: so 2 botoes visiveis (Sugerir + Gerar Escala) |
-| 5.10 | Testar: TS verde + tag amarela "Validacao recomendada" → user sabe que nao e garantia |
-| 5.11 | Testar: mudar folga manualmente → tag volta pra "Validacao recomendada" (DIRTY) |
-| 5.12 | Testar: so SOLVER_VALIDATED ou gerar com sucesso chegam ao verde |
+| 5.1 | Testar: inline preview nunca mostra diagnostics da proposta |
+| 5.2 | Testar: drawer nunca mostra diagnostics do estado atual |
+| 5.3 | Testar: sugerir → aceitar → novo arranjo vira o estado atual e fica verde |
+| 5.4 | Testar: sugerir → cancelar com warnings → volta ao atual + tag laranja |
+| 5.5 | Testar: mudar uma folga depois da validacao → hash diverge e tag volta pra amarelo |
+| 5.6 | Testar: gerar → INFEASIBLE → feedback operacional unico, sem cards duplicados |
+| 5.7 | Testar: zero mensagens com `INFEASIBLE`, `Slot`, `disponiveis=` na UI de RH |
+| 5.8 | Testar: nivel ciclo e nivel escala nunca aparecem na mesma superficie |
+| 5.9 | Testar: so 2 botoes visiveis (`Sugerir` + `Gerar Escala`) |
+| 5.10 | Testar: intermitente tipo B (folga_variavel != null) aparece no preview/advisory sem jargao tecnico |
+| 5.11 | Testar: guard T5 (variavel em dia sem regra) mostra erro humanizado, nao stack trace |
+| 5.12 | Testar: sugerir() → NO_PROPOSAL → drawer mostra mensagem humanizada sem botao aceitar → dismiss → tag SOLVER_HAD_WARNINGS |
 
 ---
 
@@ -695,43 +683,42 @@ function humanizarInfeasible(error: InfeasibleError): Aviso[] { ... }
 
 | Risco | Probabilidade | Mitigacao |
 |-------|--------------|-----------|
-| TS Preview recalcula entre transicoes, flash visual | Media | Derivacao sincrona no mesmo render cycle (useMemo, nao useEffect) |
-| Algum codigo de regra sem traducao vaza | Baixa | Fallback: usa `violacao.mensagem` (sempre presente). Dicionario e bonus, nao requisito |
-| Advisory recalcular TS Preview com overrides e lento | Baixa | TS Preview e JS puro, <50ms. Nao e solver. |
-| Remover botao Validar quebra workflow de debug | Nenhuma | Dev pode rodar solver via CLI (`npm run solver:cli`). UI e pro RH. |
-| TS Preview da proposta diverge do solver | Baixa | Ambos operam no nivel ciclo. Dedup por code resolve overlap. |
-| Store novo cria acoplamento com SetorDetalhe | Baixa | Store e generico (phase + data), SetorDetalhe so chama transition() |
-| Tag "Validacao recomendada" irrita user (parece que nunca ta pronto) | Media | Tag e informativa, nao bloqueante. User pode gerar sem validar — so nao ve verde. Tooltip explica. |
-| Dirty detection falha (mudanca nao detectada) | Baixa | Override tracking via snapshotKey no store — qualquer mudanca no config muda o hash |
+| Preview da proposta recalcular em lugar errado | Alta | Fazer no renderer, onde `runPreviewMultiPass` e os inputs ja existem |
+| Duplicar hash em main e renderer e gerar divergencia | Media | Extrair helper para `shared/advisory-hash.ts` |
+| Snapshot nao cobrir cancelar com warnings | Alta | Persistir snapshot `HAD_WARNINGS` mesmo sem aceitar proposta |
+| Tag "Validacao recomendada" irrita user | Media | Tag e informativa, nao bloqueante; tooltip explica o que significa |
+| Humanizacao ficar grande demais e quebrar outras telas | Media | Limitar escopo a feedback operacional desta pagina |
+| Remover botao Validar quebrar debug interno | Baixa | Debug continua possivel por logs/CLI; UI do RH fica mais limpa |
 
 ---
 
 ## 7. Criterios de Sucesso
 
 ### Dimensao A (Lifecycle)
-- [ ] Zero duplicacao de avisos (mesmo problema aparece 1x, nao 2-3x)
-- [ ] Cancelar sugestao = avisos identicos ao que era antes (+ tag laranja se solver tinha warnings)
-- [ ] Aceitar sugestao = avisos refletem novo arranjo (TS Preview recalculado com overrides)
-- [ ] INFEASIBLE = 1 card vermelho com sugestoes como lista, sem cards amarelos separados
-- [ ] `buildPreviewAvisos()` / `build-avisos.ts` deletado
-- [ ] `useState(avisosOperacao)` deletado
+- [ ] Zero duplicacao de avisos dentro de cada superficie
+- [ ] Inline preview nunca mostra diagnostics da proposta
+- [ ] Drawer nunca mostra diagnostics do estado atual
+- [ ] Cancelar sugestao = inline volta identico ao que era antes
+- [ ] Aceitar sugestao = preview atual recalcula sobre os overrides aceitos
+- [ ] INFEASIBLE = feedback operacional unico, sem merge com preview atual
 
 ### Dimensao B (Humanizacao)
 - [ ] Zero mensagens com "INFEASIBLE", "Slot", "preview", codigos H*/AP* crus na UI
-- [ ] `REGRAS_TEXTO` em formatadores.ts deletado ou substituido
+- [ ] `diagnostico_resumido` do solver nao aparece cru para o RH
 - [ ] Datas em formato humano (dia da semana + dd/mmm), nunca ISO
 
 ### Dimensao C (Confianca)
 - [ ] Tag "Validacao recomendada" (amarelo) visivel quando TS verde mas solver nunca rodou
 - [ ] Tag "Validado" (verde) so aparece apos solver aprovar ou gerar com sucesso
 - [ ] Tag "Validacao encontrou avisos" (laranja) apos cancelar sugestao com warnings
-- [ ] Qualquer mudanca manual de folga → tag volta pra amarelo (DIRTY)
-- [ ] Unico caminho pro verde: solver validar ou gerar escala com sucesso
+- [ ] Qualquer mudanca manual relevante no ciclo muda o hash e derruba a confianca
+- [ ] Unico caminho pro verde: existir snapshot `VALIDATED` para o hash atual
 - [ ] Tag nunca bloqueante — user pode gerar sem validar, so nao ve verde
 
 ### Gerais
 - [ ] So 2 botoes na UI: "Sugerir" e "Gerar Escala"
 - [ ] Nivel ciclo (cobertura, folgas) e nivel escala (almoco, interjornada) nunca misturados
+- [ ] `computeAdvisoryInputHash` deixa de ser exclusivo do main
 - [ ] Fluxo completo do exemplo da secao 1.4 funciona sem surpresa
 
 ---
