@@ -26,7 +26,12 @@ import type {
   PinnedCell,
   DiaSemana,
 } from '../../shared'
-import { listEscalaParticipantes, normalizeSetorSimulacaoConfig } from '../../shared'
+import {
+  hasGuaranteedSundayWindow,
+  listEscalaParticipantes,
+  normalizeSetorSimulacaoConfig,
+  resolveSundayRotatingDemand,
+} from '../../shared'
 import { buildEffectiveRulePolicy } from './rule-policy'
 
 const require = createRequire(import.meta.url)
@@ -171,21 +176,54 @@ function resolvePythonCmd(): string {
 // Calculo automatico do ciclo domingo
 // ---------------------------------------------------------------------------
 
-export function calcularCicloDomingo(
+type SundayRuleEntry = {
+  perfil_horario_id?: number | null
+  inicio?: string | null
+  fim?: string | null
+  p_inicio?: string | null
+  p_fim?: string | null
+}
+
+function contarIntermitentesGarantidosNoDomingo<TPadrao extends { folga_fixa_dia_semana: string | null; folga_variavel_dia_semana?: string | null } | null, TDia>(
+  colabRows: { id: number; tipo_trabalhador: string | null }[],
+  regraGroupByColab: Map<number, { padrao: TPadrao; dias: Map<string, TDia> }>,
+): number {
+  return colabRows.reduce((count, colab) => {
+    if ((colab.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE') return count
+    // Tipo B (com folga_variavel) entra no pool rotativo — nao conta como garantido
+    const padrao = regraGroupByColab.get(colab.id)?.padrao
+    if (padrao?.folga_variavel_dia_semana) return count
+    const regraDomingo = regraGroupByColab.get(colab.id)?.dias.get('DOM')
+    return count + (hasGuaranteedSundayWindow(regraDomingo as SundayRuleEntry | undefined) ? 1 : 0)
+  }, 0)
+}
+
+export function calcularCicloDomingo<TPadrao extends { folga_fixa_dia_semana: string | null; folga_variavel_dia_semana?: string | null } | null, TDia>(
   demandaRows: { dia_semana: string | null; min_pessoas: number }[],
   colabRows: { id: number; tipo_trabalhador: string | null }[],
-  regraGroupByColab: Map<number, { padrao: { folga_fixa_dia_semana: string | null } | null; dias: Map<string, unknown> }>,
+  regraGroupByColab: Map<number, { padrao: TPadrao; dias: Map<string, TDia> }>,
 ): { cicloTrabalho: number; cicloFolga: number } {
   // null = todos os dias (inclui domingo). Consistente com preflight-capacity.ts:70
   const domDemandas = demandaRows.filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
-  const dDom = domDemandas.length > 0 ? Math.max(...domDemandas.map(d => d.min_pessoas)) : 0
+  const dDomBruta = domDemandas.length > 0 ? Math.max(...domDemandas.map(d => d.min_pessoas)) : 0
 
   const nDom = colabRows.filter(c => {
-    if ((c.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE') return false
+    if ((c.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE') {
+      const padrao = regraGroupByColab.get(c.id)?.padrao
+      if (!padrao?.folga_variavel_dia_semana) return false  // Tipo A: exclude
+      // Tipo B: stays in pool
+    }
     const group = regraGroupByColab.get(c.id)
     if (group?.padrao?.folga_fixa_dia_semana === 'DOM') return false
     return true
   }).length
+
+  const intermitentesGarantidos = contarIntermitentesGarantidosNoDomingo(colabRows, regraGroupByColab)
+  const { effectiveSundayDemand: dDom } = resolveSundayRotatingDemand({
+    totalSundayDemand: dDomBruta,
+    guaranteedSundayCoverage: intermitentesGarantidos,
+    rotatingPoolSize: nDom,
+  })
 
   if (dDom === 0 || nDom === 0) return { cicloTrabalho: 0, cicloFolga: 1 }
 
@@ -514,8 +552,11 @@ export async function buildSolverInput(
         const fim_max = efetivo_fim        // teto de saida
         const fim_min: string | null = null // dead code no solver
 
-        // Só inclui se tem alguma regra efetiva
-        if (inicio_min || inicio_max || fim_min || fim_max || pref_turno || dom_forcar_folga || folga_fixa) {
+        const intermitenteDisponivelSemJanela = isIntermitente && Boolean(regra) && !folga_fixa
+
+        // Intermitente com dia ativo e sem horario explicito precisa entrar no payload
+        // para o preflight distinguir "dia habilitado" de "dia bloqueado".
+        if (inicio_min || inicio_max || fim_min || fim_max || pref_turno || dom_forcar_folga || folga_fixa || intermitenteDisponivelSemJanela) {
           regrasColaboradorDia.push({
             colaborador_id: colab.id,
             data: isoDate,
@@ -539,7 +580,11 @@ export async function buildSolverInput(
     const group = regraGroupByColab.get(c.id)
     const padrao = group?.padrao
     if (padrao) {
-      c.folga_fixa_dia_semana = (padrao.folga_fixa_dia_semana as DiaSemana | null) ?? null
+      // folga_fixa: stays NULL for intermitente (no CLT fixed day off concept)
+      if (c.tipo_trabalhador !== 'INTERMITENTE') {
+        c.folga_fixa_dia_semana = (padrao.folga_fixa_dia_semana as DiaSemana | null) ?? null
+      }
+      // folga_variavel: allowed for tipo B intermitente (enters sunday rotation)
       c.folga_variavel_dia_semana = (padrao.folga_variavel_dia_semana as DiaSemana | null) ?? null
     }
 
@@ -548,6 +593,10 @@ export async function buildSolverInput(
     // mas blocked_days não inclui folga_fixa de regras_colaborador_dia
     if (c.tipo_trabalhador === 'INTERMITENTE') {
       c.dias_trabalho = group?.dias.size ?? 0
+      // Tipo B: XOR desconta 1 dia (variavel = nao trabalha nesse dia quando trabalha DOM)
+      if (c.folga_variavel_dia_semana && c.dias_trabalho > 0) {
+        c.dias_trabalho -= 1
+      }
       if (c.dias_trabalho === 0) {
         console.warn(`[solver-bridge] Intermitente ${c.nome} (id=${c.id}) tem 0 dias ativos`)
       }
@@ -557,7 +606,8 @@ export async function buildSolverInput(
   // v22: Ciclo domingo calculado automaticamente (tenta 1/2 → 1/1 → 2/1)
   const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRowsFiltered, regraGroupByColab)
   for (const c of colaboradores) {
-    if (c.tipo_trabalhador === 'INTERMITENTE') continue
+    // Tipo A (sem folga_variavel): fora do pool
+    if (c.tipo_trabalhador === 'INTERMITENTE' && !c.folga_variavel_dia_semana) continue
     if (c.folga_fixa_dia_semana === 'DOM') {
       c.domingo_ciclo_trabalho = 0
       c.domingo_ciclo_folga = 1
