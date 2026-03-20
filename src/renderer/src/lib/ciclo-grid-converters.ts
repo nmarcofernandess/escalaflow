@@ -145,7 +145,14 @@ export function escalaParaCicloGrid(
     periodoCiclo = 0
   } else {
     const totalPostos = internalRows.filter(
-      (r) => r.titular != null && (r.titular.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE',
+      (r) => {
+        if (!r.titular) return false
+        const tipo = r.titular.tipo_trabalhador ?? 'CLT'
+        if (tipo !== 'INTERMITENTE') return true
+        // Tipo B (com folga_variavel) entra no pool, tipo A fica fora
+        const regra = regrasMap.get(r.titular.id)
+        return !!regra?.folga_variavel_dia_semana
+      },
     ).length
 
     if (totalPostos <= 0) {

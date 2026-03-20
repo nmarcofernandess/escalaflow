@@ -97,11 +97,13 @@ DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
 def compute_cycle_length_weeks(colabs: List[dict], demand_by_slot: DaySlotDemand, days: List[str]) -> int:
     """Compute cycle length in weeks: N / gcd(N, D).
 
-    N = number of workers eligible for sunday cycle (excludes INTERMITENTE)
+    N = number of workers eligible for sunday cycle
+        (excludes tipo A intermitente, includes tipo B with folga_variavel)
     D = max sunday demand (peak headcount target on any sunday slot)
     """
     N = sum(1 for c in colabs
-            if c.get("tipo_trabalhador", "CLT") not in ("INTERMITENTE",))
+            if c.get("tipo_trabalhador", "CLT") != "INTERMITENTE"
+            or c.get("folga_variavel_dia_semana"))
     if N <= 0:
         return 1
 
@@ -124,7 +126,8 @@ def compute_cycle_length_weeks(colabs: List[dict], demand_by_slot: DaySlotDemand
 def _compute_cycle_weeks_fast(colabs: List[dict], demand_list: List[dict]) -> int:
     """Lightweight cycle computation for diagnostico (no demand_by_slot needed)."""
     N = sum(1 for c in colabs
-            if c.get("tipo_trabalhador", "CLT") not in ("INTERMITENTE",))
+            if c.get("tipo_trabalhador", "CLT") != "INTERMITENTE"
+            or c.get("folga_variavel_dia_semana"))
     if N <= 0:
         return 1
     D = max(
