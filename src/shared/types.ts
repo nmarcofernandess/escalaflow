@@ -657,6 +657,34 @@ export interface RuleDefinition {
 /** Map de código → status aplicado para uma geração */
 export type RuleConfig = Record<string, RuleStatus>
 
+// --- Pin Hierarchy for Advisory Hierárquico ---
+
+export type PinOrigin = 'auto' | 'accepted' | 'manual' | 'saved'
+
+/**
+ * Pesos ilustrativos — DEVEM ser calibrados com dados reais antes de produção.
+ * Regra: peso_SAVED > max_ganho_spread_possível (spread * 1000 no Phase 1).
+ * Ver specs/ANALYST_PIPELINE_SOLVER_COMPLETO.md → "Calibração de Pesos".
+ */
+export const PIN_WEIGHTS: Record<PinOrigin, number> = {
+  auto: 100,
+  accepted: 500,
+  manual: 5000,
+  saved: 10000,
+} as const
+
+export function pinWeight(origin: PinOrigin): number {
+  return PIN_WEIGHTS[origin]
+}
+
+export interface PinWithOrigin {
+  c: number           // índice do colaborador (0-based)
+  d: number           // índice do dia (0-based)
+  band: number        // 0=OFF, 1=MANHA, 2=TARDE, 3=INTEGRAL
+  origin: PinOrigin   // quem definiu este pin
+  weight: number      // peso derivado da origem
+}
+
 export interface SolverInput {
   setor_id: number
   data_inicio: string
@@ -690,7 +718,7 @@ export interface SolverInput {
     nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'  // backward compat
     rules?: RuleConfig                           // v6: granular, substitui nivel_rigor quando presente
     advisory_only?: boolean
-    pinned_folga_externo?: Array<{ c: number; d: number; band: number }>
+    pinned_folga_externo?: Array<{ c: number; d: number; band: number; origin?: PinOrigin; weight?: number }>
   }
 }
 
