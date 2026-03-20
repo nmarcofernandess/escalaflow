@@ -1,6 +1,6 @@
 import type { DiaSemana } from '@shared/index'
 
-export type Simbolo = 'T' | 'FF' | 'FV' | 'DT' | 'DF' | 'I' | '.' | '-'
+export type Simbolo = 'T' | 'FF' | 'FV' | 'DT' | 'DF' | 'I' | 'NT' | '.' | '-'
 
 export interface CicloGridRow {
   id: number
@@ -73,6 +73,11 @@ export const SIMBOLO_CONFIG: Record<Simbolo, {
     swatch: 'bg-destructive/20 text-destructive',
     label: 'Indisponivel',
   },
+  NT: {
+    cell: 'bg-muted/50 text-muted-foreground/60 font-normal',
+    swatch: 'bg-muted/40 text-muted-foreground/60',
+    label: 'Nao trabalha',
+  },
   '.': {
     cell: 'text-muted-foreground',
     swatch: 'bg-muted text-muted-foreground',
@@ -85,4 +90,4 @@ export const SIMBOLO_CONFIG: Record<Simbolo, {
   },
 }
 
-export const LEGENDA_SIMBOLOS: Simbolo[] = ['T', 'FF', 'FV', 'DT', 'DF', 'I']
+export const LEGENDA_SIMBOLOS: Simbolo[] = ['T', 'FF', 'FV', 'DT', 'DF', 'I', 'NT']
