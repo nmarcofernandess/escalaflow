@@ -222,6 +222,166 @@ Tres fontes de verdade. Tres resultados.
 
 ---
 
+## Analise Profunda: Preview TS (simula-ciclo) — O que Faz, Todas as Mensagens, e Decisoes
+
+### O que `gerarCicloFase1` faz passo a passo
+
+```
+PASSO 1 (linhas 227-265): Padrao de domingo
+  - Calcula ciclo = N/gcd(N,K), gera spacing pra evitar 2 DT seguidos
+  - Se folga_fixa_dom=true: todos os domingos = F (override)
+  - Output: array de DT/DF por semana
+
+PASSO 1b (linhas 270-292): Pre-check folgas fixas vs capacidade
+  - Conta quantas folgas fixas FORCADAS caem em cada dia
+  - Se num dia tem mais folgas fixas que (N - demanda): gera FF_CONFLITO sentinela
+  - Sentinela = "o dia inteiro ta comprometido, nao e culpa de 1 pessoa"
+
+PASSO 2 (linhas 294-360): Distribuicao 5x2 (2 folgas por semana)
+  - Para cada pessoa, na ordem:
+    a) folga_fixa: se forcada pelo RH, usa. Se nao, pickBestFolgaDay(demanda)
+    b) folga_variavel: se folga_fixa_dom, vira 2a folga fixa. Se nao, pickBestFolgaDay
+    c) Warnings: se a folga atribuida causa deficit, gera FV_CONFLITO
+  - pickBestFolgaDay: score = (N - demanda[dia]) - folgasJaAlocadas[dia]
+    Escolhe o dia com MAIS SOBRA de cobertura
+
+PASSO 3 (linhas 362-379): Repair H1
+  - Varre o grid procurando >6 dias consecutivos de T
+  - Se encontra: converte o 7o dia pra F (reparo forcado)
+  - NAO recalcula cobertura apos reparo
+
+PASSO 4 (linhas 385-452): Montar output
+  - Calcula cobertura por dia/semana
+  - Monta stats (min/max cobertura, H1 violacoes, dom consecutivos)
+  - Retorna grid + warnings + stats
+```
+
+### O algoritmo `pickBestFolgaDay` (coracao da distribuicao)
+
+```
+pickBestFolgaDay(demanda_por_dia, excluir_dia):
+  Para cada dia SEG-SAB (exceto excluir_dia):
+    score[dia] = (N - demanda[dia]) - folgasJaContadas[dia]
+  Retorna dia com MAIOR score
+
+Exemplo: N=6, demanda=[4,4,4,4,4,4], folgas_ja=[1,0,1,0,0,2]
+  scores = [6-4-1, 6-4-0, 6-4-1, 6-4-0, 6-4-0, 6-4-2] = [1, 2, 1, 2, 2, 0]
+  Escolhe TER, QUI ou SEX (empate → primeiro)
+```
+
+**Limitacao:** greedy per-person. Nao faz otimizacao global. O "Sugerir" (sugerirTSHierarquico) tenta melhorar depois, mas o ganho e marginal.
+
+### TODAS as mensagens de aviso geradas pelo preview TS
+
+#### Fonte 1: `simula-ciclo.ts` → `FolgaWarning[]`
+
+| # | Tipo | Trigger | Dados | Linha |
+|---|------|---------|-------|-------|
+| W1 | `FF_CONFLITO` (sentinela, pessoa=-1) | Pre-check: folgas fixas FORCADAS num dia excedem `N - demanda` | `dia`, `coberturaRestante`, `demandaDia` | 281-290 |
+| W2 | `FF_CONFLITO` (per-person) | Folga fixa atribuida causa `N - folgasNoDia < demanda` | `pessoa` (index), `dia`, `coberturaRestante`, `demandaDia` | 323-330 |
+| W3 | `FV_CONFLITO` (per-person) | Folga variavel atribuida causa deficit | `pessoa` (index), `dia`, `coberturaRestante`, `demandaDia` | 339-346 |
+
+#### Fonte 2: `preview-diagnostics.ts` → `PreviewDiagnostic[]`
+
+| # | Code | Severity | Gate | Titulo (template) | Trigger |
+|---|------|----------|------|--------------------|---------|
+| D1 | `CAPACITY_TOTAL` | error | BLOCK | "Capacidade insuficiente: N ativos, demanda pico P" | N total < pico demanda qualquer dia |
+| D2 | `CAPACITY_DOMINGO` | error | BLOCK | "Capacidade insuficiente no domingo: N elegíveis, K necessários" | Pool domingo < demanda domingo |
+| D3 | `DOMINGO_CICLO_IMPOSSIVEL` | error | BLOCK | "Ciclo de domingo impossível: N pessoas, K demanda, ciclo X semanas" | K > N (matematicamente impossivel) |
+| D4 | `DOMINGO_TT_INEVITAVEL` | warning | WARN | "Domingos consecutivos inevitáveis: K={K}, N={N}" | K > floor(N/2) (TT = 2 domingos seguidos) |
+| D5 | `PREVIEW_ESTRITO_BLOQUEADO` | error | BLOCK | "Preview bloqueado: modo estrito inviável" | Multi-pass Pass 1 falhou E nao pode relaxar |
+| D6 | `FOLGA_FIXA_CONFLITO` (sentinela) | warning | ALLOW | "Muitas folgas fixas em {dia}: sobram {X}, demanda {Y}" | W1 convertido |
+| D7 | `FOLGA_FIXA_CONFLITO` (per-person) | warning | ALLOW | "Folga fixa de {nome} em {dia}: sobram {X}, demanda {Y}" | W2 convertido |
+| D8 | `FOLGA_VARIAVEL_CONFLITO` | warning | ALLOW | "Folga variavel de {nome} em {dia}: sobram {X}, demanda {Y}" | W3 convertido |
+| D9 | `ADVISORY_*` (varios) | varies | varies | Diagnosticos do advisory CP-SAT (substituem D1-D8 quando advisory roda) | Advisory retornou |
+| D10 | `CAPACITY_SEGMENTO_*` | warning | ALLOW | "Demanda de {faixa} em {dia}: max {X} pessoas, precisa {Y}" | Demanda por segmento horario > capacidade |
+
+#### Fonte 3: `build-avisos.ts` → `Aviso[]` (final, mostrado na UI)
+
+| # | ID | Nivel | Titulo | Trigger |
+|---|---|-------|--------|---------|
+| A1 | `diagnostic_*` | error/warning/info | Mesmo titulo do diagnostic D1-D10 | Qualquer diagnostic gerado |
+| A2 | `preview_sem_titular` | info | "{N} posto(s) ativo(s) ainda sem titular" | Postos ativos sem colaborador anexado |
+| A3 | `preview_intermitentes` | info | "{N} participante(s) intermitente(s) ficaram fora do ciclo" | Tipo A fora do preview (NOTA: hoje zerado porque tipo B entra) |
+| A4 | `store_*` | varies | Avisos do appDataStore (derivados) | Store detecta inconsistencias |
+| A5 | `operacao_*` | varies | Avisos de operacao (preflight, solver feedback) | Gerou escala com warnings |
+| A6 | `advisory_*` | varies | Diagnosticos do advisory (substitui diagnostics basicos) | Advisory CP-SAT rodou |
+
+### O "Sugerir" TS: `sugerirTSHierarquico`
+
+```
+Algoritmo (simula-ciclo.ts:470-529):
+  1. Roda gerarCicloFase1 com folgas_forcadas originais
+  2. Se sucesso e cobertura OK → nada a sugerir
+  3. Se falha ou cobertura ruim:
+     a) "Libera" 1 pessoa (remove folga forcada dela)
+     b) Roda gerarCicloFase1 de novo
+     c) Se melhorou → propoe diff: "liberar fulano melhora X"
+     d) Se nao → libera mais 1, repete
+  4. Ordem de liberacao: HIERARQUICA
+     - Primeiro: quem tem override_local (user mudou no preview)
+     - Depois: quem tem regra do colaborador (fixo no BD)
+     - Por ultimo: quem tem auto-assigned (preview decidiu)
+  5. Output: lista de diffs {colaborador_id, fixa_atual, fixa_proposta, variavel_atual, variavel_proposta}
+```
+
+**O drawer (SugestaoSheet)** mostra:
+- Tabela com nome, posto, folga atual → folga proposta
+- Botoes: "Aceitar" (aplica diff nos overrides_locais) ou "Descartar"
+- Status: TS_REDISTRIBUIU, TS_NAO_RESOLVEU, TS_FALHOU
+
+### Decisao de Sessao: Unificar Automatico + Sugerir
+
+**O "Sugerir" TS deve MORRER como botao separado.** Razoes:
+
+1. O `pickBestFolgaDay` no automatico ja faz 90% do que o sugerir faz
+2. O ganho marginal do sugerir (redistribuicao hierarquica) deve ser INCORPORADO no automatico
+3. Se o RH quer sugestao REAL (validada), vai pro CP-SAT advisory — nao pro TS
+4. O drawer do sugerir TS deve virar drawer exclusivo do CP-SAT advisory
+
+**O que muda:**
+
+| Antes | Depois |
+|-------|--------|
+| Automatico roda `gerarCicloFase1` (greedy) | Automatico roda `gerarCicloFase1` + redistribuicao hierarquica integrada |
+| Botao "Sugerir" roda `sugerirTSHierarquico` separado | Botao "Sugerir" roda CP-SAT advisory |
+| Drawer mostra diff TS ou CP-SAT (confuso) | Drawer mostra APENAS diff CP-SAT (claro) |
+| Avisos misturam TS warnings com advisory | Avisos TS = automaticos (sempre visiveis). Advisory = drawer |
+
+**Sobre as mensagens de aviso:**
+
+| Mensagem atual | Problema | Proposta |
+|---------------|----------|----------|
+| "Folga variavel de {nome} em {dia}: sobram X, demanda Y" | Nao diz o que fazer | "Cobertura insuficiente em {dia}: mover folga de {nome} para {diaSugerido} resolve" |
+| "Muitas folgas fixas em {dia}" (sentinela) | Nao identifica quem mudar | Listar hierarquicamente: primeiro quem e automatico, depois quem e manual |
+| "Troque o dia de folga de {nome}" | Sugere mudar o ULTIMO que o RH mexeu | Sugerir mudar quem tem MAIS IMPACTO (menor score no pickBestFolgaDay) |
+| "Capacidade insuficiente" | Generico | Mostrar: "Faltam X pessoas pra cobrir {dia}. Contrate ou reduza demanda." |
+
+**Hierarquia das mensagens de aviso (proposta):**
+
+```
+1. BLOQUEADORES (gate=BLOCK, nao gera escala):
+   - Capacidade total insuficiente (D1)
+   - Capacidade domingo insuficiente (D2)
+   - Ciclo matematicamente impossivel (D3)
+
+2. WARNINGS ACIONAVEIS (gate=ALLOW, gera mas com ressalvas):
+   - "Mover folga de {nomeAutoAtribuido} de {diaAtual} para {diaMelhor}"
+     → so pra quem ta AUTOMATICO (preview decidiu)
+   - "Folga de {nomeManual} em {dia} causa deficit de {X}"
+     → pra quem ta MANUAL (RH escolheu) — informa, nao manda mudar
+   - "Folga de {nomeColaborador} em {dia} (regra fixa) causa deficit"
+     → pra quem ta no BD — informa que e limitacao estrutural
+
+3. INFORMATIVOS (gate=ALLOW):
+   - Domingos consecutivos inevitaveis (D4)
+   - Postos sem titular (A2)
+```
+
+**Principio:** a mensagem nunca diz "mude o que voce acabou de fazer". Ela sugere mudar o automatico primeiro. Se nao resolve, informa sobre o manual. Se nao resolve, informa sobre o fixo. Hierarquia natural, sem tosquice.
+
+---
+
 ## Gestao de Pins — O que Fixa, o que Solta
 
 ### O que o usuario PINA (controla)
