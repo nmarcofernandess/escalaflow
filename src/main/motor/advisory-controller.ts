@@ -1,10 +1,9 @@
 /**
- * advisory-controller.ts — Solver-backed advisory: validacao + proposta de ciclo.
+ * advisory-controller.ts — Solver-backed advisory: single solve with hierarchical soft pins.
  *
- * Pipeline (3 fases, todas advisory_only=true = solve_folga_pattern):
- *   Fase A: solver COM pins → valida arranjo atual
- *   Fase B: solver SEM pins, COM folga_fixa/variavel → propoe respeitando preferencias
- *   Fase C: solver SEM pins, SEM folga_fixa/variavel → propoe mudando tudo (destrutivo)
+ * Pipeline (single solve, advisory_only=true = solve_folga_pattern):
+ *   Solver WITH weighted pins → pin_violations booleans tell what changed.
+ *   Diff comes from pin_violated flags, NOT frequency inference.
  *
  * Output contem APENAS solver diagnostics. TS diagnostics ficam na AvisosSection.
  * Ciclo e abstrato: feriados e excecoes sao stripados.
@@ -14,12 +13,14 @@ import { createHash } from 'node:crypto'
 import type {
   AdvisoryStatus,
   AdvisoryDiffItem,
+  AdvisoryPinViolation,
   EscalaAdvisoryInput,
-  EscalaAdvisoryOutput,
+  EscalaAdvisoryOutputV2,
   SemanaDraftAdvisory,
 } from '../../shared/advisory-types'
 import type { PreviewDiagnostic } from '../../shared/preview-diagnostics'
-import type { SolverInput, DiaSemana, SolverInputDemanda } from '../../shared'
+import type { SolverInputDemanda, DiaSemana } from '../../shared'
+import type { PinOrigin } from '../../shared/types'
 import { buildSolverInput, runSolver, type BuildSolverInputOptions } from './solver-bridge'
 
 // ---------------------------------------------------------------------------
@@ -30,8 +31,15 @@ const DIAS_SEMANA: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM
 
 const ADVISORY_TIMEOUT_MS = 30_000
 
+const BAND_LABELS: Record<number, string> = {
+  0: 'folga',
+  1: 'manhã',
+  2: 'tarde',
+  3: 'dia inteiro',
+}
+
 // ---------------------------------------------------------------------------
-// 1. extractFolgaFromPattern
+// 1. extractFolgaFromPattern (kept for legacy diff generation)
 // ---------------------------------------------------------------------------
 
 /**
@@ -155,31 +163,85 @@ export function computeAdvisoryInputHash(input: EscalaAdvisoryInput): string {
 }
 
 // ---------------------------------------------------------------------------
-// 4. runAdvisory — pipeline de 2 passos
+// 4. Helpers
+// ---------------------------------------------------------------------------
+
+function generateDaysList(dataInicio: string, dataFim: string): string[] {
+  const days: string[] = []
+  const start = new Date(dataInicio + 'T00:00:00')
+  const end = new Date(dataFim + 'T00:00:00')
+  const d = new Date(start)
+  while (d <= end) {
+    days.push(d.toISOString().slice(0, 10))
+    d.setDate(d.getDate() + 1)
+  }
+  return days
+}
+
+function dayOfWeekLabel(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return DIAS_SEMANA[(d.getDay() + 6) % 7] ?? '?'
+}
+
+function buildViolationDescription(bandExpected: number, bandActual: number, dia: string): string {
+  const expected = BAND_LABELS[bandExpected] ?? '?'
+  const actual = BAND_LABELS[bandActual] ?? '?'
+  return `${dia}: ${expected} → ${actual}`
+}
+
+function buildDiffFromPattern(
+  pattern: Array<{ c: number; d: number; band: number }>,
+  days: string[],
+  numColabs: number,
+  colabIdMap: number[],
+  colaboradores: Array<{ id: number; nome: string }>,
+  currentFolgas: EscalaAdvisoryInput['current_folgas'],
+): AdvisoryDiffItem[] {
+  const proposed = extractFolgaFromPattern(pattern, days, numColabs)
+  return proposed.map(({ c, fixa, variavel }) => {
+    const colabId = colabIdMap[c] ?? -1
+    const cur = currentFolgas.find((f) => f.colaborador_id === colabId)
+    const colab = colaboradores[c]
+    return {
+      colaborador_id: colabId,
+      nome: colab?.nome ?? `Colaborador ${colabId}`,
+      posto_apelido: '',
+      fixa_atual: cur?.fixa ?? null,
+      fixa_proposta: fixa,
+      variavel_atual: cur?.variavel ?? null,
+      variavel_proposta: variavel,
+    }
+  })
+}
+
+function hasMeaningfulChanges(diff: AdvisoryDiffItem[]): boolean {
+  return diff.some(
+    (d) => d.fixa_atual !== d.fixa_proposta || d.variavel_atual !== d.variavel_proposta,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 5. runAdvisory — single solve with hierarchical soft pins
 // ---------------------------------------------------------------------------
 
 /**
- * Pipeline com 3 fases progressivas (todas advisory_only=true = solve_folga_pattern):
+ * Single solve with weighted pins. Diff comes from pin_violated booleans
+ * (Task 4 output), NOT from extractFolgaFromPattern frequency inference.
  *
- * Fase A: solver COM pins → valida arranjo atual
- * Fase B: solver SEM pins, COM folga_fixa/variavel → propoe respeitando preferencias
- * Fase C: solver SEM pins, SEM folga_fixa/variavel → propoe mudando tudo (destrutivo)
- *
- * validate_only=true → para na Fase A (so valida, sem proposta)
- * validate_only=false → roda A, B, C progressivamente ate encontrar solucao
+ * validate_only=true → returns immediately with CURRENT_VALID/NO_PROPOSAL.
+ * validate_only=false → also builds pin_violations and legacy diff.
  *
  * Output contem APENAS solver diagnostics. TS diagnostics ficam na AvisosSection.
  */
 export async function runAdvisory(
   input: EscalaAdvisoryInput,
-): Promise<EscalaAdvisoryOutput> {
+): Promise<EscalaAdvisoryOutputV2> {
   // ═══════════════════════════════════════════════════════════════════════════
-  // 1. Build solver input COM pins do TS
+  // 1. Build solver input WITH weighted pins
   // ═══════════════════════════════════════════════════════════════════════════
 
   const options: BuildSolverInputOptions = {
     solveMode: input.solve_mode ?? 'rapido',
-    ...(input.max_time_seconds != null ? { maxTimeSeconds: input.max_time_seconds } : {}),
     ...(input.rules_override ? { rulesOverride: input.rules_override } : {}),
     pinnedFolgaExterno: input.pinned_folga_externo.length > 0
       ? input.pinned_folga_externo
@@ -204,222 +266,133 @@ export async function runAdvisory(
   solverInput.config.advisory_only = true
 
   const colabIdMap = solverInput.colaboradores.map((c) => c.id)
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 2. TS diagnostics pass through
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Helpers: build input pra cada fase
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Fase B: sem pins, mantém folga_fixa/variavel dos colaboradores
-  const buildFaseBInput = (): SolverInput => {
-    const { pinned_folga_externo: _dropped, ...cleanConfig } =
-      solverInput.config as Record<string, unknown>
-    return {
-      ...solverInput,
-      config: { ...cleanConfig, advisory_only: true } as SolverInput['config'],
-    }
-  }
-
-  // Fase C: sem pins, SEM folga_fixa/variavel (solver decide TUDO — destrutivo)
-  const buildFaseCInput = (): SolverInput => {
-    const { pinned_folga_externo: _dropped, ...cleanConfig } =
-      solverInput.config as Record<string, unknown>
-    return {
-      ...solverInput,
-      colaboradores: solverInput.colaboradores.map((c) => ({
-        ...c,
-        folga_fixa_dia_semana: null,
-        folga_variavel_dia_semana: null,
-      })),
-      config: { ...cleanConfig, advisory_only: true } as SolverInput['config'],
-    }
-  }
-
-  // Helper: extract diff from solver pattern
-  const buildDiffFromPattern = (
-    pattern: Array<{ c: number; d: number; band: number }>,
-  ): AdvisoryDiffItem[] => {
-    const days = generateDaysList(input.data_inicio, input.data_fim)
-    const proposed = extractFolgaFromPattern(pattern, days, colabIdMap.length)
-    return proposed.map(({ c, fixa, variavel }) => {
-      const colabId = colabIdMap[c] ?? -1
-      const cur = input.current_folgas.find((f) => f.colaborador_id === colabId)
-      const colab = solverInput.colaboradores[c]
-      return {
-        colaborador_id: colabId,
-        nome: colab?.nome ?? `Colaborador ${colabId}`,
-        posto_apelido: '',
-        fixa_atual: cur?.fixa ?? null,
-        fixa_proposta: fixa,
-        variavel_atual: cur?.variavel ?? null,
-        variavel_proposta: variavel,
-      }
-    })
-  }
-
-  const hasMeaningfulChanges = (diff: AdvisoryDiffItem[]): boolean =>
-    diff.some((d) => d.fixa_atual !== d.fixa_proposta || d.variavel_atual !== d.variavel_proposta)
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FASE A: Solver COM pins → valida arranjo atual
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  let isCurrentValid = false
-  let proposal: EscalaAdvisoryOutput['proposal'] | undefined
-  let fallback: EscalaAdvisoryOutput['fallback'] | undefined
+  const days = generateDaysList(input.data_inicio, input.data_fim)
   const solverDiagnostics: PreviewDiagnostic[] = []
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 2. SINGLE SOLVE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  let solverResult: any
   try {
-    console.log('[advisory] Fase A: validando arranjo com pins...')
-    const pinnedResult = await runSolver(solverInput, ADVISORY_TIMEOUT_MS)
-    console.log(`[advisory] Fase A: sucesso=${pinnedResult.sucesso}, status=${pinnedResult.status}`)
+    console.log('[advisory] Single solve with weighted pins...')
+    solverResult = await runSolver(solverInput, ADVISORY_TIMEOUT_MS)
+    console.log(`[advisory] Result: sucesso=${solverResult.sucesso}, status=${solverResult.status}`)
+  } catch (err: any) {
+    console.error('[advisory] Solver crashed:', err?.message ?? err)
+    return {
+      status: 'NO_PROPOSAL',
+      diagnostics: [{
+        code: 'VALIDACAO_ERRO',
+        severity: 'error',
+        gate: 'BLOCK',
+        title: 'Erro ao analisar o arranjo.',
+        detail: err?.message ?? 'Erro desconhecido.',
+        source: 'advisory_current',
+      }],
+      fallback: { should_open_ia: true, reason: err?.message ?? 'Erro', diagnosis_payload: null },
+    }
+  }
 
-    const solverSucceeded = pinnedResult.sucesso && pinnedResult.status !== 'INFEASIBLE'
-
-    if (!solverSucceeded) {
-      isCurrentValid = false
-      solverDiagnostics.push({
+  if (!solverResult.sucesso || solverResult.status === 'ADVISORY_INFEASIBLE' || solverResult.status === 'INFEASIBLE') {
+    return {
+      status: 'NO_PROPOSAL',
+      diagnostics: [{
         code: 'VALIDACAO_INVIAVEL',
         severity: 'error',
         gate: 'BLOCK',
         title: 'O arranjo de folgas atual nao e viavel para o periodo selecionado.',
-        detail: pinnedResult.erro?.mensagem
-          ?? 'Com as restricoes de jornada e demanda, este arranjo de folgas nao funciona.',
+        detail: 'Com as restricoes de jornada e demanda, este arranjo nao funciona.',
         source: 'advisory_current',
-      })
-    } else {
-      // Phase 1 OK = cobertura por dia GARANTIDA (add_min_headcount_per_day e HARD)
-      isCurrentValid = true
+      }],
+      fallback: { should_open_ia: true, reason: 'Arranjo inviavel.', diagnosis_payload: null },
     }
-  } catch (err: any) {
-    console.error('[advisory] Fase A crashed:', err?.message ?? err)
-    solverDiagnostics.push({
-      code: 'VALIDACAO_ERRO',
-      severity: 'error',
-      gate: 'BLOCK',
-      title: 'Erro ao validar o arranjo.',
-      detail: err?.message ?? 'Erro desconhecido na validacao.',
-      source: 'advisory_current',
-    })
   }
 
-  // Se validate_only → para aqui. Nao propoe nada.
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 3. validate_only → return early
+  // ═══════════════════════════════════════════════════════════════════════════
+
   if (input.validate_only) {
     return {
-      status: isCurrentValid ? 'CURRENT_VALID' : 'NO_PROPOSAL',
+      status: 'CURRENT_VALID',
       diagnostics: solverDiagnostics,
-      ...(!isCurrentValid ? { fallback: { should_open_ia: true, reason: 'Arranjo nao viavel.', diagnosis_payload: null } } : {}),
     }
   }
 
-  // Se Fase A OK no Sugerir → tentar Fase B pra ver se tem algo melhor
-  // Se Fase A falhou → Fase B tenta resolver
-
   // ═══════════════════════════════════════════════════════════════════════════
-  // FASE B: Solver FREE (OFFICIAL) → proposta dentro das regras
+  // 4. Extract pin violations from solver diagnostico
   // ═══════════════════════════════════════════════════════════════════════════
 
-  let faseBResolveu = false
-  try {
-    console.log('[advisory] Fase B: free solve (sem pins, com folga fixa/variavel)...')
-    const freeResult = await runSolver(buildFaseBInput(), ADVISORY_TIMEOUT_MS)
-    console.log(`[advisory] Fase B: sucesso=${freeResult.sucesso}, status=${freeResult.status}`)
+  const rawViolations: Array<{
+    c: number; d: number; origin: string; weight: number;
+    band_expected: number; band_actual: number
+  }> = solverResult.diagnostico?.pin_violations ?? []
+  const pinCost: number = solverResult.diagnostico?.pin_cost ?? 0
 
-    if (freeResult.sucesso && freeResult.status !== 'INFEASIBLE' && freeResult.advisory_pattern) {
-      faseBResolveu = true
-      const diff = buildDiffFromPattern(freeResult.advisory_pattern)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 5. Build human-readable violations
+  // ═══════════════════════════════════════════════════════════════════════════
 
-      if (hasMeaningfulChanges(diff)) {
-        proposal = { diff }
-      }
-      // Se sem mudancas e Fase A OK → solver concorda, sem proposta
-      // Se sem mudancas e Fase A falhou → solver TAMBEM nao conseguiu com as mesmas folgas
-    }
-  } catch (err: any) {
-    console.error('[advisory] Fase B crashed:', err?.message ?? err)
-  }
-
-  // Se Fase B resolveu (com ou sem proposta) E Fase A OK → resultado final
-  if (isCurrentValid && faseBResolveu) {
+  const pinViolations: AdvisoryPinViolation[] = rawViolations.map((v) => {
+    const colabId = colabIdMap[v.c] ?? -1
+    const colab = solverInput.colaboradores[v.c]
+    const date = days[v.d] ?? ''
+    const diaSemana = date ? dayOfWeekLabel(date) : '?'
     return {
-      status: proposal ? 'PROPOSAL_VALID' : 'CURRENT_VALID',
-      diagnostics: solverDiagnostics,
-      ...(proposal ? { proposal } : {}),
+      colaborador_id: colabId,
+      nome: colab?.nome ?? `Colaborador ${colabId}`,
+      dia: diaSemana,
+      data: date,
+      origin: v.origin as PinOrigin,
+      weight: v.weight,
+      band_expected: v.band_expected,
+      band_actual: v.band_actual,
+      descricao: buildViolationDescription(v.band_expected, v.band_actual, diaSemana),
+    }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 6. Determine status
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const status: AdvisoryStatus = pinCost === 0 ? 'CURRENT_VALID' : 'PROPOSAL_VALID'
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 7. Build legacy diff for retrocompat with SugestaoSheet
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  let proposal: EscalaAdvisoryOutputV2['proposal'] | undefined
+  if (pinCost > 0 && solverResult.advisory_pattern) {
+    const diff = buildDiffFromPattern(
+      solverResult.advisory_pattern,
+      days,
+      colabIdMap.length,
+      colabIdMap,
+      solverInput.colaboradores,
+      input.current_folgas,
+    )
+    if (hasMeaningfulChanges(diff)) {
+      proposal = { diff }
     }
   }
 
-  // Se Fase B resolveu E Fase A falhou
-  if (!isCurrentValid && faseBResolveu) {
-    if (proposal) {
-      // Solver encontrou arranjo diferente que funciona
-      return { status: 'PROPOSAL_VALID', diagnostics: solverDiagnostics, proposal }
-    }
-    // Solver livre chegou no mesmo padrao mas conseguiu resolver (distribuicao dia-a-dia diferente)
-    // O padrao semanal funciona — o problema era nos pins exatos do TS, nao nas folgas
-    return { status: 'CURRENT_VALID', diagnostics: [] }
-  }
-
   // ═══════════════════════════════════════════════════════════════════════════
-  // FASE C: Solver FREE (EXPLORATORY) → pode mexer em folga fixa/variavel
+  // 8. Build hierarchy summary
   // ═══════════════════════════════════════════════════════════════════════════
 
-  try {
-    console.log('[advisory] Fase C: free solve (sem pins, sem folga fixa/variavel — destrutivo)...')
-    const exploResult = await runSolver(buildFaseCInput(), ADVISORY_TIMEOUT_MS)
-    console.log(`[advisory] Fase C: sucesso=${exploResult.sucesso}, status=${exploResult.status}`)
-
-    if (exploResult.sucesso && exploResult.status !== 'INFEASIBLE' && exploResult.advisory_pattern) {
-      const diff = buildDiffFromPattern(exploResult.advisory_pattern)
-
-      if (hasMeaningfulChanges(diff)) {
-        solverDiagnostics.push({
-          code: 'PROPOSTA_EXPLORATORY',
-          severity: 'warning',
-          gate: 'ALLOW',
-          title: 'Para encontrar solucao, foi necessario flexibilizar regras.',
-          detail: 'A proposta pode incluir mudancas em folgas fixas de colaboradores. Revise com cuidado.',
-          source: 'advisory_proposal',
-        })
-        proposal = { diff }
-      }
-    }
-  } catch (err: any) {
-    console.error('[advisory] Fase C crashed:', err?.message ?? err)
+  const hierarchySummary = {
+    auto_changes: pinViolations.filter((v) => v.origin === 'auto').length,
+    manual_changes: pinViolations.filter((v) => v.origin === 'manual').length,
+    saved_changes: pinViolations.filter((v) => v.origin === 'saved').length,
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Resultado final
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  if (proposal) {
-    return { status: 'PROPOSAL_VALID', diagnostics: solverDiagnostics, proposal }
+  return {
+    status,
+    diagnostics: solverDiagnostics,
+    ...(proposal ? { proposal } : {}),
+    pin_violations: pinViolations.length > 0 ? pinViolations : undefined,
+    pin_cost: pinCost,
+    hierarchy_summary: hierarchySummary,
   }
-
-  // Nenhuma fase resolveu
-  fallback = {
-    should_open_ia: true,
-    reason: 'Nenhum arranjo viavel foi encontrado mesmo com flexibilizacao de regras.',
-    diagnosis_payload: null,
-  }
-
-  return { status: 'NO_PROPOSAL', diagnostics: solverDiagnostics, fallback }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function generateDaysList(dataInicio: string, dataFim: string): string[] {
-  const days: string[] = []
-  const start = new Date(dataInicio + 'T00:00:00')
-  const end = new Date(dataFim + 'T00:00:00')
-  const d = new Date(start)
-  while (d <= end) {
-    days.push(d.toISOString().slice(0, 10))
-    d.setDate(d.getDate() + 1)
-  }
-  return days
 }

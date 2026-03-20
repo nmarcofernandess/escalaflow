@@ -1,5 +1,6 @@
 import type { DiaSemana } from './constants'
 import type { PreviewDiagnostic } from './preview-diagnostics'
+import type { PinOrigin } from './types'
 
 export type AdvisoryStatus =
   | 'CURRENT_VALID'
@@ -23,7 +24,7 @@ export interface EscalaAdvisoryInput {
   solve_mode?: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
   max_time_seconds?: number
   rules_override?: Record<string, string>
-  pinned_folga_externo: Array<{ c: number; d: number; band: number }>
+  pinned_folga_externo: Array<{ c: number; d: number; band: number; origin?: PinOrigin; weight?: number }>
   current_folgas: Array<{
     colaborador_id: number
     fixa: DiaSemana | null
@@ -81,5 +82,31 @@ export interface EscalaAdvisoryOutput {
     should_open_ia: boolean
     reason: string
     diagnosis_payload: unknown
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Advisory V2 — hierarchical soft constraints
+// ---------------------------------------------------------------------------
+
+export interface AdvisoryPinViolation {
+  colaborador_id: number
+  nome: string
+  dia: string           // 'SEG', 'TER', etc (human readable)
+  data: string          // '2026-03-05' (ISO date)
+  origin: PinOrigin
+  weight: number
+  band_expected: number  // 0=OFF, 1=MANHA, 2=TARDE, 3=INTEGRAL
+  band_actual: number
+  descricao: string      // human text: "SEG: folga → manhã"
+}
+
+export interface EscalaAdvisoryOutputV2 extends EscalaAdvisoryOutput {
+  pin_violations?: AdvisoryPinViolation[]
+  pin_cost?: number
+  hierarchy_summary?: {
+    auto_changes: number
+    manual_changes: number
+    saved_changes: number
   }
 }
