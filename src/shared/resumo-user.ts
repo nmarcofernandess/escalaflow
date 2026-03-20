@@ -42,3 +42,39 @@ export function textoResumoViolacoesSoft(count: number): string {
     ? '1 aviso (preferências ou metas).'
     : `${count} avisos (preferências ou metas).`
 }
+
+/** Mapa de códigos de regra → nomes legíveis. Exportado para uso em componentes UI. */
+export const NOMES_HUMANOS_REGRAS: Record<string, string> = {
+  DIAS_TRABALHO: 'dias de trabalho por semana',
+  MIN_DIARIO: 'jornada mínima diária',
+  TIME_WINDOW: 'janela de horário',
+  FOLGA_FIXA: 'folga fixa semanal',
+  FOLGA_VARIAVEL: 'folga variável (XOR domingo)',
+  H6: 'intervalo de almoço',
+  H10: 'meta de horas semanais',
+  H1: 'máximo 6 dias consecutivos',
+}
+
+/**
+ * Texto para relaxações aplicadas pelo solver (pass > 1).
+ * Consome diagnostico.pass_usado e diagnostico.regras_relaxadas.
+ * Retorna null APENAS quando pass === 1 (numérico) e sem relaxações.
+ * Pass '1b' (string) SEMPRE retorna texto — alguma regra foi afrouxada.
+ */
+export function textoResumoRelaxacoes(
+  pass_usado: number | string,
+  regras_relaxadas: string[],
+  generation_mode?: string,
+): string | null {
+  // Só pass 1 (numérico exato) sem relaxações = tudo OK
+  if (pass_usado === 1 && regras_relaxadas.length === 0) return null
+
+  const nomes = regras_relaxadas.length > 0
+    ? regras_relaxadas.map(r => NOMES_HUMANOS_REGRAS[r] ?? r).join(', ')
+    : 'regras de produto'
+
+  if (pass_usado === 3 || generation_mode === 'EXPLORATORY') {
+    return `Escala de emergência — foram flexibilizados: ${nomes}. Revise com cuidado.`
+  }
+  return `Escala gerada com ajustes: ${nomes} foram flexibilizados para viabilizar a geração.`
+}
