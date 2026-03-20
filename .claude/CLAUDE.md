@@ -184,10 +184,10 @@ npm run solver:build
 
 ```bash
 npm run solver:cli -- list                           # lista setores disponíveis
-npm run solver:cli -- 2                              # roda Açougue (1 semana, próxima segunda)
-npm run solver:cli -- 2 2026-03-02 2026-03-08        # Açougue, período específico
-npm run solver:cli -- 1 2026-03-02 2026-04-26        # Caixa, 8 semanas
-npm run solver:cli -- 2 --mode otimizado             # mais tempo pro solver otimizar
+npm run solver:cli -- 2                              # Açougue (3 meses, patience 15s)
+npm run solver:cli -- 2 2026-03-02 2026-05-31        # Açougue, período específico
+npm run solver:cli -- 2 --mode otimizado             # patience 60s (mais paciente)
+npm run solver:cli -- 2 --mode maximo                # patience 120s (máximo polimento)
 npm run solver:cli -- 2 --dump                       # salva input JSON em tmp/ (debug)
 npm run solver:cli -- 2 --summary                    # JSON compacto: indicadores + horas/colab (~1KB)
 npm run solver:cli -- 2 --json                       # JSON sem comparacao_demanda (~250KB)
@@ -217,6 +217,19 @@ O Python devolve JSON via stdout com estes campos:
 | `diagnostico` | ~1KB | Todos | Metadata: regras ativas, pass usado, tempos |
 
 **IMPORTANTE:** `comparacao_demanda` é o campo mais pesado (67%). O app persiste no banco para CSV export e futuro gráfico de gaps. O CLI `--json` omite por padrão — use `--json-full` se precisar. A IA tool `gerar_escala` só usa um `.filter(delta < 0).slice(0, 10)` inline — não repassa o array inteiro.
+
+### Coverage Stabilization
+
+O solver usa **estabilização de cobertura** em vez de budget fixo de tempo. Cada pass roda até a cobertura parar de melhorar (patience timer) ou OPTIMAL. Os modos controlam o patience:
+
+| Modo | Patience | Semântica |
+|------|----------|-----------|
+| `rapido` | 15s | Para rápido após cobertura estabilizar |
+| `balanceado` | 30s | Equilíbrio — padrão |
+| `otimizado` | 60s | Espera mais por melhorias |
+| `maximo` | 120s | Espreme até o último % |
+
+**INFEASIBLE é instantâneo (<1s).** O patience só roda no pass que encontra solução. Passes que falham não desperdiçam tempo.
 
 ### Outros testes do motor
 
@@ -390,7 +403,7 @@ O sistema usa dois seed JSONs pre-computados — gerados pelo dev, sem LLM em ru
 | `knowledge/sistema/graph-seed.json` | Entidades e relações pre-extraídas do graph sistema | Tracked |
 
 - `seed.ts` roda na primeira inicialização (banco vazio)
-- `seed-local.ts` opcional — dados de teste completos para dev. Período sugerido: 2026-03-02 a 2026-04-26
+- `seed-local.ts` opcional — dados de teste completos para dev. Período sugerido: 2026-03-02 a 2026-05-31
 - **Reset completo:** `npm run db:reset` (ou delete `data/pglite/` + reiniciar)
 
 ### Padrões no schema
