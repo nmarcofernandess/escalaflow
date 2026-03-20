@@ -71,6 +71,12 @@ export interface SimulaCicloOutput {
   ciclo_semanas: number
   stats: SimulaCicloStats
   folga_warnings?: FolgaWarning[]
+  /** Folgas auto-redistribuidas para melhorar cobertura */
+  redistribuicoes?: Array<{
+    pessoa: number      // index no grid
+    de_dia: number      // day-of-week index original (0=SEG..5=SAB)
+    para_dia: number    // day-of-week index destino
+  }>
 }
 
 // gcd exported for heuristica K
@@ -359,6 +365,99 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     }
   }
 
+  // --- Step 2b: Auto-redistribution of auto-assigned folgas when they cause deficit ---
+  const redistribuicoes: Array<{ pessoa: number; de_dia: number; para_dia: number }> = []
+
+  if (hasDemanda) {
+    // Build per-person folga tracking from Step 2 assignments
+    const personFolgas: Array<{
+      fixa: number; var: number | null
+      fixaForced: boolean; varForced: boolean
+    }> = []
+
+    for (let p = 0; p < N; p++) {
+      const forcada = input.folgas_forcadas?.[p]
+      const isFixaDom = forcada?.folga_fixa_dom === true
+
+      const fixaForced = forcada?.folga_fixa_dia != null
+      const varForced = isFixaDom ? true : (forcada?.folga_variavel_dia != null)
+
+      // Detect the actual assigned days by scanning the first week's weekday pattern
+      let actualFixa = -1
+      let actualVar: number | null = null
+      for (let d = 0; d < 6; d++) {
+        if (grid[p][d] === 'F') {
+          if (actualFixa === -1) actualFixa = d
+          else if (actualVar == null) actualVar = d
+        }
+      }
+
+      personFolgas.push({ fixa: actualFixa, var: actualVar, fixaForced, varForced })
+    }
+
+    for (let pass = 0; pass < 3; pass++) {
+      let moved = false
+      for (let d = 0; d < 6; d++) {
+        const cob = N - folgaCount[d]
+        const dem = input.demanda_por_dia![d] ?? 0
+        if (cob >= dem) continue // no deficit on this day
+
+        // Find person with auto-assigned folga on this day
+        for (let p = 0; p < N; p++) {
+          const pf = personFolgas[p]
+          let movingFixa = false
+          let movingVar = false
+
+          if (pf.fixa === d && !pf.fixaForced) movingFixa = true
+          else if (pf.var === d && !pf.varForced) movingVar = true
+          else continue
+
+          // Find best destination: day with most surplus (coverage - demand)
+          const exclude = movingFixa ? pf.var : pf.fixa
+          let bestDay = -1
+          let bestSurplus = -Infinity
+          for (let dd = 0; dd < 6; dd++) {
+            if (dd === d || dd === exclude) continue
+            const surplus = (N - folgaCount[dd]) - (input.demanda_por_dia![dd] ?? 0)
+            if (surplus > bestSurplus) {
+              bestSurplus = surplus
+              bestDay = dd
+            }
+          }
+
+          if (bestDay >= 0 && bestSurplus > 0) {
+            // Move the folga
+            folgaCount[d]--
+            folgaCount[bestDay]++
+            if (movingFixa) pf.fixa = bestDay
+            else pf.var = bestDay
+
+            // Update grid for all weeks
+            for (let w = 0; w < weeks; w++) {
+              const sundayOff = grid[p][w * 7 + 6] === 'F'
+              if (sundayOff) {
+                // DOM off week: only fixa applies (var doesn't kick in)
+                if (movingFixa) {
+                  grid[p][w * 7 + d] = 'T'
+                  grid[p][w * 7 + bestDay] = 'F'
+                }
+              } else {
+                // DOM work week: both fixa and var apply
+                grid[p][w * 7 + d] = 'T'
+                grid[p][w * 7 + bestDay] = 'F'
+              }
+            }
+
+            redistribuicoes.push({ pessoa: p, de_dia: d, para_dia: bestDay })
+            moved = true
+            break // One move per deficit day per pass
+          }
+        }
+      }
+      if (!moved) break
+    }
+  }
+
   // --- Step 3: H1 repair (max 6 consecutivos) ---
   const maxConsec = 6
   let h1Violations = 0
@@ -449,83 +548,8 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
       sem_H1_violation: semH1,
     },
     folga_warnings: folgaWarnings.length > 0 ? folgaWarnings : undefined,
+    ...(redistribuicoes.length > 0 ? { redistribuicoes } : {}),
   }
-}
-
-// ============================================================================
-// Sugerir TS hierarquico — step-by-step de baixo pra cima
-// ============================================================================
-
-export interface SugerirTSResult {
-  resultado: SimulaCicloOutput
-  /** Quantas pessoas foram liberadas (0 = sem mudanca, N = tudo livre) */
-  liberados: number
-}
-
-/**
- * Tenta resolver deficits liberando folgas progressivamente de baixo pra cima.
- * Indice 0 = rank mais alto (preserva). Indice N-1 = rank mais baixo (libera primeiro).
- * Retorna o PRIMEIRO resultado sem deficit de cobertura.
- */
-export function sugerirTSHierarquico(input: {
-  folgas: Array<{
-    folga_fixa_dia: number | null
-    folga_variavel_dia: number | null
-    folga_fixa_dom?: boolean
-  }>
-  num_postos: number
-  trabalham_domingo: number
-  num_meses?: number
-  demanda_por_dia?: number[]
-}): SugerirTSResult {
-  const N = input.num_postos
-
-  for (let step = 0; step <= N; step++) {
-    const folgas = input.folgas.map((f, idx) => {
-      if (step > 0 && idx >= N - step) {
-        return {
-          folga_fixa_dia: null as number | null,
-          folga_variavel_dia: null as number | null,
-          folga_fixa_dom: f.folga_fixa_dom,
-        }
-      }
-      return { ...f }
-    })
-
-    const result = gerarCicloFase1({
-      num_postos: N,
-      trabalham_domingo: input.trabalham_domingo,
-      num_meses: input.num_meses,
-      folgas_forcadas: folgas,
-      demanda_por_dia: input.demanda_por_dia,
-    })
-
-    if (!result.sucesso) continue
-
-    const hasDeficit = result.cobertura_dia.some((sem) =>
-      sem.cobertura.some((cob, idx) => cob < (input.demanda_por_dia?.[idx] ?? 0)),
-    )
-
-    if (!hasDeficit) {
-      return { resultado: result, liberados: step }
-    }
-  }
-
-  // Nenhuma tentativa resolveu — retorna tudo livre (preservando folga_fixa_dom)
-  const fallbackFolgas = input.folgas.map((f) => ({
-    folga_fixa_dia: null as number | null,
-    folga_variavel_dia: null as number | null,
-    folga_fixa_dom: f.folga_fixa_dom,
-  }))
-  const fallbackResult = gerarCicloFase1({
-    num_postos: N,
-    trabalham_domingo: input.trabalham_domingo,
-    num_meses: input.num_meses,
-    folgas_forcadas: fallbackFolgas,
-    demanda_por_dia: input.demanda_por_dia,
-  })
-
-  return { resultado: fallbackResult, liberados: N }
 }
 
 // ============================================================================

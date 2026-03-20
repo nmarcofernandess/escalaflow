@@ -36,7 +36,6 @@ import {
   AlertTriangle,
   ShieldCheck,
   Zap,
-  Lightbulb,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
@@ -104,7 +103,7 @@ import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet } from '@/componentes/SugestaoSheet'
-import { converterPreviewParaPinned, sugerirK, sugerirTSHierarquico, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { runPreviewMultiPass, type MultiPassResult } from '@shared/preview-multi-pass'
 import type { EscalaAdvisoryOutput, AdvisoryDiffItem } from '@shared/index'
 import { textoResumoRelaxacoes } from '@shared/resumo-user'
@@ -2178,98 +2177,7 @@ export function SetorDetalhe() {
     }
   }, [advisoryLoading, setorId, simulacaoPreview, previewSetorRows, periodoGeracao, setor])
 
-  // ── Sugerir TS: step-by-step hierarquico (libera rank baixo primeiro) ──
-  const handleSugerirTS = useCallback(() => {
-    if (!simulacaoPreview.resultado.sucesso) return
 
-    const previewGrid = simulacaoPreview.resultado.grid
-    const currentFolgas = previewSetorRows.map((row, idx) => {
-      const gridRow = previewGrid[idx]
-      return {
-        colaborador_id: row.titular.id,
-        fixa: (row.folgaFixaDom ? 'DOM' : idxPreviewParaDiaSemana(gridRow?.folga_fixa_dia)) as DiaSemana | null,
-        variavel: idxPreviewParaDiaSemana(gridRow?.folga_variavel_dia),
-      }
-    })
-
-    const { resultado, liberados } = sugerirTSHierarquico({
-      folgas: previewSetorRows.map((row) => row.folgaForcada),
-      num_postos: simulacaoPreview.effectiveN,
-      trabalham_domingo: simulacaoPreview.effectiveK,
-      num_meses: simulacaoPreviewMeses,
-      demanda_por_dia: demandaPorDiaPreviewCiclo,
-    })
-
-    // TS falhou completamente
-    if (!resultado.sucesso || resultado.grid.length === 0) {
-      setAdvisoryResult({
-        status: 'NO_PROPOSAL',
-        diagnostics: [{
-          code: 'TS_FALHOU',
-          severity: 'warning',
-          gate: 'ALLOW',
-          title: 'O sistema nao conseguiu montar um ciclo viavel.',
-          detail: resultado.erro ?? 'Tente usar o botão Sugerir para uma análise mais profunda.',
-          source: 'advisory_proposal',
-        }],
-      })
-      setSugestaoOpen(true)
-      return
-    }
-
-    // Build diff
-    const diff: AdvisoryDiffItem[] = previewSetorRows.map((row, idx) => {
-      const gridRow = resultado.grid[idx]
-      return {
-        colaborador_id: row.titular.id,
-        nome: row.titular.nome,
-        posto_apelido: row.funcao.apelido,
-        fixa_atual: currentFolgas[idx]?.fixa ?? null,
-        fixa_proposta: row.folgaFixaDom ? 'DOM' as DiaSemana : idxPreviewParaDiaSemana(gridRow?.folga_fixa_dia),
-        variavel_atual: currentFolgas[idx]?.variavel ?? null,
-        variavel_proposta: idxPreviewParaDiaSemana(gridRow?.folga_variavel_dia),
-      }
-    })
-
-    const hasChanges = diff.some(
-      (d) => d.fixa_atual !== d.fixa_proposta || d.variavel_atual !== d.variavel_proposta,
-    )
-
-    const diagnostics: PreviewDiagnostic[] = []
-
-    if (liberados > 0 && hasChanges) {
-      diagnostics.push({
-        code: 'TS_REDISTRIBUIU',
-        severity: 'info',
-        gate: 'ALLOW',
-        title: `${liberados} colaborador(es) de menor hierarquia tiveram folgas redistribuidas.`,
-        detail: 'O sistema priorizou manter as folgas dos colaboradores de maior hierarquia.',
-        source: 'advisory_proposal',
-      })
-    }
-
-    // Verificar se ainda tem deficit mesmo apos sugestao
-    const stillHasDeficit = resultado.cobertura_dia.some((sem) =>
-      sem.cobertura.some((cob, i) => cob < (demandaPorDiaPreviewCiclo[i] ?? 0)),
-    )
-    if (stillHasDeficit) {
-      diagnostics.push({
-        code: 'TS_NAO_RESOLVEU',
-        severity: 'warning',
-        gate: 'ALLOW',
-        title: 'O sistema nao conseguiu eliminar todos os deficits.',
-        detail: 'A equipe pode ser insuficiente para a demanda. Use o botão Sugerir ou ajuste a demanda.',
-        source: 'advisory_proposal',
-      })
-    }
-
-    setAdvisoryResult({
-      status: hasChanges ? 'PROPOSAL_VALID' : 'CURRENT_VALID',
-      diagnostics,
-      ...(hasChanges ? { proposal: { diff } } : {}),
-    })
-    setSugestaoOpen(true)
-  }, [simulacaoPreview, previewSetorRows, simulacaoPreviewMeses, demandaPorDiaPreviewCiclo])
 
   // ── Validar: roda solver COM pins, validate_only — sem proposta ──
   const handleValidar = useCallback(async () => {
@@ -3300,21 +3208,6 @@ export function SetorDetalhe() {
                   {escalaTab === 'simulacao' && (
                     <>
                       {simulacaoPreview.resultado.sucesso && modoSimulacaoEfetivo === 'SETOR' && (
-                        <>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={handleSugerirTS}
-                                disabled={advisoryLoading || gerando}
-                                aria-label="Sugerir com TS"
-                              >
-                                <Lightbulb className="size-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Sugerir com TS</TooltipContent>
-                          </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -3333,7 +3226,6 @@ export function SetorDetalhe() {
                             </TooltipTrigger>
                             <TooltipContent>Validar arranjo</TooltipContent>
                           </Tooltip>
-                        </>
                       )}
                       {modoSimulacaoEfetivo === 'SETOR' && (
                         <Tooltip>
@@ -3447,15 +3339,19 @@ export function SetorDetalhe() {
                         onFolgaChange={handlePreviewFolgaChange}
                         frameBorderClassName={previewCardTone.frame}
                         coverageActions={{
-                          showSuggest: modoSimulacaoEfetivo === 'SETOR',
-                          suggestDisabled: advisoryLoading,
-                          onSuggest: modoSimulacaoEfetivo === 'SETOR' ? handleSugerirTS : undefined,
                           onResetAutomatico: () => handleResetarSimulacao('automatico'),
                           onRestaurarColaboradores: modoSimulacaoEfetivo === 'SETOR'
                             ? () => handleResetarSimulacao('colaboradores')
                             : undefined,
                         }}
+                        redistributions={simulacaoPreview.resultado.redistribuicoes}
                       />
+                      {simulacaoPreview.resultado.redistribuicoes && simulacaoPreview.resultado.redistribuicoes.length > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+                          <span className="text-blue-500">&#8635;</span>
+                          O sistema ajustou {simulacaoPreview.resultado.redistribuicoes.length} folga(s) automatica(s) para melhorar a cobertura
+                        </div>
+                      )}
                       <AvisosSection
                         avisos={previewAvisos}
                         onAnalisarIa={abrirAnaliseIa}

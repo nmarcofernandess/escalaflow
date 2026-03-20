@@ -1,4 +1,4 @@
-import { Lightbulb, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -40,6 +40,8 @@ interface CicloGridProps {
   className?: string
   frameBorderClassName?: string
   coverageActions?: CicloGridCoverageActions
+  /** Folgas auto-redistribuidas pelo preview (visual feedback) */
+  redistributions?: Array<{ pessoa: number; de_dia: number; para_dia: number }>
 }
 
 // ─── Layout constants ────────────────────────────────────────────────────────
@@ -154,6 +156,7 @@ export function CicloGrid({
   className,
   frameBorderClassName,
   coverageActions,
+  redistributions,
 }: CicloGridProps) {
   const { rows, cobertura, demanda, cicloSemanas } = data
   const isExport = variant === 'export'
@@ -190,7 +193,6 @@ export function CicloGrid({
     return localSemanaIdx > 0
   }
 
-  const showCoverageSuggest = !isExport && mode === 'edit' && coverageActions?.showSuggest && coverageActions.onSuggest != null
   const showCoverageReset = !isExport && mode === 'edit'
     && (coverageActions?.onResetAutomatico != null || coverageActions?.onRestaurarColaboradores != null)
 
@@ -338,7 +340,7 @@ export function CicloGrid({
         {/* ── TBODY ── */}
         <tbody>
           {/* Colaborador rows */}
-          {rows.map((row) => (
+          {rows.map((row, rowIdx) => (
             <tr
               key={row.id}
               className={cn(
@@ -443,6 +445,7 @@ export function CicloGrid({
                   const config = SIMBOLO_CONFIG[simbolo as Simbolo] ?? SIMBOLO_CONFIG['.']
                   const isFirst = diaIdx === 0 && isWeekStartInBlock(localIdx)
                   const isCycleEndCell = isCycleEnd(absIdx, diaIdx)
+                  const isRedist = redistributions?.some(r => r.pessoa === rowIdx && r.para_dia === diaIdx)
                   return (
                     <td
                       key={`${absIdx}-${diaIdx}`}
@@ -451,6 +454,7 @@ export function CicloGrid({
                         isFirst && 'border-l border-border',
                         isCycleEndCell && 'border-r-2 border-r-purple-500',
                       )}
+                      title={isRedist ? 'O sistema moveu esta folga para melhorar a cobertura' : undefined}
                     >
                       <span
                         className={cn(
@@ -460,6 +464,7 @@ export function CicloGrid({
                         )}
                       >
                         {simbolo === '.' ? '\u00B7' : simbolo === '-' ? '\u2013' : simbolo}
+                        {isRedist && <span className="text-[8px] text-blue-500 align-super">&#8635;</span>}
                       </span>
                     </td>
                   )
@@ -492,21 +497,6 @@ export function CicloGrid({
                 ? { width: folgaW }
                 : { left: varLeft, width: folgaW, minWidth: folgaW }}
             >
-              {showCoverageSuggest && (
-                <div className="flex justify-center">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-warning hover:text-warning"
-                    title="Sugerir ajustes"
-                    onClick={coverageActions!.onSuggest}
-                    disabled={coverageActions?.suggestDisabled}
-                  >
-                    <Lightbulb className="size-4" />
-                    Sugerir
-                  </Button>
-                </div>
-              )}
             </td>
             {/* Empty Fixo cell */}
             <td
