@@ -79,10 +79,10 @@ WEIGHTS = {
 }
 
 MODE_PROFILES = {
-    "rapido":     {"budget": 120,  "gap": 0.05},
-    "balanceado": {"budget": 180,  "gap": 0.02},
-    "otimizado":  {"budget": 600,  "gap": 0.005},
-    "maximo":     {"budget": 1800, "gap": 0.001},
+    "rapido":     {"patience_s": 15},
+    "balanceado": {"patience_s": 30},
+    "otimizado":  {"patience_s": 60},
+    "maximo":     {"patience_s": 120},
 }
 
 # Minimum viable coverage threshold (%). If a FEASIBLE solution has coverage
@@ -90,6 +90,99 @@ MODE_PROFILES = {
 # the threshold or hits HARD_TIME_CAP_SECONDS.
 MIN_COVERAGE_THRESHOLD = 90.0
 HARD_TIME_CAP_SECONDS = 3600  # 1 hour absolute maximum
+
+# ── Patience-based stabilization (replaces fixed budgets) ──────────────
+
+PATIENCE_BY_MODE = {
+    "rapido":     15,
+    "balanceado": 30,
+    "otimizado":  60,
+    "maximo":     120,
+}
+
+
+def compute_coverage_from_deficit(deficit_sum: int, total_demand: int) -> float:
+    """Coverage %: (total - deficit) / total * 100."""
+    if total_demand <= 0:
+        return 100.0
+    return round((total_demand - deficit_sum) / total_demand * 100, 1)
+
+
+class CoverageStabilizationCallback(cp_model.CpSolverSolutionCallback):
+    """Stops search when coverage % stabilizes (no improvement in patience_s seconds).
+
+    On each new solution:
+    1. Compute coverage from deficit variables
+    2. If coverage improved → reset patience timer, log progress
+    3. If patience exceeded → stop_search()
+    """
+
+    def __init__(
+        self,
+        deficit_vars: Dict[Tuple[int, int], cp_model.IntVar],
+        total_demand_slots: int,
+        patience_s: float = 30.0,
+    ):
+        super().__init__()
+        self.deficit_vars = deficit_vars
+        self.total_demand_slots = total_demand_slots
+        self.patience_s = patience_s
+
+        # State
+        self.best_coverage = 0.0
+        self.best_objective = float("inf")
+        self.last_coverage_improvement_time = 0.0
+        self.first_solution_time: float | None = None
+        self.stabilized_time: float | None = None
+        self.solutions_found = 0
+        self.coverage_history: list[tuple[float, float]] = []
+
+    def on_solution_callback(self):
+        self.solutions_found += 1
+        now = self.wall_time()
+
+        if self.first_solution_time is None:
+            self.first_solution_time = now
+            self.last_coverage_improvement_time = now
+
+        # Compute coverage from deficit vars
+        deficit_sum = sum(
+            self.Value(dv) for dv in self.deficit_vars.values()
+        )
+        coverage = compute_coverage_from_deficit(deficit_sum, self.total_demand_slots)
+        self.coverage_history.append((now, coverage))
+
+        obj = self.ObjectiveValue()
+
+        # Coverage improved? → reset timer
+        if coverage > self.best_coverage:
+            self.best_coverage = coverage
+            self.last_coverage_improvement_time = now
+            log(f"[COBERTURA] {coverage}% (obj={obj:.0f}) em {now:.1f}s")
+
+        self.best_objective = min(self.best_objective, obj)
+
+        # Check patience: no coverage improvement in patience_s seconds
+        since_last = now - self.last_coverage_improvement_time
+        if since_last >= self.patience_s:
+            self.stabilized_time = now
+            log(f"[ESTABILIZOU] Cobertura {self.best_coverage}% estavel ha {since_last:.0f}s — parando busca")
+            self.StopSearch()
+
+    def get_diagnostics(self) -> dict:
+        """Return timing/coverage diagnostics for the result."""
+        return {
+            "first_solution_s": round(self.first_solution_time, 1) if self.first_solution_time else None,
+            "stabilized_s": round(self.stabilized_time, 1) if self.stabilized_time else None,
+            "solutions_found": self.solutions_found,
+            "final_coverage": self.best_coverage,
+            "patience_s": self.patience_s,
+            "coverage_improvements": sum(
+                1 for i in range(1, len(self.coverage_history))
+                if self.coverage_history[i][1] > self.coverage_history[i - 1][1]
+            ),
+        }
+
 
 DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
 
