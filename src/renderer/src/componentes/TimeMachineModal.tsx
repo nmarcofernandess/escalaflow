@@ -151,7 +151,7 @@ export function TimeMachineModal({ open, onOpenChange }: TimeMachineModalProps) 
   async function handleCriarPrimeiroBackup() {
     setCreatingFirst(true)
     try {
-      await window.electron.ipcRenderer.invoke('backup.snapshots.criar', { trigger: 'manual', light: false })
+      await window.electron.ipcRenderer.invoke('backup.snapshots.criar', { trigger: 'manual', scope: 'full' })
       toast.success('Backup criado')
       await loadSnapshots()
     } catch (err) {

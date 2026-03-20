@@ -1017,6 +1017,7 @@ export interface ConfiguracaoBackup {
 }
 
 export type SnapshotTrigger = 'auto_close' | 'auto_intervalo' | 'manual' | 'ia' | 'auto_pre_restore'
+export type BackupScope = 'operational' | 'full'
 
 export interface SnapshotMeta {
   app: string
@@ -1025,6 +1026,7 @@ export interface SnapshotMeta {
   trigger: SnapshotTrigger
   tabelas: number
   registros: number
+  scope?: BackupScope
 }
 
 export interface SnapshotInfo {

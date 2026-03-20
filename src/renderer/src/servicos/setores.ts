@@ -62,6 +62,13 @@ export const setoresService = {
   salvarTimelineSemana: (data: SalvarTimelineSemanaInput) =>
     client['setores.salvarTimelineSemana'](data as any) as Promise<SalvarTimelineSemanaOutput>,
 
+  salvarCompleto: (data: {
+    setor_id: number
+    setor: { nome: string; icone: string | null; hora_abertura: string; hora_fechamento: string; regime_escala: '5X2' | '6X1' }
+    timeline: SalvarTimelineSemanaInput
+  }) =>
+    client['setores.salvarCompleto'](data as any) as Promise<Setor>,
+
   limparPadraoDemandas: (setorId: number) =>
     client['setores.limparPadraoDemandas']({ setor_id: setorId }) as Promise<void>,
 

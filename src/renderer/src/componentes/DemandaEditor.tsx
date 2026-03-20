@@ -385,18 +385,36 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
               ]
             })()
 
-    const padraoSegmentosBase = padraoSegmentosBaseRaw
-      .map((seg) => {
-        const start = Math.max(padraoAberturaMin, toMinutes(seg.hora_inicio))
-        const end = Math.min(padraoFechamentoMin, toMinutes(seg.hora_fim))
-        if (end - start < 30) return null
-        return {
-          ...seg,
-          hora_inicio: minutesToTime(start),
-          hora_fim: minutesToTime(end),
-        }
-      })
-      .filter((seg): seg is SegmentoDraft => seg !== null)
+    const clipSegmentos = (segs: SegmentoDraft[]) =>
+      segs
+        .map((seg) => {
+          const start = Math.max(padraoAberturaMin, toMinutes(seg.hora_inicio))
+          const end = Math.min(padraoFechamentoMin, toMinutes(seg.hora_fim))
+          if (end - start < 30) return null
+          return { ...seg, hora_inicio: minutesToTime(start), hora_fim: minutesToTime(end) }
+        })
+        .filter((seg): seg is SegmentoDraft => seg !== null)
+
+    let padraoSegmentosBase = clipSegmentos(padraoSegmentosBaseRaw)
+
+    // Onda 5: se padrao persistido ficou vazio apos clipping (bounds incompativeis),
+    // cair para fallback de dia herdado — safety net pos-restore
+    if (padraoSegmentosBase.length === 0 && (padraoPersistido.length > 0 || padraoLegado.length > 0)) {
+      const fallbackDia = firstUsaPadraoDiaComSegmentos
+        ?? DIAS_SEMANA.find((dia) => byDia[dia].length > 0)
+      if (fallbackDia) {
+        padraoSegmentosBase = clipSegmentos(cloneSegmentos(byDia[fallbackDia], nextTempId))
+      }
+      if (padraoSegmentosBase.length === 0) {
+        padraoSegmentosBase = [{
+          id: nextTempId.current--,
+          hora_inicio: minutesToTime(padraoAberturaMin),
+          hora_fim: minutesToTime(padraoFechamentoMin),
+          min_pessoas: 1,
+          override: false,
+        }]
+      }
+    }
 
     const padrao: PadraoDraft = {
       hora_abertura: minutesToTime(padraoAberturaMin),
@@ -1445,13 +1463,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
 
         <TabsContent value={activeTab} className="mt-3">
           <div className="space-y-3">
-            {activeTab === 'padrao' && (
-              <div className="text-xs text-muted-foreground">
-                {diasUsandoPadrao.length > 0
-                  ? `${diasUsandoPadrao.length} dia(s) estão herdando o padrão no momento.`
-                  : 'Nenhum dia está herdando o padrão no momento.'}
-              </div>
-            )}
+            {null}
             <div className={cn(isDiaHerdandoPadrao && 'pointer-events-none select-none opacity-60')}>
               {viewMode === 'timeline' ? renderTimelineView() : (
                 <>

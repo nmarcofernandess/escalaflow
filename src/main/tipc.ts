@@ -2180,6 +2180,106 @@ const setoresSalvarTimelineSemana = t.procedure
     }
   })
 
+// ─── Onda 3: Save unificado (setor + timeline em uma transacao) ─────────────
+const setoresSalvarCompleto = t.procedure
+  .input<{
+    setor_id: number
+    setor: {
+      nome: string
+      icone: string | null
+      hora_abertura: string
+      hora_fechamento: string
+      regime_escala: '5X2' | '6X1'
+    }
+    timeline: {
+      padrao: {
+        hora_abertura: string
+        hora_fechamento: string
+        segmentos: Array<{ hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }>
+      }
+      dias: Array<{
+        dia_semana: string
+        ativo: boolean
+        usa_padrao: boolean
+        hora_abertura: string
+        hora_fechamento: string
+        segmentos: Array<{ hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }>
+      }>
+    }
+  }>()
+  .action(async ({ input }) => {
+    const { withDbCriticalSection } = await import('./backup')
+
+    return withDbCriticalSection('setores.salvarCompleto', async () => {
+      const setor = await queryOne<{ id: number }>('SELECT id FROM setores WHERE id = ?', input.setor_id)
+      if (!setor) throw new Error('Setor nao encontrado')
+
+      if (!input.setor.nome.trim()) throw new Error('Nome do setor e obrigatorio')
+      if (!Array.isArray(input.timeline.dias) || input.timeline.dias.length === 0) {
+        throw new Error('Nenhum dia informado para salvar timeline semanal')
+      }
+
+      const preparedPadrao = normalizeTimelineDayForPersistence({
+        dia_semana: 'PADRAO',
+        ativo: true,
+        usa_padrao: false,
+        hora_abertura: input.timeline.padrao.hora_abertura,
+        hora_fechamento: input.timeline.padrao.hora_fechamento,
+        segmentos: input.timeline.padrao.segmentos,
+      })
+
+      const diasUnicos = new Set<string>()
+      const preparedDays = input.timeline.dias.map((dia) => {
+        if (diasUnicos.has(dia.dia_semana)) throw new Error(`Dia duplicado: ${dia.dia_semana}`)
+        diasUnicos.add(dia.dia_semana)
+        return normalizeTimelineDayForPersistence(dia)
+      })
+
+      await transaction(async () => {
+        // 1. Atualiza dados basicos do setor
+        await execute(
+          `UPDATE setores SET nome = ?, icone = ?, hora_abertura = ?, hora_fechamento = ?, regime_escala = ? WHERE id = ?`,
+          input.setor.nome.trim(), input.setor.icone, input.setor.hora_abertura,
+          input.setor.hora_fechamento, input.setor.regime_escala, input.setor_id,
+        )
+
+        // 2. Atualiza demanda padrao do setor
+        await execute(
+          `UPDATE setores SET demanda_padrao_hora_abertura = ?, demanda_padrao_hora_fechamento = ?, demanda_padrao_segmentos_json = ? WHERE id = ?`,
+          preparedPadrao.hora_abertura, preparedPadrao.hora_fechamento,
+          stringifyDemandaPadraoSegmentos(preparedPadrao.normalizados), input.setor_id,
+        )
+
+        // 3. Limpa demandas legado null
+        await execute('DELETE FROM demandas WHERE setor_id = ? AND dia_semana IS NULL', input.setor_id)
+
+        // 4. Upsert horarios + demandas por dia
+        for (const prepared of preparedDays) {
+          await execute(`
+            INSERT INTO setor_horario_semana (setor_id, dia_semana, ativo, usa_padrao, hora_abertura, hora_fechamento)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(setor_id, dia_semana) DO UPDATE SET
+              ativo = excluded.ativo, usa_padrao = excluded.usa_padrao,
+              hora_abertura = excluded.hora_abertura, hora_fechamento = excluded.hora_fechamento
+          `, input.setor_id, prepared.dia_semana, prepared.ativo, prepared.usa_padrao,
+            prepared.hora_abertura, prepared.hora_fechamento)
+
+          await execute('DELETE FROM demandas WHERE setor_id = ? AND dia_semana = ?', input.setor_id, prepared.dia_semana)
+          for (const seg of prepared.normalizados) {
+            await execute(`
+              INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas, override)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `, input.setor_id, prepared.dia_semana, seg.hora_inicio, seg.hora_fim, seg.min_pessoas, seg.override)
+          }
+        }
+      })
+
+      const result = await queryOne('SELECT * FROM setores WHERE id = ?', input.setor_id)
+      broadcastInvalidation(['setores', 'setor', 'demandas', 'horario_semana'], input.setor_id)
+      return result
+    })
+  })
+
 /** Limpa demandas padrao (dia_semana IS NULL) — chamado pelo autosave do DemandaEditor
  *  quando os 7 dias sao salvos individualmente, as entradas NULL ficam orfas e
  *  causariam double-counting no solver (que soma null + dia-especifica).
@@ -2249,6 +2349,18 @@ const colaboradoresListarRegrasPadraoSetor = t.procedure
     )
   })
 
+const colaboradoresListarRegrasHorarioSetor = t.procedure
+  .input<{ setor_id: number }>()
+  .action(async ({ input }) => {
+    return await queryAll(
+      `SELECT r.* FROM colaborador_regra_horario r
+       JOIN colaboradores c ON c.id = r.colaborador_id
+       WHERE c.setor_id = ? AND c.ativo = true AND r.ativo = true
+       ORDER BY r.colaborador_id ASC, r.dia_semana_regra NULLS FIRST, r.id ASC`,
+      input.setor_id,
+    )
+  })
+
 const colaboradoresBuscarRegraHorario = t.procedure
   .input<{ colaborador_id: number }>()
   .action(async ({ input }) => {
@@ -2270,6 +2382,11 @@ const colaboradoresSalvarRegraHorario = t.procedure
   .action(async ({ input }) => {
     const diaSemana = input.dia_semana_regra ?? null
     const isDiaEspecifico = diaSemana !== null
+    const colaborador = await queryOne<{ tipo_trabalhador: string | null }>(
+      'SELECT tipo_trabalhador FROM colaboradores WHERE id = ?',
+      input.colaborador_id,
+    )
+    const isIntermitente = (colaborador?.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE'
 
     const existe = diaSemana === null
       ? await queryOne<{
@@ -2311,12 +2428,16 @@ const colaboradoresSalvarRegraHorario = t.procedure
 
     const folgaFixa = isDiaEspecifico
       ? null
-      : (hasOwnField(input, 'folga_fixa_dia_semana')
+      : (isIntermitente
+          ? null
+          : hasOwnField(input, 'folga_fixa_dia_semana')
           ? (input.folga_fixa_dia_semana ?? null)
           : (existe?.folga_fixa_dia_semana ?? null))
     const folgaVariavel = isDiaEspecifico
       ? null
-      : (hasOwnField(input, 'folga_variavel_dia_semana')
+      : (isIntermitente
+          ? null
+          : hasOwnField(input, 'folga_variavel_dia_semana')
           ? (input.folga_variavel_dia_semana ?? null)
           : (existe?.folga_variavel_dia_semana ?? null))
 
@@ -2345,7 +2466,7 @@ const colaboradoresSalvarRegraHorario = t.procedure
         existe.id
       )
       const result = await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', existe.id)
-      broadcastInvalidation(['regras_padrao'])
+      broadcastInvalidation(['regras_padrao', 'regras_horario'])
       return result
     } else {
       const id = await insertReturningId(`
@@ -2363,7 +2484,7 @@ const colaboradoresSalvarRegraHorario = t.procedure
         folgaVariavel,
       )
       const result = await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', id)
-      broadcastInvalidation(['regras_padrao'])
+      broadcastInvalidation(['regras_padrao', 'regras_horario'])
       return result
     }
   })
@@ -2402,7 +2523,7 @@ const colaboradoresSalvarPadraoFolgas = t.procedure
         }
       }
     })
-    broadcastInvalidation(['regras_padrao'])
+    broadcastInvalidation(['regras_padrao', 'regras_horario'])
     return { ok: true, count: input.padrao.length }
   })
 
@@ -2410,7 +2531,7 @@ const colaboradoresDeletarRegraHorario = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM colaborador_regra_horario WHERE id = ?', input.id)
-    broadcastInvalidation(['regras_padrao'])
+    broadcastInvalidation(['regras_padrao', 'regras_horario'])
     return undefined
   })
 
@@ -2449,7 +2570,7 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
         existe.id
       )
       const result = await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', existe.id)
-      broadcastInvalidation(['regras_padrao'])
+      broadcastInvalidation(['regras_padrao', 'regras_horario'])
       return result
     } else {
       const id = await insertReturningId(`
@@ -2464,7 +2585,7 @@ const colaboradoresUpsertRegraExcecaoData = t.procedure
         input.domingo_forcar_folga ?? false
       )
       const result = await queryOne('SELECT * FROM colaborador_regra_horario_excecao_data WHERE id = ?', id)
-      broadcastInvalidation(['regras_padrao'])
+      broadcastInvalidation(['regras_padrao', 'regras_horario'])
       return result
     }
   })
@@ -2473,7 +2594,7 @@ const colaboradoresDeletarRegraExcecaoData = t.procedure
   .input<{ id: number }>()
   .action(async ({ input }) => {
     await execute('DELETE FROM colaborador_regra_horario_excecao_data WHERE id = ?', input.id)
-    broadcastInvalidation(['regras_padrao'])
+    broadcastInvalidation(['regras_padrao', 'regras_horario'])
     return undefined
   })
 
@@ -3751,7 +3872,7 @@ const regrasResetarRegra = t.procedure
 // BACKUP / RESTORE (1 handler — importar de arquivo externo)
 // =============================================================================
 
-const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; registros: number; categorias: string[] } | null> => {
+const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; registros: number; repairs: number; categorias: string[] } | null> => {
   const win = BrowserWindow.getFocusedWindow()
   const opts = {
     filters: [
@@ -3766,6 +3887,7 @@ const dadosImportar = t.procedure.action(async (): Promise<{ tabelas: number; re
   const { parseBackupFile, importFromData } = await import('./backup')
   const { dados } = parseBackupFile(result.filePaths[0])
   const imported = await importFromData(dados)
+  broadcastInvalidation(['all'])
   return { ...imported, categorias: Object.keys(dados).length > 0 ? ['backup'] : [] }
 })
 
@@ -3817,13 +3939,15 @@ const backupSnapshotsListar = t.procedure.action(async () => {
 })
 
 const backupSnapshotsCriar = t.procedure
-  .input<{ trigger?: string; light?: boolean }>()
+  .input<{ trigger?: string; light?: boolean; scope?: 'operational' | 'full' }>()
   .action(async ({ input }) => {
     try {
       const { createSnapshot } = await import('./backup')
       const trigger = (input?.trigger ?? 'manual') as SnapshotTrigger
-      const result = await createSnapshot(trigger, app.getPath('userData'), app.getVersion(), { light: input?.light })
-      console.log('[BACKUP-IPC] criar:', result?.filename ?? 'null (in progress)')
+      // Backward compat: light → operational
+      const scope = input?.scope ?? (input?.light ? 'operational' : 'full')
+      const result = await createSnapshot(trigger, app.getPath('userData'), app.getVersion(), { scope })
+      console.log('[BACKUP-IPC] criar:', result?.filename ?? 'null (skipped)')
       return result
     } catch (err) {
       console.error('[BACKUP-IPC] criar error:', err)
@@ -3835,7 +3959,9 @@ const backupSnapshotsRestaurar = t.procedure
   .input<{ filename: string }>()
   .action(async ({ input }) => {
     const { restoreSnapshot } = await import('./backup')
-    return restoreSnapshot(input.filename, app.getPath('userData'), app.getVersion(), { skipPreRestore: false })
+    const result = await restoreSnapshot(input.filename, app.getPath('userData'), app.getVersion(), { skipPreRestore: false })
+    broadcastInvalidation(['all'])
+    return result
   })
 
 const backupSnapshotsRestaurarPreRestore = t.procedure
@@ -3843,6 +3969,7 @@ const backupSnapshotsRestaurarPreRestore = t.procedure
   .action(async ({ input }) => {
     const { restoreSnapshot } = await import('./backup')
     const result = await restoreSnapshot(input.filename, app.getPath('userData'), app.getVersion(), { skipPreRestore: true })
+    broadcastInvalidation(['all'])
     return { tabelas: result.tabelas, registros: result.registros }
   })
 
@@ -4483,6 +4610,7 @@ export const router = {
   'setores.upsertHorarioSemana': setoresUpsertHorarioSemana,
   'setores.salvarTimelineDia': setoresSalvarTimelineDia,
   'setores.salvarTimelineSemana': setoresSalvarTimelineSemana,
+  'setores.salvarCompleto': setoresSalvarCompleto,
   'setores.limparPadraoDemandas': setoresLimparPadraoDemandas,
   'setores.listarDemandasExcecaoData': setoresListarDemandasExcecaoData,
   'setores.salvarDemandaExcecaoData': setoresSalvarDemandaExcecaoData,
@@ -4507,6 +4635,7 @@ export const router = {
   'colaboradores.restaurarPostos': colaboradoresRestaurarPostos,
   'colaboradores.deletar': colaboradoresDeletar,
   'colaboradores.listarRegrasPadraoSetor': colaboradoresListarRegrasPadraoSetor,
+  'colaboradores.listarRegrasHorarioSetor': colaboradoresListarRegrasHorarioSetor,
   'colaboradores.buscarRegraHorario': colaboradoresBuscarRegraHorario,
   'colaboradores.salvarRegraHorario': colaboradoresSalvarRegraHorario,
   'colaboradores.salvarPadraoFolgas': colaboradoresSalvarPadraoFolgas,

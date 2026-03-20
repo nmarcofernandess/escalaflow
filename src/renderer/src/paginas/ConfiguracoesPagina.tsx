@@ -293,7 +293,7 @@ export function ConfiguracoesPagina() {
   async function handleBackupNow() {
     setBackupNowLoading(true)
     try {
-      const result = await window.electron.ipcRenderer.invoke('backup.snapshots.criar', { trigger: 'manual', light: true }) as any
+      const result = await window.electron.ipcRenderer.invoke('backup.snapshots.criar', { trigger: 'manual', scope: 'operational' }) as any
       if (result) {
         toast.success('Backup criado!', { description: `${result.meta.registros} registros salvos` })
         const config = await window.electron.ipcRenderer.invoke('backup.config.obter') as typeof backupConfig

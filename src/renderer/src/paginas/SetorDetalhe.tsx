@@ -109,6 +109,7 @@ import { runPreviewMultiPass, type MultiPassResult } from '@shared/preview-multi
 import type { EscalaAdvisoryOutput, AdvisoryDiffItem } from '@shared/index'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
+import { DIAS_ORDEM, type CicloGridRow, type Simbolo } from '@/lib/ciclo-grid-types'
 import { SolverConfigDrawer, type SolverSessionConfig } from '@/componentes/SolverConfigDrawer'
 import { ExportarEscala } from '@/componentes/ExportarEscala'
 import { ExportModal, type EscalaExportData, type ExportToggles } from '@/componentes/ExportModal'
@@ -149,6 +150,7 @@ import {
   SetorHorarioSemana,
   RegraHorarioColaborador,
   RuleConfig,
+  hasGuaranteedSundayWindow,
   listEscalaParticipantes,
   normalizeSetorSimulacaoConfig,
   type PreviewDiagnostic,
@@ -158,6 +160,7 @@ import {
   type SetorSimulacaoOverrideLocal,
   type InfeasibleError,
   resolvePreviewGate,
+  resolveSundayRotatingDemand,
 } from '@shared/index'
 
 // ─── DnD: Sortable row for posto hierarchy reorder ──────────────────
@@ -201,6 +204,27 @@ function SortablePostoRow({
       {children}
     </TableRow>
   )
+}
+
+function timeToMinutes(hhmm: string): number {
+  const [hora, minuto] = hhmm.split(':').map(Number)
+  return (hora * 60) + minuto
+}
+
+function intermitenteRuleCoversSegment(
+  rule: RegraHorarioColaborador | undefined,
+  horaInicio: string,
+  horaFim: string,
+  fallbackInicio: string,
+  fallbackFim: string,
+): boolean {
+  if (!rule) return false
+
+  const inicio = rule.inicio ?? fallbackInicio
+  const fim = rule.fim ?? fallbackFim
+
+  return timeToMinutes(inicio) < timeToMinutes(horaFim)
+    && timeToMinutes(fim) > timeToMinutes(horaInicio)
 }
 
 function TitularAssignmentPanel({
@@ -380,6 +404,7 @@ export function SetorDetalhe() {
   const excecoesAtivas = useAppDataStore((s) => s.excecoes)
   const regras = useAppDataStore((s) => s.regras)
   const regrasPadrao = useAppDataStore((s) => s.regrasPadrao)
+  const regrasHorario = useAppDataStore((s) => s.regrasHorario)
   const appVersion = useAppVersion()
 
   // Notify store which sector is active (loads data if changed)
@@ -532,6 +557,16 @@ export function SetorDetalhe() {
     }
     return map
   }, [regrasPadrao])
+
+  const regrasHorarioByColab = useMemo(() => {
+    const map = new Map<number, RegraHorarioColaborador[]>()
+    for (const regra of regrasHorario ?? []) {
+      const bucket = map.get(regra.colaborador_id)
+      if (bucket) bucket.push(regra)
+      else map.set(regra.colaborador_id, [regra])
+    }
+    return map
+  }, [regrasHorario])
 
   const folgasEquipeMap = useMemo(() => {
     const map = new Map<number, { fixa: DiaSemana | null; variavel: DiaSemana | null }>()
@@ -1034,13 +1069,103 @@ export function SetorDetalhe() {
     return demanda
   }, [demandaPorDiaDraft, demandas, derivados?.demandaPorDia])
 
+  const participantesEscalaAtivos = useMemo(
+    () => listEscalaParticipantes(orderedColabs, postosAtivos),
+    [orderedColabs, postosAtivos],
+  )
+
   const storePreviewAvisos = useMemo(
     () => (derivados?.avisos ?? []).filter((aviso) => !PREVIEW_OWNED_STORE_WARNING_IDS.has(aviso.id)),
     [derivados?.avisos],
   )
 
+  const horaAberturaPreview = setor?.hora_abertura ?? '08:00'
+  const horaFechamentoPreview = setor?.hora_fechamento ?? '20:00'
+
+  const previewSetorIntermitentesRegras = useMemo(
+    () => participantesEscalaAtivos
+      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE')
+      .map(({ colaborador, funcao }) => {
+        const regrasDoColab = regrasHorarioByColab.get(colaborador.id) ?? []
+        const regrasPorDia = new Map<DiaSemana, RegraHorarioColaborador>()
+        for (const regra of regrasDoColab) {
+          if (regra.dia_semana_regra != null) regrasPorDia.set(regra.dia_semana_regra, regra)
+        }
+        return { colaborador, funcao, regrasPorDia }
+      }),
+    [participantesEscalaAtivos, regrasHorarioByColab],
+  )
+
+  const previewSetorIntermitentesCoberturaPorDia = useMemo(() => {
+    const cobertura = Object.fromEntries(
+      DIAS_SEMANA.map((dia) => [dia, 0]),
+    ) as Record<DiaSemana, number>
+
+    for (const { regrasPorDia } of previewSetorIntermitentesRegras) {
+      for (const dia of DIAS_SEMANA) {
+        if (regrasPorDia.has(dia)) cobertura[dia] += 1
+      }
+    }
+
+    return cobertura
+  }, [previewSetorIntermitentesRegras])
+
+  const previewSetorIntermitentesDomingoGarantidos = useMemo(
+    () => participantesEscalaAtivos
+      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE')
+      .filter(({ colaborador }) => {
+        const regrasDoColab = regrasHorarioByColab.get(colaborador.id) ?? []
+        const domingo = regrasDoColab.find((regra) => regra.dia_semana_regra === 'DOM')
+        return hasGuaranteedSundayWindow(domingo)
+      })
+      .length,
+    [participantesEscalaAtivos, regrasHorarioByColab],
+  )
+
+  const demandaDomingoCicloPreview = useMemo(
+    () => resolveSundayRotatingDemand({
+      totalSundayDemand: demandaDomingoSetor,
+      guaranteedSundayCoverage: previewSetorIntermitentesDomingoGarantidos,
+    }),
+    [demandaDomingoSetor, previewSetorIntermitentesDomingoGarantidos],
+  )
+
+  const demandaPorDiaPreviewCiclo = useMemo(
+    () => demandaPorDiaPreview.map((demandaDia, index) => {
+      const dia = DIAS_SEMANA[index]
+      return Math.max(0, demandaDia - (dia ? (previewSetorIntermitentesCoberturaPorDia[dia] ?? 0) : 0))
+    }),
+    [demandaPorDiaPreview, previewSetorIntermitentesCoberturaPorDia],
+  )
+
+  const demandaSegmentosPreviewCiclo = useMemo(
+    () => (demandas ?? []).flatMap((demanda) => {
+      const diasAlvo = demanda.dia_semana != null ? [demanda.dia_semana] : DIAS_SEMANA
+
+      return diasAlvo.map((dia) => {
+        const coberturaGarantida = previewSetorIntermitentesRegras.reduce((total, { regrasPorDia }) => {
+          return total + (intermitenteRuleCoversSegment(
+            regrasPorDia.get(dia),
+            demanda.hora_inicio,
+            demanda.hora_fim,
+            horaAberturaPreview,
+            horaFechamentoPreview,
+          ) ? 1 : 0)
+        }, 0)
+
+        return {
+          dia_semana: dia,
+          hora_inicio: demanda.hora_inicio,
+          hora_fim: demanda.hora_fim,
+          min_pessoas: Math.max(0, demanda.min_pessoas - coberturaGarantida),
+        }
+      })
+    }),
+    [demandas, horaAberturaPreview, horaFechamentoPreview, previewSetorIntermitentesRegras],
+  )
+
   const setorSimulacaoInfo = useMemo(() => {
-    const participantesPreview = listEscalaParticipantes(orderedColabs, postosAtivos)
+    const participantesPreview = participantesEscalaAtivos
       .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
     const N = participantesPreview.length
     if (N < 1) {
@@ -1052,16 +1177,21 @@ export function SetorDetalhe() {
       }
     }
 
-    if (demandaDomingoSetor > 0) {
-      const kEfetivo = Math.min(demandaDomingoSetor, N)
-      const limitado = kEfetivo < demandaDomingoSetor
+    if (demandaDomingoCicloPreview.residualSundayDemand > 0) {
+      const kEfetivo = Math.min(demandaDomingoCicloPreview.residualSundayDemand, N)
+      const limitado = kEfetivo < demandaDomingoCicloPreview.residualSundayDemand
+      const prefixoIntermitente = demandaDomingoCicloPreview.guaranteedSundayCoverage > 0
+        ? `DOM bruto=${demandaDomingoCicloPreview.totalSundayDemand}, -${demandaDomingoCicloPreview.guaranteedSundayCoverage} intermitente(s) ativo(s) no DOM => liquido=${demandaDomingoCicloPreview.residualSundayDemand}. `
+        : ''
       return {
         n: N,
         k: kEfetivo,
         origemN: `N pelo setor: ${N} participante(s) ativo(s) com posto.`,
         origemK: limitado
-          ? `K: demanda DOM=${demandaDomingoSetor}, limitado a ${kEfetivo} porque o setor tem ${N} participante(s) ativos.`
-          : `K pelo setor: pico de demanda em DOM/padrao = ${demandaDomingoSetor}.`,
+          ? `K: ${prefixoIntermitente}Limitado a ${kEfetivo} porque o pool rotativo CLT tem ${N} participante(s) ativos.`
+          : demandaDomingoCicloPreview.guaranteedSundayCoverage > 0
+            ? `K pelo setor: ${prefixoIntermitente}O ciclo CLT precisa cobrir ${kEfetivo}.`
+            : `K pelo setor: pico de demanda em DOM/padrao = ${demandaDomingoCicloPreview.totalSundayDemand}.`,
       }
     }
 
@@ -1072,7 +1202,7 @@ export function SetorDetalhe() {
       origemN: `N pelo setor: ${N} participante(s) ativo(s) com posto.`,
       origemK: `Sem demanda DOM/padrao cadastrada: usando K sugerido ${sugerido}.`,
     }
-  }, [demandaDomingoSetor, orderedColabs, postosAtivos])
+  }, [demandaDomingoCicloPreview, participantesEscalaAtivos])
 
   const modoSimulacaoEfetivo: SetorSimulacaoMode = simulacaoConfig.mode
 
@@ -1082,7 +1212,7 @@ export function SetorDetalhe() {
   )
 
   const previewSetorRows = useMemo(() => {
-    return listEscalaParticipantes(orderedColabs, postosAtivos)
+    return participantesEscalaAtivos
       .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
       .map(({ funcao, colaborador }) => {
         const regra = regrasMap.get(colaborador.id) ?? null
@@ -1108,18 +1238,11 @@ export function SetorDetalhe() {
           },
         }
       })
-  }, [orderedColabs, overridesLocaisSetor, postosAtivos, regrasMap])
+  }, [overridesLocaisSetor, participantesEscalaAtivos, regrasMap])
 
   const previewSetorSemTitular = useMemo(
-    () => Math.max(0, postosAtivos.length - listEscalaParticipantes(orderedColabs, postosAtivos).length),
-    [orderedColabs, postosAtivos],
-  )
-
-  const previewSetorIntermitentes = useMemo(
-    () => listEscalaParticipantes(orderedColabs, postosAtivos)
-      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE')
-      .length,
-    [orderedColabs, postosAtivos],
+    () => Math.max(0, postosAtivos.length - participantesEscalaAtivos.length),
+    [participantesEscalaAtivos.length, postosAtivos.length],
   )
 
   const previewRuleConfig = useMemo<RuleConfig>(() => {
@@ -1184,7 +1307,7 @@ export function SetorDetalhe() {
               folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null || folga.folga_fixa_dom)
                 ? folgasForcadas
                 : undefined,
-              demanda_por_dia: demandaPorDiaPreview,
+              demanda_por_dia: demandaPorDiaPreviewCiclo,
             },
             participants: previewSetorRows.map((row) => ({
               id: row.titular.id,
@@ -1192,14 +1315,12 @@ export function SetorDetalhe() {
               sexo: row.titular.sexo as 'M' | 'F',
               folga_fixa_dom: row.folgaFixaDom,
             })),
-            demandaPorDia: demandaPorDiaPreview,
+            demandaPorDia: demandaPorDiaPreviewCiclo,
             trabalhamDomingo: effectiveK,
             rules: previewRuleConfig,
-            demandaSegmentos: (demandas ?? [])
-              .filter((d): d is typeof d & { dia_semana: import('@shared/index').DiaSemana } => d.dia_semana != null)
-              .map((d) => ({ dia_semana: d.dia_semana, hora_inicio: d.hora_inicio, hora_fim: d.hora_fim, min_pessoas: d.min_pessoas })),
-            horaAbertura: setor?.hora_abertura ?? '08:00',
-            horaFechamento: setor?.hora_fechamento ?? '20:00',
+            demandaSegmentos: demandaSegmentosPreviewCiclo,
+            horaAbertura: horaAberturaPreview,
+            horaFechamento: horaFechamentoPreview,
           })
 
     const resultado: SimulaCicloOutput = multiPassResult?.output
@@ -1239,19 +1360,21 @@ export function SetorDetalhe() {
       savePadrao,
       pinnedRows,
       previewRows: previewSetorRows,
-      foraDoPreview: previewSetorIntermitentes,
+      foraDoPreview: 0, // intermitentes agora aparecem no grid com NT
       semTitular: previewSetorSemTitular,
       multiPassResult,
     }
   }, [
-    demandaPorDiaPreview,
+    demandaPorDiaPreviewCiclo,
+    demandaSegmentosPreviewCiclo,
     modoSimulacaoEfetivo,
     previewLivreFolgas,
     previewRuleConfig,
-    previewSetorIntermitentes,
     previewSetorRows,
     previewSetorSemTitular,
     regimeEfetivo,
+    horaAberturaPreview,
+    horaFechamentoPreview,
     setorSimulacaoInfo,
     simulacaoConfig.livre.k,
     simulacaoConfig.livre.n,
@@ -1292,17 +1415,18 @@ export function SetorDetalhe() {
 
   const simulacaoGridData = useMemo(() => {
     if (!simulacaoPreview.resultado.sucesso) return null
+
+    // Grid base (só CLTs — rotação)
     const grid = simulacaoParaCicloGrid(
       simulacaoPreview.resultado,
       simulacaoPreview.rowLabels,
-      demandaPorDiaPreview,
+      demandaPorDiaPreview, // demanda BRUTA — grid mostra cobertura real
     )
 
-    if (simulacaoPreview.mode !== 'SETOR') return grid
-
-    return {
-      ...grid,
-      rows: grid.rows.map((row, index) => {
+    // Enriquecer rows CLT com info do SETOR mode
+    let cltRows = grid.rows
+    if (simulacaoPreview.mode === 'SETOR') {
+      cltRows = grid.rows.map((row, index) => {
         const previewRow = simulacaoPreview.previewRows[index]
         if (!previewRow) return row
         return {
@@ -1316,9 +1440,43 @@ export function SetorDetalhe() {
           baseFixaColaborador: previewRow.baseFixaColaborador,
           baseVariavelColaborador: previewRow.baseVariavelColaborador,
         }
-      }),
+      })
     }
-  }, [demandaPorDiaPreview, simulacaoPreview])
+
+    // Construir rows intermitentes (padrão fixo: T/DT nos dias com regra, NT nos outros)
+    const numSemanas = grid.rows[0]?.semanas.length ?? 0
+    const intermitentesRows: CicloGridRow[] = previewSetorIntermitentesRegras.map(({ colaborador, funcao, regrasPorDia }) => {
+      const semanaBase: Simbolo[] = DIAS_ORDEM.map((dia) => {
+        if (regrasPorDia.has(dia)) return dia === 'DOM' ? 'DT' as Simbolo : 'T' as Simbolo
+        return 'NT' as Simbolo
+      })
+      return {
+        id: colaborador.id,
+        nome: colaborador.nome,
+        posto: funcao.apelido,
+        fixa: null,
+        variavel: null,
+        blocked: true,
+        semanas: Array.from({ length: numSemanas }, () => [...semanaBase]),
+      }
+    })
+
+    // Recalcular cobertura incluindo intermitentes
+    const coberturaAjustada = grid.cobertura.map((cobSemana) => {
+      return cobSemana.map((cob, diaIdx) => {
+        const dia = DIAS_ORDEM[diaIdx]
+        const intermitentesNoDia = previewSetorIntermitentesRegras
+          .filter(({ regrasPorDia }) => dia != null && regrasPorDia.has(dia)).length
+        return cob + intermitentesNoDia
+      })
+    })
+
+    return {
+      ...grid,
+      rows: [...cltRows, ...intermitentesRows],
+      cobertura: coberturaAjustada,
+    }
+  }, [demandaPorDiaPreview, previewSetorIntermitentesRegras, simulacaoPreview])
 
   // ─── Form sync ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -1445,40 +1603,6 @@ export function SetorDetalhe() {
   }, [carregarDetalheEscala, escalaOficialAtual, escalaSelecionada, historicoSelecionadaId, oficialCompleta?.escala.id])
 
   // ─── Handlers ────────────────────────────────────────────────────────
-  // ─── Salvar tudo (form + demandas) ──────────────────────────────────
-  const salvarDemandas = useCallback(async (draft: SemanaDraft) => {
-    await setoresService.salvarTimelineSemana({
-      setor_id: setorId,
-      padrao: {
-        hora_abertura: draft.padrao.hora_abertura,
-        hora_fechamento: draft.padrao.hora_fechamento,
-        segmentos: draft.padrao.segmentos.map((s) => ({
-          hora_inicio: s.hora_inicio,
-          hora_fim: s.hora_fim,
-          min_pessoas: s.min_pessoas,
-          override: s.override,
-        })),
-      },
-      dias: DIAS_SEMANA.map((dia) => {
-        const dd = draft.dias[dia]
-        const usaPadrao = dd.usa_padrao
-        return {
-          dia_semana: dia,
-          ativo: dd.ativo,
-          usa_padrao: usaPadrao,
-          hora_abertura: usaPadrao ? draft.padrao.hora_abertura : dd.hora_abertura,
-          hora_fechamento: usaPadrao ? draft.padrao.hora_fechamento : dd.hora_fechamento,
-          segmentos: (usaPadrao ? draft.padrao.segmentos : dd.segmentos).map((s) => ({
-            hora_inicio: s.hora_inicio,
-            hora_fim: s.hora_fim,
-            min_pessoas: s.min_pessoas,
-            override: s.override,
-          })),
-        }
-      }),
-    })
-  }, [setorId])
-
   const handleSalvarTudo = useCallback(async (): Promise<boolean> => {
     const formData = setorForm.getValues()
     const nome = formData.nome.trim()
@@ -1489,20 +1613,45 @@ export function SetorDetalhe() {
     const draft = demandaEditorRef.current?.getDraft()
     setSalvandoTudo(true)
     try {
-      // 1. Salva form do setor
-      await setoresService.atualizar(setorId, {
-        nome,
-        icone: formData.icone ?? null,
-        hora_abertura: formData.hora_abertura,
-        hora_fechamento: formData.hora_fechamento,
-        regime_escala: formData.regime_escala,
+      // Onda 3: save unificado — setor + timeline em uma transacao
+      const mapSeg = (s: { hora_inicio: string; hora_fim: string; min_pessoas: number; override: boolean }) => ({
+        hora_inicio: s.hora_inicio, hora_fim: s.hora_fim, min_pessoas: s.min_pessoas, override: s.override,
       })
-      // 2. Salva demandas (7 dias)
-      if (draft) {
-        await salvarDemandas(draft)
-        demandaEditorRef.current?.markClean()
-      }
-      // Marca form como clean
+      await setoresService.salvarCompleto({
+        setor_id: setorId,
+        setor: {
+          nome,
+          icone: formData.icone ?? null,
+          hora_abertura: formData.hora_abertura,
+          hora_fechamento: formData.hora_fechamento,
+          regime_escala: formData.regime_escala,
+        },
+        timeline: draft ? {
+          setor_id: setorId,
+          padrao: {
+            hora_abertura: draft.padrao.hora_abertura,
+            hora_fechamento: draft.padrao.hora_fechamento,
+            segmentos: draft.padrao.segmentos.map(mapSeg),
+          },
+          dias: DIAS_SEMANA.map((dia) => {
+            const dd = draft.dias[dia]
+            const usaPadrao = dd.usa_padrao
+            return {
+              dia_semana: dia,
+              ativo: dd.ativo,
+              usa_padrao: usaPadrao,
+              hora_abertura: usaPadrao ? draft.padrao.hora_abertura : dd.hora_abertura,
+              hora_fechamento: usaPadrao ? draft.padrao.hora_fechamento : dd.hora_fechamento,
+              segmentos: (usaPadrao ? draft.padrao.segmentos : dd.segmentos).map(mapSeg),
+            }
+          }),
+        } : {
+          setor_id: setorId,
+          padrao: { hora_abertura: formData.hora_abertura, hora_fechamento: formData.hora_fechamento, segmentos: [] },
+          dias: [],
+        },
+      })
+      if (draft) demandaEditorRef.current?.markClean()
       setorForm.reset(formData)
       toast.success('Setor salvo')
       return true
@@ -1512,7 +1661,7 @@ export function SetorDetalhe() {
     } finally {
       setSalvandoTudo(false)
     }
-  }, [setorId, setorForm, salvarDemandas])
+  }, [setorId, setorForm])
 
   const handleSalvarExcDemanda = async () => {
     if (!excDemandaForm.data || !excDemandaForm.hora_inicio || !excDemandaForm.hora_fim) {
@@ -1967,7 +2116,7 @@ export function SetorDetalhe() {
       num_postos: simulacaoPreview.effectiveN,
       trabalham_domingo: simulacaoPreview.effectiveK,
       num_meses: simulacaoPreviewMeses,
-      demanda_por_dia: demandaPorDiaPreview,
+      demanda_por_dia: demandaPorDiaPreviewCiclo,
     })
 
     // TS falhou completamente
@@ -2020,7 +2169,7 @@ export function SetorDetalhe() {
 
     // Verificar se ainda tem deficit mesmo apos sugestao
     const stillHasDeficit = resultado.cobertura_dia.some((sem) =>
-      sem.cobertura.some((cob, i) => cob < (demandaPorDiaPreview[i] ?? 0)),
+      sem.cobertura.some((cob, i) => cob < (demandaPorDiaPreviewCiclo[i] ?? 0)),
     )
     if (stillHasDeficit) {
       diagnostics.push({
@@ -2039,7 +2188,7 @@ export function SetorDetalhe() {
       ...(hasChanges ? { proposal: { diff } } : {}),
     })
     setSugestaoOpen(true)
-  }, [simulacaoPreview, previewSetorRows, simulacaoPreviewMeses, demandaPorDiaPreview])
+  }, [simulacaoPreview, previewSetorRows, simulacaoPreviewMeses, demandaPorDiaPreviewCiclo])
 
   // ── Validar: roda solver COM pins, validate_only — sem proposta ──
   const handleValidar = useCallback(async () => {
@@ -2664,6 +2813,7 @@ export function SetorDetalhe() {
                                     : '-'
                                   const status = ocupante ? getStatusColaborador(ocupante.id) : '-'
                                   const folgas = ocupante ? folgasEquipeMap.get(ocupante.id) : null
+                                  const ocupanteIntermitente = (ocupante?.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE'
                                   const pickerAberto = titularPickerPostoId === posto.id
 
                                   return (
@@ -2695,60 +2845,68 @@ export function SetorDetalhe() {
                                       </TableCell>
                                       <TableCell className="text-center">
                                         {ocupante ? (
-                                          <Select
-                                            value={folgas?.variavel ?? '__none__'}
-                                            onValueChange={async (val) => {
-                                              try {
-                                                await colaboradoresService.salvarRegraHorario({
-                                                  colaborador_id: ocupante.id,
-                                                  folga_variavel_dia_semana: val === '__none__' ? null : (val as DiaSemana),
-                                                })
+                                          ocupanteIntermitente ? (
+                                            <span className="text-xs text-muted-foreground">-</span>
+                                          ) : (
+                                            <Select
+                                              value={folgas?.variavel ?? '__none__'}
+                                              onValueChange={async (val) => {
+                                                try {
+                                                  await colaboradoresService.salvarRegraHorario({
+                                                    colaborador_id: ocupante.id,
+                                                    folga_variavel_dia_semana: val === '__none__' ? null : (val as DiaSemana),
+                                                  })
 
-                                              } catch (err) {
-                                                toast.error(mapError(err) || 'Erro ao salvar folga')
-                                              }
-                                            }}
-                                          >
-                                            <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                                              {DIAS_SEMANA.filter((d) => d !== 'DOM').map((dia) => (
-                                                <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
+                                                } catch (err) {
+                                                  toast.error(mapError(err) || 'Erro ao salvar folga')
+                                                }
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                                {DIAS_SEMANA.filter((d) => d !== 'DOM').map((dia) => (
+                                                  <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          )
                                         ) : (
                                           <span className="text-xs text-muted-foreground">-</span>
                                         )}
                                       </TableCell>
                                       <TableCell className="text-center">
                                         {ocupante ? (
-                                          <Select
-                                            value={folgas?.fixa ?? '__none__'}
-                                            onValueChange={async (val) => {
-                                              try {
-                                                await colaboradoresService.salvarRegraHorario({
-                                                  colaborador_id: ocupante.id,
-                                                  folga_fixa_dia_semana: val === '__none__' ? null : (val as DiaSemana),
-                                                })
+                                          ocupanteIntermitente ? (
+                                            <span className="text-xs text-muted-foreground">-</span>
+                                          ) : (
+                                            <Select
+                                              value={folgas?.fixa ?? '__none__'}
+                                              onValueChange={async (val) => {
+                                                try {
+                                                  await colaboradoresService.salvarRegraHorario({
+                                                    colaborador_id: ocupante.id,
+                                                    folga_fixa_dia_semana: val === '__none__' ? null : (val as DiaSemana),
+                                                  })
 
-                                              } catch (err) {
-                                                toast.error(mapError(err) || 'Erro ao salvar folga')
-                                              }
-                                            }}
-                                          >
-                                            <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                                              {DIAS_SEMANA.map((dia) => (
-                                                <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
+                                                } catch (err) {
+                                                  toast.error(mapError(err) || 'Erro ao salvar folga')
+                                                }
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-7 w-[70px] px-2 text-xs">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                                {DIAS_SEMANA.map((dia) => (
+                                                  <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          )
                                         ) : (
                                           <span className="text-xs text-muted-foreground">-</span>
                                         )}

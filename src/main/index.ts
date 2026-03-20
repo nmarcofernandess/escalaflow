@@ -313,7 +313,7 @@ async function bootstrap(): Promise<void> {
         const hoursAgo = last ? (Date.now() - last.getTime()) / 3600000 : Infinity
 
         if (hoursAgo >= config.intervalo_horas) {
-          await createSnapshot('auto_intervalo', app.getPath('userData'), app.getVersion())
+          await createSnapshot('auto_intervalo', app.getPath('userData'), app.getVersion(), { scope: 'operational' })
         }
       } catch (err) {
         console.error('[BACKUP] Falha no auto-backup intervalo:', err)
@@ -346,7 +346,7 @@ async function bootstrap(): Promise<void> {
       const { getBackupConfig, createSnapshot } = await import('./backup')
       const config = await getBackupConfig()
       if (config.ativo && config.backup_ao_fechar) {
-        await createSnapshot('auto_close', app.getPath('userData'), app.getVersion())
+        await createSnapshot('auto_close', app.getPath('userData'), app.getVersion(), { scope: 'operational' })
       }
     } catch (err) {
       console.error('[BACKUP] Falha no auto-backup ao fechar:', err)

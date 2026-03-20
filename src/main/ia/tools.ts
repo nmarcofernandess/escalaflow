@@ -3651,7 +3651,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         try {
             const { createSnapshot } = await import('../backup')
             const electron = await import('electron')
-            const info = await createSnapshot('ia', electron.default.app.getPath('userData'), electron.default.app.getVersion())
+            const info = await createSnapshot('ia', electron.default.app.getPath('userData'), electron.default.app.getVersion(), { scope: 'operational' })
             if (!info) return toolError('BACKUP_IN_PROGRESS', 'Backup ja em andamento, tente novamente em alguns segundos')
             return toolOk({
                 mensagem: 'Backup criado com sucesso',
