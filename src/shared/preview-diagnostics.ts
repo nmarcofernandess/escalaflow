@@ -295,14 +295,15 @@ export function buildPreviewDiagnostics({
         continue
       }
 
-      // Fallback: no origin info (legacy) — keep original message
+      // Fallback: no origin info — treat as informational (structural, not actionable)
       diagnostics.push({
-        code: w.tipo === 'FV_CONFLITO' ? 'FOLGA_VARIAVEL_CONFLITO' : 'FOLGA_FIXA_CONFLITO',
-        severity: 'warning',
+        code: 'FOLGA_SALVA_DEFICIT',
+        severity: 'info',
         gate: 'ALLOW',
         title: `Folga de ${nomePessoa} em ${diaLabel}: sobram ${w.coberturaRestante}, demanda e ${w.demandaDia}.`,
-        detail: 'Troque o dia de folga para reduzir o deficit.',
+        detail: 'Esta folga esta definida no cadastro do colaborador.',
         source: 'capacity',
+        action: { type: 'navigate', target: 'colaborador', id: participants[w.pessoa]?.id },
       })
     }
   }

@@ -75,20 +75,19 @@ describe('runPreviewMultiPass', () => {
     }
   })
 
-  it('Keeps preview visible when K > N/2 and H3 HARD, but blocks generation via diagnostics', () => {
-    // N=6, K=4 => strict fails, H3 HARD => cannot relax generation
+  it('Returns pass1 when K > N/2 and H3 HARD (cannot relax)', () => {
+    // N=6, K=4 => strict fails, H3 HARD => cannot relax
+    // Advisory handles the proposal — no BLOCK diagnostic needed here
     const result = runPreviewMultiPass(makeInput({
       N: 6,
       K: 4,
       rules: { H3_DOM_MAX_CONSEC_M: 'HARD', H3_DOM_MAX_CONSEC_F: 'HARD' },
     }))
 
-    expect(result.pass_usado).toBe(2)
+    expect(result.pass_usado).toBe(1)
     expect(result.relaxed).toBe(false)
-    expect(result.output.sucesso).toBe(true)
-    const previewDiag = result.diagnostics.find(d => d.code === 'PREVIEW_ESTRITO_BLOQUEADO')
-    expect(previewDiag).toBeDefined()
-    expect(previewDiag!.gate).toBe('BLOCK')
+    const blockedDiag = result.diagnostics.find(d => d.code === 'PREVIEW_ESTRITO_BLOQUEADO')
+    expect(blockedDiag).toBeUndefined()
   })
 
   it('Passes domingo_ciclo_trabalho/folga to diagnostics (ciclo 1:1, capacity matches K)', () => {

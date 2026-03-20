@@ -4,12 +4,14 @@ import { buildPreviewAvisos } from '../../src/renderer/src/lib/build-avisos'
 import type { PreviewDiagnostic } from '../../src/shared/preview-diagnostics'
 
 describe('preview + advisory convergence', () => {
-  it('advisory diagnostics substituem preview com mesmo codigo', () => {
+  it('advisory diagnostics coexistem com preview diagnostics (sem dedup por ADVISORY_ prefix)', () => {
+    // Advisory now uses plain codes (VALIDACAO_INVIAVEL etc), not ADVISORY_ prefix.
+    // Both preview and advisory entries are shown independently.
     const previewDiagnostics: PreviewDiagnostic[] = [
       { code: 'CAPACIDADE_DIARIA_INSUFICIENTE', severity: 'error', gate: 'BLOCK', title: 'Preview: deficit', detail: 'SEG', source: 'capacity' },
     ]
     const advisoryDiagnostics: PreviewDiagnostic[] = [
-      { code: 'ADVISORY_CAPACIDADE_DIARIA_INSUFICIENTE', severity: 'info', gate: 'ALLOW', title: 'Advisory: resolvido', detail: 'OK', source: 'advisory_proposal' },
+      { code: 'VALIDACAO_INVIAVEL', severity: 'error', gate: 'BLOCK', title: 'Advisory: inviavel', detail: 'Restricoes conflitantes', source: 'advisory_current' },
     ]
 
     const avisos = buildPreviewAvisos({
@@ -22,11 +24,12 @@ describe('preview + advisory convergence', () => {
     })
 
     const previewAviso = avisos.find((a) => a.id === 'diagnostic_CAPACIDADE_DIARIA_INSUFICIENTE')
-    const advisoryAviso = avisos.find((a) => a.id === 'advisory_ADVISORY_CAPACIDADE_DIARIA_INSUFICIENTE')
+    const advisoryAviso = avisos.find((a) => a.id === 'advisory_VALIDACAO_INVIAVEL')
 
-    expect(previewAviso).toBeUndefined()
+    // Both survive — no automatic dedup by ADVISORY_ prefix stripping
+    expect(previewAviso).toBeDefined()
     expect(advisoryAviso).toBeDefined()
-    expect(advisoryAviso!.nivel).toBe('info')
+    expect(advisoryAviso!.nivel).toBe('error')
   })
 
   it('preview diagnostics sobrevivem quando nao ha advisory', () => {

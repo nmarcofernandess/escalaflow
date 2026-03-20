@@ -1418,19 +1418,8 @@ export function SetorDetalhe() {
 
   const previewDiagnostics = useMemo<PreviewDiagnostic[]>(() => {
     if (modoSimulacaoEfetivo !== 'SETOR') return []
-    const diags = simulacaoPreview.multiPassResult?.diagnostics ?? []
-    // Suprimir folga_warnings falso-positivos de tipo B intermitente
-    // (XOR faz alternancia — nao e conflito real)
-    if (tipoBIds.size === 0) return diags
-    return diags.filter((d) => {
-      if (d.code !== 'FOLGA_VARIAVEL_CONFLITO') return true
-      // Se o titulo menciona um tipo B, suprimir
-      return !Array.from(tipoBIds).some((id) => {
-        const row = simulacaoPreview.previewRows.find((r) => r.titular.id === id)
-        return row && d.title.includes(row.titular.nome)
-      })
-    })
-  }, [modoSimulacaoEfetivo, simulacaoPreview, tipoBIds])
+    return simulacaoPreview.multiPassResult?.diagnostics ?? []
+  }, [modoSimulacaoEfetivo, simulacaoPreview])
 
   const previewGate = useMemo<PreviewGate>(
     () => resolvePreviewGate(previewDiagnostics),
