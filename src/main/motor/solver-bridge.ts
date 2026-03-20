@@ -25,6 +25,7 @@ import type {
   SolverInputDemandaExcecaoData,
   PinnedCell,
   DiaSemana,
+  PinOrigin,
 } from '../../shared'
 import {
   hasGuaranteedSundayWindow,
@@ -50,7 +51,7 @@ export interface BuildSolverInputOptions {
   /** Override in-memory de regras — sobrescreve empresa+sistema apenas para esta geração */
   rulesOverride?: Record<string, string>
   /** Padrão de folgas externo (da simulação Nível 1). Se fornecido, solver pula Phase 1. */
-  pinnedFolgaExterno?: Array<{ c: number; d: number; band: number }>
+  pinnedFolgaExterno?: Array<{ c: number; d: number; band: number; origin?: PinOrigin; weight?: number }>
 }
 
 // ---------------------------------------------------------------------------
