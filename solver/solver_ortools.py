@@ -79,7 +79,7 @@ WEIGHTS = {
 }
 
 MODE_PROFILES = {
-    "rapido":     {"budget": 45,   "gap": 0.05},
+    "rapido":     {"budget": 120,  "gap": 0.05},
     "balanceado": {"budget": 180,  "gap": 0.02},
     "otimizado":  {"budget": 600,  "gap": 0.005},
     "maximo":     {"budget": 1800, "gap": 0.001},
@@ -1046,10 +1046,16 @@ def build_model(
     ) if rule_is('S_CYCLE_CONSISTENCY', 'ON') != 'OFF' and cycle_days < D else []
 
     max_total_minutes = D * S * grid_min
+    # Exclude intermitentes with horas_semanais=0 from spread calculation
+    # (their free domain [0, huge] distorts max/min equality)
+    spread_minutes = [wm for c, wm in enumerate(weekly_minutes)
+                      if int(colabs[c].get("horas_semanais", 44)) > 0]
+    if not spread_minutes:
+        spread_minutes = weekly_minutes  # fallback: use all
     max_weekly = model.new_int_var(0, max_total_minutes, "max_weekly")
     min_weekly = model.new_int_var(0, max_total_minutes, "min_weekly")
-    model.add_max_equality(max_weekly, weekly_minutes)
-    model.add_min_equality(min_weekly, weekly_minutes)
+    model.add_max_equality(max_weekly, spread_minutes)
+    model.add_min_equality(min_weekly, spread_minutes)
     spread = model.new_int_var(0, 9000, "spread")
     model.add(spread == max_weekly - min_weekly)
 
