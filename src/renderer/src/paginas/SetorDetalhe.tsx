@@ -1118,7 +1118,9 @@ export function SetorDetalhe() {
 
   const previewSetorIntermitentesDomingoGarantidos = useMemo(
     () => previewSetorIntermitentesRegras
-      .filter(({ ehTipoB }) => !ehTipoB)
+      // Tipo A com DOM = cobertura garantida fixa
+      // Tipo B com DOM = participa do pool, mas pra K do simula-ciclo descontamos
+      // pra evitar que CLTs fiquem sobrecarregados (tipo B cobre parte dos domingos)
       .filter(({ regrasPorDia }) => regrasPorDia.has('DOM'))
       .length,
     [previewSetorIntermitentesRegras],
