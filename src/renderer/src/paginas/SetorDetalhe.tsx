@@ -1407,8 +1407,19 @@ export function SetorDetalhe() {
 
   const previewDiagnostics = useMemo<PreviewDiagnostic[]>(() => {
     if (modoSimulacaoEfetivo !== 'SETOR') return []
-    return simulacaoPreview.multiPassResult?.diagnostics ?? []
-  }, [modoSimulacaoEfetivo, simulacaoPreview])
+    const diags = simulacaoPreview.multiPassResult?.diagnostics ?? []
+    // Suprimir folga_warnings falso-positivos de tipo B intermitente
+    // (XOR faz alternancia — nao e conflito real)
+    if (tipoBIds.size === 0) return diags
+    return diags.filter((d) => {
+      if (d.code !== 'FOLGA_VARIAVEL_CONFLITO') return true
+      // Se o titulo menciona um tipo B, suprimir
+      return !Array.from(tipoBIds).some((id) => {
+        const row = simulacaoPreview.previewRows.find((r) => r.titular.id === id)
+        return row && d.title.includes(row.titular.nome)
+      })
+    })
+  }, [modoSimulacaoEfetivo, simulacaoPreview, tipoBIds])
 
   const previewGate = useMemo<PreviewGate>(
     () => resolvePreviewGate(previewDiagnostics),
@@ -1417,16 +1428,16 @@ export function SetorDetalhe() {
 
   const abrirAnaliseIa = useCallback(() => {
     const allDiags = advisoryResult?.diagnostics ?? previewDiagnostics
-    const failedTitles = allDiags
-      .filter((d) => d.severity === 'error')
-      .map((d) => d.title)
+    const problemas = allDiags.map((d) => d.title)
+    const storeAvisos = (derivados?.avisos ?? []).map((a) => a.titulo)
+    const tudo = [...problemas, ...storeAvisos].filter(Boolean)
 
-    if (failedTitles.length > 0) {
-      const prompt = `Analise os problemas da escala do setor ${setor?.nome ?? ''}: ${failedTitles.join('; ')}`
-      useIaStore.getState().setPendingAutoMessage(prompt)
-    }
+    const prompt = tudo.length > 0
+      ? `Analise os problemas da escala do setor ${setor?.nome ?? ''}: ${tudo.join('; ')}`
+      : `Analise a escala do setor ${setor?.nome ?? ''} e me diga se esta tudo certo.`
+    useIaStore.getState().setPendingAutoMessage(prompt)
     useIaStore.getState().setAberto(true)
-  }, [advisoryResult, previewDiagnostics, setor?.nome])
+  }, [advisoryResult, derivados?.avisos, previewDiagnostics, setor?.nome])
 
   const previewAutoOverrides = useMemo<RuleConfig>(() => {
     const next: RuleConfig = {}
