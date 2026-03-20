@@ -4,7 +4,7 @@ import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
   EscalaAdvisoryInput,
-  EscalaAdvisoryOutput,
+  EscalaAdvisoryOutputV2,
   AjustarAlocacaoRequest,
   StatusEscala,
   RegimeEscala,
@@ -71,5 +71,5 @@ export const escalasService = {
   },
 
   advisory: (input: EscalaAdvisoryInput) =>
-    client['escalas.advisory'](input) as Promise<EscalaAdvisoryOutput>,
+    client['escalas.advisory'](input) as Promise<EscalaAdvisoryOutputV2>,
 }

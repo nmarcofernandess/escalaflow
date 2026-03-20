@@ -103,9 +103,9 @@ import { CicloGrid } from '@/componentes/CicloGrid'
 import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet } from '@/componentes/SugestaoSheet'
-import { converterPreviewParaPinned, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { converterPreviewParaPinned, converterPreviewParaPinnedWithOrigin, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { runPreviewMultiPass, type MultiPassResult } from '@shared/preview-multi-pass'
-import type { EscalaAdvisoryOutput, AdvisoryDiffItem } from '@shared/index'
+import type { EscalaAdvisoryOutputV2 } from '@shared/index'
 import { textoResumoRelaxacoes } from '@shared/resumo-user'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
@@ -475,9 +475,9 @@ export function SetorDetalhe() {
   const [oficializando, setOficializando] = useState(false)
   const [descartando, setDescartando] = useState(false)
   const [sugestaoOpen, setSugestaoOpen] = useState(false)
-  const [sugestaoMode, setSugestaoMode] = useState<'sugestao' | 'validacao'>('sugestao')
-  const [advisoryResult, setAdvisoryResult] = useState<EscalaAdvisoryOutput | null>(null)
+  const [advisoryResult, setAdvisoryResult] = useState<EscalaAdvisoryOutputV2 | null>(null)
   const [advisoryLoading, setAdvisoryLoading] = useState(false)
+  const [gerandoLabel, setGerandoLabel] = useState<string | null>(null)
   const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
   const [solverConfigOpen, setSolverConfigOpen] = useState(false)
   const [solverSessionConfig, setSolverSessionConfig] = useState<SolverSessionConfig>({
@@ -1903,8 +1903,8 @@ export function SetorDetalhe() {
     })
   }, [atualizarSimulacaoConfig, mergeOverrideLocalWithBase, regrasMap, simulacaoConfig.livre.folgas_forcadas, simulacaoConfig.livre.n, simulacaoPreview.mode])
 
-  // ─── Geracao inline ──────────────────────────────────────────────────
-  const handleGerar = async () => {
+  // ─── Geracao inline (logica original — chamada pelo gate ou escape hatch) ──
+  const handleGerarOriginal = async () => {
     const dataInicio = periodoGeracao.data_inicio
     const dataFim = periodoGeracao.data_fim
     if (!dataInicio || !dataFim) {
@@ -1952,7 +1952,7 @@ export function SetorDetalhe() {
     // Preflight
     setAvisosOperacao([]) // limpa avisos anteriores
     try {
-      const preflight = await escalasService.preflight(setorId, { data_inicio: dataInicio, data_fim: dataFim })
+      const preflight = await escalasService.preflight(setorId, { data_inicio: periodoGeracao.data_inicio, data_fim: periodoGeracao.data_fim })
       if (!preflight.ok) {
         const blockerAvisos: AvisoEscala[] = preflight.blockers.map((b, i) => ({
           id: `preflight_${i}`,
@@ -1991,8 +1991,8 @@ export function SetorDetalhe() {
         : undefined
 
       const result = await escalasService.gerar(setorId, {
-        data_inicio: dataInicio,
-        data_fim: dataFim,
+        data_inicio: periodoGeracao.data_inicio,
+        data_fim: periodoGeracao.data_fim,
         solveMode: solverSessionConfig.solveMode,
         maxTimeSeconds: solverSessionConfig.maxTimeSeconds,
         rulesOverride,
@@ -2016,7 +2016,7 @@ export function SetorDetalhe() {
           },
         })
       } else {
-        toast.success('Rascunho gerado e enviado para o histórico')
+        toast.success('Rascunho gerado e enviado para o historico')
       }
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : String(err)
@@ -2051,7 +2051,115 @@ export function SetorDetalhe() {
       }
     } finally {
       setGerando(false)
+      setGerandoLabel(null)
     }
+  }
+
+  // ─── Gate inteligente — roda advisory antes de gerar ──────────────────
+  const handleGerarComGate = async () => {
+    if (!setorId || !simulacaoPreview.resultado.sucesso) {
+      // No preview or not SETOR mode — skip gate, generate directly
+      await handleGerarOriginal()
+      return
+    }
+
+    setGerandoLabel('Analisando...')
+
+    try {
+      // Build advisory input with weighted pins (origin tracking)
+      const pinnedWithOrigin = converterPreviewParaPinnedWithOrigin(
+        simulacaoPreview.resultado,
+        previewSetorRows.map(row => ({ funcao: row.funcao, titular: row.titular })),
+        previewSetorRows
+          .filter(row => row.overrideFixaLocal || row.overrideVariavelLocal)
+          .map(row => ({
+            colaborador_id: row.titular.id,
+            fixa: row.overrideFixaLocal ? row.fixaAtual : undefined,
+            variavel: row.overrideVariavelLocal ? row.variavelAtual : undefined,
+          })),
+        previewSetorRows
+          .filter(row => row.baseFixaColaborador || row.baseVariavelColaborador)
+          .map(row => ({
+            colaborador_id: row.titular.id,
+            fixa: row.baseFixaColaborador ? row.fixaAtual : undefined,
+            variavel: row.baseVariavelColaborador ? row.variavelAtual : undefined,
+          })),
+      )
+
+      // Build current_folgas for diff
+      const previewGrid = simulacaoPreview.resultado.grid
+      const currentFolgas = previewSetorRows.map((row, idx) => {
+        const gridRow = previewGrid[idx]
+        const fixaDoGrid = gridRow ? (row.folgaFixaDom ? 'DOM' as DiaSemana : idxPreviewParaDiaSemana(gridRow.folga_fixa_dia)) : null
+        const variavelDoGrid = gridRow ? idxPreviewParaDiaSemana(gridRow.folga_variavel_dia) : null
+        return {
+          colaborador_id: row.titular.id,
+          fixa: fixaDoGrid ?? row.fixaAtual,
+          variavel: variavelDoGrid ?? row.variavelAtual,
+          origem_fixa: (row.overrideFixaLocal ? 'OVERRIDE_LOCAL' : 'COLABORADOR') as 'COLABORADOR' | 'OVERRIDE_LOCAL',
+          origem_variavel: (row.overrideVariavelLocal ? 'OVERRIDE_LOCAL' : 'COLABORADOR') as 'COLABORADOR' | 'OVERRIDE_LOCAL',
+        }
+      })
+
+      // Run advisory
+      const advisoryRes = await escalasService.advisory({
+        setor_id: setorId,
+        data_inicio: periodoGeracao.data_inicio,
+        data_fim: periodoGeracao.data_fim,
+        pinned_folga_externo: pinnedWithOrigin,
+        current_folgas: currentFolgas,
+      })
+
+      const violations = advisoryRes.pin_violations ?? []
+      const temMudancaManualOuSalva = violations.some(
+        v => v.origin === 'manual' || v.origin === 'saved'
+      )
+
+      if (violations.length === 0) {
+        // Level 1: cost=0 — generate directly, no friction
+        setGerandoLabel('Gerando...')
+        await handleGerarOriginal()
+        return
+      }
+
+      if (!temMudancaManualOuSalva) {
+        // Level 2: only auto changes — generate directly + info toast
+        setGerandoLabel('Gerando...')
+        await handleGerarOriginal()
+        toast.info(`O sistema ajustou ${violations.length} folga(s) automatica(s) para otimizar a cobertura`)
+        return
+      }
+
+      // Level 3: manual/saved violated — open drawer for user decision
+      setGerandoLabel(null)
+      setAdvisoryResult(advisoryRes as EscalaAdvisoryOutputV2)
+      setSugestaoOpen(true)
+    } catch (err) {
+      console.error('[gate] Error:', err)
+      // If advisory fails, fall through to direct generation
+      setGerandoLabel('Gerando...')
+      await handleGerarOriginal()
+    }
+  }
+
+  // ─── Sheet callbacks ──────────────────────────────────────────────────
+  const handleAceitarEGerar = async () => {
+    setSugestaoOpen(false)
+    setGerandoLabel('Gerando...')
+    await handleGerarOriginal()
+    setGerandoLabel(null)
+  }
+
+  const handleGerarMesmoAssim = async () => {
+    setSugestaoOpen(false)
+    setGerandoLabel('Gerando...')
+    await handleGerarOriginal()
+    setGerandoLabel(null)
+    toast.info('Escala gerada com as suas folgas originais')
+  }
+
+  const handleCancelarSugestao = () => {
+    setSugestaoOpen(false)
   }
 
   const rascunhoSelecionado = useMemo(
@@ -2193,7 +2301,6 @@ export function SetorDetalhe() {
   // ── Validar: roda solver COM pins, validate_only — sem proposta ──
   const handleValidar = useCallback(async () => {
     if (advisoryLoading || !setorId || !simulacaoPreview.resultado.sucesso) return
-    setSugestaoMode('validacao')
     setSugestaoOpen(true)
     setAdvisoryLoading(true)
     setAdvisoryResult(null)
@@ -3274,9 +3381,10 @@ export function SetorDetalhe() {
                       <Button
                         size="sm"
                         className="gap-1.5"
-                        onClick={handleGerar}
+                        onClick={handleGerarComGate}
                         disabled={
                           gerando ||
+                          !!gerandoLabel ||
                           advisoryLoading ||
                           !empresa ||
                           (tiposContrato?.length ?? 0) === 0 ||
@@ -3288,12 +3396,17 @@ export function SetorDetalhe() {
                             : undefined
                         }
                       >
-                        {gerando ? (
-                          <Loader2 className="size-3.5 animate-spin" />
+                        {gerandoLabel || gerando ? (
+                          <>
+                            <Loader2 className="size-3.5 animate-spin" />
+                            {gerandoLabel ?? 'Gerando...'}
+                          </>
                         ) : (
-                          <Play className="size-3.5" />
+                          <>
+                            <Play className="size-3.5" />
+                            Gerar Escala
+                          </>
                         )}
-                        Gerar Escala
                       </Button>
                     </>
                   )}
@@ -3388,46 +3501,15 @@ export function SetorDetalhe() {
                 </div>
               )}
 
-              {/* Sheet de sugestao — advisory pipeline */}
+              {/* Sheet de sugestao — advisory pipeline (V2: CP-SAT exclusive) */}
               <SugestaoSheet
                 open={sugestaoOpen}
                 onOpenChange={setSugestaoOpen}
                 loading={advisoryLoading}
                 advisory={advisoryResult}
-                mode={sugestaoMode}
-                previewDiagnostics={previewDiagnostics}
-                onAceitar={async () => {
-                  if (!advisoryResult?.proposal) return
-                  try {
-                    atualizarSimulacaoConfig((prev) => ({
-                      ...prev,
-                      setor: {
-                        ...prev.setor,
-                        overrides_locais: advisoryResult.proposal!.diff.reduce((acc, d) => {
-                          const nextOverride = mergeOverrideLocalWithBase(d.colaborador_id, {
-                            fixa: d.fixa_proposta,
-                            variavel: d.variavel_proposta,
-                          })
-                          if (nextOverride) {
-                            acc[String(d.colaborador_id)] = nextOverride
-                          } else {
-                            delete acc[String(d.colaborador_id)]
-                          }
-                          return acc
-                        }, { ...prev.setor.overrides_locais }),
-                      },
-                    }))
-                    toast.success('Sugestao aplicada na simulacao')
-                    setSugestaoOpen(false)
-                    setAdvisoryResult(null)
-                  } catch {
-                    toast.error('Erro ao aplicar sugestao')
-                  }
-                }}
-                onDescartar={() => {
-                  setSugestaoOpen(false)
-                  setAdvisoryResult(null)
-                }}
+                onAceitarEGerar={handleAceitarEGerar}
+                onGerarMesmoAssim={handleGerarMesmoAssim}
+                onCancelar={handleCancelarSugestao}
                 onAnalisarIa={abrirAnaliseIa}
               />
 

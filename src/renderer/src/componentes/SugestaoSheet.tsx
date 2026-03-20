@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   ArrowRight,
   CheckCircle2,
@@ -21,9 +22,10 @@ import {
 } from '@/components/ui/sheet'
 import type {
   AdvisoryDiffItem,
+  AdvisoryPinViolation,
   AdvisoryStatus,
   DiaSemana,
-  EscalaAdvisoryOutput,
+  EscalaAdvisoryOutputV2,
   PreviewDiagnostic,
 } from '@shared/index'
 import { DIAS_CURTOS } from '@/lib/ciclo-grid-types'
@@ -35,14 +37,11 @@ interface SugestaoSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   loading: boolean
-  advisory: EscalaAdvisoryOutput | null
-  onAceitar: () => void
-  onDescartar: () => void
+  advisory: EscalaAdvisoryOutputV2 | null
+  onAceitarEGerar: () => void
+  onGerarMesmoAssim: () => void
+  onCancelar: () => void
   onAnalisarIa?: () => void
-  /** Contexto: muda titulo e loading text */
-  mode?: 'sugestao' | 'validacao'
-  /** Avisos do TS (preview) — mostrados em secao separada quando mode='validacao' */
-  previewDiagnostics?: PreviewDiagnostic[]
 }
 
 /* ─── Status config ────────────────────────────────────────── */
@@ -58,7 +57,7 @@ const STATUS_CONFIG: Record<AdvisoryStatus, {
     icon: CheckCircle2,
   },
   PROPOSAL_VALID: {
-    subtitle: 'O sistema encontrou um arranjo diferente. Veja as diferencas.',
+    subtitle: 'Para que a escala funcione, o sistema sugere alguns ajustes.',
     accent: 'text-amber-500',
     icon: Lightbulb,
   },
@@ -115,14 +114,12 @@ function DiagnosticRow({ diag }: { diag: PreviewDiagnostic }) {
   )
 }
 
-/* ─── DiffCell — renders a single FF or FV value with change indicator ── */
+/* ─── Legacy DiffCell — kept for retrocompat when pin_violations is empty ── */
 
 function DiffCell({ atual, proposta }: { atual: DiaSemana | null; proposta: DiaSemana | null }) {
-  // Same value — muted
   if (atual === proposta) {
     return <span className="text-muted-foreground">{fmtDia(atual)}</span>
   }
-  // Added (was null, now has value)
   if (!atual && proposta) {
     return (
       <span className="font-semibold text-emerald-500">
@@ -130,7 +127,6 @@ function DiffCell({ atual, proposta }: { atual: DiaSemana | null; proposta: DiaS
       </span>
     )
   }
-  // Removed (had value, now null)
   if (atual && !proposta) {
     return (
       <span className="font-semibold text-rose-400">
@@ -138,7 +134,6 @@ function DiffCell({ atual, proposta }: { atual: DiaSemana | null; proposta: DiaS
       </span>
     )
   }
-  // Changed
   return (
     <span className="font-semibold text-amber-500">
       {fmtDia(proposta)} <Zap className="ml-0.5 inline size-3" />
@@ -146,24 +141,22 @@ function DiffCell({ atual, proposta }: { atual: DiaSemana | null; proposta: DiaS
   )
 }
 
-/* ─── ProposalSection — tabela lado-a-lado ─────────────────── */
+/* ─── Legacy ProposalSection — fallback when pin_violations empty ───── */
 
-function ProposalSection({ diff }: { diff: AdvisoryDiffItem[] }) {
+function LegacyProposalSection({ diff }: { diff: AdvisoryDiffItem[] }) {
   const changedItems = diff.filter((d) => d.fixa_atual !== d.fixa_proposta || d.variavel_atual !== d.variavel_proposta)
   const unchangedCount = diff.length - changedItems.length
 
   return (
     <div className="space-y-3">
-      {/* Header */}
       <div className="flex items-center gap-2">
         <Zap className="size-4 text-amber-500" />
-        <h4 className="text-sm font-semibold">Proposta de Ajuste</h4>
+        <h4 className="text-sm font-semibold">Ajustes sugeridos</h4>
         <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
           {changedItems.length} {changedItems.length === 1 ? 'alteracao' : 'alteracoes'}
         </span>
       </div>
 
-      {/* Diff table */}
       <div className="overflow-hidden rounded-lg border">
         <table className="w-full text-sm">
           <thead>
@@ -209,19 +202,61 @@ function ProposalSection({ diff }: { diff: AdvisoryDiffItem[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
 
-      {/* Legend */}
-      <div className="flex gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <Zap className="size-3 text-amber-500" /> mudou
-        </span>
-        <span className="flex items-center gap-1">
-          <PlusCircle className="size-3 text-emerald-500" /> adicionou
-        </span>
-        <span className="flex items-center gap-1">
-          <XCircle className="size-3 text-rose-400" /> removido
-        </span>
-      </div>
+/* ─── V2 Violations Section — grouped by person ──────────── */
+
+function ViolationsSection({ violations }: { violations: AdvisoryPinViolation[] }) {
+  const [autoExpanded, setAutoExpanded] = useState(false)
+
+  const autoViolations = violations.filter(v => v.origin === 'auto')
+  const userViolations = violations.filter(v => v.origin === 'manual' || v.origin === 'saved')
+
+  return (
+    <div className="space-y-4">
+      {/* User section — expanded by default, highlighted */}
+      {userViolations.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 text-amber-500" />
+            <h4 className="text-sm font-semibold">
+              Mudancas nas suas escolhas ({userViolations.length})
+            </h4>
+          </div>
+          <div className="space-y-1.5 pl-6">
+            {userViolations.map((v, i) => (
+              <div key={`user-${v.colaborador_id}-${v.dia}-${i}`} className="text-sm">
+                <span className="font-medium">{v.nome}</span>
+                <span className="text-muted-foreground">: {v.descricao}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Auto section — collapsed by default */}
+      {autoViolations.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setAutoExpanded(!autoExpanded)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span className="text-xs">{autoExpanded ? '\u25BE' : '\u25B8'}</span>
+            <span>Ajustes automaticos ({autoViolations.length})</span>
+          </button>
+          {autoExpanded && (
+            <div className="pl-6 space-y-1 text-sm text-muted-foreground">
+              {autoViolations.map((v, i) => (
+                <div key={`auto-${v.colaborador_id}-${v.dia}-${i}`}>
+                  <span className="font-medium text-foreground/80">{v.nome}</span>: {v.descricao}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -233,22 +268,23 @@ export function SugestaoSheet({
   onOpenChange,
   loading,
   advisory,
-  onAceitar,
-  onDescartar,
+  onAceitarEGerar,
+  onGerarMesmoAssim,
+  onCancelar,
   onAnalisarIa,
-  mode = 'sugestao',
-  previewDiagnostics,
 }: SugestaoSheetProps) {
   const config = advisory ? STATUS_CONFIG[advisory.status] : null
-  const hasProposal = !!advisory?.proposal
   const StatusIcon = config?.icon ?? Lightbulb
 
   const hasErrors = advisory?.diagnostics.some((d) => d.severity === 'error') ?? false
-  const hasWarnings = advisory?.diagnostics.some((d) => d.severity === 'warning') ?? false
   const diagnosticsToShow = advisory?.diagnostics.filter((d) => d.severity !== 'info') ?? []
 
-  const titulo = mode === 'validacao' ? 'Validacao do Arranjo' : 'Sugestao do Sistema'
-  const loadingText = mode === 'validacao' ? 'Validando o arranjo...' : 'Analisando o arranjo...'
+  // V2: prefer pin_violations over legacy proposal diff
+  const pinViolations = advisory?.pin_violations ?? []
+  const hasPinViolations = pinViolations.length > 0
+  const hasLegacyProposal = !hasPinViolations && !!advisory?.proposal
+  const hasAnyChanges = hasPinViolations || hasLegacyProposal
+  const pinCost = advisory?.pin_cost ?? 0
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -261,10 +297,10 @@ export function SugestaoSheet({
             ) : (
               <StatusIcon className={cn('size-5', config?.accent)} />
             )}
-            {titulo}
+            Sugestao de ajuste
           </SheetTitle>
           <SheetDescription>
-            {loading ? loadingText : config?.subtitle ?? ''}
+            {loading ? 'Analisando o arranjo...' : config?.subtitle ?? ''}
           </SheetDescription>
         </SheetHeader>
 
@@ -293,13 +329,18 @@ export function SugestaoSheet({
               </div>
             )}
 
-            {/* Proposal diff */}
-            {advisory.proposal && (
-              <ProposalSection diff={advisory.proposal.diff} />
+            {/* V2: Pin violations grouped by type */}
+            {hasPinViolations && (
+              <ViolationsSection violations={pinViolations} />
             )}
 
-            {/* Success message when no proposal and no issues */}
-            {!hasProposal && !hasErrors && (
+            {/* Legacy: Proposal diff fallback (retrocompat) */}
+            {hasLegacyProposal && advisory.proposal && (
+              <LegacyProposalSection diff={advisory.proposal.diff} />
+            )}
+
+            {/* Success message when no changes needed and no issues */}
+            {!hasAnyChanges && !hasErrors && (
               <div className="flex flex-col items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-6 py-5 text-center">
                 <CheckCircle2 className="size-8 text-emerald-500" />
                 <div>
@@ -313,22 +354,8 @@ export function SugestaoSheet({
               </div>
             )}
 
-            {/* Preview diagnostics (TS) — seção separada quando disponível */}
-            {previewDiagnostics && previewDiagnostics.filter((d) => d.severity !== 'info').length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Avisos do Ciclo
-                </h4>
-                <div className="space-y-1.5">
-                  {previewDiagnostics.filter((d) => d.severity !== 'info').map((d, idx) => (
-                    <DiagnosticRow key={`preview-${d.code}-${idx}`} diag={d} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error state without proposal — offer IA */}
-            {!hasProposal && hasErrors && onAnalisarIa && (
+            {/* Error state without changes — offer IA */}
+            {!hasAnyChanges && hasErrors && onAnalisarIa && (
               <div className="flex flex-col gap-3 rounded-lg border border-rose-500/20 bg-rose-500/5 px-5 py-4">
                 <p className="text-sm text-rose-700 dark:text-rose-400">
                   Nao foi possivel montar um arranjo viavel com a equipe e demanda atuais. Use a IA para entender melhor.
@@ -349,23 +376,21 @@ export function SugestaoSheet({
 
         {/* Footer */}
         <SheetFooter className="flex-row gap-2 sm:justify-start">
-          {hasProposal && (
+          {pinCost > 0 && (
             <Button
-              onClick={onAceitar}
+              onClick={onAceitarEGerar}
               disabled={loading}
               className="bg-emerald-600 text-white hover:bg-emerald-700"
             >
-              Aceitar sugestao
+              Aceitar e Gerar
             </Button>
           )}
-          <Button variant="outline" onClick={onDescartar}>
-            {hasProposal ? 'Descartar' : 'Fechar'}
+          <Button variant="secondary" onClick={onGerarMesmoAssim} disabled={loading}>
+            Gerar mesmo assim
           </Button>
-          {hasProposal && (
-            <span className="ml-auto text-xs text-muted-foreground">
-              Aceitar aplica a proposta so na simulacao
-            </span>
-          )}
+          <Button variant="ghost" onClick={onCancelar}>
+            Cancelar
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
