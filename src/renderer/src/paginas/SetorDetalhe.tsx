@@ -107,6 +107,7 @@ import { SugestaoSheet } from '@/componentes/SugestaoSheet'
 import { converterPreviewParaPinned, sugerirK, sugerirTSHierarquico, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { runPreviewMultiPass, type MultiPassResult } from '@shared/preview-multi-pass'
 import type { EscalaAdvisoryOutput, AdvisoryDiffItem } from '@shared/index'
+import { textoResumoRelaxacoes } from '@shared/resumo-user'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
 import { DIAS_ORDEM, type CicloGridRow, type Simbolo } from '@/lib/ciclo-grid-types'
@@ -1990,7 +1991,17 @@ export function SetorDetalhe() {
       setHistoricoCompleta(result)
       setHistoricoSelecionadaId(result.escala.id)
       setEscalaSelecionada(`historico:${result.escala.id}`)
-      toast.success('Rascunho gerado e enviado para o historico')
+      const passUsado = result.diagnostico?.pass_usado ?? 1
+      const relaxacoesTexto = textoResumoRelaxacoes(
+        passUsado,
+        result.diagnostico?.regras_relaxadas ?? [],
+        result.diagnostico?.generation_mode,
+      )
+      if (relaxacoesTexto) {
+        toast.warning(relaxacoesTexto, { duration: 8000 })
+      } else {
+        toast.success('Rascunho gerado e enviado para o histórico')
+      }
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : String(err)
 
