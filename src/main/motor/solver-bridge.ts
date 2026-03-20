@@ -227,13 +227,8 @@ export function calcularCicloDomingo<TPadrao extends { folga_fixa_dia_semana: st
 
   if (dDom === 0 || nDom === 0) return { cicloTrabalho: 0, cicloFolga: 1 }
 
-  // Strict > (not >=) to ensure slack — exact equality means zero room for maneuver
+  // >= allows exact match (N/2 == demand is fine for 1/1 cycle)
   if (nDom * (1 / 3) > dDom) return { cicloTrabalho: 1, cicloFolga: 2 }
-  if (nDom * (1 / 2) > dDom) return { cicloTrabalho: 1, cicloFolga: 1 }
-  if (nDom * (2 / 3) > dDom) return { cicloTrabalho: 2, cicloFolga: 1 }
-  if (nDom * (3 / 4) > dDom) return { cicloTrabalho: 3, cicloFolga: 1 }
-  // Fallback: >= allows exact match as last resort
-  if (nDom * (1 / 3) >= dDom) return { cicloTrabalho: 1, cicloFolga: 2 }
   if (nDom * (1 / 2) >= dDom) return { cicloTrabalho: 1, cicloFolga: 1 }
   if (nDom * (2 / 3) >= dDom) return { cicloTrabalho: 2, cicloFolga: 1 }
   if (nDom * (3 / 4) >= dDom) return { cicloTrabalho: 3, cicloFolga: 1 }
