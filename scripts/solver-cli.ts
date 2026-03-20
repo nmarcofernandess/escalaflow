@@ -6,9 +6,9 @@
  *   npm run solver:cli -- <setor_id> [data_inicio] [data_fim] [--mode rapido|otimizado] [--json] [--summary] [--dump]
  *
  * Exemplos:
- *   npm run solver:cli -- 2                          # Açougue, período padrão (1 semana)
+ *   npm run solver:cli -- 2                          # Açougue, 3 meses (padrão)
  *   npm run solver:cli -- 2 2026-03-02 2026-03-08    # Açougue, 1 semana específica
- *   npm run solver:cli -- 1 2026-03-02 2026-04-26 --mode otimizado  # Caixa, 8 semanas
+ *   npm run solver:cli -- 1 2026-03-02 2026-05-31 --mode otimizado  # Caixa, 3 meses
  *   npm run solver:cli -- 2 --json                   # JSON sem comparacao_demanda (~250KB)
  *   npm run solver:cli -- 2 --json-full              # JSON completo (~800KB)
  *   npm run solver:cli -- 2 --summary                # JSON compacto: indicadores + horas (~1KB)
@@ -66,9 +66,10 @@ const dataInicio = positional[1] ?? (() => {
   return d.toISOString().slice(0, 10)
 })()
 const dataFim = positional[2] ?? (() => {
-  // 1 semana depois do inicio (domingo)
+  // 3 meses depois do inicio (período real do RH)
   const d = new Date(dataInicio)
-  d.setDate(d.getDate() + 6)
+  d.setMonth(d.getMonth() + 3)
+  d.setDate(d.getDate() - 1)
   return d.toISOString().slice(0, 10)
 })()
 
@@ -123,14 +124,14 @@ ${C.bold}Uso:${C.reset}
   npm run solver:cli -- <setor_id> [data_inicio] [data_fim] [flags]
 
 ${C.bold}Flags:${C.reset}
-  --mode rapido|balanceado|otimizado|maximo   Modo do solver (default: rapido)
+  --mode rapido|balanceado|otimizado|maximo   Patience do solver (default: rapido=15s)
   --json                    JSON sem comparacao_demanda (~250KB para 3 meses)
   --json-full               JSON completo com comparacao_demanda (~800KB)
   --summary                 JSON compacto: indicadores + horas/colab (~1KB)
   --dump                    Salva input JSON em tmp/
 
 ${C.bold}Exemplos:${C.reset}
-  npm run solver:cli -- 2                          ${C.dim}# Açougue, 1 semana${C.reset}
+  npm run solver:cli -- 2                          ${C.dim}# Açougue, 3 meses${C.reset}
   npm run solver:cli -- 2 2026-03-02 2026-03-08    ${C.dim}# Período específico${C.reset}
   npm run solver:cli -- 1 --mode otimizado         ${C.dim}# Caixa, modo otimizado${C.reset}
   npm run solver:cli -- 2 --dump                   ${C.dim}# Salva input pra debug${C.reset}
@@ -188,7 +189,10 @@ ${C.bold}Listar setores:${C.reset}
     console.log(`${C.bold}${C.cyan}╚══════════════════════════════════════════╝${C.reset}\n`)
     console.log(`  ${C.bold}Setor:${C.reset}   ${setor.nome} (#${setor.id})`)
     console.log(`  ${C.bold}Período:${C.reset} ${dataInicio} a ${dataFim}`)
-    console.log(`  ${C.bold}Modo:${C.reset}    ${solveMode}`)
+    const PATIENCE_LABEL: Record<string, string> = {
+      rapido: '15s', balanceado: '30s', otimizado: '60s', maximo: '120s'
+    }
+    console.log(`  ${C.bold}Modo:${C.reset}    ${solveMode} (patience ${PATIENCE_LABEL[solveMode] ?? '30s'})`)
     console.log(`  ${C.bold}DB:${C.reset}      ${process.env.ESCALAFLOW_DB_PATH}`)
     console.log()
   }

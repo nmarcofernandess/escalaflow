@@ -18,7 +18,7 @@ async function main() {
 
   const setorId = args[0] ? parseInt(args[0], 10) : 1
   const dataInicio = args[1] ?? '2026-03-02'
-  const dataFim = args[2] ?? '2026-04-26'
+  const dataFim = args[2] ?? '2026-05-31'
   const solveMode: 'rapido' | 'otimizado' = 'rapido'
   const rigorLevel: 'ALTO' | 'MEDIO' | 'BAIXO' = 'ALTO'
 
