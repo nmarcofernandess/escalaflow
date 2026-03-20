@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { formatarData } from '@/lib/formatadores'
+import { textoResumoRelaxacoes } from '@shared/resumo-user'
 import type { DiagnosticoSolver, Indicadores } from '@shared/index'
 
 interface EscalaResultBannerProps {
@@ -66,7 +67,16 @@ function resolveTier(diagnostico?: DiagnosticoSolver, indicadores?: Indicadores)
     }
   }
 
-  // pass === 1
+  if (pass !== 1) {
+    // pass '1b' or any unknown — treat as amber (something was relaxed)
+    return {
+      tier: 'amber',
+      mensagem: soft > 0
+        ? `Escala gerada com ajustes — ${soft} aviso${soft > 1 ? 's' : ''}`
+        : 'Escala gerada com ajustes',
+    }
+  }
+
   return {
     tier: 'verde',
     mensagem: soft > 0
@@ -123,6 +133,16 @@ export function EscalaResultBanner({
         <Icon className={cn('mt-0.5 size-5 shrink-0', styles.icon)} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground">{mensagem}</p>
+          {tier !== 'verde' && diagnostico && (() => {
+            const texto = textoResumoRelaxacoes(
+              diagnostico.pass_usado ?? 1,
+              diagnostico.regras_relaxadas ?? [],
+              (diagnostico as any).generation_mode,
+            )
+            return texto ? (
+              <p className="mt-1 text-xs text-muted-foreground">{texto}</p>
+            ) : null
+          })()}
           <p className="mt-0.5 text-xs text-muted-foreground">
             {formatarData(dataInicio)} — {formatarData(dataFim)}
           </p>
