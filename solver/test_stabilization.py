@@ -73,3 +73,38 @@ def test_callback_no_deficit_tracking():
         patience_s=30.0,
     )
     assert cb.patience_s == 30.0
+
+
+def test_solve_uses_stabilization():
+    """Full solve() uses stabilization callback and returns diagnostics."""
+    import json
+    from solver_ortools import solve
+
+    try:
+        with open("tmp/solver-input-setor-3.json") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        import pytest
+        pytest.skip("No solver input dump — run: npm run solver:cli -- 3 --dump")
+
+    data["config"]["solve_mode"] = "rapido"  # patience=15s
+    data["config"].pop("max_time_seconds", None)
+
+    result = solve(data)
+
+    assert result.get("sucesso") in (True, False)  # doesn't crash
+    diag = result.get("diagnostico", {})
+
+    # Stabilization diagnostics exist
+    assert "stabilization" in diag
+    stab = diag["stabilization"]
+    assert isinstance(stab.get("solutions_found"), int)
+    assert isinstance(stab.get("final_coverage"), (int, float))
+    assert "first_solution_s" in stab
+    assert "patience_s" in stab
+
+
+def test_solve_hard_cap_unchanged():
+    """HARD_TIME_CAP_SECONDS is still 3600."""
+    from solver_ortools import HARD_TIME_CAP_SECONDS
+    assert HARD_TIME_CAP_SECONDS == 3600

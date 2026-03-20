@@ -139,7 +139,7 @@ class CoverageStabilizationCallback(cp_model.CpSolverSolutionCallback):
 
     def on_solution_callback(self):
         self.solutions_found += 1
-        now = self.wall_time()
+        now = self.wall_time
 
         if self.first_solution_time is None:
             self.first_solution_time = now
@@ -1601,21 +1601,20 @@ def _solve_pass(
     pass_num: int | str,
     relaxations: List[str],
     max_time: float,
-    gap_limit: float,
+    patience_s: float,
     num_workers: int,
     pinned_folga: Dict[Tuple[int, int], int] | None = None,
 ) -> dict:
-    """Execute a single solve pass with optional constraint relaxations."""
+    """Execute a single solve pass with coverage-based stabilization.
+
+    The solver runs until:
+    1. OPTIMAL reached → immediate return
+    2. Coverage stabilizes (no improvement in patience_s seconds) → stop
+    3. max_time exceeded → safety net stop
+    """
     config = data.get("config", {})
 
-    if pass_num == 1:
-        log(f"Passo 1: resolvendo com todas as regras CLT (max {max_time:.0f}s)...")
-    elif pass_num == "1b":
-        log(f"Passo 1b: padrao de folgas fixado + meta de horas flexivel (max {max_time:.0f}s)...")
-    elif pass_num == 2:
-        log(f"Passo 2: relaxando meta de horas e dias de trabalho (max {max_time:.0f}s)...")
-    else:
-        log(f"Passo 3: modo emergencia — apenas regras CLT obrigatorias (max {max_time:.0f}s)...")
+    log(f"Passo {pass_num}: patience {patience_s:.0f}s, cap {max_time:.0f}s...")
 
     (
         model,
@@ -1637,16 +1636,23 @@ def _solve_pass(
         grid_min,
     ) = build_model(data, relaxations=relaxations, pinned_folga=pinned_folga)
 
+    total_demand_slots = sum(demand_by_slot.values())
+
+    cb = CoverageStabilizationCallback(
+        deficit_vars=deficit,
+        total_demand_slots=total_demand_slots,
+        patience_s=patience_s,
+    )
+
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max_time
     solver.parameters.num_workers = num_workers
     solver.parameters.log_search_progress = True
     solver.parameters.log_to_stdout = False
-    if gap_limit > 0:
-        solver.parameters.relative_gap_limit = gap_limit
+    # No relative_gap_limit — callback controls stopping via coverage
 
     t0 = time.time()
-    status = solver.solve(model)
+    status = solver.solve(model, cb)
     solve_time_ms = (time.time() - t0) * 1000
 
     result = extract_solution(
@@ -1672,28 +1678,22 @@ def _solve_pass(
         policy_adjustments=config.get("policy_adjustments", []),
     )
 
+    # Attach stabilization diagnostics (Task 2 propagates to diagnostico)
+    result["_stabilization"] = cb.get_diagnostics()
+
     status_label = result.get('status', 'UNKNOWN')
     cob = result.get('indicadores', {}).get('cobertura_percent', '?')
     t_s = solve_time_ms / 1000
+    stopped_by = "estabilizacao" if cb.stabilized_time else ("optimal" if status_label == "OPTIMAL" else "timeout")
     if status_label == 'INFEASIBLE':
         log(f"Passo {pass_num}: impossivel encontrar solucao em {t_s:.1f}s")
     elif status_label in ('OPTIMAL', 'FEASIBLE'):
         qual = 'otima' if status_label == 'OPTIMAL' else 'viavel'
-        log(f"Passo {pass_num}: solucao {qual} em {t_s:.1f}s — cobertura {cob}%")
+        log(f"Passo {pass_num}: solucao {qual} em {t_s:.1f}s — cobertura {cob}% ({stopped_by})")
     else:
         log(f"Passo {pass_num}: {status_label} em {t_s:.1f}s — cobertura {cob}%")
 
     return result
-
-
-def _get_coverage(result: dict) -> float:
-    """Extract cobertura_percent from a solver result, defaulting to 0."""
-    return result.get("indicadores", {}).get("cobertura_percent", 0.0)
-
-
-def _coverage_is_viable(result: dict) -> bool:
-    """Check if the result's coverage meets the minimum viable threshold."""
-    return _get_coverage(result) >= MIN_COVERAGE_THRESHOLD
 
 
 def solve(data: dict) -> dict:
@@ -1733,104 +1733,24 @@ def solve(data: dict) -> dict:
     num_workers = config.get("num_workers", 8)
 
     profile = MODE_PROFILES.get(solve_mode, MODE_PROFILES["rapido"])
-    total_budget = config.get("max_time_seconds", profile["budget"])
-    gap_limit = profile["gap"]
-
-    # Divide time budget across passes (Pass 1 gets more, Pass 2/3 are fallback)
-    pass1_time = max(10, total_budget * 0.5)
-    pass2_time = max(10, total_budget * 0.3)
-    pass3_time = max(10, total_budget * 0.2)
+    patience_s = profile["patience_s"]
+    hard_cap = config.get("max_time_seconds", HARD_TIME_CAP_SECONDS)
 
     # Track total elapsed time for the hard cap
     t_global_start = time.time()
 
+    def remaining_time() -> float:
+        return max(5, hard_cap - (time.time() - t_global_start))
+
     n_dias = (datetime.strptime(data['data_fim'], "%Y-%m-%d") - datetime.strptime(data['data_inicio'], "%Y-%m-%d")).days + 1
-    log(f"Montando modelo: {len(colabs)} colaboradores, {n_dias} dias, modo {solve_mode}")
+    log(f"Montando modelo: {len(colabs)} colaboradores, {n_dias} dias, patience {patience_s}s ({solve_mode})")
 
     # Pre-analysis: capacity vs demand
     capacidade_diag = _analyze_capacity(data)
     ratio_pct = round(capacidade_diag['ratio_cobertura_max'] * 100)
     log(f"Capacidade estimada: {ratio_pct}% da demanda pode ser coberta")
 
-    # If demand is mathematically impossible to cover, skip continuation logic
-    math_possible = capacidade_diag.get("cobertura_matematicamente_possivel", True)
-
     cycle_weeks = _compute_cycle_weeks_fast(colabs, data.get("demanda", []))
-
-    # --- Helper: run a pass with minimum-coverage continuation ---
-    # Per-pass cap: don't let continuation blow past the mode budget
-    pass_time_cap = total_budget * 2  # generous but bounded
-
-    def _run_with_continuation(
-        pass_num: int | str,
-        relaxations: list,
-        initial_time: float,
-        pass_gap: float,
-        pinned_folga: Dict[Tuple[int, int], int] | None = None,
-    ) -> dict:
-        """Run a solver pass. If FEASIBLE but below MIN_COVERAGE_THRESHOLD,
-        retry with doubled time budget until coverage is met or time cap is hit."""
-        current_time = initial_time
-        best_result = None
-        attempt = 0
-        MAX_CONTINUATION_ATTEMPTS = 3
-
-        while True:
-            attempt += 1
-            elapsed_total = time.time() - t_global_start
-            remaining = min(HARD_TIME_CAP_SECONDS, pass_time_cap) - elapsed_total
-
-            if remaining <= 5 or attempt > MAX_CONTINUATION_ATTEMPTS:
-                if attempt > MAX_CONTINUATION_ATTEMPTS:
-                    log(f"Passo {pass_num}: max tentativas ({MAX_CONTINUATION_ATTEMPTS}) — usando melhor resultado")
-                else:
-                    log(f"Tempo limite atingido ({elapsed_total:.0f}s) — usando melhor resultado ate agora")
-                break
-
-            # Clamp to remaining time
-            run_time = min(current_time, remaining)
-
-            if attempt > 1:
-                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}%, tentando melhorar...")
-
-            result = _solve_pass(
-                data,
-                pass_num=pass_num,
-                relaxations=relaxations,
-                max_time=run_time,
-                gap_limit=pass_gap,
-                num_workers=num_workers,
-                pinned_folga=pinned_folga,
-            )
-
-            if not result.get("sucesso"):
-                # INFEASIBLE — no point retrying this pass
-                return best_result if best_result else result
-
-            # Keep the best feasible result (highest coverage)
-            if best_result is None or _get_coverage(result) > _get_coverage(best_result):
-                best_result = result
-
-            # Check if coverage is good enough
-            if _coverage_is_viable(best_result):
-                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}% atingida")
-                return best_result
-
-            # OPTIMAL = provably best — retrying won't improve
-            if result.get("status") == "OPTIMAL":
-                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}% (OPTIMAL — melhor resultado possivel)")
-                return best_result
-
-            # Coverage below threshold and demand IS mathematically possible
-            if not math_possible:
-                log(f"Passo {pass_num}: cobertura {_get_coverage(best_result):.0f}% (demanda excede capacidade maxima — aceitando melhor resultado)")
-                return best_result
-
-            # Double the budget for next attempt, relax gap progressively
-            current_time = current_time * 2
-            pass_gap = max(pass_gap * 0.5, 0.001)  # tighten gap each retry
-
-        return best_result if best_result else {"sucesso": False, "status": "TIMEOUT"}
 
     # ---- Advisory-only mode: run Phase 1 and return immediately ----
     advisory_only = config.get("advisory_only", False)
@@ -1864,7 +1784,7 @@ def solve(data: dict) -> dict:
         log(f"Padrao de folgas EXTERNO recebido: {sum(1 for v in pinned_folga.values() if v == 0)} dias OFF")
     else:
         # Partial external (tipo B pre-computed) or no external — run Phase 1 for CLTs
-        phase1_budget = min(15, total_budget * 0.15)  # max 15s, 15% of budget
+        phase1_budget = 15  # Phase 1 is lightweight, fixed cap
         log("Calculando padrao de folgas...")
 
         phase1_result = solve_folga_pattern(data, budget_s=phase1_budget)
@@ -1946,9 +1866,10 @@ def solve(data: dict) -> dict:
             }
 
     # ---- Pass 1: Normal (with Phase 1 folga pinned) ----
-    result = _run_with_continuation(
-        pass_num=1, relaxations=[], initial_time=pass1_time, pass_gap=gap_limit,
-        pinned_folga=pinned_folga,
+    result = _solve_pass(
+        data, pass_num=1, relaxations=[],
+        max_time=remaining_time(), patience_s=patience_s,
+        num_workers=num_workers, pinned_folga=pinned_folga,
     )
 
     if result and result.get("sucesso"):
@@ -1960,6 +1881,8 @@ def solve(data: dict) -> dict:
         diag["cycle_length_weeks"] = cycle_weeks
         diag.update(phase1_diag)
         diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
+        if "_stabilization" in result:
+            diag["stabilization"] = result.pop("_stabilization")
         result["diagnostico"] = diag
         return result
 
@@ -1986,10 +1909,10 @@ def solve(data: dict) -> dict:
             pass1b_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO"]
             if exploratory_mode:
                 pass1b_relaxations.append("H6")
-            result = _run_with_continuation(
-                pass_num="1b", relaxations=pass1b_relaxations,
-                initial_time=pass1_time, pass_gap=gap_limit,
-                pinned_folga=folga_only_pins,
+            result = _solve_pass(
+                data, pass_num="1b", relaxations=pass1b_relaxations,
+                max_time=remaining_time(), patience_s=patience_s,
+                num_workers=num_workers, pinned_folga=folga_only_pins,
             )
 
             if result and result.get("sucesso"):
@@ -2001,6 +1924,8 @@ def solve(data: dict) -> dict:
                 diag["cycle_length_weeks"] = cycle_weeks
                 diag.update(phase1_diag)
                 diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
+                if "_stabilization" in result:
+                    diag["stabilization"] = result.pop("_stabilization")
                 result["diagnostico"] = diag
                 return result
 
@@ -2015,9 +1940,10 @@ def solve(data: dict) -> dict:
         pass2_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO"]
         if exploratory_mode:
             pass2_relaxations.append("H6")
-        result = _run_with_continuation(
-            pass_num=2, relaxations=pass2_relaxations, initial_time=pass2_time, pass_gap=gap_limit,
-            pinned_folga=None,  # drop Phase 1 pin in degradation
+        result = _solve_pass(
+            data, pass_num=2, relaxations=pass2_relaxations,
+            max_time=remaining_time(), patience_s=patience_s,
+            num_workers=num_workers, pinned_folga=None,  # drop Phase 1 pin in degradation
         )
 
         if result and result.get("sucesso"):
@@ -2029,6 +1955,8 @@ def solve(data: dict) -> dict:
             diag["cycle_length_weeks"] = cycle_weeks
             diag.update(phase1_diag)
             diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
+            if "_stabilization" in result:
+                diag["stabilization"] = result.pop("_stabilization")
             result["diagnostico"] = diag
             return result
 
@@ -2041,9 +1969,10 @@ def solve(data: dict) -> dict:
         else:
             log("Passo 2 impossivel — fallback legal-first (sem relaxar regras de oficializacao)")
             pass3_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
-        result = _run_with_continuation(
-            pass_num=3, relaxations=pass3_relaxations, initial_time=pass3_time, pass_gap=gap_limit,
-            pinned_folga=None,
+        result = _solve_pass(
+            data, pass_num=3, relaxations=pass3_relaxations,
+            max_time=remaining_time(), patience_s=patience_s,
+            num_workers=num_workers, pinned_folga=None,
         )
     else:
         result = result if result else {"sucesso": False, "status": "TIMEOUT"}
@@ -2061,6 +1990,8 @@ def solve(data: dict) -> dict:
     diag.update(phase1_diag)
     diag["modo_emergencia"] = exploratory_mode
     diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
+    if "_stabilization" in result:
+        diag["stabilization"] = result.pop("_stabilization")
     if result:
         result["diagnostico"] = diag
 
