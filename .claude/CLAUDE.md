@@ -677,7 +677,7 @@ escalaflow-backup-2026-03-13T14-30-00-000.zip
 
 ---
 
-## Ciclo V3 — Estado atual
+## Ciclo V3 + Intermitente Tipo A/B — Estado atual
 
 O sistema de ciclos passou por refatoracao significativa:
 
@@ -685,6 +685,34 @@ O sistema de ciclos passou por refatoracao significativa:
 - **XOR folga variavel**: offset NEGATIVO (mesma semana). `constraints.py` OFFSET = {SEG:-6..SAB:-1}.
 - **folga_fixa=DOM**: guards implementados no solver, bridge e TS.
 - **Preview Nivel 1**: funciona no SetorDetalhe via `previewNivel1` useMemo + `converterNivel1ParaEscala`.
+
+### Intermitente Tipo A (fixo) vs Tipo B (rotativo)
+
+Detectado automaticamente por `folga_variavel_dia_semana`:
+- **Tipo A** (`null`): dias fixos via regra de horario. Fora do pool rotativo. Cobertura garantida se tem DOM.
+- **Tipo B** (`!= null`): participa do ciclo domingo. XOR: trabalha DOM → folga variavel, nao trabalha DOM → trabalha variavel.
+- Dias sem regra = **NT (Nao Trabalha)** — HARD, inviolavel.
+- Tipo B e **pre-calculado** na bridge como `pinned_folga_externo` (determinístico, sem solver search).
+- `folga_fixa` e SEMPRE null pra intermitente.
+
+### Calculo de ciclo domingo — 6 locais (manter sincronizados!)
+
+O calculo `N/gcd(N,K)` existe em 6 locais independentes. Se mudar a logica de quem entra no pool, atualizar TODOS:
+
+1. `SetorDetalhe.tsx:setorSimulacaoInfo` — N/K pro preview
+2. `simula-ciclo.ts:gerarCicloFase1` — grid T/F (spacing implicito)
+3. `solver-bridge.ts:calcularCicloDomingo` — ratio por pessoa (thresholds)
+4. `solver_ortools.py:compute_cycle_length_weeks` — Phase 1 diagnostico
+5. `solver_ortools.py:_compute_cycle_weeks_fast` — output diagnostico
+6. `ciclo-grid-converters.ts:escalaParaCicloGrid` — grid escala oficial
+
+### Pipeline de geracao — doc canonico
+
+Ver `specs/ANALYST_PIPELINE_SOLVER_COMPLETO.md` para mapeamento completo de:
+- Preview TS → Phase 1 CP-SAT → Passes 1/1b/2/3 → Validador
+- Onde pins sao fixados e estripados
+- Duplicacoes de logica
+- Tabela de regras por etapa
 
 ## Checklist antes de commitar
 
