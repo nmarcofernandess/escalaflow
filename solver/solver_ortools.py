@@ -449,6 +449,12 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
     h3_status_m = rules.get("H3_DOM_MAX_CONSEC_M", rules.get("H3_DOM_MAX_CONSEC", "HARD"))
     h3_status_f = rules.get("H3_DOM_MAX_CONSEC_F", rules.get("H3_DOM_MAX_CONSEC", "HARD"))
 
+    # Soft pin support: pins with origin/weight become SOFT constraints
+    external_pins = config.get("pinned_folga_externo", [])
+    has_weighted_pins = any("weight" in p for p in external_pins)
+    penalty_terms = []
+    pin_violated_vars: Dict[Tuple[int, int], dict] = {}
+
     # Compute grid info for half-demand
     empresa = data["empresa"]
     grid_min = int(empresa.get("grid_minutos", 30))
@@ -488,8 +494,41 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
     # Weekly chunks for dias_trabalho
     week_chunks = build_week_chunks(days)
 
-    # HARD: dias de trabalho por semana
-    add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
+    if has_weighted_pins:
+        # Soft pin constraints with hierarchical weights
+        for pin in external_pins:
+            c_idx = pin["c"]
+            d_idx = pin["d"]
+            band = pin["band"]
+            weight = pin.get("weight", 100)
+            origin = pin.get("origin", "auto")
+
+            if d_idx >= D or c_idx >= C:
+                continue  # Guard: pin out of range
+            if d_idx in blocked_days.get(c_idx, set()):
+                continue  # Blocked days are already HARD OFF — skip soft pin
+
+            violated = model.new_bool_var(f"pin_viol_{c_idx}_{d_idx}")
+            pin_violated_vars[(c_idx, d_idx)] = {
+                "var": violated, "origin": origin, "weight": weight, "band": band,
+            }
+
+            if band == BAND_OFF:
+                model.add(works_day[c_idx, d_idx] == 0).only_enforce_if(violated.negated())
+            elif band == BAND_MANHA:
+                model.add(is_manha[c_idx, d_idx] == 1).only_enforce_if(violated.negated())
+            elif band == BAND_TARDE:
+                model.add(is_tarde[c_idx, d_idx] == 1).only_enforce_if(violated.negated())
+            elif band == BAND_INTEGRAL:
+                model.add(is_integral[c_idx, d_idx] == 1).only_enforce_if(violated.negated())
+
+            penalty_terms.append(violated * weight)
+
+        # DIAS_TRABALHO as SOFT — reuse existing function from constraints.py
+        add_dias_trabalho_soft_penalty(model, penalty_terms, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
+    else:
+        # LEGACY: HARD pins (no origin/weight) — keep original behavior
+        add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
 
     # HARD: max 6 consecutivos
     add_h1_max_dias_consecutivos(model, works_day, C, D)
@@ -558,7 +597,7 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
         is_integral[c, d] for c in range(C) for d in range(D)
         if d not in blocked_days.get(c, set())
     )
-    model.minimize(spread * 1000 + total_integral)
+    model.minimize(spread * 1000 + total_integral + sum(penalty_terms))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = budget_s
@@ -582,12 +621,32 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
                     pattern[(c, d)] = BAND_INTEGRAL
                 else:
                     pattern[(c, d)] = BAND_OFF
-        return {
+
+        # Extract pin violations (only when soft pins are active)
+        result_dict: dict = {
             "pattern": pattern,
             "status": "OK",
             "time_ms": round(solve_ms, 1),
             "cycle_days": cycle_days,
         }
+        if has_weighted_pins:
+            pin_violations_list = []
+            pin_cost_total = 0
+            for (c_idx, d_idx), info in pin_violated_vars.items():
+                if solver.value(info["var"]):
+                    pin_violations_list.append({
+                        "c": c_idx,
+                        "d": d_idx,
+                        "origin": info["origin"],
+                        "weight": info["weight"],
+                        "band_expected": info["band"],
+                        "band_actual": pattern.get((c_idx, d_idx), -1),
+                    })
+                    pin_cost_total += info["weight"]
+            result_dict["pin_violations"] = pin_violations_list
+            result_dict["pin_cost"] = pin_cost_total
+
+        return result_dict
 
     log(f"Padrao de folgas inviavel ({solve_ms/1000:.1f}s) — usando distribuicao automatica")
     return None
@@ -1757,6 +1816,8 @@ def solve(data: dict) -> dict:
     all_cd_pairs = n_colabs * n_days
     is_full_external = len(external_pinned_dict) >= all_cd_pairs * 0.8  # >80% covered = full
 
+    phase1_result = None  # Will be set if Phase 1 runs (else branch)
+
     if is_full_external:
         # Full external pins (e.g. from preview Nível 1) — skip Phase 1
         pinned_folga = external_pinned_dict
@@ -1817,6 +1878,11 @@ def solve(data: dict) -> dict:
             "tempo_total_s": round(time.time() - t_global_start, 1),
         }
         advisory_diag.update(phase1_diag)
+
+        # Propagate pin violations from Phase 1 to advisory output
+        if phase1_result and "pin_violations" in phase1_result:
+            advisory_diag["pin_violations"] = phase1_result["pin_violations"]
+            advisory_diag["pin_cost"] = phase1_result.get("pin_cost", 0)
 
         if pinned_folga is not None:
             # Serialize pattern as list of {c, d, band} for JSON
