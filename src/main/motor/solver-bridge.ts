@@ -652,7 +652,7 @@ export async function buildSolverInput(
     }))
   }
 
-  return {
+  const result: SolverInput = {
     setor_id: setorId,
     data_inicio: dataInicio,
     data_fim: dataFim,
@@ -706,6 +706,103 @@ export async function buildSolverInput(
       ...(options.pinnedFolgaExterno ? { pinned_folga_externo: options.pinnedFolgaExterno } : {}),
     },
   }
+
+  // ── Tipo B pré-cálculo: fixar dias como pinned_folga_externo ──────────
+  // Tipo B tem padrão DETERMINÍSTICO — não precisa do solver pra decidir.
+  // Fixar variáveis = propagação instantânea = solver rápido.
+  const BAND_OFF = 0
+  const BAND_INTEGRAL = 3
+  const tipoBColabs = colaboradores.filter(
+    (c) => c.tipo_trabalhador === 'INTERMITENTE' && c.folga_variavel_dia_semana,
+  )
+
+  if (tipoBColabs.length > 0) {
+    // Montar array de datas ISO do período
+    const days: string[] = []
+    {
+      const cursor = new Date(dataInicio + 'T00:00:00')
+      const end = new Date(dataFim + 'T00:00:00')
+      while (cursor <= end) {
+        days.push(cursor.toISOString().slice(0, 10))
+        cursor.setDate(cursor.getDate() + 1)
+      }
+    }
+
+    const tipoBPins: Array<{ c: number; d: number; band: number }> = []
+
+    // Map dia_semana pra JS getDay: 0=DOM, 1=SEG..6=SAB
+    const GETDAY_TO_DIA: Record<number, DiaSemana> = {
+      0: 'DOM', 1: 'SEG', 2: 'TER', 3: 'QUA', 4: 'QUI', 5: 'SEX', 6: 'SAB',
+    }
+
+    // Identificar domingos sequenciais no período
+    const sundayDayIndices: number[] = []
+    for (let d = 0; d < days.length; d++) {
+      const dt = new Date(`${days[d]}T00:00:00`)
+      if (dt.getDay() === 0) sundayDayIndices.push(d)
+    }
+
+    for (const tipoBColab of tipoBColabs) {
+      const cIdx = colaboradores.indexOf(tipoBColab)
+      if (cIdx < 0) continue
+
+      const group = regraGroupByColab.get(tipoBColab.id)
+      const diasAtivos = group?.dias ?? new Map<string, unknown>()
+      const folgaVar = tipoBColab.folga_variavel_dia_semana as DiaSemana | null
+
+      // Round-robin offset — com múltiplos tipo B, cada um em time diferente
+      const tipoBOffset = tipoBColabs.indexOf(tipoBColab)
+
+      // Primeiro: decidir DT/DF pra cada domingo (round-robin)
+      const sundayIsWork = new Map<number, boolean>()
+      for (const sundayDIdx of sundayDayIndices) {
+        const seqIdx = sundayDayIndices.indexOf(sundayDIdx)
+        sundayIsWork.set(sundayDIdx, (seqIdx + tipoBOffset) % 2 === 0)
+      }
+
+      for (let d = 0; d < days.length; d++) {
+        const dt = new Date(`${days[d]}T00:00:00`)
+        const diaSemana = GETDAY_TO_DIA[dt.getDay()]!
+
+        // Dia sem regra = OFF (NT)
+        if (!diasAtivos.has(diaSemana)) {
+          tipoBPins.push({ c: cIdx, d, band: BAND_OFF })
+          continue
+        }
+
+        // Domingo: DT/DF pré-calculado
+        if (diaSemana === 'DOM') {
+          tipoBPins.push({ c: cIdx, d, band: sundayIsWork.get(d) ? BAND_INTEGRAL : BAND_OFF })
+          continue
+        }
+
+        // Dia variável: XOR com domingo DA MESMA SEMANA
+        if (folgaVar && diaSemana === folgaVar) {
+          // Achar o domingo desta semana (dia_semana SEG..SAB → domingo seguinte)
+          const jsDay = dt.getDay() // 1=seg..6=sab
+          const daysUntilSunday = (7 - jsDay) % 7 || 7
+          const sundayDIdx = d + daysUntilSunday
+          const trabalhaDOM = sundayDIdx < days.length ? (sundayIsWork.get(sundayDIdx) ?? false) : false
+          // XOR: trabalha DOM → folga variável (OFF). Não trabalha DOM → trabalha (INTEGRAL).
+          tipoBPins.push({ c: cIdx, d, band: trabalhaDOM ? BAND_OFF : BAND_INTEGRAL })
+          continue
+        }
+
+        // Outros dias com regra ativa: trabalha
+        tipoBPins.push({ c: cIdx, d, band: BAND_INTEGRAL })
+      }
+
+      const integralCount = tipoBPins.filter((p) => p.c === cIdx && p.band === BAND_INTEGRAL).length
+      const offCount = tipoBPins.filter((p) => p.c === cIdx && p.band === BAND_OFF).length
+      console.log(`[solver-bridge] Tipo B ${tipoBColab.nome}: ${integralCount} INTEGRAL, ${offCount} OFF (pre-computed)`)
+    }
+
+    // Merge com pinned_folga_externo existente
+    const existingPins = result.config.pinned_folga_externo ?? []
+    result.config.pinned_folga_externo = [...existingPins, ...tipoBPins]
+  }
+
+  return result
 }
 
 export function computeSolverScenarioHash(input: SolverInput): string {

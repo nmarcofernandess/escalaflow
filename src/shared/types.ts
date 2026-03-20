@@ -690,6 +690,7 @@ export interface SolverInput {
     nivel_rigor?: 'ALTO' | 'MEDIO' | 'BAIXO'  // backward compat
     rules?: RuleConfig                           // v6: granular, substitui nivel_rigor quando presente
     advisory_only?: boolean
+    pinned_folga_externo?: Array<{ c: number; d: number; band: number }>
   }
 }
 

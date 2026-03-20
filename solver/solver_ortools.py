@@ -1743,10 +1743,21 @@ def solve(data: dict) -> dict:
     advisory_only = config.get("advisory_only", False)
 
     # ---- Phase 1: Folga Pattern (lightweight model) ----
-    # Check for external pinned_folga (from Nível 1 simulation)
+    # Check for external pinned_folga (from Nível 1 simulation or tipo B pre-computation)
     external_pinned = config.get("pinned_folga_externo")
+    external_pinned_dict: Dict[Tuple[int, int], int] = {}
     if external_pinned and isinstance(external_pinned, list):
-        pinned_folga = {(item["c"], item["d"]): item["band"] for item in external_pinned}
+        external_pinned_dict = {(item["c"], item["d"]): item["band"] for item in external_pinned}
+
+    # Determine if external pins cover ALL (c,d) — full override — or just some (partial, e.g. tipo B)
+    n_colabs = len(colabs)
+    n_days = (date.fromisoformat(data["data_fim"]) - date.fromisoformat(data["data_inicio"])).days + 1
+    all_cd_pairs = n_colabs * n_days
+    is_full_external = len(external_pinned_dict) >= all_cd_pairs * 0.8  # >80% covered = full
+
+    if is_full_external:
+        # Full external pins (e.g. from preview Nível 1) — skip Phase 1
+        pinned_folga = external_pinned_dict
         band_counts = {0: 0, 1: 0, 2: 0, 3: 0}
         for v in pinned_folga.values():
             band_counts[v] = band_counts.get(v, 0) + 1
@@ -1759,6 +1770,7 @@ def solve(data: dict) -> dict:
         }
         log(f"Padrao de folgas EXTERNO recebido: {sum(1 for v in pinned_folga.values() if v == 0)} dias OFF")
     else:
+        # Partial external (tipo B pre-computed) or no external — run Phase 1 for CLTs
         phase1_budget = min(15, total_budget * 0.15)  # max 15s, 15% of budget
         log("Calculando padrao de folgas...")
 
@@ -1786,6 +1798,13 @@ def solve(data: dict) -> dict:
         else:
             phase1_diag = {"phase1_status": "INFEASIBLE" if phase1_result is None else "SKIPPED"}
             log("Padrao de folgas nao encontrado — usando distribuicao automatica")
+
+        # Merge partial external pins (tipo B pre-computed) with Phase 1 result
+        if external_pinned_dict:
+            if pinned_folga is None:
+                pinned_folga = {}
+            pinned_folga.update(external_pinned_dict)
+            log(f"Merged {len(external_pinned_dict)} pins externos (tipo B pre-computed)")
 
     if advisory_only:
         log("Modo advisory: retornando resultado da Phase 1")
