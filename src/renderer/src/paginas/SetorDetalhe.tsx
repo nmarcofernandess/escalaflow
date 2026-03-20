@@ -1118,9 +1118,7 @@ export function SetorDetalhe() {
 
   const previewSetorIntermitentesDomingoGarantidos = useMemo(
     () => previewSetorIntermitentesRegras
-      // Tipo A com DOM = cobertura garantida fixa
-      // Tipo B com DOM = participa do pool, mas pra K do simula-ciclo descontamos
-      // pra evitar que CLTs fiquem sobrecarregados (tipo B cobre parte dos domingos)
+      .filter(({ ehTipoB }) => !ehTipoB)  // Apenas tipo A (fixo) = cobertura garantida
       .filter(({ regrasPorDia }) => regrasPorDia.has('DOM'))
       .length,
     [previewSetorIntermitentesRegras],
@@ -1170,9 +1168,19 @@ export function SetorDetalhe() {
     [demandas, horaAberturaPreview, horaFechamentoPreview, previewSetorIntermitentesRegras],
   )
 
+  const tipoBIds = useMemo(
+    () => new Set(previewSetorIntermitentesRegras.filter(({ ehTipoB }) => ehTipoB).map(({ colaborador }) => colaborador.id)),
+    [previewSetorIntermitentesRegras],
+  )
+
   const setorSimulacaoInfo = useMemo(() => {
+    // Tipo B entra no pool rotativo (conta no N). Tipo A fica fora.
     const participantesPreview = participantesEscalaAtivos
-      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
+      .filter(({ colaborador }) => {
+        const tipo = colaborador.tipo_trabalhador ?? 'CLT'
+        if (tipo !== 'INTERMITENTE') return true
+        return tipoBIds.has(colaborador.id)
+      })
     const N = participantesPreview.length
     if (N < 1) {
       return {
@@ -1208,7 +1216,7 @@ export function SetorDetalhe() {
       origemN: `N pelo setor: ${N} participante(s) ativo(s) com posto.`,
       origemK: `Sem demanda DOM/padrao cadastrada: usando K sugerido ${sugerido}.`,
     }
-  }, [demandaDomingoCicloPreview, participantesEscalaAtivos])
+  }, [demandaDomingoCicloPreview, participantesEscalaAtivos, tipoBIds])
 
   const modoSimulacaoEfetivo: SetorSimulacaoMode = simulacaoConfig.mode
 
@@ -1219,22 +1227,31 @@ export function SetorDetalhe() {
 
   const previewSetorRows = useMemo(() => {
     return participantesEscalaAtivos
-      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE')
+      .filter(({ colaborador }) => {
+        const tipo = colaborador.tipo_trabalhador ?? 'CLT'
+        if (tipo !== 'INTERMITENTE') return true
+        return tipoBIds.has(colaborador.id) // Tipo B entra no simula-ciclo
+      })
       .map(({ funcao, colaborador }) => {
+        const isTipoB = tipoBIds.has(colaborador.id)
         const regra = regrasMap.get(colaborador.id) ?? null
         const overrideLocal = overridesLocaisSetor.get(colaborador.id)
-        const baseFixa = regra?.folga_fixa_dia_semana ?? null
-        const baseVariavel = regra?.folga_variavel_dia_semana ?? null
-        const fixaAtual = resolveOverrideField(overrideLocal, 'fixa', baseFixa)
-        const variavelAtual = resolveOverrideField(overrideLocal, 'variavel', baseVariavel)
+
+        // Tipo B: folga_fixa sempre null, folga_variavel da regra padrao
+        const baseFixa = isTipoB ? null : (regra?.folga_fixa_dia_semana ?? null)
+        const baseVariavel = isTipoB
+          ? (previewSetorIntermitentesRegras.find((r) => r.colaborador.id === colaborador.id)?.folgaVariavel ?? null)
+          : (regra?.folga_variavel_dia_semana ?? null)
+        const fixaAtual = isTipoB ? null : resolveOverrideField(overrideLocal, 'fixa', baseFixa)
+        const variavelAtual = isTipoB ? baseVariavel : resolveOverrideField(overrideLocal, 'variavel', baseVariavel)
         return {
           funcao,
           titular: colaborador,
           fixaAtual,
           variavelAtual,
-          overrideFixaLocal: fixaAtual !== baseFixa,
-          overrideVariavelLocal: variavelAtual !== baseVariavel,
-          baseFixaColaborador: fixaAtual === baseFixa && baseFixa != null,
+          overrideFixaLocal: !isTipoB && fixaAtual !== baseFixa,
+          overrideVariavelLocal: !isTipoB && variavelAtual !== baseVariavel,
+          baseFixaColaborador: !isTipoB && fixaAtual === baseFixa && baseFixa != null,
           baseVariavelColaborador: variavelAtual === baseVariavel && baseVariavel != null,
           folgaFixaDom: fixaAtual === 'DOM',
           folgaForcada: {
@@ -1242,9 +1259,10 @@ export function SetorDetalhe() {
             folga_variavel_dia: diaSemanaParaIdxPreview(variavelAtual),
             folga_fixa_dom: fixaAtual === 'DOM',
           },
+          isTipoB,
         }
       })
-  }, [overridesLocaisSetor, participantesEscalaAtivos, regrasMap])
+  }, [overridesLocaisSetor, participantesEscalaAtivos, previewSetorIntermitentesRegras, regrasMap, tipoBIds])
 
   const previewSetorSemTitular = useMemo(
     () => Math.max(0, postosAtivos.length - participantesEscalaAtivos.length),
@@ -1429,90 +1447,87 @@ export function SetorDetalhe() {
       demandaPorDiaPreview, // demanda BRUTA — grid mostra cobertura real
     )
 
-    // Enriquecer rows CLT com info do SETOR mode
-    let cltRows = grid.rows
+    // Enriquecer rows com info do SETOR mode (inclui tipo B que agora participa do simula-ciclo)
+    let enrichedRows = grid.rows
     if (simulacaoPreview.mode === 'SETOR') {
-      cltRows = grid.rows.map((row, index) => {
+      // Mapa de regras por dia pra tipo B (pra converter T→NT em dias sem regra)
+      const tipoBRegrasMap = new Map(
+        previewSetorIntermitentesRegras
+          .filter(({ ehTipoB }) => ehTipoB)
+          .map(({ colaborador, regrasPorDia, folgaVariavel }) => [colaborador.id, { regrasPorDia, folgaVariavel }]),
+      )
+
+      enrichedRows = grid.rows.map((row, index) => {
         const previewRow = simulacaoPreview.previewRows[index]
         if (!previewRow) return row
+
+        const tipoBInfo = tipoBRegrasMap.get(previewRow.titular.id)
+        const isTipoB = !!tipoBInfo
+
+        // Tipo B: pos-processar — dias sem regra viram NT
+        let semanas = row.semanas
+        if (isTipoB) {
+          semanas = row.semanas.map((semana) =>
+            semana.map((simbolo, diaIdx) => {
+              const dia = DIAS_ORDEM[diaIdx]
+              if (!dia || !tipoBInfo.regrasPorDia.has(dia)) return 'NT' as Simbolo
+              return simbolo
+            }),
+          )
+        }
+
         return {
           ...row,
+          semanas,
           id: previewRow.titular.id,
           posto: previewRow.funcao.apelido,
-          fixa: previewRow.folgaFixaDom ? 'DOM' : row.fixa,
-          blocked: false,
-          overrideFixaLocal: previewRow.overrideFixaLocal,
-          overrideVariavelLocal: previewRow.overrideVariavelLocal,
-          baseFixaColaborador: previewRow.baseFixaColaborador,
+          fixa: isTipoB ? null : (previewRow.folgaFixaDom ? 'DOM' : row.fixa),
+          blocked: isTipoB ? false : false,
+          blockedFixa: isTipoB ? true : undefined,
+          overrideFixaLocal: isTipoB ? false : previewRow.overrideFixaLocal,
+          overrideVariavelLocal: isTipoB ? false : previewRow.overrideVariavelLocal,
+          baseFixaColaborador: isTipoB ? false : previewRow.baseFixaColaborador,
           baseVariavelColaborador: previewRow.baseVariavelColaborador,
         }
       })
     }
 
-    // Construir rows intermitentes (tipo A: fixo T/NT, tipo B: XOR rotation)
+    // Rows de tipo A (fixo) — nao participam do simula-ciclo
     const numSemanas = grid.rows[0]?.semanas.length ?? 0
-    const intermitentesRows: CicloGridRow[] = previewSetorIntermitentesRegras.map(
-      ({ colaborador, funcao, regrasPorDia, folgaVariavel, ehTipoB }) => {
-        if (!ehTipoB) {
-          // TIPO A: fixed pattern (T/DT nos dias com regra, NT nos outros)
-          const semanaBase: Simbolo[] = DIAS_ORDEM.map((dia) => {
-            if (regrasPorDia.has(dia)) return dia === 'DOM' ? 'DT' as Simbolo : 'T' as Simbolo
-            return 'NT' as Simbolo
-          })
-          return {
-            id: colaborador.id,
-            nome: colaborador.nome,
-            posto: funcao.apelido,
-            fixa: null,
-            variavel: null,
-            blocked: true,
-            semanas: Array.from({ length: numSemanas }, () => [...semanaBase]),
-          }
-        }
-
-        // TIPO B: XOR rotation — round-robin alternando DT/DF
-        // Preview e aproximacao; escala real vem do solver
-        const semanas: Simbolo[][] = Array.from({ length: numSemanas }, (_, semIdx) => {
-          const trabalhaDOM = semIdx % 2 === 0
-
-          return DIAS_ORDEM.map((dia) => {
-            if (!regrasPorDia.has(dia)) return 'NT' as Simbolo
-            if (dia === 'DOM') return trabalhaDOM ? 'DT' as Simbolo : 'DF' as Simbolo
-            if (dia === folgaVariavel) {
-              return trabalhaDOM ? 'FV' as Simbolo : 'T' as Simbolo
-            }
-            return 'T' as Simbolo
-          }) as Simbolo[]
+    const tipoARows: CicloGridRow[] = previewSetorIntermitentesRegras
+      .filter(({ ehTipoB }) => !ehTipoB)
+      .map(({ colaborador, funcao, regrasPorDia }) => {
+        const semanaBase: Simbolo[] = DIAS_ORDEM.map((dia) => {
+          if (regrasPorDia.has(dia)) return dia === 'DOM' ? 'DT' as Simbolo : 'T' as Simbolo
+          return 'NT' as Simbolo
         })
-
         return {
           id: colaborador.id,
           nome: colaborador.nome,
           posto: funcao.apelido,
           fixa: null,
-          variavel: folgaVariavel,
-          blocked: false, // tipo B pode editar variavel
-          blockedFixa: true, // intermitente nunca tem folga fixa
-          semanas,
+          variavel: null,
+          blocked: true,
+          semanas: Array.from({ length: numSemanas }, () => [...semanaBase]),
         }
-      },
-    )
+      })
 
-    // Recalcular cobertura incluindo intermitentes (respects XOR for tipo B)
-    const coberturaAjustada = grid.cobertura.map((cobSemana, semIdx) => {
-      return cobSemana.map((cob, diaIdx) => {
-        const intermitentesTrabalham = intermitentesRows.filter((row) => {
+    const allRows = [...enrichedRows, ...tipoARows]
+
+    // Recalcular cobertura das rows finais (com NT aplicado)
+    const coberturaFinal = grid.cobertura.map((_, semIdx) => {
+      return Array.from({ length: 7 }, (__, diaIdx) => {
+        return allRows.filter((row) => {
           const simbolo = row.semanas[semIdx]?.[diaIdx]
           return simbolo === 'T' || simbolo === 'DT'
         }).length
-        return cob + intermitentesTrabalham
       })
     })
 
     return {
       ...grid,
-      rows: [...cltRows, ...intermitentesRows],
-      cobertura: coberturaAjustada,
+      rows: allRows,
+      cobertura: coberturaFinal,
     }
   }, [demandaPorDiaPreview, previewSetorIntermitentesRegras, simulacaoPreview])
 
