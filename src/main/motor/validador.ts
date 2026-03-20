@@ -64,11 +64,16 @@ interface ColabComContrato {
   funcao_id: number | null
 }
 
-interface RegraPadraoColab {
+interface RegraHorarioColab {
   colaborador_id: number
+  dia_semana_regra: string | null
   folga_fixa_dia_semana: string | null
+  folga_variavel_dia_semana: string | null
   domingo_ciclo_trabalho: number | null
   domingo_ciclo_folga: number | null
+  perfil_horario_id: number | null
+  inicio: string | null
+  fim: string | null
 }
 
 // ─── VALIDADOR V3 ─────────────────────────────────────────────────────────────
@@ -131,20 +136,39 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
      ORDER BY c.rank ASC, c.nome ASC`,
     escala.setor_id
   )
-  const regrasPadraoColab = await queryAll<RegraPadraoColab>(
-    `SELECT colaborador_id, folga_fixa_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga
+  const regrasHorarioColab = await queryAll<RegraHorarioColab>(
+    `SELECT colaborador_id, dia_semana_regra, folga_fixa_dia_semana, folga_variavel_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga,
+            perfil_horario_id, inicio, fim
      FROM colaborador_regra_horario
-     WHERE ativo = TRUE AND dia_semana_regra IS NULL
+     WHERE ativo = TRUE
        AND colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = TRUE)`,
     escala.setor_id,
   )
-  const regraPadraoMap = new Map(regrasPadraoColab.map((regra) => [regra.colaborador_id, regra]))
-  const regraGroupByColab = new Map(
-    regrasPadraoColab.map((regra) => [regra.colaborador_id, {
-      padrao: { folga_fixa_dia_semana: regra.folga_fixa_dia_semana },
-      dias: new Map<string, unknown>(),
-    }]),
+  const regraPadraoMap = new Map(
+    regrasHorarioColab
+      .filter((regra) => regra.dia_semana_regra === null)
+      .map((regra) => [regra.colaborador_id, regra]),
   )
+  const regraGroupByColab = new Map<number, {
+    padrao: { folga_fixa_dia_semana: string | null } | null
+    dias: Map<string, { perfil_horario_id: number | null; inicio: string | null; fim: string | null }>
+  }>()
+  for (const regra of regrasHorarioColab) {
+    const group = regraGroupByColab.get(regra.colaborador_id) ?? {
+      padrao: null,
+      dias: new Map<string, { perfil_horario_id: number | null; inicio: string | null; fim: string | null }>(),
+    }
+    if (regra.dia_semana_regra === null) {
+      group.padrao = { folga_fixa_dia_semana: regra.folga_fixa_dia_semana }
+    } else {
+      group.dias.set(regra.dia_semana_regra, {
+        perfil_horario_id: regra.perfil_horario_id,
+        inicio: regra.inicio,
+        fim: regra.fim,
+      })
+    }
+    regraGroupByColab.set(regra.colaborador_id, group)
+  }
 
   const excecoes = await queryAll<{
     id: number
@@ -215,6 +239,7 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
         : cicloFolga
     ) ?? undefined,
     folga_fixa_dia_semana: (regraPadraoMap.get(c.id)?.folga_fixa_dia_semana as import('../../shared').DiaSemana | null) ?? null,
+    folga_variavel_dia_semana: (regraPadraoMap.get(c.id)?.folga_variavel_dia_semana as import('../../shared').DiaSemana | null) ?? null,
   }))
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -386,6 +411,29 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
   }
 
   const violacoes = validarTudoV3(validarParams)
+
+  // ── H_INTERMITENTE_DIA_SEM_REGRA — intermitente alocado em dia sem regra ─
+  for (const colab of colaboradores) {
+    if (colab.tipo_trabalhador !== 'INTERMITENTE') continue
+    const mapaColab = resultado.get(colab.id)
+    if (!mapaColab) continue
+    const group = regraGroupByColab.get(colab.id)
+    const diasComRegra = group?.dias ?? new Map<string, unknown>()
+    for (const [data, cel] of mapaColab) {
+      if (cel.status !== 'TRABALHO') continue
+      const dia = diaSemana(data)
+      if (!diasComRegra.has(dia)) {
+        violacoes.push({
+          severidade: 'HARD',
+          regra: 'H_INTERMITENTE_DIA_SEM_REGRA',
+          colaborador_id: colab.id,
+          colaborador_nome: colab.nome,
+          data,
+          mensagem: `Intermitente ${colab.nome} alocado em ${dia} (${data}) sem regra ativa`,
+        })
+      }
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 9. Rodar APs Tier 1 + Tier 2 + SOFT (mesmo padrão do gerador Fase 7)
