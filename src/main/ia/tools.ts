@@ -6,7 +6,7 @@ import { buildSolverInput, runSolver, persistirSolverResult, computeSolverScenar
 import { inferGenerationModeForOverrides } from '../motor/rule-policy'
 import { persistirResumoAutoritativoEscala } from '../tipc/escalas-utils'
 import { salvarDetalheFuncao, deletarFuncao } from '../funcoes-service'
-import { textoResumoCobertura, textoResumoViolacoesHard, textoResumoViolacoesSoft } from '../../shared/resumo-user'
+import { textoResumoCobertura, textoResumoViolacoesHard, textoResumoViolacoesSoft, textoResumoRelaxacoes } from '../../shared/resumo-user'
 import { validarEscalaV3 } from '../motor/validador'
 import { searchKnowledge, exploreRelations } from '../knowledge/search'
 import { ingestKnowledge } from '../knowledge/ingest'
@@ -2201,12 +2201,18 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               )
             }
             const coberturaResumo = textoResumoCobertura(ind.cobertura_percent, ind.cobertura_efetiva_percent ?? ind.cobertura_percent)
+            const relaxacoesTexto = textoResumoRelaxacoes(
+                solverResult.diagnostico?.pass_usado ?? 1,
+                solverResult.diagnostico?.regras_relaxadas ?? [],
+                solverResult.diagnostico?.generation_mode,
+            )
             const resumo_user = {
                 cobertura: coberturaResumo.principal,
                 ...(coberturaResumo.secundaria ? { cobertura_secundaria: coberturaResumo.secundaria } : {}),
                 problemas_oficializar: textoResumoViolacoesHard(ind.violacoes_hard),
                 avisos: textoResumoViolacoesSoft(ind.violacoes_soft),
                 qualidade: ind.pontuacao,
+                ...(relaxacoesTexto ? { relaxacoes: relaxacoesTexto } : {}),
             }
 
             broadcastInvalidation(['escalas'])
