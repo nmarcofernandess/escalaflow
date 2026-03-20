@@ -742,6 +742,20 @@ def build_model(
             for s in range(S):
                 model.add(work[c, d, s] == 0)
 
+    # Belt-and-suspenders: intermitente NEVER works on days with folga_fixa
+    # even if folga_fixa constraint is relaxed in a later pass
+    regras_dia_raw = data.get("regras_colaborador_dia", [])
+    colab_id_to_c_bs = {colabs[c]["id"]: c for c in range(C)}
+    day_to_d_bs = {day: d for d, day in enumerate(days)}
+    for regra in regras_dia_raw:
+        if regra.get("folga_fixa", False):
+            c_bs = colab_id_to_c_bs.get(regra.get("colaborador_id"))
+            d_bs = day_to_d_bs.get(regra.get("data"))
+            if c_bs is not None and d_bs is not None:
+                if colabs[c_bs].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+                    for s in range(S):
+                        model.add(work[c_bs, d_bs, s] == 0)
+
     # Phase 1 pinned bands: constrain slots based on shift band assignment
     BAND_OFF = 0
     BAND_MANHA = 1

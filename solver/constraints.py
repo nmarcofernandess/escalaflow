@@ -722,8 +722,9 @@ def add_domingo_ciclo_soft(
         return penalties
 
     for c in range(C):
-        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
-            continue
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE" \
+           and not colabs[c].get("folga_variavel_dia_semana"):
+            continue  # Tipo A only
         # Guard: folga_fixa=DOM → always off Sunday, cycle is N/A
         if colabs[c].get("folga_fixa_dia_semana") == "DOM":
             continue
@@ -931,6 +932,8 @@ def add_folga_fixa_5x2(
     day_labels = [DAY_LABELS[dt_date.fromisoformat(day).weekday()] for day in days]
 
     for c in range(C):
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+            continue
         fixed_day = colabs[c].get("folga_fixa_dia_semana")
         if not fixed_day:
             continue
@@ -965,6 +968,9 @@ def add_folga_variavel_condicional(
     OFFSET = {"SEG": -6, "TER": -5, "QUA": -4, "QUI": -3, "SEX": -2, "SAB": -1}
 
     for c in range(C):
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE" \
+           and not colabs[c].get("folga_variavel_dia_semana"):
+            continue  # Tipo A only
         # Guard: folga_fixa=DOM → person never works Sunday, XOR is meaningless
         if colabs[c].get("folga_fixa_dia_semana") == "DOM":
             continue
@@ -1008,8 +1014,9 @@ def add_dom_max_consecutivo(
         return
 
     for c in range(C):
-        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
-            continue
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE" \
+           and not colabs[c].get("folga_variavel_dia_semana"):
+            continue  # Tipo A only
         # Guard: folga_fixa=DOM → never works Sunday, max consec is trivially 0
         if colabs[c].get("folga_fixa_dia_semana") == "DOM":
             continue
@@ -1114,8 +1121,9 @@ def add_domingo_ciclo_hard(
         return
 
     for c in range(C):
-        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
-            continue
+        if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE" \
+           and not colabs[c].get("folga_variavel_dia_semana"):
+            continue  # Tipo A only
         # Guard: folga_fixa=DOM → never works Sunday, hard cycle N/A
         if colabs[c].get("folga_fixa_dia_semana") == "DOM":
             continue
