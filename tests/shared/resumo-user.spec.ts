@@ -13,15 +13,15 @@ describe('textoResumoRelaxacoes', () => {
   it('returns adjustment text for pass 2 with one rule', () => {
     const result = textoResumoRelaxacoes(2, ['DIAS_TRABALHO'])
     expect(result).toContain('dias de trabalho por semana')
-    expect(result).toContain('flexibilizad')
-    expect(result).not.toContain('emergência')
+    expect(result).toContain('ajustados')
+    expect(result).not.toContain('limitações')
   })
 
   it('returns adjustment text for pass 1b with multiple rules', () => {
     const result = textoResumoRelaxacoes('1b', ['DIAS_TRABALHO', 'MIN_DIARIO'])
     expect(result).toContain('dias de trabalho por semana')
     expect(result).toContain('jornada mínima diária')
-    expect(result).not.toContain('emergência')
+    expect(result).not.toContain('limitações')
   })
 
   it('returns adjustment text for pass 1b with empty regras', () => {
@@ -29,17 +29,19 @@ describe('textoResumoRelaxacoes', () => {
     const result = textoResumoRelaxacoes('1b', [])
     expect(result).not.toBeNull()
     expect(result).toContain('ajustes')
+    expect(result).toContain('algumas regras de horário')
   })
 
-  it('returns emergency text for pass 3', () => {
+  it('returns limitation text for pass 3', () => {
     const result = textoResumoRelaxacoes(3, ['FOLGA_FIXA', 'TIME_WINDOW'])
-    expect(result).toContain('emergência')
+    expect(result).toContain('limitações')
     expect(result).toContain('folga fixa semanal')
+    expect(result).toContain('horário de entrada/saída')
   })
 
-  it('returns emergency text for EXPLORATORY mode', () => {
+  it('returns limitation text for EXPLORATORY mode', () => {
     const result = textoResumoRelaxacoes(2, ['H1'], 'EXPLORATORY')
-    expect(result).toContain('emergência')
+    expect(result).toContain('limitações')
   })
 
   it('falls back to raw code for unknown rule', () => {
@@ -51,5 +53,7 @@ describe('textoResumoRelaxacoes', () => {
     expect(NOMES_HUMANOS_REGRAS['DIAS_TRABALHO']).toBe('dias de trabalho por semana')
     expect(NOMES_HUMANOS_REGRAS['MIN_DIARIO']).toBe('jornada mínima diária')
     expect(NOMES_HUMANOS_REGRAS['H6']).toBe('intervalo de almoço')
+    expect(NOMES_HUMANOS_REGRAS['TIME_WINDOW']).toBe('horário de entrada/saída')
+    expect(NOMES_HUMANOS_REGRAS['FOLGA_VARIAVEL']).toBe('rodízio de folga/domingo')
   })
 })

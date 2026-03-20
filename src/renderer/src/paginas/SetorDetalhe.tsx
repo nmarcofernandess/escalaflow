@@ -1351,7 +1351,7 @@ export function SetorDetalhe() {
     const resultado: SimulaCicloOutput = multiPassResult?.output
       ?? resultadoErro(
           'Preview Nível 1 disponível apenas para setores 5x2.',
-          'Mude para o modo Livre para explorar o ciclo ou gere a escala real pelo solver.',
+          'Mude para o modo Livre para explorar o ciclo ou gere a escala pelo botão Gerar.',
         )
 
     const savePadrao = modoSimulacaoEfetivo === 'SETOR' && resultado.sucesso
@@ -1998,7 +1998,13 @@ export function SetorDetalhe() {
         result.diagnostico?.generation_mode,
       )
       if (relaxacoesTexto) {
-        toast.warning(relaxacoesTexto, { duration: 8000 })
+        toast.warning(relaxacoesTexto, {
+          duration: 8000,
+          action: {
+            label: 'Ver detalhes',
+            onClick: () => navigate(`/setores/${setorId}/escala?id=${result.escala.id}`),
+          },
+        })
       } else {
         toast.success('Rascunho gerado e enviado para o histórico')
       }
@@ -2165,7 +2171,7 @@ export function SetorDetalhe() {
         useIaStore.getState().setAberto(true)
       }
     } catch (err) {
-      toast.error('Erro ao analisar com o motor')
+      toast.error('Erro ao analisar a escala')
       console.error(err)
     } finally {
       setAdvisoryLoading(false)
@@ -2203,7 +2209,7 @@ export function SetorDetalhe() {
           severity: 'warning',
           gate: 'ALLOW',
           title: 'O sistema nao conseguiu montar um ciclo viavel.',
-          detail: resultado.erro ?? 'Tente usar o Sugerir com motor para uma analise mais profunda.',
+          detail: resultado.erro ?? 'Tente usar o botão Sugerir para uma análise mais profunda.',
           source: 'advisory_proposal',
         }],
       })
@@ -2252,7 +2258,7 @@ export function SetorDetalhe() {
         severity: 'warning',
         gate: 'ALLOW',
         title: 'O sistema nao conseguiu eliminar todos os deficits.',
-        detail: 'A equipe pode ser insuficiente para a demanda. Use o Sugerir com motor ou ajuste a demanda.',
+        detail: 'A equipe pode ser insuficiente para a demanda. Use o botão Sugerir ou ajuste a demanda.',
         source: 'advisory_proposal',
       })
     }
@@ -2307,7 +2313,7 @@ export function SetorDetalhe() {
 
       if (result.fallback?.should_open_ia) {
         setSugestaoOpen(false)
-        toast.info('Abrindo IA com o diagnostico do solver...')
+        toast.info('Abrindo IA para analisar a situação...')
         const prompt = `Valide a escala do setor ${setor?.nome ?? ''} (${periodoGeracao.data_inicio} a ${periodoGeracao.data_fim}). O solver nao conseguiu viabilizar: ${result.fallback.reason}`
         useIaStore.getState().setPendingAutoMessage(prompt)
         useIaStore.getState().setAberto(true)

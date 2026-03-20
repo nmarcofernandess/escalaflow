@@ -423,7 +423,7 @@ export function RegrasPagina() {
             />
             <RegraCategoriaCard
               titulo="Preferencias de Otimizacao"
-              descricao="Objetivos de qualidade que o motor tenta maximizar. Desativar remove a penalidade da funcao objetivo."
+              descricao="Objetivos de qualidade que o sistema tenta alcançar ao gerar a escala. Desativar ignora esse critério."
               categoria="SOFT"
               regras={regrasData}
               salvandoRegra={salvandoRegra}
@@ -432,7 +432,7 @@ export function RegrasPagina() {
             />
             <RegraCategoriaCard
               titulo="Antipadroes"
-              descricao="Padroes indesejados na escala que o motor penaliza ao otimizar. Desativar remove a penalidade."
+              descricao="Padrões indesejados na escala que o sistema evita ao gerar. Desativar ignora esse critério."
               categoria="ANTIPATTERN"
               regras={regrasData}
               salvandoRegra={salvandoRegra}

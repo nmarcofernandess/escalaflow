@@ -818,7 +818,7 @@ export function EscalaPagina() {
                             <CardHeader className="pb-2">
                               <CardTitle className="text-sm font-medium flex items-center gap-2">
                                 <AlertTriangle className="size-4 text-warning" />
-                                Ajustes do Motor
+                                Ajustes automáticos
                               </CardTitle>
                             </CardHeader>
                             <CardContent>
