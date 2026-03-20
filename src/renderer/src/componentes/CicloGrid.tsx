@@ -430,7 +430,7 @@ export function CicloGrid({
                     overrideLocal={row.overrideFixaLocal}
                     baseColaborador={row.baseFixaColaborador}
                     mode={mode}
-                    blocked={row.blocked}
+                    blocked={row.blockedFixa ?? row.blocked}
                     onFolgaChange={onFolgaChange}
                   />
                 )}

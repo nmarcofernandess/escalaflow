@@ -1468,18 +1468,15 @@ export function SetorDetalhe() {
           }
         }
 
-        // TIPO B: XOR rotation
-        // Use CLT grid coverage to determine when intermitente works Sunday
+        // TIPO B: XOR rotation — round-robin alternando DT/DF
+        // Preview e aproximacao; escala real vem do solver
         const semanas: Simbolo[][] = Array.from({ length: numSemanas }, (_, semIdx) => {
-          const coberturaDOM = grid.cobertura[semIdx]?.[6] ?? 0
-          const demandaDOM = grid.demanda[6] ?? 0
-          const trabalhaDOM = coberturaDOM < demandaDOM
+          const trabalhaDOM = semIdx % 2 === 0
 
           return DIAS_ORDEM.map((dia) => {
             if (!regrasPorDia.has(dia)) return 'NT' as Simbolo
             if (dia === 'DOM') return trabalhaDOM ? 'DT' as Simbolo : 'DF' as Simbolo
             if (dia === folgaVariavel) {
-              // XOR: worked Sunday → variable day off. Didn't work Sunday → works.
               return trabalhaDOM ? 'FV' as Simbolo : 'T' as Simbolo
             }
             return 'T' as Simbolo
@@ -1492,7 +1489,8 @@ export function SetorDetalhe() {
           posto: funcao.apelido,
           fixa: null,
           variavel: folgaVariavel,
-          blocked: true,
+          blocked: false, // tipo B pode editar variavel
+          blockedFixa: true, // intermitente nunca tem folga fixa
           semanas,
         }
       },

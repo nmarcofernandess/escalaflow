@@ -9,6 +9,7 @@ export interface CicloGridRow {
   variavel: DiaSemana | null
   fixa: DiaSemana | null
   blocked: boolean
+  blockedFixa?: boolean
   overrideVariavelLocal?: boolean
   overrideFixaLocal?: boolean
   baseVariavelColaborador?: boolean
