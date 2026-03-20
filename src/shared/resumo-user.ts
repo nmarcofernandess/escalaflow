@@ -59,7 +59,7 @@ export const NOMES_HUMANOS_REGRAS: Record<string, string> = {
  * Texto para ajustes aplicados pelo sistema (pass > 1).
  * Consome diagnostico.pass_usado e diagnostico.regras_relaxadas.
  * Retorna null APENAS quando pass === 1 (numérico) e sem relaxações.
- * Pass '1b' (string) SEMPRE retorna texto — alguma regra foi afrouxada.
+ * Pass 2+ always returns text — some rule was relaxed.
  */
 export function textoResumoRelaxacoes(
   pass_usado: number | string,

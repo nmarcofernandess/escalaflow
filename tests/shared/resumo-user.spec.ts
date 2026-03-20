@@ -17,19 +17,11 @@ describe('textoResumoRelaxacoes', () => {
     expect(result).not.toContain('limitações')
   })
 
-  it('returns adjustment text for pass 1b with multiple rules', () => {
-    const result = textoResumoRelaxacoes('1b', ['DIAS_TRABALHO', 'MIN_DIARIO'])
+  it('returns adjustment text for pass 2 with multiple rules', () => {
+    const result = textoResumoRelaxacoes(2, ['DIAS_TRABALHO', 'MIN_DIARIO'])
     expect(result).toContain('dias de trabalho por semana')
     expect(result).toContain('jornada mínima diária')
     expect(result).not.toContain('limitações')
-  })
-
-  it('returns adjustment text for pass 1b with empty regras', () => {
-    // Pass 1b means something was relaxed, even if regras_relaxadas is empty
-    const result = textoResumoRelaxacoes('1b', [])
-    expect(result).not.toBeNull()
-    expect(result).toContain('ajustes')
-    expect(result).toContain('algumas regras de horário')
   })
 
   it('returns limitation text for pass 3', () => {

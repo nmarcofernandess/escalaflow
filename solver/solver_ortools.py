@@ -1686,6 +1686,25 @@ def _solve_pass(
         grid_min,
     ) = build_model(data, relaxations=relaxations, pinned_folga=pinned_folga)
 
+    # Warm-start from advisory pattern: OFFs as strong hints, INTEGRAL as directional hints.
+    # AddHint is a starting-point suggestion — NOT a constraint. It helps the solver
+    # find good solutions faster by seeding the search with the advisory's folga pattern.
+    if pinned_folga:
+        advisory_hints = 0
+        for (c, d), band in pinned_folga.items():
+            if c >= C or d >= D:
+                continue
+            if band == 0:  # OFF — strong hint: all slots off
+                for s in range(S):
+                    model.add_hint(work[c, d, s], 0)
+                advisory_hints += S
+            elif band == 3:  # INTEGRAL — hint all slots on (solver picks best subset)
+                for s in range(S):
+                    model.add_hint(work[c, d, s], 1)
+                advisory_hints += S
+        if advisory_hints > 0:
+            log(f"Warm-start: {advisory_hints} hints do padrao advisory aplicados")
+
     total_demand_slots = sum(demand_by_slot.values())
 
     cb = CoverageStabilizationCallback(
@@ -1749,17 +1768,12 @@ def _solve_pass(
 def solve(data: dict) -> dict:
     """Main solve function with multi-pass graceful degradation.
 
-    Pass 1: Normal solve with all configured rules.
-    Pass 2: Relax only product/contract rules that do not invalidate legality.
+    Pass 1: Normal solve with all configured rules + advisory pins as constraints.
+    Pass 2: Relax product rules (DIAS_TRABALHO, MIN_DIARIO). Keeps advisory pins
+            as constraints + warm-start hints for faster convergence.
     Pass 3:
       - OFFICIAL: legal-first fallback, still preserving legal blockers.
       - EXPLORATORY: emergency mode, including relaxations that can invalidate officialization.
-
-    Minimum-coverage continuation: if a pass returns FEASIBLE but coverage
-    is below MIN_COVERAGE_THRESHOLD, the solver retries with progressively
-    more time (doubling each attempt) until coverage is reached or the
-    HARD_TIME_CAP_SECONDS (1 hour) is hit. This applies to ALL modes,
-    including 'rapido'.
 
     Returns the result from the first pass that succeeds with viable coverage.
     """
@@ -1943,54 +1957,10 @@ def solve(data: dict) -> dict:
 
     exploratory_mode = generation_mode == "EXPLORATORY"
 
-    # ---- Pass 1b: Keep Phase 1 folga pattern + relax hours ----
-    # When Pass 1 fails because short days (e.g. Sunday 05:30-11:00) make the
-    # weekly hour target unreachable with tolerance=0, this pass preserves the
-    # OFF pattern (which days are folga) while freeing band assignments.
-    # This keeps 5X2 + domingo_ciclo intact but lets the solver schedule hours freely.
-    if pinned_folga is not None:
-        elapsed = time.time() - t_global_start
-        if elapsed < HARD_TIME_CAP_SECONDS - 5:
-            log("Passo 1b: mantendo padrao de folgas, flexibilizando horarios...")
-
-            # Convert to folga-only pins: OFF stays OFF, everything else → INTEGRAL (no restriction)
-            BAND_OFF = 0
-            BAND_INTEGRAL = 3
-            folga_only_pins = {
-                k: (BAND_OFF if v == BAND_OFF else BAND_INTEGRAL)
-                for k, v in pinned_folga.items()
-            }
-
-            pass1b_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO"]
-            if exploratory_mode:
-                pass1b_relaxations.append("H6")
-            result = _solve_pass(
-                data, pass_num="1b", relaxations=pass1b_relaxations,
-                max_time=remaining_time(), patience_s=patience_s,
-                num_workers=num_workers, pinned_folga=folga_only_pins,
-            )
-
-            if result and result.get("sucesso"):
-                diag = result.get("diagnostico", {})
-                diag["pass_usado"] = "1b"
-                diag["generation_mode"] = generation_mode
-                diag["regras_relaxadas"] = ["DIAS_TRABALHO", "MIN_DIARIO"] + (["H6"] if exploratory_mode else [])
-                diag["capacidade_vs_demanda"] = capacidade_diag
-                diag["cycle_length_weeks"] = cycle_weeks
-                diag.update(phase1_diag)
-                diag["tempo_total_s"] = round(time.time() - t_global_start, 1)
-                if "_stabilization" in result:
-                    diag["stabilization"] = result.pop("_stabilization")
-                result["diagnostico"] = diag
-                return result
-
-    # ---- Pass 2: Relax product rules to SOFT (no Phase 1 pin — let it emerge) ----
+    # ---- Pass 2: Relax product rules (keep advisory pins as warm-start hints) ----
     elapsed = time.time() - t_global_start
     if elapsed < HARD_TIME_CAP_SECONDS - 5:
-        if pinned_folga is not None:
-            log("Passo 1b impossivel — relaxando todas as regras e removendo padrão de folgas...")
-        else:
-            log("Passo 1 impossivel — relaxando regras de produto...")
+        log("Passo 1 impossivel — relaxando regras de produto (mantendo padrao de folgas)...")
 
         pass2_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO"]
         if exploratory_mode:
@@ -1998,7 +1968,7 @@ def solve(data: dict) -> dict:
         result = _solve_pass(
             data, pass_num=2, relaxations=pass2_relaxations,
             max_time=remaining_time(), patience_s=patience_s,
-            num_workers=num_workers, pinned_folga=None,  # drop Phase 1 pin in degradation
+            num_workers=num_workers, pinned_folga=pinned_folga,  # keep advisory pins
         )
 
         if result and result.get("sucesso"):
