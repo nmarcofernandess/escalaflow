@@ -1088,10 +1088,14 @@ export function SetorDetalhe() {
       .map(({ colaborador, funcao }) => {
         const regrasDoColab = regrasHorarioByColab.get(colaborador.id) ?? []
         const regrasPorDia = new Map<DiaSemana, RegraHorarioColaborador>()
+        let folgaVariavel: DiaSemana | null = null
         for (const regra of regrasDoColab) {
           if (regra.dia_semana_regra != null) regrasPorDia.set(regra.dia_semana_regra, regra)
+          if (regra.dia_semana_regra === null && regra.folga_variavel_dia_semana) {
+            folgaVariavel = regra.folga_variavel_dia_semana
+          }
         }
-        return { colaborador, funcao, regrasPorDia }
+        return { colaborador, funcao, regrasPorDia, folgaVariavel, ehTipoB: folgaVariavel != null }
       }),
     [participantesEscalaAtivos, regrasHorarioByColab],
   )
@@ -1111,15 +1115,11 @@ export function SetorDetalhe() {
   }, [previewSetorIntermitentesRegras])
 
   const previewSetorIntermitentesDomingoGarantidos = useMemo(
-    () => participantesEscalaAtivos
-      .filter(({ colaborador }) => (colaborador.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE')
-      .filter(({ colaborador }) => {
-        const regrasDoColab = regrasHorarioByColab.get(colaborador.id) ?? []
-        const domingo = regrasDoColab.find((regra) => regra.dia_semana_regra === 'DOM')
-        return hasGuaranteedSundayWindow(domingo)
-      })
+    () => previewSetorIntermitentesRegras
+      .filter(({ ehTipoB }) => !ehTipoB)
+      .filter(({ regrasPorDia }) => regrasPorDia.has('DOM'))
       .length,
-    [participantesEscalaAtivos, regrasHorarioByColab],
+    [previewSetorIntermitentesRegras],
   )
 
   const demandaDomingoCicloPreview = useMemo(
@@ -1443,31 +1443,65 @@ export function SetorDetalhe() {
       })
     }
 
-    // Construir rows intermitentes (padrão fixo: T/DT nos dias com regra, NT nos outros)
+    // Construir rows intermitentes (tipo A: fixo T/NT, tipo B: XOR rotation)
     const numSemanas = grid.rows[0]?.semanas.length ?? 0
-    const intermitentesRows: CicloGridRow[] = previewSetorIntermitentesRegras.map(({ colaborador, funcao, regrasPorDia }) => {
-      const semanaBase: Simbolo[] = DIAS_ORDEM.map((dia) => {
-        if (regrasPorDia.has(dia)) return dia === 'DOM' ? 'DT' as Simbolo : 'T' as Simbolo
-        return 'NT' as Simbolo
-      })
-      return {
-        id: colaborador.id,
-        nome: colaborador.nome,
-        posto: funcao.apelido,
-        fixa: null,
-        variavel: null,
-        blocked: true,
-        semanas: Array.from({ length: numSemanas }, () => [...semanaBase]),
-      }
-    })
+    const intermitentesRows: CicloGridRow[] = previewSetorIntermitentesRegras.map(
+      ({ colaborador, funcao, regrasPorDia, folgaVariavel, ehTipoB }) => {
+        if (!ehTipoB) {
+          // TIPO A: fixed pattern (T/DT nos dias com regra, NT nos outros)
+          const semanaBase: Simbolo[] = DIAS_ORDEM.map((dia) => {
+            if (regrasPorDia.has(dia)) return dia === 'DOM' ? 'DT' as Simbolo : 'T' as Simbolo
+            return 'NT' as Simbolo
+          })
+          return {
+            id: colaborador.id,
+            nome: colaborador.nome,
+            posto: funcao.apelido,
+            fixa: null,
+            variavel: null,
+            blocked: true,
+            semanas: Array.from({ length: numSemanas }, () => [...semanaBase]),
+          }
+        }
 
-    // Recalcular cobertura incluindo intermitentes
-    const coberturaAjustada = grid.cobertura.map((cobSemana) => {
+        // TIPO B: XOR rotation
+        // Use CLT grid coverage to determine when intermitente works Sunday
+        const semanas: Simbolo[][] = Array.from({ length: numSemanas }, (_, semIdx) => {
+          const coberturaDOM = grid.cobertura[semIdx]?.[6] ?? 0
+          const demandaDOM = grid.demanda[6] ?? 0
+          const trabalhaDOM = coberturaDOM < demandaDOM
+
+          return DIAS_ORDEM.map((dia) => {
+            if (!regrasPorDia.has(dia)) return 'NT' as Simbolo
+            if (dia === 'DOM') return trabalhaDOM ? 'DT' as Simbolo : 'DF' as Simbolo
+            if (dia === folgaVariavel) {
+              // XOR: worked Sunday → variable day off. Didn't work Sunday → works.
+              return trabalhaDOM ? 'FV' as Simbolo : 'T' as Simbolo
+            }
+            return 'T' as Simbolo
+          }) as Simbolo[]
+        })
+
+        return {
+          id: colaborador.id,
+          nome: colaborador.nome,
+          posto: funcao.apelido,
+          fixa: null,
+          variavel: folgaVariavel,
+          blocked: true,
+          semanas,
+        }
+      },
+    )
+
+    // Recalcular cobertura incluindo intermitentes (respects XOR for tipo B)
+    const coberturaAjustada = grid.cobertura.map((cobSemana, semIdx) => {
       return cobSemana.map((cob, diaIdx) => {
-        const dia = DIAS_ORDEM[diaIdx]
-        const intermitentesNoDia = previewSetorIntermitentesRegras
-          .filter(({ regrasPorDia }) => dia != null && regrasPorDia.has(dia)).length
-        return cob + intermitentesNoDia
+        const intermitentesTrabalham = intermitentesRows.filter((row) => {
+          const simbolo = row.semanas[semIdx]?.[diaIdx]
+          return simbolo === 'T' || simbolo === 'DT'
+        }).length
+        return cob + intermitentesTrabalham
       })
     })
 
