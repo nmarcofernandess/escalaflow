@@ -78,27 +78,13 @@ WEIGHTS = {
     "ap1_excess": 250,
 }
 
-MODE_PROFILES = {
-    "rapido":     {"patience_s": 15},
-    "balanceado": {"patience_s": 30},
-    "otimizado":  {"patience_s": 60},
-    "maximo":     {"patience_s": 120},
-}
-
-# Minimum viable coverage threshold (%). If a FEASIBLE solution has coverage
-# below this, the solver keeps running with extended budget until it reaches
-# the threshold or hits HARD_TIME_CAP_SECONDS.
 MIN_COVERAGE_THRESHOLD = 90.0
 HARD_TIME_CAP_SECONDS = 3600  # 1 hour absolute maximum
 
-# ── Patience-based stabilization (replaces fixed budgets) ──────────────
-
-PATIENCE_BY_MODE = {
-    "rapido":     15,
-    "balanceado": 30,
-    "otimizado":  60,
-    "maximo":     120,
-}
+# ── Coverage stabilization ─────────────────────────────────────────────
+# One patience value. The solver stops when coverage % hasn't improved
+# in DEFAULT_PATIENCE_S seconds. No modes, no budgets.
+DEFAULT_PATIENCE_S = 30
 
 
 def compute_coverage_from_deficit(deficit_sum: int, total_demand: int) -> float:
@@ -503,7 +489,7 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
     week_chunks = build_week_chunks(days)
 
     # HARD: dias de trabalho por semana
-    add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days)
+    add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
 
     # HARD: max 6 consecutivos
     add_h1_max_dias_consecutivos(model, works_day, C, D)
@@ -896,20 +882,25 @@ def build_model(
     block_starts = make_block_starts(model, work, C, D, S)
 
     # ---------------------------------------------------------------
-    # HARD: Minimum headcount per Sunday (from demand peak)
-    # Ensures enough people work each Sunday to meet demand.
-    # Only applies to non-emergency passes.
+    # Minimum headcount per Sunday (from demand peak)
+    # Relaxed in Pass 2+ (same gate as FOLGA_FIXA/FOLGA_VARIAVEL)
+    # to avoid false INFEASIBLE on long periods where H1/H2/folga_fixa
+    # make it impossible to guarantee headcount every single Sunday.
+    # S_DEFICIT (SOFT) already penalizes under-coverage per slot.
     # ---------------------------------------------------------------
-    if "ALL_PRODUCT_RULES" not in relax:
+    _skip_sunday_headcount = (
+        "ALL_PRODUCT_RULES" in relax
+        or "FOLGA_FIXA" in relax
+        or "FOLGA_VARIAVEL" in relax
+    )
+    if not _skip_sunday_headcount:
         for d in sunday_indices:
-            # Find peak demand for this day across all slots
             peak = 0
             for s in range(S):
                 target = demand_by_slot.get((d, s), 0)
                 if target > peak:
                     peak = target
             if peak > 0:
-                # Count available (non-blocked) collaborators for this Sunday
                 available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
                 if len(available_c) >= peak:
                     model.add(sum(works_day[c, d] for c in available_c) >= peak)
@@ -1109,9 +1100,9 @@ def build_model(
     if force_dt_soft:
         dt_status = 'SOFT'
     if dt_status == 'HARD':
-        add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days)
+        add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
     elif dt_status == 'SOFT':
-        add_dias_trabalho_soft_penalty(model, obj_terms_list, works_day, colabs, C, D, week_chunks, blocked_days)
+        add_dias_trabalho_soft_penalty(model, obj_terms_list, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
 
     md_status = rule_is('MIN_DIARIO', 'HARD')
     if force_md_soft:
@@ -1729,11 +1720,9 @@ def solve(data: dict) -> dict:
 
     config = data.get("config", {})
     generation_mode = config.get("generation_mode", "OFFICIAL")
-    solve_mode = config.get("solve_mode", "rapido")
     num_workers = config.get("num_workers", 8)
 
-    profile = MODE_PROFILES.get(solve_mode, MODE_PROFILES["rapido"])
-    patience_s = profile["patience_s"]
+    patience_s = DEFAULT_PATIENCE_S
     hard_cap = config.get("max_time_seconds", HARD_TIME_CAP_SECONDS)
 
     # Track total elapsed time for the hard cap
@@ -1743,7 +1732,7 @@ def solve(data: dict) -> dict:
         return max(5, hard_cap - (time.time() - t_global_start))
 
     n_dias = (datetime.strptime(data['data_fim'], "%Y-%m-%d") - datetime.strptime(data['data_inicio'], "%Y-%m-%d")).days + 1
-    log(f"Montando modelo: {len(colabs)} colaboradores, {n_dias} dias, patience {patience_s}s ({solve_mode})")
+    log(f"Montando modelo: {len(colabs)} colaboradores, {n_dias} dias, patience {patience_s}s")
 
     # Pre-analysis: capacity vs demand
     capacidade_diag = _analyze_capacity(data)
@@ -1968,7 +1957,7 @@ def solve(data: dict) -> dict:
             pass3_relaxations = ["ALL_PRODUCT_RULES"]
         else:
             log("Passo 2 impossivel — fallback legal-first (sem relaxar regras de oficializacao)")
-            pass3_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
+            pass3_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW", "H10_ELASTIC"]
         result = _solve_pass(
             data, pass_num=3, relaxations=pass3_relaxations,
             max_time=remaining_time(), patience_s=patience_s,
@@ -1983,7 +1972,7 @@ def solve(data: dict) -> dict:
     diag["regras_relaxadas"] = (
         ["H1", "H6", "H10", "DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
         if exploratory_mode
-        else ["DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW"]
+        else ["DIAS_TRABALHO", "MIN_DIARIO", "FOLGA_FIXA", "FOLGA_VARIAVEL", "TIME_WINDOW", "H10_ELASTIC"]
     )
     diag["capacidade_vs_demanda"] = capacidade_diag
     diag["cycle_length_weeks"] = cycle_weeks

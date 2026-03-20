@@ -12,7 +12,7 @@ Este e o fluxo principal do sistema. O usuario quer gerar a escala de trabalho d
 
 ### Passo a passo
 1. **Preflight**: O sistema verifica se o setor tem tudo necessario para gerar a escala. Identifica blockers: setor sem colaboradores, sem demanda, colaboradores sem contrato valido, etc.
-2. **Geracao**: O motor Python (OR-Tools CP-SAT) recebe todos os dados e gera a melhor escala possivel. Tempo: 30s (modo rapido) ou 120s (modo otimizado).
+2. **Geracao**: O motor Python (OR-Tools CP-SAT) recebe todos os dados e gera a melhor escala possivel. O solver usa estabilizacao de cobertura — roda ate a cobertura parar de melhorar (30s sem melhoria, timer reseta a cada ganho). Nao existe budget fixo de tempo nem modos de resolucao.
 3. **Resultado**: A escala sai como RASCUNHO com indicadores: cobertura (%), violacoes hard/soft, equilibrio, pontuacao.
 4. **Revisao**: O RH analisa a escala no grid visual. Pode ver cada dia de cada pessoa, horarios, folgas, funcoes.
 5. **Ajustes**: Se necessario, o RH ajusta manualmente (muda status de um dia, altera horarios).

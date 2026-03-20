@@ -252,7 +252,7 @@ const GerarEscalaSchema = z.object({
   setor_id: z.number().int().positive().describe('ID do setor. Use o contexto automático injetado pelo sistema.'),
   data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial da escala no formato YYYY-MM-DD.'),
   data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final da escala no formato YYYY-MM-DD.'),
-  solve_mode: z.enum(['rapido', 'balanceado', 'otimizado', 'maximo']).optional().describe('Modo de resolução: "rapido" (~45s), "balanceado" (~3min), "otimizado" (~10min) ou "maximo" (~30min). Padrão: rapido.'),
+  solve_mode: z.enum(['rapido', 'balanceado', 'otimizado', 'maximo']).optional().describe('Depreciado — o solver agora usa estabilização de cobertura automática (30s patience). Este campo é ignorado.'),
   rules_override: z.record(z.string(), z.string()).optional().describe('Overrides temporários de regras (codigo -> status). Endurecer regra mantém geração OFFICIAL; relaxar regra que hoje está HARD torna a geração EXPLORATORY. Ex: {"H10":"HARD"} ou {"H6":"SOFT"}')
 })
 

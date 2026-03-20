@@ -184,10 +184,8 @@ npm run solver:build
 
 ```bash
 npm run solver:cli -- list                           # lista setores disponíveis
-npm run solver:cli -- 2                              # Açougue (3 meses, patience 15s)
+npm run solver:cli -- 2                              # Açougue, 3 meses (estabilização 30s)
 npm run solver:cli -- 2 2026-03-02 2026-05-31        # Açougue, período específico
-npm run solver:cli -- 2 --mode otimizado             # patience 60s (mais paciente)
-npm run solver:cli -- 2 --mode maximo                # patience 120s (máximo polimento)
 npm run solver:cli -- 2 --dump                       # salva input JSON em tmp/ (debug)
 npm run solver:cli -- 2 --summary                    # JSON compacto: indicadores + horas/colab (~1KB)
 npm run solver:cli -- 2 --json                       # JSON sem comparacao_demanda (~250KB)
@@ -220,14 +218,9 @@ O Python devolve JSON via stdout com estes campos:
 
 ### Coverage Stabilization
 
-O solver usa **estabilização de cobertura** em vez de budget fixo de tempo. Cada pass roda até a cobertura parar de melhorar (patience timer) ou OPTIMAL. Os modos controlam o patience:
+O solver usa **estabilização de cobertura** com patience fixo de **30s**. Não existem modos de resolução — o solver sempre busca o melhor resultado possível e para sozinho quando a cobertura estabiliza (30s sem melhoria, timer reseta a cada ganho).
 
-| Modo | Patience | Semântica |
-|------|----------|-----------|
-| `rapido` | 15s | Para rápido após cobertura estabilizar |
-| `balanceado` | 30s | Equilíbrio — padrão |
-| `otimizado` | 60s | Espera mais por melhorias |
-| `maximo` | 120s | Espreme até o último % |
+O campo `solve_mode` no JSON é mantido por backward-compatibility mas é **ignorado** pelo solver.
 
 **INFEASIBLE é instantâneo (<1s).** O patience só roda no pass que encontra solução. Passes que falham não desperdiçam tempo.
 

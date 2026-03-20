@@ -55,7 +55,16 @@ const C = {
 // ---------------------------------------------------------------------------
 const args = process.argv.slice(2)
 const flags = new Set(args.filter(a => a.startsWith('--')))
-const positional = args.filter(a => !a.startsWith('--'))
+// Filter positional: exclude --flags AND their values (e.g. --mode rapido)
+const FLAGS_WITH_VALUE = new Set(['--mode'])
+const positional: string[] = []
+for (let i = 0; i < args.length; i++) {
+  if (args[i].startsWith('--')) {
+    if (FLAGS_WITH_VALUE.has(args[i]) && i + 1 < args.length) i++ // skip value
+    continue
+  }
+  positional.push(args[i])
+}
 
 const isListCmd = positional[0] === 'list'
 const setorId = positional[0] ? parseInt(positional[0], 10) : NaN
@@ -67,20 +76,14 @@ const dataInicio = positional[1] ?? (() => {
 })()
 const dataFim = positional[2] ?? (() => {
   // 3 meses depois do inicio (período real do RH)
-  const d = new Date(dataInicio)
-  d.setMonth(d.getMonth() + 3)
-  d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
+  const [y, m, day] = dataInicio.split('-').map(Number)
+  const d = new Date(y, m - 1 + 3, day - 1) // mês+3, dia-1 = último dia do período
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 })()
 
-const VALID_MODES = ['rapido', 'balanceado', 'otimizado', 'maximo'] as const
-type SolveModeArg = (typeof VALID_MODES)[number]
-const rawMode = flags.has('--mode') ? args[args.indexOf('--mode') + 1] : 'rapido'
-if (!VALID_MODES.includes(rawMode as SolveModeArg)) {
-  console.error(`\x1b[31mERRO: Modo "${rawMode}" inválido. Use: ${VALID_MODES.join(', ')}\x1b[0m`)
-  process.exit(1)
-}
-const solveMode = rawMode as SolveModeArg
+// solve_mode is deprecated — solver uses coverage stabilization (30s patience).
+// --mode flag kept for backward compat but ignored by solver.
+const solveMode = 'rapido' as const
 const jsonOnly = flags.has('--json')
 const summaryOnly = flags.has('--summary')
 const dumpInput = flags.has('--dump')
@@ -189,10 +192,7 @@ ${C.bold}Listar setores:${C.reset}
     console.log(`${C.bold}${C.cyan}╚══════════════════════════════════════════╝${C.reset}\n`)
     console.log(`  ${C.bold}Setor:${C.reset}   ${setor.nome} (#${setor.id})`)
     console.log(`  ${C.bold}Período:${C.reset} ${dataInicio} a ${dataFim}`)
-    const PATIENCE_LABEL: Record<string, string> = {
-      rapido: '15s', balanceado: '30s', otimizado: '60s', maximo: '120s'
-    }
-    console.log(`  ${C.bold}Modo:${C.reset}    ${solveMode} (patience ${PATIENCE_LABEL[solveMode] ?? '30s'})`)
+    console.log(`  ${C.bold}Solver:${C.reset}  estabilização de cobertura (patience 30s)`)
     console.log(`  ${C.bold}DB:${C.reset}      ${process.env.ESCALAFLOW_DB_PATH}`)
     console.log()
   }

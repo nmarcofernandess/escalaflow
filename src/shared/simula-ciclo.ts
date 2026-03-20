@@ -653,13 +653,11 @@ export function converterPreviewParaPinned(
 // Conversor Preview T/F → PinWithOrigin (origin tracking)
 // ============================================================================
 
-const DIAS_SEMANA_PREVIEW: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
-
 /**
  * Converte preview T/F para PinWithOrigin[] com rastreio de quem decidiu cada pin.
  *
  * Para cada (pessoa, dia):
- * - Dia de trabalho (T, DT) → sempre 'auto'
+ * - Dia de trabalho (T) → sempre 'auto'
  * - Dia de folga (F) + DiaSemana bate com override local → 'manual'
  * - Dia de folga (F) + DiaSemana bate com folga salva no BD → 'saved'
  * - Dia de folga (F) + nenhum match → 'auto' (preview decidiu)
@@ -696,7 +694,7 @@ export function converterPreviewParaPinnedWithOrigin(
         if (!isWork) {
           // Folga — check origin by day-of-week
           const dayOfWeekIdx = dayCounter % 7
-          const diaSemana = DIAS_SEMANA_PREVIEW[dayOfWeekIdx]
+          const diaSemana = DIAS_IDX_TO_DIASEMANA[dayOfWeekIdx]
 
           if (override && (override.fixa === diaSemana || override.variavel === diaSemana)) {
             origin = 'manual'

@@ -443,22 +443,41 @@ def add_dias_trabalho(
     C: int, D: int,
     week_chunks: List[List[int]],
     blocked_days: Dict[int, set] | None = None,
+    days: List[str] | None = None,
 ) -> None:
     """Force correct number of work days per collaborator per weekly chunk.
 
     Uses explicit regime_escala when present:
       5X2 -> 5 days/week
       6X1 -> 6 days/week
-    Partial weeks are prorated and capped by available days.
+    Partial weeks are prorated and capped by TRULY available days
+    (excluding blocked days AND folga_fixa days forced OFF by add_folga_fixa_5x2).
     """
+    DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+
+    # Pre-compute folga_fixa day indices per collaborator so we don't
+    # count them as "available" when computing the target.
+    folga_fixa_days: Dict[int, set] = {}
+    if days:
+        from datetime import date as dt_date
+        day_labels = [DAY_LABELS[dt_date.fromisoformat(day).weekday()] for day in days]
+        for c in range(C):
+            if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+                continue
+            fixed_day = colabs[c].get("folga_fixa_dia_semana")
+            if fixed_day:
+                folga_fixa_days[c] = {d for d in range(len(days)) if day_labels[d] == fixed_day}
+
     for c in range(C):
         regime_days = _resolve_regime_days(colabs[c])
         if regime_days == 0:
             continue  # Intermitente sem dias ativos — skip
         blocked = blocked_days.get(c, set()) if blocked_days else set()
+        fixed_off = folga_fixa_days.get(c, set())
 
         for chunk in week_chunks:
-            available_days = [d for d in chunk if d not in blocked]
+            # Truly available = not blocked AND not folga_fixa
+            available_days = [d for d in chunk if d not in blocked and d not in fixed_off]
             available = len(available_days)
             if available <= 0:
                 continue
@@ -1275,14 +1294,29 @@ def add_dias_trabalho_soft_penalty(
     week_chunks: list,
     blocked_days: dict,
     weight: int = 4000,
+    days: List[str] | None = None,
 ) -> None:
     """DIAS_TRABALHO SOFT: penaliza desvio do numero esperado de dias/semana."""
+    DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+    # Pre-compute folga_fixa indices (same logic as HARD version)
+    folga_fixa_days: Dict[int, set] = {}
+    if days:
+        from datetime import date as dt_date
+        day_labels = [DAY_LABELS[dt_date.fromisoformat(day).weekday()] for day in days]
+        for c in range(C):
+            if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
+                continue
+            fixed_day = colabs[c].get("folga_fixa_dia_semana")
+            if fixed_day:
+                folga_fixa_days[c] = {d for d in range(len(days)) if day_labels[d] == fixed_day}
+
     for c in range(C):
         regime_days = _resolve_regime_days(colabs[c])
         if regime_days == 0:
             continue  # Intermitente sem dias ativos — skip
+        fixed_off = folga_fixa_days.get(c, set())
         for chunk in week_chunks:
-            available = [d for d in chunk if d not in blocked_days.get(c, set())]
+            available = [d for d in chunk if d not in blocked_days.get(c, set()) and d not in fixed_off]
             if not available:
                 continue
             # Use the same prorata semantics as HARD DIAS_TRABALHO.

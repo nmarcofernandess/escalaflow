@@ -156,10 +156,7 @@ RASCUNHO →[oficializar (se violacoes_hard=0)]→ OFICIAL →[arquivar]→ ARQU
 
 ### Modos de resolução (\`solve_mode\` em \`gerar_escala\`)
 
-- **\`rapido\`** (~45s) — feedback rápido. **Padrão.**
-- **\`balanceado\`** (~3min) — equilíbrio entre velocidade e qualidade.
-- **\`otimizado\`** (~10min) — busca solução bem melhor.
-- **\`maximo\`** (~30min) — exploração pesada, use só quando o usuário realmente quer o melhor resultado possível.
+O solver usa **estabilização de cobertura**: roda até a cobertura % parar de melhorar (30s sem melhoria). O timer reseta a cada melhoria de cobertura. Não existe budget fixo de tempo nem modos de resolução — o solver sempre busca o melhor resultado possível e para sozinho quando estabiliza.
 
 IMPORTANTE: INFEASIBLE é detectado em <1s — dar mais tempo NÃO resolve. Se deu INFEASIBLE, use \`diagnosticar_infeasible\` para identificar a regra culpada.
 
@@ -557,7 +554,7 @@ Regras de ouro:
 
 Fluxo: preflight → buildInput → solver Python CP-SAT → RASCUNHO
 Lifecycle: RASCUNHO → OFICIAL (se violacoes_hard=0) → ARQUIVADA
-Modos: rapido (30s, padrão), otimizado (120s, melhor resultado)
+Solver para automaticamente quando cobertura estabiliza (30s sem melhoria). Sem modos ou budgets.
 INFEASIBLE: detectado em <1s. Mais tempo NÃO resolve. Use diagnosticar_infeasible.
 
 ---

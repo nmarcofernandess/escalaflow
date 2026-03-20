@@ -16,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { useApiData } from '@/hooks/useApiData'
@@ -25,7 +24,7 @@ import type { EscalaPeriodoPreset } from '@/lib/escala-periodo-preset'
 import type { RuleDefinition, RuleStatus, RuleConfig } from '@shared/index'
 
 export interface SolverSessionConfig {
-  solveMode: 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
+  solveMode: 'rapido' // kept for backward compat — solver ignores this, uses 30s patience
   maxTimeSeconds?: number
   rulesOverride: RuleConfig
 }
@@ -53,18 +52,16 @@ export function SolverConfigDrawer({
   )
 
   const [localOverride, setLocalOverride] = useState<RuleConfig>(config.rulesOverride)
-  const [solveMode, setSolveMode] = useState(config.solveMode)
   const [localPeriodoPreset, setLocalPeriodoPreset] = useState<EscalaPeriodoPreset>(periodoPreset)
 
   useEffect(() => {
     if (!open) return
     setLocalOverride(config.rulesOverride)
-    setSolveMode(config.solveMode)
     setLocalPeriodoPreset(periodoPreset)
   }, [config, open, periodoPreset])
 
   const handleSave = () => {
-    onConfigChange({ ...config, solveMode, rulesOverride: localOverride })
+    onConfigChange({ ...config, rulesOverride: localOverride })
     onPeriodoPresetChange(localPeriodoPreset)
     onOpenChange(false)
   }
@@ -247,64 +244,7 @@ export function SolverConfigDrawer({
               </div>
             </div>
 
-            <Separator />
-
-            {/* Estrategia */}
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Estrategia
-              </p>
-              <RadioGroup
-                value={solveMode}
-                onValueChange={(v) => setSolveMode(v as SolverSessionConfig['solveMode'])}
-                className="space-y-2"
-              >
-                <div className="flex items-start gap-3 rounded-md border p-3">
-                  <RadioGroupItem value="rapido" id="mode-rapido" className="mt-0.5" />
-                  <div>
-                    <Label htmlFor="mode-rapido" className="font-medium cursor-pointer">
-                      Rapido
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Primeira solucao valida (~45s)
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-md border p-3">
-                  <RadioGroupItem value="balanceado" id="mode-balanceado" className="mt-0.5" />
-                  <div>
-                    <Label htmlFor="mode-balanceado" className="font-medium cursor-pointer">
-                      Balanceado
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Equilibrio velocidade/qualidade (~3min)
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-md border p-3">
-                  <RadioGroupItem value="otimizado" id="mode-otimizado" className="mt-0.5" />
-                  <div>
-                    <Label htmlFor="mode-otimizado" className="font-medium cursor-pointer">
-                      Otimizado
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Alta qualidade (~10min)
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-md border p-3">
-                  <RadioGroupItem value="maximo" id="mode-maximo" className="mt-0.5" />
-                  <div className="flex-1">
-                    <Label htmlFor="mode-maximo" className="font-medium cursor-pointer">
-                      Maximo
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Otimizacao maxima (~30min)
-                    </p>
-                  </div>
-                </div>
-              </RadioGroup>
-            </div>
+            {/* Estrategia removida — solver usa estabilizacao de cobertura (patience 30s fixo) */}
 
             <Separator />
 

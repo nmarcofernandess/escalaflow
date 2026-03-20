@@ -677,32 +677,31 @@ hints = alocacoesAnteriores.map(h => ({
 }))
 ```
 
-### 3.8 Modos de Resolucao
+### 3.8 Estabilizacao de Cobertura
 
-| Modo | Timeout total | Gap Limit | Quando usar |
-|------|--------------|-----------|-------------|
-| `rapido` | 45s (default) | 5% | Geracao normal, feedback rapido |
-| `balanceado` | 180s | 2% | Quando quer melhorar sem esperar demais |
-| `otimizado` | 600s | 0.5% | Quando quer uma escala bem refinada |
-| `maximo` | 1800s | 0.1% | Busca pesada; usar com intencao explicita |
+O solver usa **estabilizacao de cobertura** com patience fixo de 30s. Nao existem modos de resolucao (rapido/otimizado/etc) — o solver sempre busca o melhor resultado possivel e para sozinho quando a cobertura estabiliza.
 
-Configuraveis via `SolverConfigDrawer` no frontend ou via tool `gerar_escala` da IA (parametro `solve_mode`).
+O campo `solve_mode` no JSON e mantido por backward-compatibility mas e **ignorado** pelo solver.
 
-**Time budget splitting (multi-pass oficial):**
+**Como funciona:** O solver monitora a cobertura % a cada solucao encontrada via `CoverageStabilizationCallback`. Se a cobertura nao melhora em `patience_s` segundos, o solver para e retorna a melhor solucao. O timer reseta a cada melhoria de cobertura.
+
+**Multi-pass (cada pass usa o callback internamente):**
 
 | Pass | Objetivo | Tempo alocado | Relaxations |
 |------|----------|---------------|-------------|
-| Pass 1 | Normal (todas regras conforme config) | 50% do timeout | Nenhuma |
-| Pass 1b | Manter pattern de folgas | reutiliza budget do Pass 1 | DIAS_TRABALHO, MIN_DIARIO |
-| Pass 2 | Relaxar product rules | 30% do timeout | DIAS_TRABALHO, MIN_DIARIO |
-| Pass 3 | Fallback legal-first | 20% do timeout | DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW |
+| Pass 1 | Normal (todas regras conforme config) | remaining_time() | Nenhuma |
+| Pass 1b | Manter pattern de folgas | remaining_time() | DIAS_TRABALHO, MIN_DIARIO |
+| Pass 2 | Relaxar product rules | remaining_time() | DIAS_TRABALHO, MIN_DIARIO |
+| Pass 3 | Fallback legal-first | remaining_time() | DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW |
 
-**INFEASIBLE e provado em <1s** — dar mais tempo NAO resolve. Se o CP-SAT prova impossibilidade matematica, e instantaneo. O multi-pass tenta com regras relaxadas, nao com mais tempo.
+**INFEASIBLE e provado em <1s** — dar mais tempo NAO resolve. Se o CP-SAT prova impossibilidade matematica, e instantaneo. O multi-pass tenta com regras relaxadas, nao com mais tempo. O patience so roda no pass que encontra solucao.
 
 **Regras que NUNCA relaxam (CLT core):**
 H2 (interjornada 11h), H4 (max 10h/dia), H5 (excecoes), H11-H18 (aprendiz/estagiario/feriados proibidos)
 
 **Observacao importante:** `H10` nao entra mais no relaxamento automatico do modo `OFFICIAL`. Se estiver SOFT, foi por configuracao/policy, nao por fallback silencioso.
+
+**Diagnostico `stabilization`:** O resultado inclui metricas de estabilizacao: `first_solution_s`, `stabilized_s`, `solutions_found`, `final_coverage`, `patience_s`, `coverage_improvements`.
 
 ### 3.9 Input Hash (Deteccao de Mudancas)
 
@@ -1718,7 +1717,7 @@ Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemin
 |---|------|--------|-----------|
 | 13 | `preflight` | `{setor_id, datas}` | Verifica viabilidade rapida: setor ativo, colabs, demandas, feriados. |
 | 13 | `preflight_completo` | `{setor_id, datas}` | Versao completa: chama `buildEscalaPreflight()` com capacity checks por colab/dia. |
-| 14 | `gerar_escala` | `{setor_id, datas, solve_mode?, rules_override?}` | buildSolverInput → runSolver (45s rapido / 180s balanceado / 600s otimizado / 1800s maximo) → persistirSolverResult → validarEscalaV3 → persistencia autoritativa. Retorna escala RASCUNHO com diagnostico (`generation_mode`, `pass_usado`, `regras_relaxadas`). |
+| 14 | `gerar_escala` | `{setor_id, datas, rules_override?}` | buildSolverInput → runSolver (coverage stabilization: patience 30s) → persistirSolverResult → validarEscalaV3 → persistencia autoritativa. Retorna escala RASCUNHO com diagnostico (`generation_mode`, `pass_usado`, `regras_relaxadas`, `stabilization`). |
 | 15 | `ajustar_alocacao` | `{escala_id, colab_id, data, status}` | UPDATE alocacoes.status (TRABALHO/FOLGA/INDISPONIVEL). |
 | 16 | `ajustar_horario` | `{escala_id, colab_id, data, hora_inicio, hora_fim}` | UPDATE hora_inicio/hora_fim em alocacoes. Revalida via validarEscalaV3(). |
 | 17 | `oficializar_escala` | `{escala_id}` | UPDATE status='OFICIAL'. Valida violacoes_hard=0 antes de permitir. |

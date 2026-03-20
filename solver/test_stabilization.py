@@ -8,8 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from solver_ortools import (
     CoverageStabilizationCallback,
     compute_coverage_from_deficit,
-    PATIENCE_BY_MODE,
-    MODE_PROFILES,
+    DEFAULT_PATIENCE_S,
 )
 
 
@@ -36,20 +35,9 @@ def test_coverage_calculation():
     assert compute_coverage_from_deficit(deficit_sum=5, total_demand=0) == 100.0
 
 
-def test_patience_by_mode():
-    """solve_mode maps to patience values."""
-    assert PATIENCE_BY_MODE["rapido"] == 15
-    assert PATIENCE_BY_MODE["balanceado"] == 30
-    assert PATIENCE_BY_MODE["otimizado"] == 60
-    assert PATIENCE_BY_MODE["maximo"] == 120
-
-
-def test_mode_profiles_use_patience():
-    """MODE_PROFILES no longer contain budget/gap, only patience_s."""
-    for mode, profile in MODE_PROFILES.items():
-        assert "budget" not in profile, f"{mode} still has 'budget'"
-        assert "gap" not in profile, f"{mode} still has 'gap'"
-        assert "patience_s" in profile, f"{mode} missing 'patience_s'"
+def test_default_patience():
+    """Single patience value, no modes."""
+    assert DEFAULT_PATIENCE_S == 30
 
 
 def test_callback_diagnostics_empty():
@@ -87,7 +75,6 @@ def test_solve_uses_stabilization():
         import pytest
         pytest.skip("No solver input dump — run: npm run solver:cli -- 3 --dump")
 
-    data["config"]["solve_mode"] = "rapido"  # patience=15s
     data["config"].pop("max_time_seconds", None)
 
     result = solve(data)
@@ -101,7 +88,7 @@ def test_solve_uses_stabilization():
     assert isinstance(stab.get("solutions_found"), int)
     assert isinstance(stab.get("final_coverage"), (int, float))
     assert "first_solution_s" in stab
-    assert "patience_s" in stab
+    assert stab["patience_s"] == 30  # always 30, no modes
 
 
 def test_solve_hard_cap_unchanged():
