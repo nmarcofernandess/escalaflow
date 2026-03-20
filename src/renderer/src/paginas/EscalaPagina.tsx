@@ -63,6 +63,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { formatarMinutos, REGRAS_TEXTO } from '@/lib/formatadores'
+import { textoResumoRelaxacoes } from '@shared/resumo-user'
 
 /** Margem por arredondamento de grid (15min/slot × semanas) */
 const TOLERANCIA_POR_SEMANA = 15
@@ -566,6 +567,32 @@ export function EscalaPagina() {
         ]}
       />
 
+      {escalaCompleta?.diagnostico && (() => {
+        const pass = escalaCompleta.diagnostico.pass_usado ?? 1
+        const isEmergency = pass === 3
+        const texto = textoResumoRelaxacoes(
+          pass,
+          escalaCompleta.diagnostico.regras_relaxadas ?? [],
+          escalaCompleta.diagnostico.generation_mode,
+        )
+        if (!texto) return null
+        return (
+          <div className={cn(
+            'mx-6 mt-4 rounded-lg border-2 p-3',
+            isEmergency
+              ? 'border-destructive/40 bg-destructive/5'
+              : 'border-warning/40 bg-warning/5',
+          )}>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className={cn('size-4 shrink-0',
+                isEmergency ? 'text-destructive' : 'text-warning',
+              )} />
+              <p className="text-sm font-medium">{texto}</p>
+            </div>
+          </div>
+        )
+      })()}
+
       <div className="flex-1 space-y-4 p-6">
         {loading ? (
           <div className="flex items-center justify-center py-16">
@@ -779,6 +806,27 @@ export function EscalaPagina() {
                           </div>
                         </CardContent>
                       </Card>
+                      {escalaCompleta?.diagnostico && (() => {
+                        const texto = textoResumoRelaxacoes(
+                          escalaCompleta.diagnostico.pass_usado ?? 1,
+                          escalaCompleta.diagnostico.regras_relaxadas ?? [],
+                          escalaCompleta.diagnostico.generation_mode,
+                        )
+                        if (!texto) return null
+                        return (
+                          <Card>
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                <AlertTriangle className="size-4 text-warning" />
+                                Ajustes do Motor
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <p className="text-sm text-muted-foreground">{texto}</p>
+                            </CardContent>
+                          </Card>
+                        )
+                      })()}
                     </div>
                   )
                 })()}
