@@ -532,7 +532,8 @@ export function sugerirTSHierarquico(input: {
 // Conversor Nivel 1 → formato EscalaCicloResumo
 // ============================================================================
 
-import type { Escala, Alocacao, Colaborador, Funcao, DiaSemana, RegraHorarioColaborador } from './index'
+import type { Escala, Alocacao, Colaborador, Funcao, DiaSemana, RegraHorarioColaborador, PinWithOrigin, PinOrigin } from './index'
+import { pinWeight } from './index'
 
 const DIAS_IDX_TO_DIASEMANA: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
 
@@ -640,6 +641,72 @@ export function converterPreviewParaPinned(
           d: dayCounter,
           band: status === 'T' ? 3 : 0, // 3=INTEGRAL, 0=OFF (TS nao sabe de bandas)
         })
+        dayCounter++
+      }
+    }
+  }
+
+  return pinned
+}
+
+// ============================================================================
+// Conversor Preview T/F → PinWithOrigin (origin tracking)
+// ============================================================================
+
+const DIAS_SEMANA_PREVIEW: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
+
+/**
+ * Converte preview T/F para PinWithOrigin[] com rastreio de quem decidiu cada pin.
+ *
+ * Para cada (pessoa, dia):
+ * - Dia de trabalho (T, DT) → sempre 'auto'
+ * - Dia de folga (F) + DiaSemana bate com override local → 'manual'
+ * - Dia de folga (F) + DiaSemana bate com folga salva no BD → 'saved'
+ * - Dia de folga (F) + nenhum match → 'auto' (preview decidiu)
+ *
+ * Manual tem precedencia sobre saved (override local > BD).
+ */
+export function converterPreviewParaPinnedWithOrigin(
+  output: SimulaCicloOutput,
+  postosElegiveis: Array<{ funcao: { id: number }; titular: { id: number } }>,
+  overridesLocais: Array<{ colaborador_id: number; fixa?: DiaSemana | null; variavel?: DiaSemana | null }>,
+  savedFolgas?: Array<{ colaborador_id: number; fixa?: DiaSemana | null; variavel?: DiaSemana | null }>,
+): PinWithOrigin[] {
+  const pinned: PinWithOrigin[] = []
+
+  for (let rowIdx = 0; rowIdx < output.grid.length; rowIdx++) {
+    const row = output.grid[rowIdx]
+    const posto = postosElegiveis[rowIdx]
+    if (!posto) continue
+
+    const colabId = posto.titular.id
+    const override = overridesLocais.find(o => o.colaborador_id === colabId)
+    const saved = savedFolgas?.find(s => s.colaborador_id === colabId)
+
+    const c = rowIdx
+    let dayCounter = 0
+
+    for (const semana of row.semanas) {
+      for (const status of semana.dias) {
+        const isWork = status === 'T'
+        const band = isWork ? 3 : 0
+
+        let origin: PinOrigin = 'auto'
+
+        if (!isWork) {
+          // Folga — check origin by day-of-week
+          const dayOfWeekIdx = dayCounter % 7
+          const diaSemana = DIAS_SEMANA_PREVIEW[dayOfWeekIdx]
+
+          if (override && (override.fixa === diaSemana || override.variavel === diaSemana)) {
+            origin = 'manual'
+          } else if (saved && (saved.fixa === diaSemana || saved.variavel === diaSemana)) {
+            origin = 'saved'
+          }
+          // else stays 'auto'
+        }
+
+        pinned.push({ c, d: dayCounter, band, origin, weight: pinWeight(origin) })
         dayCounter++
       }
     }
