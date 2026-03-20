@@ -37,6 +37,7 @@ export interface ColabMotor {
   domingo_ciclo_trabalho?: number
   domingo_ciclo_folga?: number
   folga_fixa_dia_semana?: DiaSemana | null
+  folga_variavel_dia_semana?: DiaSemana | null
 }
 
 export interface CelulaMotor {
