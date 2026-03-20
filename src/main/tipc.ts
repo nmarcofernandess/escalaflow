@@ -2435,11 +2435,25 @@ const colaboradoresSalvarRegraHorario = t.procedure
           : (existe?.folga_fixa_dia_semana ?? null))
     const folgaVariavel = isDiaEspecifico
       ? null
-      : (isIntermitente
-          ? null
-          : hasOwnField(input, 'folga_variavel_dia_semana')
+      : (hasOwnField(input, 'folga_variavel_dia_semana')
           ? (input.folga_variavel_dia_semana ?? null)
           : (existe?.folga_variavel_dia_semana ?? null))
+
+    // Guard T5: intermitente com folga_variavel precisa ter regra ativa nesse dia
+    if (isIntermitente && folgaVariavel != null && !isDiaEspecifico) {
+      const regraExiste = await queryOne<{ id: number }>(
+        `SELECT id FROM colaborador_regra_horario
+         WHERE colaborador_id = ? AND dia_semana_regra = ? AND ativo = true
+         LIMIT 1`,
+        input.colaborador_id, folgaVariavel,
+      )
+      if (!regraExiste) {
+        throw new Error(
+          `Folga variavel '${folgaVariavel}' invalida: intermitente nao tem regra ativa para esse dia. `
+          + `Cadastre a regra de horario para ${folgaVariavel} antes.`,
+        )
+      }
+    }
 
     // Validação: FF e FV não podem ser o mesmo dia
     if (folgaFixa && folgaVariavel && folgaFixa === folgaVariavel) {
