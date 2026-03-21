@@ -1957,10 +1957,10 @@ def solve(data: dict) -> dict:
 
     exploratory_mode = generation_mode == "EXPLORATORY"
 
-    # ---- Pass 2: Relax product rules (keep advisory pins as warm-start hints) ----
+    # ---- Pass 2: Relax product rules (drop Phase 1 pins — let solver find better pattern) ----
     elapsed = time.time() - t_global_start
     if elapsed < HARD_TIME_CAP_SECONDS - 5:
-        log("Passo 1 impossivel — relaxando regras de produto (mantendo padrao de folgas)...")
+        log("Passo 1 impossível — relaxando regras de produto...")
 
         pass2_relaxations = ["DIAS_TRABALHO", "MIN_DIARIO"]
         if exploratory_mode:
@@ -1968,7 +1968,7 @@ def solve(data: dict) -> dict:
         result = _solve_pass(
             data, pass_num=2, relaxations=pass2_relaxations,
             max_time=remaining_time(), patience_s=patience_s,
-            num_workers=num_workers, pinned_folga=pinned_folga,  # keep advisory pins
+            num_workers=num_workers, pinned_folga=None,  # drop pins — solver finds its own pattern
         )
 
         if result and result.get("sucesso"):

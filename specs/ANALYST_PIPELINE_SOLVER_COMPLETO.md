@@ -461,11 +461,14 @@ O Phase 1 hoje INVENTA um pattern novo. O Phase 1 ideal:
 | Valida H1 (max 6 consec) | Sim (repair) | Sim (HARD constraint) |
 | Valida ciclo domingo | Sim (N/gcd(N,K)) | Sim (HARD se config) |
 | Valida cobertura | Warning | HARD min_headcount |
-| Valida bandas (manha/tarde) | NAO | Sim — UNICA coisa que faz a mais |
+| Valida bandas (manha/tarde) | NAO | Sim — unica coisa NOVA |
+| Headcount minimo | Warning (soft) | HARD constraint (INFEASIBLE se viola) |
+| DIAS_TRABALHO | Implicito no 5x2 | HARD constraint formal |
+| XOR folga variavel | Forcado direto | HARD constraint (`works[c,DOM]+works[c,var]==1`) |
 | Detecta conflito | Warning textual | INFEASIBLE + IIS (quais constraints conflitam) |
 | Sugere ajuste | Nao | SIM — diff minimo pra viabilizar |
 
-**Conclusao:** A UNICA coisa que o Phase 1 faz que o Preview NAO faz e validar bandas (manha/tarde). Todo o resto o Preview ja calcula. Se o Phase 1 VALIDASSE em vez de RECALCULAR, a congruencia seria quase total.
+**Conclusao:** Bandas (manha/tarde) sao a unica coisa NOVA que o Phase 1 faz. Mas o Phase 1 faz TODO O RESTO com MAIS RIGOR — constraints HARD formais vs repair/warning/implicito do preview. O preview detecta problemas (warnings), o Phase 1 IMPEDE problemas (INFEASIBLE). Se o Phase 1 VALIDASSE em vez de RECALCULAR, a congruencia seria quase total.
 
 ### Implicacao: Se Phase 1 e Validador
 
@@ -515,13 +518,729 @@ FALLBACK: Relaxa horarios (nao folgas)
 
 ---
 
+## Analise Profunda: Phase 1 e Advisory — O que Fazem, Com que Dados, e o que Devem Virar
+
+### Phase 1: `solve_folga_pattern` — Anatomia Completa
+
+**Arquivo:** `solver/solver_ortools.py:346-505`
+**Budget:** max 15s (15% do budget total), 8 workers
+**Modelo:** CP-SAT leve com 3 BoolVars por (c,d): `is_manha`, `is_tarde`, `is_integral`
+
+#### Input do Phase 1
+
+| Dado | Fonte | Como usa |
+|------|-------|----------|
+| `colaboradores[]` | BD via bridge | Identifica quem participa, sexo, folga_fixa, folga_variavel, tipo_trabalhador |
+| `data_inicio/data_fim` | Config | Define grid de dias (D) |
+| `demanda[]` | BD via bridge | `_compute_peak_demand_per_day` → headcount minimo. `_compute_half_demand` → manha/tarde |
+| `demanda_excecao_data[]` | BD via bridge | Override de demanda por data especifica |
+| `config.rules{}` | Policy efetiva | Status de H3_DOM_CICLO_EXATO, H3_DOM_MAX_CONSEC |
+| `empresa.hora_abertura/fechamento` | BD | Calcula slots pra half-demand (manha vs tarde) |
+| `empresa.grid_minutos` | BD | Quantizacao de slots |
+| `excecoes[]` | BD | `_compute_blocked_days` → dias bloqueados por pessoa |
+
+#### Constraints do Phase 1 (TODAS HARD)
+
+| # | Constraint | Funcao | O que faz |
+|---|-----------|--------|-----------|
+| 1 | Mutual exclusion | inline | `is_manha + is_tarde + is_integral <= 1` (nenhum = OFF) |
+| 2 | Blocked days | inline | `works_day[c,d] == 0` pra excecoes/feriados |
+| 3 | Dias de trabalho | `add_dias_trabalho` | 5 dias/semana (ou conforme contrato) |
+| 4 | Max 6 consecutivos | `add_h1_max_dias_consecutivos` | Sliding window de 7, soma <= 6 |
+| 5 | Folga fixa 5x2 | `add_folga_fixa_5x2` | Se tem folga_fixa → `works_day[c,d] == 0` naquele dia |
+| 6 | Folga variavel XOR | `add_folga_variavel_condicional` | `works[c,DOM] + works[c,var] == 1` |
+| 7 | Headcount minimo | `add_min_headcount_per_day` | `sum(works_day[*,d]) >= peak_demand[d]` |
+| 8 | Ciclo domingo | `add_domingo_ciclo_hard` | Se H3 HARD: ciclo exato por N/gcd(N,K) |
+| 9 | Max DOM consecutivos | `add_dom_max_consecutivo` | Mulher max 1, homem max 2 (policy-driven) |
+| 10 | Band demand | `add_band_demand_coverage` | Cobertura manha/tarde por dia |
+
+#### Objetivo do Phase 1
+
+```python
+model.minimize(spread * 1000 + total_integral)
+```
+
+- **Primario:** minimizar spread (max_trabalho - min_trabalho entre colaboradores) → equilibrio
+- **Secundario:** minimizar INTEGRAL (prefere MANHA/TARDE quando possivel) → diversidade
+
+#### Output do Phase 1
+
+Dicionario `{(c, d): band}` onde band = 0(OFF), 1(MANHA), 2(TARDE), 3(INTEGRAL).
+Tambem retorna: `status`, `time_ms`, `cycle_days`.
+
+#### Ponto critico: Phase 1 e um GERADOR, nao um VALIDADOR
+
+**Todos os constraints sao HARD.** Se qualquer um nao bate → INFEASIBLE. Nao existe gradiente, nao existe "quase". Ou o arranjo funciona 100% ou nao funciona nada.
+
+Isso significa que se o RH pina folga da Milena em SEG e isso causa headcount insuficiente em SEG, o Phase 1 nao diz "mover Milena pra TER resolve". Ele diz "INFEASIBLE" — e o sistema cai pro Fase B/C.
+
+---
+
+### Advisory Atual: Pipeline de 3 Fases Binarias
+
+**Arquivo:** `src/main/motor/advisory-controller.ts`
+**Budget:** 30s total (3 spawns sequenciais do Python)
+
+```
+Fase A: solver COM pins do TS → valida arranjo atual
+  |
+  | se INFEASIBLE ou Sugerir ativo
+  v
+Fase B: solver SEM pins, COM folga_fixa/variavel → propoe dentro das preferencias
+  |
+  | se INFEASIBLE
+  v
+Fase C: solver SEM pins, SEM folga/variavel → propoe mudando TUDO (destrutivo)
+```
+
+#### O que cada fase faz e com que dados
+
+| Fase | Pins | Folgas | Feriados/Excecoes | O que testa |
+|------|------|--------|-------------------|-------------|
+| **A** | `pinned_folga_externo` do TS | Da bridge (BD) | Stripados | "O arranjo atual e viavel?" |
+| **B** | Nenhum | Da bridge (BD) | Stripados | "Existe arranjo viavel dentro das folgas fixas/variaveis atuais?" |
+| **C** | Nenhum | Zeradas (null/null) | Stripados | "Existe QUALQUER arranjo viavel?" |
+
+**Peculiaridades:**
+- Feriados e excecoes sao STRIPADOS do advisory (ciclo e abstrato)
+- Fase B e Fase C rodam o MESMO `solve_folga_pattern` — so muda o input
+- O diff e extraido por `extractFolgaFromPattern` que faz top-2 weekday por frequencia
+- `convertSemanaDraftToDemanda` permite demanda custom do preview (nao so do BD)
+
+#### Problemas do modelo binario
+
+1. **Sem gradiente:** Phase 1 diz FEASIBLE ou INFEASIBLE. Nao diz "90% viavel, mude 1 coisa".
+2. **3 spawns Python:** Cada fase e um spawn separado (30s budget). Se Fase A falha e B falha, ja gastou 20s.
+3. **Salto destrutivo:** De "mantém folgas" (B) pra "muda TUDO" (C) nao tem meio-termo.
+4. **Sem hierarquia de custo:** Um pin auto-atribuido pelo preview tem o MESMO peso que um pin manualmente escolhido pelo RH. O solver nao sabe a diferenca.
+5. **Diff impreciso:** `extractFolgaFromPattern` infere folgas por frequencia — pode divergir da intencao.
+
+---
+
+### Proposta: Advisory como Otimizador Hierarquico (Single-Solve)
+
+#### A Ideia Central
+
+Em vez de 3 fases binarias (funciona/nao funciona), rodar UM UNICO solve com soft constraints hierarquicas. Cada pin tem um CUSTO de violacao proporcional a quem o definiu. O solver minimiza o custo total — o resultado e SEMPRE viavel (nunca INFEASIBLE por pins), e o diff mostra EXATAMENTE quais pins foram relaxados e por que.
+
+```
+EM VEZ DE:
+  Fase A: com pins (HARD) → INFEASIBLE → cai
+  Fase B: sem pins → resultado sem relacao com o que o RH quis
+  Fase C: sem nada → caos
+
+PROPOSTA:
+  Single solve: TODOS os pins como SOFT com pesos hierarquicos
+  → SEMPRE viavel (pins sao custos, nao constraints)
+  → Resultado = melhor arranjo possivel dado os custos
+  → Diff natural: o que mudou = o que o solver relaxou (ordenado por custo)
+```
+
+#### A Hierarquia de Custos (NAO e fixa > variavel)
+
+A hierarquia **NAO** e por tipo de folga (fixa vs variavel). E por **ORIGEM** — quem definiu o pin:
+
+| Nivel | Origem | Peso | Logica |
+|-------|--------|------|--------|
+| Nivel | Origem | Peso (ilustrativo) | Logica |
+|-------|--------|-----|--------|
+| 1 (barato) | **Auto-atribuido** pelo preview | 100 | O preview decidiu. E greedy. Mudar custa quase nada. |
+| 2 (medio) | **Sugestao aceita** pelo RH | 500 | O RH olhou a proposta e clicou "Aceitar". Tem intencao, mas nao e manual. |
+| 3 (caro) | **Manual do RH** no preview | 5000 | O RH ESCOLHEU esse dia. E a vontade dele. So muda se for impossivel. |
+| 4 (caríssimo) | **Salvo no BD** (regra do colaborador) | 10000 | E configuracao permanente. Mudar = mudar o contrato mental. |
+| 5 (fixo) | **CLT / HARD inviolavel** | ∞ (HARD) | H1, H2, H4, H5, excecoes. NUNCA relaxa. |
+
+**Folga fixa e folga variavel de um mesmo nivel tem o MESMO peso.** O que importa nao e se e "fixa" ou "variavel" — e se foi o sistema que decidiu ou o RH que escolheu.
+
+**⚠️ CALIBRACAO DE PESOS — OBRIGATORIA ANTES DE PRODUÇÃO:**
+
+Os pesos acima sao ILUSTRATIVOS. O objetivo do Phase 1 inclui `spread * 1000` (equilibrio entre colaboradores). Se o spread melhora significativamente ao violar um pin, o solver PREFERE violar o pin. Exemplo:
+
+```
+Spread melhora de 14 pra 3 (ganho = 11 * 1000 = 11000)
+Pin SAVED custa 10000
+→ Solver viola o pin SAVED (10000 < 11000 de ganho no spread)
+→ RH: "PORQUE ELE MUDOU A FOLGA DA CLEUNICE?!"
+```
+
+**Regra de calibracao:** peso_minimo_pin_MANUAL deve ser SEMPRE > max_ganho_spread_possivel. Com N=6 colaboradores e periodo de 12 semanas, spread max razoavel ~ 10-15. Ganho max ~ 15 * 1000 = 15000. Logo MANUAL precisa ser >= 50000 e SAVED >= 100000 pra garantir que o solver NUNCA troca pin humano por equilibrio.
+
+**Valores finais DEVEM ser calibrados com dados reais do Supermercado Fernandes antes de produção.** Rodar 10+ cenários reais e verificar que nenhum pin manual/saved é violado pelo ganho de spread. Os pesos da tabela acima sao ponto de partida, nao verdade final.
+
+#### Como Funciona no CP-SAT (Tecnica)
+
+Para cada pin `(c, d, band)` com origem de peso W:
+
+```python
+# Bool: "este pin foi violado?"
+pin_violated = model.new_bool_var(f"pin_viol_{c}_{d}")
+
+# Constraint condicional: se pin NAO violado, o band deve ser respeitado
+if band == 0:  # OFF
+    model.add(works_day[c, d] == 0).only_enforce_if(pin_violated.Not())
+elif band == 1:  # MANHA
+    model.add(is_manha[c, d] == 1).only_enforce_if(pin_violated.Not())
+elif band == 2:  # TARDE
+    model.add(is_tarde[c, d] == 1).only_enforce_if(pin_violated.Not())
+elif band == 3:  # INTEGRAL
+    model.add(is_integral[c, d] == 1).only_enforce_if(pin_violated.Not())
+
+# Penalidade ponderada no objetivo
+penalty_terms.append(pin_violated * W)
+```
+
+Objetivo final:
+
+```python
+model.minimize(
+    spread * 1000              # equilibrio (primario)
+    + total_integral           # diversidade de bandas (secundario)
+    + sum(penalty_terms)       # custo de violar pins (hierarquico)
+)
+```
+
+**Propriedades garantidas:**
+- Se o arranjo do RH e VIAVEL → custo de penalidade = 0, nenhum pin violado
+- Se o arranjo do RH NAO e viavel → solver viola os pins MAIS BARATOS primeiro (auto)
+- Se nao e possivel sem violar pins manuais → solver mostra QUAIS manuais precisou mudar
+- NUNCA e INFEASIBLE por pins (pins sao custos, nao constraints)
+- Constraints CLT (H1, H2, H4...) continuam HARD — nao relaxam nunca
+
+#### Bandas (manha/tarde) na Hierarquia
+
+Hoje `add_band_demand_coverage` e HARD no Phase 1. Na proposta hierarquica, bandas viram mais um nivel de custo:
+
+| Constraint | Peso | Logica |
+|-----------|------|--------|
+| Band coverage (manha/tarde) | 2000 | Preferencia de distribuicao. Importa, mas menos que pin manual do RH. |
+| Preferencia turno (`prefere_turno`) | 500 | SOFT hint do colaborador. Mesmo nivel que sugestao aceita. |
+
+Isso permite que o solver redistribua bandas pra salvar um pin manual do RH, em vez de forcar INFEASIBLE.
+
+#### O que o Diff Mostra
+
+O advisory hierarquico retorna uma lista ORDENADA por custo das mudancas que o solver fez:
+
+```
+DIFF (do mais barato ao mais caro):
+
+1. [auto, custo 100] Milena: folga variavel SEG→TER
+   → Sistema redistribuiu automaticamente. Zero impacto pro RH.
+
+2. [auto, custo 100] Rafaela: folga variavel QUI→SEX
+   → Sistema redistribuiu automaticamente.
+
+3. [band, custo 2000] Cleunice: manha→integral (QUA)
+   → Demanda de manha em QUA nao permitia split.
+
+4. (nenhum pin manual foi violado ✅)
+```
+
+Se o solver PRECISOU violar pin manual:
+
+```
+DIFF:
+
+1. [auto, custo 100] ... (redistribuicoes automaticas)
+
+⚠️ 2. [manual, custo 5000] Maria: folga fixa TER→QUA
+   → Folga em TER causa deficit de 1 pessoa.
+   → Sugestao: mover pra QUA resolve sem impacto.
+```
+
+O RH ve EXATAMENTE:
+- O que mudou
+- Quem mudou (sistema vs ele)
+- Por que mudou
+- O custo relativo (o solver preferiu mudar 50 pins automaticos a 1 pin manual)
+
+#### Eliminacao de Fases B e C do Advisory
+
+Com a abordagem hierarquica, **Fases B e C sao desnecessarias:**
+
+| Advisory Atual | Advisory Hierarquico |
+|---------------|---------------------|
+| Fase A: testa com pins (HARD). Binario. | Single solve: pins como SOFT com pesos |
+| Fase B: solta pins, mantém folgas. Novo solve. | Desnecessario — solver ja sabe quais pins soltar (os baratos) |
+| Fase C: solta TUDO. Terceiro solve. Destrutivo. | Desnecessario — solver NUNCA precisa soltar tudo (sempre existe gradiente) |
+| 3 spawns Python (30s budget) | 1 spawn Python (15-30s) |
+| Diff inferido por frequencia | Diff EXATO: quais booleans o solver ativou |
+
+#### Morte do Pass 1b no Multi-Pass do Solver
+
+Pass 1b faz DUAS coisas distintas:
+
+| Acao do Pass 1b | Tipo de relaxacao | Quem absorve |
+|-----------------|-------------------|--------------|
+| Estripar bandas (manha/tarde → integral) | Folga pattern | Advisory hierarquico (peso 2000) |
+| Relaxar DIAS_TRABALHO → SOFT | Folga pattern | Advisory hierarquico (peso 3000) |
+| Relaxar MIN_DIARIO → SOFT | Slot-level | Pass 2 simplificado |
+
+**Porque Pass 1b pode morrer:**
+
+As duas primeiras relaxacoes (bandas e DIAS_TRABALHO) sao problemas de **folga pattern** — QUAIS dias e QUAIS bandas. O advisory hierarquico resolve isso ANTES do solver completo rodar, porque trata ambos como soft constraints com pesos.
+
+O cenario classico que hoje depende do 1b:
+
+```
+Colaborador com 3 folgas fixas + DIAS_TRABALHO exige 5 dias
+→ 3 + 5 = 8 > 7 → INFEASIBLE no Phase 1 (HARD)
+→ Pass 1b relaxa DIAS_TRABALHO → SOFT → resolve com 4 dias
+```
+
+Com o advisory hierarquico:
+
+```
+Advisory recebe: 3 folgas fixas (origem: saved, peso 10000) + DIAS_TRABALHO (peso 3000)
+→ DIAS_TRABALHO e mais barato que as folgas
+→ Solver relaxa DIAS_TRABALHO (custo 3000) em vez de violar folgas (custo 30000)
+→ Resultado: "Cleunice trabalha 4 dias (nao 5) por ter 3 folgas fixas"
+→ NUNCA INFEASIBLE — sempre retorna o melhor compromisso
+```
+
+A terceira relaxacao (MIN_DIARIO) e um problema de **slot-level** — o Phase 1/advisory nao trabalha com slots de 15 minutos. Se o solver completo falha porque MIN_DIARIO + H2 + H6 conflitam, isso vai pro Pass 2 simplificado.
+
+**Multi-pass com advisory hierarquico:**
+
+```
+ANTES (4 passes):
+  Pass 1: com pins Phase 1 → FAIL
+  Pass 1b: mantém OFFs, solta bands, relaxa DIAS_TRAB + MIN_DIARIO
+  Pass 2: solta TODOS os pins, relaxa produto
+  Pass 3: emergência
+
+DEPOIS (2-3 passes):
+  Pass 1: com pins do advisory (GARANTIDOS viáveis) → FAIL (raro)
+  Pass 2: mantém pins, relaxa MIN_DIARIO + TIME_WINDOW + H10
+  Pass 3: emergência real (só se matematicamente impossível)
+```
+
+**Pass 1b morre** porque tudo que ele fazia ja foi resolvido ANTES:
+- Estripar bandas → advisory ja fez (soft com peso 2000)
+- Relaxar DIAS_TRABALHO → advisory ja fez (soft com peso 3000)
+- Relaxar MIN_DIARIO → vai pro Pass 2 (que agora MANTEM os pins intactos)
+
+**Pass 2 muda radicalmente**: nao precisa mais estripar pins. Mantem a estrutura de folgas do RH (validada pelo advisory) e so flexibiliza a distribuicao de horarios nos slots.
+
+#### Integracao com o Fluxo Linear
+
+O advisory hierarquico encaixa no fluxo linear proposto:
+
+```
+PREVIEW TS (usuario configura)
+  |
+  | feedback instantaneo (warnings TS)
+  v
+RH clica "Sugerir" (on-demand) ou "Gerar" (gate)
+  |
+  v
+ADVISORY HIERARQUICO (single solve, 5-15s)
+  - Recebe pins do preview com PESOS por origem
+  - Roda CP-SAT com soft constraints hierarquicas
+  - Output: custo total + lista de pins violados
+  |
+  ├── custo = 0 → "Tudo OK! Gerando..."
+  ├── custo <= 500 → "Redistribuicoes automaticas aplicadas. Nenhuma mudanca manual."
+  ├── custo > 500 → Drawer com diff hierarquico. RH aceita ou ajusta.
+  └── custo > 5000 → Drawer com ⚠️ "foi necessario mudar pin manual do RH."
+  |
+  v (usuario aceita ou clica "Gerar" direto)
+SOLVER COMPLETO (Pass 1 com pins validados + warm-start hints)
+  - OFFs como pins HARD (advisory garantiu)
+  - Bandas como HINTS (AddHint — solver pode redistribuir slots)
+  - Warm-start acelera convergencia (ponto de partida perto da solucao)
+  - So distribui horarios
+  |
+  v (se FAIL — raro, slot-level)
+PASS 2: Relaxa horarios (NAO folgas)
+  - Mantem folgas intactas (advisory garantiu)
+  - Relaxa MIN_DIARIO, TIME_WINDOW, H10
+  - **INFORMA O RH** do que relaxou (ver secao abaixo)
+```
+
+**Estrategia de disparo do advisory (V1):**
+
+O advisory NAO roda a cada clique no preview — spawnar Python a cada mudanca e caro (1-5s). Duas estrategias complementares:
+
+| Trigger | Quando | UX |
+|---------|--------|-----|
+| **Gate no "Gerar"** | RH clica "Gerar Escala" | Advisory roda ANTES do solver completo. Se custo=0, gera direto. Se custo>0, mostra drawer. |
+| **On-demand "Sugerir"** | RH clica "Sugerir" (botao separado) | Advisory roda e mostra drawer. RH pode aceitar/ajustar/ignorar. |
+
+O `computeAdvisoryInputHash` (ja existe) evita re-runs quando o input nao mudou. O debounce nao e necessario na V1 porque o advisory so roda on-demand (clique explicito), nao a cada mudanca.
+
+**O momento ideal pra proposta matadora e quando o RH confia no sistema pra clicar "Sugerir".** O advisory hierarquico e esse momento: ele mostra que entende a intencao do RH (pesos altos pra pins manuais) e so muda o que e barato/automatico. Confianca construida por transparencia.
+
+#### Dados Necessarios (que o TS precisa passar pro advisory)
+
+O input precisa incluir a ORIGEM de cada pin:
+
+```typescript
+interface PinWithOrigin {
+  c: number           // indice do colaborador
+  d: number           // indice do dia
+  band: number        // 0=OFF, 1=MANHA, 2=TARDE, 3=INTEGRAL
+  origin: 'auto' | 'accepted' | 'manual' | 'saved'  // quem definiu
+  weight: number      // peso derivado da origem (100, 500, 5000, 10000)
+}
+```
+
+O TS ja tem essa informacao:
+- `overrideVariavelLocal` / `overrideFixaLocal` → **manual** (RH clicou no preview)
+- `baseVariavelColaborador` / `baseFixaColaborador` → **saved** (vem do BD)
+- Sem nenhum desses flags → **auto** (preview decidiu via pickBestFolgaDay)
+- Aceitar sugestao anterior → **accepted** (tracked no store)
+
+---
+
+### Comparacao: Advisory Atual vs Hierarquico
+
+| Aspecto | Atual (3 fases binarias) | Proposta (single solve hierarquico) |
+|---------|-------------------------|-------------------------------------|
+| **Spawns Python** | 3 (sequenciais) | 1 |
+| **Budget** | 30s (10s cada) | 15-30s (unico) |
+| **Resultado** | PASS/FAIL binario | Gradiente de custo |
+| **Diff** | Inferido por frequencia | Exato por booleans |
+| **Hierarquia** | Nenhuma (pin = pin) | 5 niveis por origem |
+| **Folga fixa vs variavel** | Tratadas separadamente (B vs C) | Mesmo peso quando mesma origem |
+| **Bandas** | HARD no Phase 1 | SOFT com peso 2000 |
+| **Pins manuais** | Protegidos na Fase B, destruidos na C | Protegidos por peso 5000, so violados se necessario |
+| **INFEASIBLE** | Possivel em cada fase | Impossivel por pins (so por CLT HARD) |
+| **UX** | "Nao consegui" / "Proposta radical" | "Mudei 3 coisas automaticas, seus pins manuais estao intactos" |
+
+---
+
+## O Abismo de Informacao — Relaxacoes Silenciosas
+
+### O Problema: o Solver Fala, a UI nao Escuta
+
+O solver Python rastreia e reporta TUDO que fez:
+
+```python
+diagnostico = {
+    "pass_usado": 2,
+    "regras_relaxadas": ["DIAS_TRABALHO", "MIN_DIARIO"],
+    "generation_mode": "OFFICIAL",
+    "policy_adjustments": [...],
+    "modo_emergencia": false,
+}
+```
+
+Mas entre o solver e os olhos do RH, a informacao MORRE:
+
+```
+Solver Python:
+  "Pass 2, relaxei DIAS_TRABALHO e MIN_DIARIO"
+    ↓
+Bridge TS (solver-bridge.ts):
+  Persiste diagnostico no banco ✅
+    ↓
+SetorDetalhe.tsx (linha 1993):
+  toast.success('Rascunho gerado e enviado para o historico') ← SO ISSO
+    ↓
+EscalaPagina.tsx:
+  Nunca le diagnostico ← ZERO mencao a pass_usado ou regras_relaxadas
+    ↓
+resumo_user:
+  Fala de cobertura e violacoes. IGNORA relaxamento.
+    ↓
+RH: "Deu verde, ta otimo!" ← NAO SABE que o solver mudou regras
+```
+
+### Codigo Morto: `EscalaResultBanner.tsx`
+
+Existe um componente PRONTO que resolve isso:
+
+**Arquivo:** `src/renderer/src/componentes/EscalaResultBanner.tsx`
+
+| Pass | Cor | Mensagem |
+|------|-----|----------|
+| 1 | Verde | "Escala gerada com sucesso!" |
+| 2 | Amarelo | "Escala gerada com ajustes — N avisos" |
+| 3 | Vermelho | "Escala de EMERGENCIA — CLT minimo" |
+
+Inclui botoes de Exportar, Ver completo, Oficializar, Descartar. Tudo funcional.
+
+**Mas nunca foi importado. Zero usos no app inteiro.** O componente existe desde a criacao mas ninguem plugou.
+
+### Unica Saida Atual: Chat IA
+
+O system prompt da IA diz pra interpretar `pass_usado != 1` e avisar em linguagem humana. Mas se o RH gera pela UI sem abrir o chat → silencio total. A IA e o unico caminho pra essa informacao chegar no usuario, e e um caminho OPCIONAL.
+
+### Como o Advisory Hierarquico + Drawer Resolvem Isso
+
+O abismo se divide em dois momentos:
+
+#### Momento 1: PRE-GERACAO (advisory/drawer)
+
+O advisory hierarquico JA resolve ANTES de gerar:
+
+```
+Advisory detecta: "DIAS_TRABALHO precisa relaxar pra Cleunice (3 folgas fixas)"
+  ↓
+Drawer mostra:
+  ⚠️ Cleunice trabalha 4 dias (nao 5) por ter 3 folgas fixas
+  [custo 3000 — relaxacao de regra de produto]
+  ↓
+RH VE a decisao ANTES de clicar Gerar
+```
+
+Com o advisory hierarquico, a maioria das relaxacoes que hoje sao silenciosas (Pass 1b/2) viram itens VISIVEIS no drawer ANTES da geracao. O RH aceita ou ajusta.
+
+**Relaxacoes que o advisory absorve (pre-geracao):**
+
+| Relaxacao | Antes (silenciosa) | Depois (drawer) |
+|-----------|-------------------|-----------------|
+| Estripar bandas | Pass 1b (silencioso) | "Cleunice mudou de manha pra integral em QUA" |
+| DIAS_TRABALHO | Pass 1b/2 (silencioso) | "Cleunice trabalha 4 dias (3 folgas fixas)" |
+| Folga fixa/variavel | Pass 2/3 (silencioso) | "Mover folga de Milena de SEG→TER" |
+| Pin auto redistribuido | Nunca informado | "Sistema moveu 3 folgas automaticas" |
+
+#### Momento 2: POS-GERACAO (banner + resumo_user + "ver tudo")
+
+Relaxacoes de SLOT-LEVEL (MIN_DIARIO, H2, H6, H10, TIME_WINDOW) so sao detectadas pelo solver completo — o advisory nao trabalha com slots de 15 minutos. Quando o Pass 2 simplificado relaxa algo, o RH PRECISA saber.
+
+**Duas saidas complementares — AMBAS obrigatorias:**
+
+**Saida A: Banner visual (`EscalaResultBanner.tsx` — codigo morto, so plugar):**
+
+| Pass | Cor | Mensagem | Conteudo expandivel |
+|------|-----|----------|---------------------|
+| 1 | Verde | "Escala gerada com sucesso!" | Nada — tudo seguiu o planejado |
+| 2 | Amarelo | "Escala gerada com ajustes em horarios" | Lista: "MIN_DIARIO relaxado: Joao faz 6h em vez de 8h (TER)" |
+| 3 | Vermelho | "Escala de EMERGENCIA — CLT minimo" | Lista completa de tudo relaxado + sugestao de acao |
+
+**Saida B: `resumo_user` expandido (texto que a IA e a aba Resumo consomem):**
+
+Hoje `resumo-user.ts` gera 3 textos: cobertura, violacoes hard, violacoes soft.
+**FALTA** um quarto texto: relaxacoes aplicadas pelo solver. Sem isso, mesmo o "Ver Tudo" da escala e o Chat IA ficam cegos sobre o que o solver afrouxou.
+
+Nova funcao necessaria em `src/shared/resumo-user.ts`:
+
+```typescript
+/**
+ * Texto para relaxacoes aplicadas pelo solver (pass > 1).
+ * Consome diagnostico.pass_usado e diagnostico.regras_relaxadas.
+ */
+export function textoResumoRelaxacoes(
+  pass_usado: number | string,
+  regras_relaxadas: string[],
+  generation_mode?: string,
+): string | null {
+  if (pass_usado === 1 && regras_relaxadas.length === 0) return null  // tudo OK
+
+  const NOMES_HUMANOS: Record<string, string> = {
+    DIAS_TRABALHO: 'dias de trabalho por semana',
+    MIN_DIARIO: 'jornada mínima diária',
+    TIME_WINDOW: 'janela de horário',
+    FOLGA_FIXA: 'folga fixa semanal',
+    FOLGA_VARIAVEL: 'folga variável (XOR domingo)',
+    H6: 'intervalo de almoço',
+    H10: 'meta de horas semanais',
+    H1: 'máximo 6 dias consecutivos',
+  }
+
+  const nomes = regras_relaxadas
+    .map(r => NOMES_HUMANOS[r] ?? r)
+    .join(', ')
+
+  if (pass_usado === 3 || generation_mode === 'EXPLORATORY') {
+    return `Escala de emergência — foram flexibilizados: ${nomes}. Revise com cuidado.`
+  }
+  return `Escala gerada com ajustes: ${nomes} foram flexibilizados para viabilizar a geração.`
+}
+```
+
+**Onde consumir:**
+
+| Local | O que faz | Impacto |
+|-------|----------|---------|
+| `tools.ts` → `gerar_escala` | Adicionar `relaxacoes` ao objeto `resumo_user` | IA Chat explica pro RH o que foi afrouxado |
+| `diagnosticar_escala` tool | Idem — `resumo_user` inclui relaxacao se `pass_usado > 1` | RH pergunta "como ta minha escala?" e recebe resposta completa |
+| `EscalaPagina.tsx` aba Resumo | Renderizar `textoResumoRelaxacoes` junto com cobertura/violacoes | "Ver Tudo" mostra a informacao que hoje some |
+| `EscalaResultBanner.tsx` | Usar `textoResumoRelaxacoes` como conteudo expandivel | Banner + texto alinhados |
+
+**Dados necessarios (ja existem no diagnostico — zero infra nova):**
+
+```typescript
+// diagnostico.pass_usado — qual pass resolveu
+// diagnostico.regras_relaxadas — quais regras foram afrouxadas
+// diagnostico.capacidade_vs_demanda — ratio de cobertura
+// diagnostico.generation_mode — OFFICIAL ou EXPLORATORY
+```
+
+**QUICK WIN:** Banner + `resumo_user` expandido podem ser implementados AGORA, independente do advisory hierarquico. O dado ja flui do Python ate o renderer — so falta traduzir pra linguagem humana e renderizar. Isso mata o silencio pos-geracao hoje, sem esperar a refatoracao do pipeline.
+
+#### Mapa Completo: O que o RH Ve em Cada Momento
+
+```
+ANTES DE GERAR (advisory + drawer):
+  ┌─────────────────────────────────────────────────┐
+  │ DRAWER DE SUGESTAO                              │
+  │                                                 │
+  │ ✅ Pins automaticos redistribuidos (custo 100)  │
+  │    Milena: FV SEG→TER                           │
+  │    Rafaela: FV QUI→SEX                          │
+  │                                                 │
+  │ ⚠️ Regra relaxada (custo 3000)                  │
+  │    Cleunice: trabalha 4 dias (3 folgas fixas)   │
+  │                                                 │
+  │ ⚠️ Banda ajustada (custo 2000)                  │
+  │    Cleunice: manha→integral (QUA)               │
+  │                                                 │
+  │ ✅ Pins manuais preservados                     │
+  │                                                 │
+  │ [Aceitar e Gerar]  [Ajustar Manualmente]        │
+  └─────────────────────────────────────────────────┘
+
+DEPOIS DE GERAR (banner + resumo_user + "ver tudo"):
+  ┌─────────────────────────────────────────────────┐
+  │ 🟡 Escala gerada com ajustes em horarios        │  ← EscalaResultBanner.tsx (plugar)
+  │ Pass 2 — relaxou MIN_DIARIO                     │
+  │                                                 │
+  │ ▸ Detalhes:                                     │
+  │   Joao: jornada minima reduzida (6h em vez de   │
+  │   8h na TER) por conflito com interjornada 11h  │
+  │                                                 │
+  │ [Ver completo] [Exportar] [Oficializar]         │
+  └─────────────────────────────────────────────────┘
+
+  Aba Resumo ("Ver Tudo"):
+  ┌─────────────────────────────────────────────────┐
+  │ Cobertura dos horarios: 82%                     │  ← textoResumoCobertura (ja existe)
+  │ Nenhum problema que impeca oficializar.         │  ← textoResumoViolacoesHard (ja existe)
+  │ 2 avisos (preferencias ou metas).               │  ← textoResumoViolacoesSoft (ja existe)
+  │ Escala gerada com ajustes: dias de trabalho e   │  ← textoResumoRelaxacoes (NOVO)
+  │ jornada minima foram flexibilizados.            │
+  └─────────────────────────────────────────────────┘
+
+  Chat IA (resumo_user.relaxacoes):
+  ┌─────────────────────────────────────────────────┐
+  │ "A escala foi gerada, mas precisei flexibilizar │
+  │  dias de trabalho e jornada minima pra viabili- │
+  │  zar. Isso aconteceu porque..."                 │
+  └─────────────────────────────────────────────────┘
+```
+
+**Resultado:** ZERO relaxacao silenciosa. O RH sabe o que mudou ANTES de gerar (drawer) e DEPOIS de gerar (banner). As duas camadas se complementam — o advisory cuida do pattern de folgas, o banner cuida dos slots de horarios.
+
+### Avisos Existentes que se Integram
+
+As 19 mensagens de aviso mapeadas anteriormente (W1-W3, D1-D10, A1-A6) continuam relevantes no preview. Com o advisory hierarquico, a relacao muda:
+
+| Aviso atual | O que acontece com advisory hierarquico |
+|-------------|----------------------------------------|
+| W1-W3 (FF/FV_CONFLITO) | Absorvido pelo diff do advisory (mais preciso que warning textual) |
+| D1-D3 (CAPACITY_*) | Continuam como BLOCKERS — advisory nao resolve falta de gente |
+| D4 (DOM_TT_INEVITAVEL) | Continua como INFORMATIVO — advisory confirma com dados reais |
+| D5 (PREVIEW_ESTRITO_BLOQUEADO) | Morre — advisory hierarquico NUNCA e INFEASIBLE por pins |
+| D6-D8 (FOLGA_*_CONFLITO convertidos) | Absorvidos pelo diff do advisory |
+| D9 (ADVISORY_*) | Substituidos pelo diff hierarquico com custos |
+| D10 (CAPACITY_SEGMENTO) | Continua — e informacao de demanda, nao de folga |
+| A2 (sem titular) | Continua — informacao estrutural |
+| A3 (intermitentes fora) | Continua (hoje zerado, pode morrer) |
+
+**Avisos NOVOS que o advisory hierarquico gera (nao existem hoje):**
+
+| Aviso novo | Trigger | Nivel |
+|-----------|---------|-------|
+| "Redistribuicoes automaticas aplicadas" | custo total <= 500 (so autos) | info |
+| "Regra de produto relaxada: DIAS_TRABALHO" | DIAS_TRABALHO violado no solve | warning |
+| "Pin manual alterado: {nome} {dia}" | custo > 5000 (pin manual violado) | warning |
+| "Banda ajustada: {nome} manha→integral" | band pin violado | info |
+
+**Avisos NOVOS pos-geracao (banner expandido):**
+
+| Aviso novo | Trigger | Nivel |
+|-----------|---------|-------|
+| "Horario minimo reduzido" | Pass 2 relaxou MIN_DIARIO | warning |
+| "Janela de horario expandida" | Pass 2 relaxou TIME_WINDOW | warning |
+| "Meta semanal ajustada" | Pass 2 relaxou H10 | warning |
+| "Escala de emergencia" | Pass 3 usado | error |
+
+---
+
 ## Disclaimer Critico
 
-Esta analise mapeia o estado ATUAL do sistema e propoe uma direcao.
-A implementacao do fluxo linear requer mudancas significativas:
-- Phase 1 precisa aceitar pins como INPUT (hoje GERA pins)
-- Multi-pass precisa ser reestruturado (2 passes em vez de 4)
-- IIS (Irreducible Infeasible Subsystem) do OR-Tools pra identificar quais pins conflitam
-- UI precisa de tela de diff/aprovacao entre Phase 1 e solver
+Esta analise mapeia o estado ATUAL do sistema e propoe quatro pecas complementares:
 
-Estimativa: trabalho de 2-3 sessoes focadas.
+**1. Transparencia IMEDIATA (quick win — INDEPENDENTE do advisory):** Dois artefatos que matam o silencio pos-geracao HOJE: (a) `textoResumoRelaxacoes` em `resumo-user.ts` traduz `diagnostico.pass_usado` + `regras_relaxadas` pra linguagem humana, consumido pelo Chat IA, aba Resumo e banner; (b) plugar `EscalaResultBanner.tsx` (codigo morto existente) no pos-geracao. Zero dependencia do advisory hierarquico — o dado ja flui do Python ate o renderer, so falta traduzir e renderizar.
+
+**2. Advisory Hierarquico (single solve com pesos):** Refatorar `solve_folga_pattern` pra aceitar soft constraints com pesos por pin. Elimina Fases B/C do advisory E o Pass 1b do multi-pass. Drawer mostra diff hierarquico PRE-geracao. Este e o mecanismo que garante que o RH sabe o que vai ser afrouxado ANTES de gerar — o Phase 1 vira validador, nao gerador.
+
+**3. Fluxo Linear (Phase 1 como gate):** Phase 1 aceita pins como INPUT validado pelo advisory. Multi-pass simplifica de 4 pra 2-3 passes (Pass 1 com pins garantidos + Pass 2 pra relaxar slot-level + Pass 3 emergencia).
+
+**4. Circuito completo de feedback:** Os dois momentos se complementam — advisory/drawer cuida de PATTERN-LEVEL (folgas, bandas, DIAS_TRABALHO) antes de gerar; banner + `resumo_user` cuidam de SLOT-LEVEL (MIN_DIARIO, TIME_WINDOW, H10) depois de gerar. ZERO relaxacao silenciosa em qualquer etapa.
+
+### Plano Incremental
+
+#### Fase 0: Quick Win — Transparencia Pos-Geracao (AGORA, sem advisory)
+
+| Passo | O que faz | Arquivo | Impacto |
+|-------|----------|---------|---------|
+| 0a | Criar `textoResumoRelaxacoes()` em `resumo-user.ts` | `src/shared/resumo-user.ts` | Funcao pura que traduz `pass_usado` + `regras_relaxadas` → texto humano |
+| 0b | Adicionar campo `relaxacoes` ao objeto `resumo_user` em `gerar_escala` e `diagnosticar_escala` | `src/main/ia/tools.ts` | Chat IA passa a informar o RH sobre relaxacoes (hoje ignora) |
+| 0c | Plugar `EscalaResultBanner.tsx` no `EscalaPagina.tsx` | `src/renderer/src/paginas/EscalaPagina.tsx` | Banner verde/amarelo/vermelho visivel ao abrir escala |
+| 0d | Renderizar `textoResumoRelaxacoes` na aba Resumo ("Ver Tudo") | `EscalaPagina.tsx` ou componente de resumo | RH ve o que foi afrouxado mesmo sem abrir o chat |
+
+**Esforco:** ~20 linhas em `resumo-user.ts`, ~5 linhas em `tools.ts`, 1 import + render condicional no renderer.
+**Dependencia do advisory:** NENHUMA. Pode ser feito hoje.
+
+#### Fase 1: Advisory Hierarquico (Transparencia Pre-Geracao)
+
+| Passo | O que faz | Arquivos impactados | Impacto |
+|-------|----------|---------------------|---------|
+| 1a | Definir `PinWithOrigin` interface (type contract) | `shared/types.ts` | Contrato de tipos que todos os pontos de passagem vao usar |
+| 1b | Propagar `origin` e `weight` em TODOS os pontos de passagem | `simula-ciclo.ts` (gerar origin dos overrides), `advisory-types.ts` (EscalaAdvisoryInput), `solver-bridge.ts:buildSolverInput` (repassar pro JSON), `solver_ortools.py:solve_folga_pattern` (ler origin/weight do JSON) | Dado flui end-to-end com a informacao de quem definiu cada pin |
+| 2 | Converter constraints de pin de HARD pra SOFT ponderado no Phase 1 | `solver_ortools.py:solve_folga_pattern` | Advisory hierarquico funcional (single solve, nunca INFEASIBLE por pins) |
+| 3 | DIAS_TRABALHO como SOFT com peso no Phase 1 | `solver_ortools.py:add_dias_trabalho` | Pass 1b pode morrer |
+| 4 | Refatorar `advisory-controller.ts` pra single solve com diff exato dos booleans | `advisory-controller.ts` | Elimina Fases B/C, 1 spawn em vez de 3 |
+| 5 | Drawer mostrando diff hierarquico (custo por item, origem por pin) | `SetorDetalhe.tsx`, `SugestaoSheet.tsx` | RH ve o que mudou ANTES de gerar |
+
+**IMPORTANTE sobre o passo 4:** O diff do advisory hierarquico vem DIRETAMENTE dos `pin_violated` booleans retornados pelo solver — NAO da inferencia por frequencia do `extractFolgaFromPattern` atual. Cada `pin_violated[c,d]` que o solver setou como `True` e uma mudanca explicita e rastreavel. O `extractFolgaFromPattern` (que infere folga por top-2 weekday frequency) deve ser REMOVIDO ou relegado a fallback. O diff exato e uma propriedade NATIVA do modelo hierarquico — nao e inferencia, e observacao.
+
+#### Fase 2: Pipeline Limpo
+
+| Passo | O que faz | Impacto |
+|-------|----------|---------|
+| 6 | Simplificar multi-pass (remover Pass 1b, Pass 2 mantem pins) | Pipeline limpo, previsivel |
+| 7 | Warm-start: advisory pattern como HINT pro solver completo | Acelera solver completo significativamente |
+| 8 | Banner pos-geracao consome tambem info do advisory (o que foi aceito vs o que mudou em slot) | Circuito completo: pre + pos sem gaps |
+
+**Sobre warm-start (passo 7):** O `build_model` ja tem `apply_warm_start_hints`. Se o advisory produz um pattern validado:
+- **OFFs** do advisory → pins HARD no solver completo (o advisory GARANTIU que funcionam)
+- **Bandas** (MANHA/TARDE/INTEGRAL) do advisory → `model.AddHint()` (orientacao suave, solver pode redistribuir slots se necessario)
+- **Diferenca pratica:** pin = `model.Add(work[c,d,s] == 0)` (HARD, inflexivel). Hint = `model.AddHint(work[c,d,s], 0)` (orientacao, solver pode ignorar se achar melhor)
+- **Resultado:** solver completo comeca PERTO da solucao certa em vez de buscar do zero. Convergencia mais rapida, resultado melhor.
+
+### Pre-requisitos (ja existem)
+
+- `CicloGridRow` ja tem `overrideVariavelLocal`, `overrideFixaLocal`, `baseVariavelColaborador`, `baseFixaColaborador` — a informacao de origem JA EXISTE no TS
+- `only_enforce_if` do OR-Tools CP-SAT e nativo — nao precisa de hack
+- `EscalaResultBanner.tsx` ja existe com tiers verde/amarelo/vermelho — so precisa plugar
+- `diagnostico.pass_usado` e `diagnostico.regras_relaxadas` ja sao retornados pelo solver — o dado ja flui ate o renderer, so ninguem mostra
+- `resumo-user.ts` ja tem 3 funcoes de texto (cobertura, hard, soft) — a 4a (relaxacoes) segue o mesmo padrao
+- Budget de 15-30s e compativel com UX de "Sugerir" (nao bloqueia)
+
+### Sequencia de impacto
+
+```
+Fase 0 (quick win, HOJE):
+  RH gera escala → banner amarelo "Escala gerada com ajustes"
+  RH abre "Ver Tudo" → ve "dias de trabalho e jornada minima foram flexibilizados"
+  IA Chat → "A escala precisou flexibilizar dias de trabalho e jornada minima"
+  → Elimina o cenario "deu verde, ta otimo!" quando o solver afrouxou regras
+
+Fase 1 (advisory hierarquico):
+  RH configura folgas → advisory mostra "vou precisar mudar X, aceita?"
+  RH aceita → gera com CONFIANCA
+  → Elimina o cenario "o solver mudou tudo sem avisar"
+
+Fase 2 (pipeline limpo):
+  Menos passes, menos surpresas, mais previsibilidade
+  → Elimina complexidade acidental do multi-pass
+```
+
+Estimativa: Fase 0 = 1 sessao. Fase 1 = 2-3 sessoes. Fase 2 = 1 sessao.
+
+**Calibracao de pesos:** entre Fase 1 e Fase 2. Rodar 10+ cenarios reais com os pesos ilustrativos, verificar que nenhum pin manual/saved e violado pelo ganho de spread, ajustar multiplicadores. Ver nota na secao "Hierarquia de Custos".

@@ -47,7 +47,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-destructive flex items-center gap-2">
             <XCircle className="size-4" />
-            Violacoes Criticas (HARD)
+            Problemas Críticos
           </h3>
           {comHard.map((grupo) => (
             <Card
@@ -101,7 +101,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-warning flex items-center gap-2">
             <AlertTriangle className="size-4" />
-            Alertas (SOFT)
+            Alertas
           </h3>
           {comSoft.map((grupo) => (
             <Card

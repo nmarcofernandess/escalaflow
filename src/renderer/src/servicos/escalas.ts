@@ -22,6 +22,7 @@ export const escalasService = {
       maxTimeSeconds?: number
       rulesOverride?: RuleConfig
       pinnedFolgaExterno?: Array<{ c: number; d: number; band: number }>
+      advisoryAceitoJson?: string
     },
   ) =>
     client['escalas.gerar']({
@@ -33,6 +34,7 @@ export const escalasService = {
       max_time_seconds: data.maxTimeSeconds,
       rules_override: data.rulesOverride,
       pinned_folga_externo: data.pinnedFolgaExterno,
+      advisory_aceito_json: data.advisoryAceitoJson,
     }) as Promise<EscalaCompletaV3>,
 
   preflight: (

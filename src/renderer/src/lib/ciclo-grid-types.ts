@@ -25,6 +25,8 @@ export interface CicloGridData {
 }
 
 export interface CicloGridCoverageActions {
+  onSuggest?: () => void
+  suggestLoading?: boolean
   onResetAutomatico?: () => void
   onRestaurarColaboradores?: () => void
 }

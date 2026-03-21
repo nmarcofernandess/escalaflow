@@ -19,8 +19,8 @@ function categorizarRegras(regrasAtivas: string[], regrasOff: string[]): Categor
 
   const categorias: Record<string, { label: string; ativas: number; total: number }> = {
     CLT: { label: 'CLT', ativas: 0, total: 0 },
-    SOFT: { label: 'SOFT', ativas: 0, total: 0 },
-    AP: { label: 'AP', ativas: 0, total: 0 },
+    SOFT: { label: 'Otimização', ativas: 0, total: 0 },
+    AP: { label: 'Boas Práticas', ativas: 0, total: 0 },
   }
 
   for (const regra of todas) {

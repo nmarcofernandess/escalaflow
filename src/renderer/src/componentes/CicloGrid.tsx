@@ -1,4 +1,4 @@
-import { RotateCcw } from 'lucide-react'
+import { Lightbulb, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -487,7 +487,7 @@ export function CicloGrid({
             >
               COBERTURA
             </td>
-            {/* Empty Var cell */}
+            {/* Var cell — Sugerir button */}
             <td
               className={cn(
                 'px-1 py-2 border-t-2 border-border',
@@ -497,6 +497,23 @@ export function CicloGrid({
                 ? { width: folgaW }
                 : { left: varLeft, width: folgaW, minWidth: folgaW }}
             >
+              {showCoverageReset && coverageActions?.onSuggest && (
+                <div className="flex justify-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    title="Sugerir arranjo"
+                    onClick={coverageActions.onSuggest}
+                    disabled={coverageActions.suggestLoading}
+                  >
+                    {coverageActions.suggestLoading
+                      ? <Loader2 className="size-4 animate-spin" />
+                      : <Lightbulb className="size-4" />
+                    }
+                  </Button>
+                </div>
+              )}
             </td>
             {/* Empty Fixo cell */}
             <td

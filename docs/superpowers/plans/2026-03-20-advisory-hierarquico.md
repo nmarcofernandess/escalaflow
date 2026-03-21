@@ -31,6 +31,16 @@
 - `diagnosticar_escala` já lê `diagnostico_json` da tabela `escalas`. Plan B precisa persistir `advisory_aceito_json` separadamente (já planejado na Task 10).
 - **NÃO existe componente `EscalaResultBanner`.** O banner é inline em `EscalaPagina.tsx` (~20 linhas). Se precisar criar componente, criar novo com props simples.
 
+**Mudanças do Coverage Stabilization (commit 1067b54) que afetam Tasks 11+:**
+- **`_solve_pass` mudou de assinatura:** `gap_limit` → `patience_s`. Chamadas usam `patience_s=patience_s` (vem de `DEFAULT_PATIENCE_S = 30`).
+- **`_run_with_continuation` REMOVIDO.** Cada pass é chamado com `_solve_pass(data, pass_num=N, ..., max_time=remaining_time(), patience_s=patience_s, ...)` direto.
+- **`MODE_PROFILES` REMOVIDO.** Substituído por `DEFAULT_PATIENCE_S = 30`. O campo `solve_mode` no JSON é IGNORADO pelo Python.
+- **Pass 3 OFFICIAL agora inclui `H10_ELASTIC`** nas relaxações (fix para 3 meses).
+- **Sunday headcount minimum** relaxa junto com FOLGA_FIXA/FOLGA_VARIAVEL (guard `_skip_sunday_headcount`).
+- **`add_dias_trabalho`** (constraints.py) agora aceita `days` param e desconta folga_fixa de available — fix para semanas parciais.
+- **SolverConfigDrawer:** seção "Estratégia" (radio buttons de modo) foi removida. `SolverSessionConfig.solveMode` é literal `'rapido'`.
+- **Resultado inclui `diagnostico.stabilization`** com métricas: `first_solution_s`, `stabilized_s`, `solutions_found`, `final_coverage`, `patience_s`, `coverage_improvements`.
+
 ---
 
 ## File Structure
@@ -910,9 +920,18 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 1. `pickBestFolgaDay` distribui folgas (já faz)
 2. **NOVO:** Após distribuir, checar se algum dia auto-atribuído causa déficit
 3. **NOVO:** Se causa, redistribuir APENAS os auto-atribuídos (weight=100), nunca os manuais/salvos
-4. **NOVO:** Se redistribuição resolve, aplicar SILENCIOSAMENTE (sem drawer, sem botão)
+4. **NOVO:** Se redistribuição resolve, aplicar automaticamente COM FEEDBACK VISUAL (ver abaixo)
 5. Se redistribuição NÃO resolve (déficit causado por pin manual/salvo), gerar WARNING hierárquico
 6. Drawer SÓ abre via CP-SAT advisory (botão "Sugerir" ou gate no "Gerar")
+
+**⚠️ UX CRÍTICA — Redistribuição NUNCA é silenciosa:**
+
+O sistema NÃO pode mover folgas sem que o RH SAIBA. Folgas "dançando sozinhas" = "tá bugado". Feedback obrigatório:
+
+1. **No grid:** Folgas auto-redistribuídas devem ter indicador visual sutil — ícone de seta (↻) ou cor levemente diferente da folga manual
+2. **Tooltip na célula:** "O sistema moveu esta folga de SEG para QUA para melhorar a cobertura"
+3. **Info banner compacto no topo do preview** (quando houve redistribuição): "O sistema ajustou {N} folga(s) automática(s) para otimizar cobertura" — tom neutro, sem alarme
+4. O banner NÃO é um blocker, NÃO abre drawer, NÃO pede ação — é informativo. O RH vê e segue a vida.
 
 **O que muda no `gerarCicloFase1`:**
 
@@ -988,27 +1007,34 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 
 | Origin do pin | Mensagem | Tom |
 |---------------|----------|-----|
-| `auto` (peso 100) | SILENCIOSA — o sistema redistribuiu sem informar | Nenhum aviso pro RH |
-| `manual` (RH escolheu) | "Folga de {nome} em {dia} causa déficit de {X} pessoa(s)" | Informativo — o RH sabe que escolheu |
-| `saved` (BD) | "Folga de {nome} em {dia} (regra fixa) causa déficit de {X}" | Estrutural — precisa editar regra |
+| `auto` (peso 100) | Feedback visual sutil no grid (ícone ↻ + tooltip). SEM warning textual — sistema já redistribuiu (Task 6) | Visual discreto |
+| `manual` (RH escolheu) | "Folga de {nome} em {dia} (sua escolha): sobram {X} pessoa(s), demanda é {Y}. O sistema vai respeitar." | Informativo com números |
+| `saved` (BD) | "Folga de {nome} em {dia} está definida no cadastro. Sobram {X}, demanda é {Y}. [Editar cadastro]" | Estrutural com link direto |
 
-**Princípio:** A mensagem NUNCA diz "mude o que você acabou de fazer". Se o déficit é causado por pin auto, o sistema já redistribuiu (Task 6). Se é causado por pin manual, INFORMA mas não manda mudar. Se é causado por pin salvo, informa que é limitação estrutural.
+**Princípio:** A mensagem NUNCA diz "mude o que você acabou de fazer". Se o déficit é causado por pin auto, o sistema já redistribuiu (Task 6) e mostra feedback visual discreto. Se é causado por pin manual, INFORMA com dados numéricos mas não manda mudar. Se é causado por pin salvo, informa E dá link direto pra editar o cadastro.
+
+**⚠️ UX REGRAS DE LINGUAGEM (OBRIGATÓRIAS):**
+- NUNCA usar: "restrição", "constraint", "motor", "solver", "pin", "origin", "weight", "relaxação", "viabilizar"
+- SEMPRE usar: "sistema", "escala", "folga", "cadastro", "escolha"
+- Manter DETALHE NUMÉRICO: "sobram X, demanda é Y" — o RH precisa do número pra decidir
+- Mensagens saved DEVEM ter link/botão direto pra editar (não só texto "edite a regra")
 
 - [ ] **Step 1: Update warning generation in preview-diagnostics.ts**
 
 Localizar onde `FF_CONFLITO` e `FV_CONFLITO` são gerados. Adicionar campo `origin` ao diagnóstico e condicionar a mensagem:
 
 ```typescript
-// Quando origin é 'auto': NÃO gerar diagnóstico (sistema já redistribuiu)
-if (folgaOrigin === 'auto') continue // silencioso
+// Quando origin é 'auto': NÃO gerar diagnóstico textual
+// (o feedback visual já foi aplicado no grid pela Task 6 — ícone ↻ + tooltip)
+if (folgaOrigin === 'auto') continue
 
 // Quando origin é 'manual':
 diagnostics.push({
   code: 'FOLGA_MANUAL_DEFICIT',
   severity: 'warning',
   gate: 'ALLOW',
-  title: `Folga de ${nome} em ${NOMES_DIA[dia]} causa déficit de ${deficit} pessoa(s)`,
-  detail: 'Você escolheu esta folga manualmente. O motor vai trabalhar com essa restrição.',
+  title: `Folga de ${nome} em ${NOMES_DIA[dia]} (sua escolha): sobram ${sobra}, demanda é ${demanda}`,
+  detail: 'O sistema vai respeitar essa escolha ao gerar a escala.',
 })
 
 // Quando origin é 'saved':
@@ -1016,10 +1042,14 @@ diagnostics.push({
   code: 'FOLGA_SALVA_DEFICIT',
   severity: 'info',
   gate: 'ALLOW',
-  title: `Folga de ${nome} em ${NOMES_DIA[dia]} (regra salva) causa déficit de ${deficit}`,
-  detail: 'Esta folga vem da regra do colaborador. Para mudar, edite a regra.',
+  title: `Folga de ${nome} em ${NOMES_DIA[dia]} (cadastro): sobram ${sobra}, demanda é ${demanda}`,
+  detail: 'Esta folga está definida no cadastro do colaborador.',
+  // NOVO: metadata pra UI renderizar link direto
+  action: { type: 'navigate', target: 'colaborador', id: colaboradorId },
 })
 ```
+
+**Nota sobre link direto:** O `action` é metadata — o renderer decide como usar. Pode ser link pra página do colaborador, ou botão inline "Editar cadastro". O diagnostic NÃO renderiza o link sozinho.
 
 - [ ] **Step 2: Update capacity messages**
 
@@ -1048,7 +1078,7 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 8: SugestaoSheet exclusivo CP-SAT + cleanup TS
+### Task 8: SugestaoSheet exclusivo CP-SAT + gate inteligente + escape hatch
 
 **Files:**
 - Modify: `src/renderer/src/componentes/SugestaoSheet.tsx`
@@ -1056,24 +1086,65 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 
 **O drawer agora é EXCLUSIVO do CP-SAT advisory.** Os status TS (`TS_REDISTRIBUIU`, `TS_NAO_RESOLVEU`, `TS_FALHOU`) morrem.
 
+**⚠️ REGRAS UX INVIOLÁVEIS (DoD — Definition of Done):**
+
+1. **ZERO termos técnicos na UI:** "pin", "origin", "weight", "custo N", "band", "constraint", "violation" NUNCA aparecem. GREP no código pra garantir.
+2. **Gate inteligente (3 níveis):**
+   - `pin_cost === 0` → gera direto (sem interrupção)
+   - `pin_cost > 0 mas só auto` → gera direto + toast "O sistema ajustou {N} folga(s) para otimizar" (NÃO abre drawer)
+   - `pin_cost > 0 com manual/saved violado` → AÍ SIM abre drawer (sistema quer mexer no que o RH escolheu)
+3. **Escape hatch obrigatório:** Drawer DEVE ter botão "Gerar mesmo assim" (secundário/ghost). Sem ele = loop infinito (RH fecha drawer → clica Gerar → drawer abre de novo).
+4. **Loading state no botão:** "Gerar Escala" → "Analisando..." (imediato, durante advisory) → "Gerando..." (durante solver). O RH nunca vê 5s de nada acontecendo.
+5. **Drawer humanizado:** Agrupar por PESSOA, não por "origin". Texto: "{nome}: folga {dia_atual} → {dia_proposto}". Sem "custo total" no rodapé.
+6. **Cache do advisory:** Usar `computeAdvisoryInputHash` (já existe) pra não respawnar Python se o input não mudou. Gate instantâneo quando cacheado.
+
 - [ ] **Step 1: Remove TS status codes from SugestaoSheet**
 
 Remover tratamento de `TS_REDISTRIBUIU`, `TS_NAO_RESOLVEU`, `TS_FALHOU`. O drawer só mostra:
-- `CURRENT_VALID`: "Arranjo atual OK" (com pin_cost=0)
-- `PROPOSAL_VALID`: diff hierárquico com custos (Task 6 do plano anterior está aqui)
-- `NO_PROPOSAL`: "Sem sugestão viável"
+- `CURRENT_VALID`: "Suas folgas estão OK!" (com pin_cost=0)
+- `PROPOSAL_VALID`: lista de mudanças por pessoa
+- `NO_PROPOSAL`: "Não foi possível encontrar um arranjo viável com a equipe atual"
 
-- [ ] **Step 2: Add hierarchical diff display**
+- [ ] **Step 2: Redesign drawer content — humanizado, por pessoa**
 
-Quando `advisory.pin_violations` está presente, mostrar diff hierárquico:
-1. Agrupar violations por origin (auto → manual → saved)
-2. Mostrar custo de cada mudança
-3. Destacar com ícone/cor se pin manual foi violado
-4. "Custo total: X" no rodapé
-5. Seção auto: texto "Sistema redistribuiu automaticamente" (info, colapsável)
-6. Seção manual: texto "Estas mudanças afetam suas escolhas" (warning, expandido)
+O drawer mostra mudanças AGRUPADAS POR PESSOA, sem termos técnicos:
 
-- [ ] **Step 3: Rewire botão "Sugerir" → CP-SAT advisory**
+```
+┌─────────────────────────────────────────────────────────┐
+│ Sugestão de ajuste                                      │
+│                                                         │
+│ Para que a escala funcione, o sistema sugere:            │
+│                                                         │
+│ 📋 Ajustes automáticos (sistema decidiu)                │  ← colapsável, starts collapsed
+│    Milena: folga segunda → terça                        │
+│    Rafaela: folga quinta → sexta                        │
+│                                                         │
+│ ⚠️ Mudanças nas suas escolhas                           │  ← expandido, destaque
+│    Cleunice: turno da manhã → dia inteiro (quarta)      │
+│    Maria: folga terça → quarta (sua escolha manual)     │
+│                                                         │
+│ [Aceitar e Gerar]  [Gerar mesmo assim]  [Cancelar]      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Nota:** "Ajustes automáticos" começa COLAPSADO (o RH não precisa ver). "Mudanças nas suas escolhas" começa EXPANDIDO (é o que importa).
+
+- [ ] **Step 3: Add escape hatch — "Gerar mesmo assim"**
+
+Botão secundário/ghost no footer do drawer. Quando clicado:
+- Fecha o drawer
+- Gera a escala COM as folgas originais do RH (ignora sugestão do advisory)
+- Toast: "Escala gerada com as suas folgas originais"
+
+```typescript
+const handleGerarSemAceitar = async () => {
+  setShowSugestaoSheet(false)
+  // Gera com pins originais (sem aplicar diff do advisory)
+  await handleGerarEscala()
+}
+```
+
+- [ ] **Step 4: Rewire botão "Sugerir" → CP-SAT advisory**
 
 Em SetorDetalhe.tsx, o handler do botão "Sugerir":
 
@@ -1081,7 +1152,7 @@ Em SetorDetalhe.tsx, o handler do botão "Sugerir":
 const handleSugerir = async () => {
   setSugerindo(true)
   try {
-    const advisoryInput = buildAdvisoryInput() // builds PinWithOrigin[] from preview
+    const advisoryInput = buildAdvisoryInput()
     const result = await runAdvisory(advisoryInput)
     setAdvisoryResult(result)
     setShowSugestaoSheet(true)
@@ -1091,40 +1162,83 @@ const handleSugerir = async () => {
 }
 ```
 
-- [ ] **Step 4: Gate no "Gerar"**
-
-Quando o RH clica "Gerar Escala", rodar advisory ANTES:
+- [ ] **Step 5: Gate inteligente no "Gerar" (3 níveis)**
 
 ```typescript
 const handleGerarComGate = async () => {
-  const advisoryResult = await runAdvisory(buildAdvisoryInput())
+  // Loading state imediato
+  setGerandoLabel('Analisando...')
 
-  if (!advisoryResult.pin_violations?.length) {
-    await handleGerarEscala() // custo=0, gera direto
+  // Cache check — se input não mudou, usa resultado anterior
+  const advisoryResult = await runAdvisoryComCache(buildAdvisoryInput())
+
+  const violations = advisoryResult.pin_violations ?? []
+  const temMudancaManualOuSalva = violations.some(
+    v => v.origin === 'manual' || v.origin === 'saved'
+  )
+
+  if (violations.length === 0) {
+    // Nível 1: custo=0 → gera direto
+    setGerandoLabel('Gerando...')
+    await handleGerarEscala()
     return
   }
 
-  // custo > 0 → abrir drawer
+  if (!temMudancaManualOuSalva) {
+    // Nível 2: só autos → gera direto + toast informativo
+    setGerandoLabel('Gerando...')
+    await handleGerarEscala()
+    toast.info(`O sistema ajustou ${violations.length} folga(s) automática(s) para otimizar a cobertura`)
+    return
+  }
+
+  // Nível 3: mudança em manual/saved → abre drawer
+  setGerandoLabel(null)
   setAdvisoryResult(advisoryResult)
   setShowSugestaoSheet(true)
-  // Botão "Aceitar e Gerar" do drawer chama handleGerarEscala
 }
 ```
 
-- [ ] **Step 5: Typecheck + test manual**
+- [ ] **Step 6: Loading state no botão**
+
+O botão "Gerar Escala" deve mostrar estado intermediário:
+
+```tsx
+<Button onClick={handleGerarComGate} disabled={!!gerandoLabel}>
+  {gerandoLabel ? (
+    <><Loader2 className="size-4 animate-spin mr-2" />{gerandoLabel}</>
+  ) : (
+    'Gerar Escala'
+  )}
+</Button>
+```
+
+`gerandoLabel` é state: `null` (normal) → `'Analisando...'` (advisory) → `'Gerando...'` (solver) → `null` (fim).
+
+- [ ] **Step 7: Typecheck + test manual**
 
 Run: `npm run typecheck`
-Test: Clicar Sugerir → drawer CP-SAT. Clicar Gerar → gate. TS antigo não aparece.
 
-- [ ] **Step 6: Commit**
+Checklist manual:
+1. Gerar com tudo OK → gera direto, sem drawer, sem delay extra ✅
+2. Gerar com autos redistribuídos → gera direto + toast "ajustou N folgas" ✅
+3. Gerar com manual violado → drawer abre com mudanças por pessoa ✅
+4. Drawer: "Aceitar e Gerar" → aplica diff + gera ✅
+5. Drawer: "Gerar mesmo assim" → ignora diff + gera com folgas originais ✅
+6. Drawer: "Cancelar" → fecha sem gerar ✅
+7. Botão mostra "Analisando..." → "Gerando..." → resultado ✅
+8. GREP: zero ocorrências de "pin", "origin", "weight", "custo", "band" em strings user-facing ✅
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/renderer/src/componentes/SugestaoSheet.tsx src/renderer/src/paginas/SetorDetalhe.tsx
-git commit -m "feat: SugestaoSheet exclusive to CP-SAT advisory + gate on Gerar
+git commit -m "feat: SugestaoSheet CP-SAT exclusive + intelligent gate + escape hatch
 
-Removes TS status codes (TS_REDISTRIBUIU etc). Drawer shows only
-hierarchical diff with costs from CP-SAT advisory.
-Sugerir button → runAdvisory. Gerar button → advisory gate first.
+3-level gate: cost=0 direct, auto-only direct+toast, manual/saved opens drawer.
+Drawer humanized: grouped by person, no technical terms, collapsible auto section.
+Escape hatch: 'Gerar mesmo assim' avoids infinite loop.
+Loading: 'Analisando...' → 'Gerando...' on button.
 
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 ```
@@ -1424,7 +1538,79 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 13: Verificação E2E final
+### Task 13: Verificação E2E + DoD (Definition of Done)
+
+---
+
+## Definition of Done — BLOQUEADORES DE MERGE
+
+**Nenhuma task é "done" sem estes critérios. Se falhar em 1, não mergeia.**
+
+### DoD 1: ZERO termos técnicos na UI
+
+```bash
+# GREP OBRIGATÓRIO — rodar antes de CADA commit de UI
+grep -rn '".*pin\|".*origin\|".*weight\|".*custo [0-9]\|".*band\|".*constraint\|".*violation\|".*solver\|".*relaxa\|".*viabilizar\|".*motor"' \
+  src/renderer/src/ --include="*.tsx" --include="*.ts" \
+  | grep -v "// " | grep -v "console\." | grep -v "import "
+```
+
+Se retornar QUALQUER match em string user-facing (tooltip, título, mensagem, placeholder), é BLOCKER.
+
+Termos PROIBIDOS na UI: `pin`, `origin`, `weight`, `custo N`, `band`, `constraint`, `violation`, `solver`, `relaxação`, `flexibilizad`, `viabilizar`, `motor` (isolado, sem "motor de cálculo")
+
+Termos PERMITIDOS: `sistema`, `escala`, `folga`, `cadastro`, `escolha`, `ajuste`, `cobertura`, `demanda`, `motor de cálculo`
+
+### DoD 2: Escape hatch no drawer
+
+O drawer do gate DEVE ter 3 botões:
+- **"Aceitar e Gerar"** (primário) — aplica diff + gera
+- **"Gerar mesmo assim"** (secundário/ghost) — ignora diff + gera com folgas originais
+- **"Cancelar"** (text/link) — fecha sem gerar
+
+Sem "Gerar mesmo assim" = loop infinito = BLOCKER.
+
+### DoD 3: Loading state no botão Gerar
+
+O botão "Gerar Escala" DEVE mostrar:
+- `'Analisando...'` durante o advisory (~1-5s)
+- `'Gerando...'` durante o solver (~5-120s)
+- Voltar ao normal quando terminar
+
+5s de botão travado sem feedback visual = BLOCKER.
+
+### DoD 4: Gate inteligente (3 níveis)
+
+| Cenário | Comportamento esperado |
+|---------|----------------------|
+| Advisory custo=0 | Gera direto. Nenhuma interrupção. |
+| Advisory custo>0, só auto | Gera direto + toast "O sistema ajustou N folgas" |
+| Advisory custo>0, manual/saved violado | Abre drawer. RH decide. |
+
+Se auto-only abre drawer = BLOCKER (interrupção desnecessária).
+
+### DoD 5: Feedback visual de auto-redistribuição
+
+Folgas movidas automaticamente no preview DEVEM ter indicador visual:
+- Ícone sutil (↻) ou cor diferenciada na célula do grid
+- Tooltip explicando "O sistema moveu esta folga de SEG para QUA para melhorar a cobertura"
+
+Folgas que "dançam" sem feedback visual = BLOCKER.
+
+### DoD 6: Mensagens com dados numéricos
+
+Warnings de folga manual/saved DEVEM incluir números:
+- "sobram X pessoa(s), demanda é Y"
+
+Mensagem genérica sem número = BLOCKER.
+
+### DoD 7: Testes passando
+
+- `npm run typecheck` → 0 errors
+- `npm run test` → ALL PASS
+- `npm run solver:test` → ALL PASS
+
+---
 
 - [ ] **Step 1: Full typecheck**
 
@@ -1441,43 +1627,54 @@ Expected: ALL PASS
 Run: `npm run solver:test`
 Expected: ALL PASS
 
-- [ ] **Step 4: Manual E2E checklist**
+- [ ] **Step 4: GREP de termos técnicos (DoD 1)**
+
+Run the grep command from DoD 1.
+Expected: ZERO matches in user-facing strings.
+
+- [ ] **Step 5: Manual E2E checklist**
 
 **Preview automático (Task 6):**
-1. Abrir SetorDetalhe do Açougue
+1. Abrir SetorDetalhe do Açougue ✅
 2. Preview auto-distribui folgas (pickBestFolgaDay) ✅
-3. Se alguma auto-folga causa déficit, preview redistribui SILENCIOSAMENTE ✅
-4. Nenhum warning pra folgas auto-redistribuídas ✅
-5. Trocar folga manualmente → warning "Folga de {nome} em {dia} causa déficit de X" ✅
-6. Warning NÃO diz "mude isso" — só informa ✅
+3. Se auto-folga causa déficit, preview redistribui e mostra ícone ↻ na célula ✅ (DoD 5)
+4. Tooltip na célula redistribuída: "O sistema moveu esta folga..." ✅ (DoD 5)
+5. Info banner compacto no topo: "O sistema ajustou N folga(s)..." ✅ (DoD 5)
+6. Trocar folga MANUALMENTE → warning com números: "sobram X, demanda Y" ✅ (DoD 6)
+7. Warning saved tem link/botão "Editar cadastro" ✅
+8. Warning NÃO diz "mude o que você fez" — só informa ✅
 
-**Sugerir CP-SAT (Tasks 8-9):**
-7. Clicar "Sugerir" → drawer CP-SAT (NÃO TS antigo) ✅
-8. Drawer mostra diff hierárquico com custos ✅
-9. Pins auto aparecem primeiro (custo baixo, colapsáveis) ✅
-10. Pins manuais aparecem com destaque (se violados) ✅
-11. Nenhum status `TS_REDISTRIBUIU`/`TS_NAO_RESOLVEU` — mortos ✅
-12. D5 (`PREVIEW_ESTRITO_BLOQUEADO`) NÃO aparece ✅
-13. W1-W3 / D6-D8 NÃO aparecem (substituídos por mensagens por origin) ✅
+**Sugerir CP-SAT (Task 8):**
+9. Clicar "Sugerir" → drawer CP-SAT (NÃO TS antigo) ✅
+10. Drawer agrupa por PESSOA (não por "origin") ✅
+11. Seção "Ajustes automáticos" colapsada por default ✅
+12. Seção "Mudanças nas suas escolhas" expandida com destaque ✅
+13. ZERO termos técnicos no drawer (GREP) ✅ (DoD 1)
+14. Nenhum status TS_REDISTRIBUIU/TS_NAO_RESOLVEU ✅
+15. D5/D6-D8/D9 NÃO aparecem ✅
 
 **Gate no Gerar (Task 8):**
-14. Clicar "Gerar Escala" com preview OK (custo=0) → gera direto ✅
-15. Clicar "Gerar Escala" com conflito → drawer abre automaticamente ✅
-16. "Aceitar e Gerar" no drawer → gera ✅
+16. Gerar com custo=0 → gera direto, sem drawer, sem delay extra ✅ (DoD 4)
+17. Gerar com auto-only violados → gera direto + toast info ✅ (DoD 4)
+18. Gerar com manual/saved violado → drawer abre ✅ (DoD 4)
+19. Botão mostra "Analisando..." → "Gerando..." ✅ (DoD 3)
+20. Drawer tem "Aceitar e Gerar" + "Gerar mesmo assim" + "Cancelar" ✅ (DoD 2)
+21. "Gerar mesmo assim" → gera com folgas originais, sem loop ✅ (DoD 2)
+22. "Cancelar" → fecha sem gerar, sem side effects ✅
 
-**Pós-geração (Plan A implementado + Task 10):**
-17. Toast informativo (verde ou amarelo) ✅ — JÁ FUNCIONA (Plan A)
-18. Abrir escala existente do histórico → banner inline mostra tier correto ✅ — JÁ FUNCIONA (diagnostico_json persistido)
-19. Banner mostra o que FOI ACEITO do advisory + o que o solver relaxou ✅ — Task 10 (advisory_aceito_json)
-20. Aba Apontamentos → card "Ajustes do Motor" visível se pass>1 ✅ — JÁ FUNCIONA (Plan A)
-21. Chat IA: "como está minha escala?" → menciona relaxações ✅ — JÁ FUNCIONA (diagnosticar_escala lê diagnostico_json)
+**Pós-geração (Plan A + Task 10):**
+23. Toast informativo (verde ou amarelo) ✅
+24. Escala no histórico → informação de relaxação visível ✅
+25. Advisory aceito persistido → visível ao reabrir escala (info colapsável) ✅
+26. Chat IA: "como está minha escala?" → menciona relaxações ✅
 
 **Regressão:**
-22. Gerar sem advisory (setor com equipe folgada) → funciona como antes ✅
-23. Pins sem origin/weight (legado) → HARD, sem pin_violations ✅
-24. Solver CLI 3 meses → resultado consistente ✅
+27. Gerar sem advisory (equipe folgada) → funciona como antes ✅
+28. Pins sem origin/weight (legado) → HARD, sem pin_violations ✅
+29. Solver CLI 3 meses → resultado consistente ✅
+30. Nenhum console.log de debug esquecido ✅
 
-- [ ] **Step 5: Final commit (se ajustes)**
+- [ ] **Step 6: Final commit (se ajustes)**
 
 ```bash
 git add -A

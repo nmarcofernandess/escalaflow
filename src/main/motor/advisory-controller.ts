@@ -9,7 +9,6 @@
  * Ciclo e abstrato: feriados e excecoes sao stripados.
  */
 
-import { createHash } from 'node:crypto'
 import type {
   AdvisoryStatus,
   AdvisoryDiffItem,
@@ -135,32 +134,10 @@ export function convertSemanaDraftToDemanda(
 }
 
 // ---------------------------------------------------------------------------
-// 3. computeAdvisoryInputHash
+// 3. computeAdvisoryInputHash — re-exported from shared (isomorphic)
 // ---------------------------------------------------------------------------
 
-export function computeAdvisoryInputHash(input: EscalaAdvisoryInput): string {
-  const hashPayload = {
-    setor_id: input.setor_id,
-    data_inicio: input.data_inicio,
-    data_fim: input.data_fim,
-    pinned_folga_externo: [...input.pinned_folga_externo].sort(
-      (a, b) => a.c - b.c || a.d - b.d || a.band - b.band,
-    ),
-    current_folgas: [...input.current_folgas]
-      .sort((a, b) => a.colaborador_id - b.colaborador_id)
-      .map((f) => ({
-        colaborador_id: f.colaborador_id,
-        fixa: f.fixa,
-        variavel: f.variavel,
-      })),
-    demanda_preview: input.demanda_preview ?? null,
-  }
-
-  return createHash('sha256')
-    .update(JSON.stringify(hashPayload))
-    .digest('hex')
-    .slice(0, 16)
-}
+export { computeAdvisoryInputHash } from '../../shared/advisory-hash'
 
 // ---------------------------------------------------------------------------
 // 4. Helpers

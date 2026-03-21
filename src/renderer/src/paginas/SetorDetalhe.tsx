@@ -35,7 +35,6 @@ import {
   Check,
   AlertTriangle,
   ShieldCheck,
-  Zap,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
@@ -1264,6 +1263,28 @@ export function SetorDetalhe() {
       })
   }, [overridesLocaisSetor, participantesEscalaAtivos, previewSetorIntermitentesRegras, regrasMap, tipoBIds])
 
+  // Capacidade efetiva por dia SEG-SAB: CLT/Estagiário = 1 em todos, Intermitente = 1 só nos dias com regra
+  const capacidadeEfetivaPorDia = useMemo(() => {
+    const DIAS_WEEKDAY: DiaSemana[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
+    const cap = DIAS_WEEKDAY.map(() => 0)
+    for (const row of previewSetorRows) {
+      const tipo = row.titular.tipo_trabalhador ?? 'CLT'
+      if (tipo !== 'INTERMITENTE') {
+        // CLT/Estagiário trabalha todos os dias
+        for (let d = 0; d < 6; d++) cap[d]++
+      } else {
+        // Intermitente: só conta nos dias que tem regra de horário
+        const intermInfo = previewSetorIntermitentesRegras.find(r => r.colaborador.id === row.titular.id)
+        if (intermInfo) {
+          for (let d = 0; d < 6; d++) {
+            if (intermInfo.regrasPorDia.has(DIAS_WEEKDAY[d])) cap[d]++
+          }
+        }
+      }
+    }
+    return cap
+  }, [previewSetorRows, previewSetorIntermitentesRegras])
+
   const previewSetorSemTitular = useMemo(
     () => Math.max(0, postosAtivos.length - participantesEscalaAtivos.length),
     [participantesEscalaAtivos.length, postosAtivos.length],
@@ -1332,6 +1353,7 @@ export function SetorDetalhe() {
                 ? folgasForcadas
                 : undefined,
               demanda_por_dia: demandaPorDiaPreviewCiclo,
+              capacidade_efetiva_por_dia: modoSimulacaoEfetivo === 'SETOR' ? capacidadeEfetivaPorDia : undefined,
             },
             participants: previewSetorRows.map((row) => ({
               id: row.titular.id,
@@ -1400,6 +1422,7 @@ export function SetorDetalhe() {
       multiPassResult,
     }
   }, [
+    capacidadeEfetivaPorDia,
     demandaPorDiaPreviewCiclo,
     demandaSegmentosPreviewCiclo,
     modoSimulacaoEfetivo,
@@ -1893,7 +1916,7 @@ export function SetorDetalhe() {
   }, [atualizarSimulacaoConfig, mergeOverrideLocalWithBase, regrasMap, simulacaoConfig.livre.folgas_forcadas, simulacaoConfig.livre.n, simulacaoPreview.mode])
 
   // ─── Geracao inline (logica original — chamada pelo gate ou escape hatch) ──
-  const handleGerarOriginal = async () => {
+  const handleGerarOriginal = async (opts?: { advisoryAceitoJson?: string }) => {
     const dataInicio = periodoGeracao.data_inicio
     const dataFim = periodoGeracao.data_fim
     if (!dataInicio || !dataFim) {
@@ -1986,6 +2009,7 @@ export function SetorDetalhe() {
         maxTimeSeconds: solverSessionConfig.maxTimeSeconds,
         rulesOverride,
         pinnedFolgaExterno,
+        advisoryAceitoJson: opts?.advisoryAceitoJson,
       })
       setHistoricoCompleta(result)
       setHistoricoSelecionadaId(result.escala.id)
@@ -2135,7 +2159,20 @@ export function SetorDetalhe() {
   const handleAceitarEGerar = async () => {
     setSugestaoOpen(false)
     setGerandoLabel('Gerando...')
-    await handleGerarOriginal()
+    // Serialize the accepted advisory for persistence with the escala
+    const advisoryAceitoJson = advisoryResult?.pin_violations?.length
+      ? JSON.stringify({
+          pin_violations: advisoryResult.pin_violations.map((v) => ({
+            colaborador_id: v.colaborador_id,
+            nome: v.nome,
+            dia: v.dia,
+            origin: v.origin,
+            descricao: v.descricao,
+          })),
+          pin_cost: advisoryResult.pin_cost ?? 0,
+        })
+      : undefined
+    await handleGerarOriginal({ advisoryAceitoJson })
     setGerandoLabel(null)
   }
 
@@ -2269,14 +2306,6 @@ export function SetorDetalhe() {
       })
 
       setAdvisoryResult(result)
-
-      if (result.fallback?.should_open_ia) {
-        setSugestaoOpen(false)
-        toast.info('Abrindo analise com IA...')
-        const prompt = `O setor ${setor?.nome ?? ''} precisa de ajuda com a escala (${periodoGeracao.data_inicio} a ${periodoGeracao.data_fim}). ${result.fallback.reason}`
-        useIaStore.getState().setPendingAutoMessage(prompt)
-        useIaStore.getState().setAberto(true)
-      }
     } catch (err) {
       toast.error('Erro ao analisar a escala')
       console.error(err)
@@ -3334,26 +3363,6 @@ export function SetorDetalhe() {
                             <TooltipContent>Validar arranjo</TooltipContent>
                           </Tooltip>
                       )}
-                      {modoSimulacaoEfetivo === 'SETOR' && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={handleSugerirSolver}
-                              disabled={advisoryLoading || gerando}
-                              aria-label="Sugerir com o motor"
-                            >
-                              {advisoryLoading ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <Zap className="size-4" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Sugerir com o motor</TooltipContent>
-                        </Tooltip>
-                      )}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -3452,6 +3461,8 @@ export function SetorDetalhe() {
                         onFolgaChange={handlePreviewFolgaChange}
                         frameBorderClassName={previewCardTone.frame}
                         coverageActions={{
+                          onSuggest: modoSimulacaoEfetivo === 'SETOR' ? handleSugerirSolver : undefined,
+                          suggestLoading: advisoryLoading,
                           onResetAutomatico: () => handleResetarSimulacao('automatico'),
                           onRestaurarColaboradores: modoSimulacaoEfetivo === 'SETOR'
                             ? () => handleResetarSimulacao('colaboradores')

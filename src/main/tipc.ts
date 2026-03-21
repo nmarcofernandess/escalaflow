@@ -1140,8 +1140,17 @@ const escalasBuscar = t.procedure
       ? JSON.parse((escala as any).diagnostico_json)
       : undefined
 
+    // Attach persisted advisory result (pin_violations accepted before generation)
+    const advisoryAceito = (escala as any).advisory_aceito_json
+      ? JSON.parse((escala as any).advisory_aceito_json)
+      : undefined
+
     const hasSnapshot = snapshotDecisoes.length > 0 || snapshotComparacao.length > 0
-    if (!hasSnapshot) return { ...base, ...(diagnosticoFromDb ? { diagnostico: diagnosticoFromDb } : {}) }
+    if (!hasSnapshot) return {
+      ...base,
+      ...(diagnosticoFromDb ? { diagnostico: diagnosticoFromDb } : {}),
+      ...(advisoryAceito ? { advisory_aceito: advisoryAceito } : {}),
+    }
 
     // Use decisoes from snapshot (solver has rich explanations),
     // but comparacao_demanda ALWAYS from validador TS (consistent with indicadores).
@@ -1161,6 +1170,7 @@ const escalasBuscar = t.procedure
       })),
       // comparacao_demanda: from base (validarEscalaV3) — same source as indicadores
       ...(diagnosticoFromDb ? { diagnostico: diagnosticoFromDb } : {}),
+      ...(advisoryAceito ? { advisory_aceito: advisoryAceito } : {}),
     }
   })
 
@@ -1383,6 +1393,7 @@ const escalasGerar = t.procedure
     max_time_seconds?: number
     rules_override?: Record<string, string>
     pinned_folga_externo?: Array<{ c: number; d: number; band: number }>
+    advisory_aceito_json?: string
   }>()
   .action(async ({ input }): Promise<EscalaCompletaV3> => {
     const setorId = input.setor_id
@@ -1446,12 +1457,27 @@ const escalasGerar = t.procedure
       solverResult, inputHash, regimesOverride,
     )
 
+    // Persist accepted advisory result with the escala (if provided)
+    if (input.advisory_aceito_json) {
+      await execute(
+        'UPDATE escalas SET advisory_aceito_json = ? WHERE id = ?',
+        input.advisory_aceito_json, escalaId,
+      )
+    }
+
     const validacao = await validarEscalaV3(escalaId)
     await persistirResumoAutoritativoEscala(escalaId, validacao)
     broadcastInvalidation(['escalas'])
+
+    // Parse advisory for response
+    const advisoryAceito = input.advisory_aceito_json
+      ? JSON.parse(input.advisory_aceito_json)
+      : undefined
+
     return {
       ...validacao,
       diagnostico: solverResult.diagnostico,
+      ...(advisoryAceito ? { advisory_aceito: advisoryAceito } : {}),
       timing: {
         fase0_ms: 0, fase1_ms: 0, fase2_ms: 0, fase3_ms: 0,
         fase4_ms: 0, fase5_ms: 0, fase6_ms: 0, fase7_ms: 0,

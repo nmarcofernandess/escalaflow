@@ -1,21 +1,8 @@
 import { AlertTriangle, Info, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
-export interface Aviso {
-  /** Codigo unico do aviso (ex: COB_DEFICIT_SEG, TT_ALEX_S3) — usado pra deduplicacao */
-  id: string
-  nivel: 'error' | 'warning' | 'info'
-  titulo: string
-  descricao: string
-  /** Botao de acao opcional (ex: "Resolver automatico") */
-  acao?: {
-    label: string
-    handler: () => void
-  }
-  /** Texto pro sistema de IA usar quando o RH perguntar sobre esse aviso */
-  contexto_ia?: string
-}
+export type { Aviso } from '@/lib/humanizar-operacao'
+import type { Aviso } from '@/lib/humanizar-operacao'
 
 interface AvisosSectionProps {
   avisos: Aviso[]

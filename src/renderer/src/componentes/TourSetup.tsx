@@ -136,7 +136,7 @@ const tourSteps: TourStep[] = [
         <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
           <li>
             <strong>Badge de compliance</strong> mostra aderencia por
-            categoria (CLT, SOFT, Antipadrao)
+            categoria (CLT, Otimização, Boas Práticas)
           </li>
           <li>
             <strong>Config por geracao</strong> (botao &#9881;&#65039;) — estrategia,

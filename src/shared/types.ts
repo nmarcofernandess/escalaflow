@@ -384,6 +384,16 @@ export interface EscalaCompletaV3 {
   decisoes: DecisaoMotor[]
   comparacao_demanda: SlotComparacao[]
   diagnostico?: DiagnosticoSolver
+  advisory_aceito?: {
+    pin_violations: Array<{
+      colaborador_id: number
+      nome: string
+      dia: string
+      origin: string
+      descricao: string
+    }>
+    pin_cost: number
+  }
   timing?: {
     fase0_ms: number
     fase1_ms: number
@@ -662,9 +672,11 @@ export type RuleConfig = Record<string, RuleStatus>
 export type PinOrigin = 'auto' | 'accepted' | 'manual' | 'saved'
 
 /**
- * Pesos ilustrativos — DEVEM ser calibrados com dados reais antes de produção.
- * Regra: peso_SAVED > max_ganho_spread_possível (spread * 1000 no Phase 1).
- * Ver specs/ANALYST_PIPELINE_SOLVER_COMPLETO.md → "Calibração de Pesos".
+ * Pesos calibrados com dados reais (Supermercado Fernandes, mar/2026).
+ * Hierarquia: auto < spread(1000) < DIAS_TRABALHO(4000) < manual < saved.
+ * Auto pins sacrificados livremente por spread (correto — são sugestões).
+ * Manual/saved sobrevivem pressão de spread (spread real é 0-2, max 91k).
+ * Validado por solver-soft-pins.spec.ts (5/5 tests).
  */
 export const PIN_WEIGHTS: Record<PinOrigin, number> = {
   auto: 100,

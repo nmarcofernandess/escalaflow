@@ -892,6 +892,9 @@ async function migrateSchema(): Promise<void> {
   // --- v30: Persistir diagnostico do solver com a escala ---
   await addColumnIfMissing('escalas', 'diagnostico_json', 'TEXT')
 
+  // --- v31: Persistir advisory aceito com a escala ---
+  await addColumnIfMissing('escalas', 'advisory_aceito_json', 'TEXT')
+
   // --- v27: Re-enable 'session' tipo in knowledge_sources for session indexing ---
   try {
     await execDDL(`ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_tipo_check`)

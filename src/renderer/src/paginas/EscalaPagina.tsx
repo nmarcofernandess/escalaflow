@@ -593,6 +593,13 @@ export function EscalaPagina() {
         )
       })()}
 
+      {escalaCompleta?.advisory_aceito?.pin_violations?.length ? (
+        <div className="mx-6 mt-2 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/50 p-3 text-sm text-blue-800 dark:text-blue-300">
+          <span className="font-medium">Ajustes aceitos:</span>{' '}
+          {escalaCompleta.advisory_aceito.pin_violations.map(v => `${v.nome} (${v.descricao})`).join(', ')}
+        </div>
+      ) : null}
+
       <div className="flex-1 space-y-4 p-6">
         {loading ? (
           <div className="flex items-center justify-center py-16">

@@ -71,8 +71,8 @@ const TIPO_STYLES: Record<'h' | 's' | 'i', React.CSSProperties> = {
 }
 
 const TIPO_LABELS: Record<UnifiedAviso['tipo'], string> = {
-  h: 'Criticas (HARD)',
-  s: 'Alertas (SOFT)',
+  h: 'Problemas Críticos',
+  s: 'Alertas',
   i: 'Informativos',
 }
 

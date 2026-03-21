@@ -20,6 +20,8 @@ export interface SimulaCicloFase1Input {
   }>
   /** Demanda por dia da semana [SEG, TER, QUA, QUI, SEX, SAB, DOM]. Se fornecido, folgas sao distribuidas nos dias com mais sobra de cobertura. */
   demanda_por_dia?: number[]
+  /** Capacidade efetiva por dia [SEG..SAB] — quantas pessoas PODEM trabalhar cada dia (exclui NT intermitentes). Se omitido, usa N pra todos. */
+  capacidade_efetiva_por_dia?: number[]
 }
 
 export interface SimulaCicloSemana {
@@ -274,6 +276,8 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
   const folgaWarnings: FolgaWarning[] = []
 
   // --- Step 1b: Pre-check folgas fixas vs capacidade por dia (nao mata o grid, gera warning) ---
+  // Capacidade efetiva por dia (computed early for Step 1b, reused in Step 2)
+  const capDia1b = input.capacidade_efetiva_por_dia ?? Array(6).fill(N) as number[]
   const DIA_LABELS_LOCAL: string[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']
   if (input.folgas_forcadas && input.demanda_por_dia && input.demanda_por_dia.length >= 6) {
     const forcedFolgasByDay = [0, 0, 0, 0, 0, 0]
@@ -283,14 +287,14 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
       }
     }
     for (let d = 0; d < 6; d++) {
-      const maxFolgas = N - (input.demanda_por_dia[d] ?? 0)
+      const capEfetiva = capDia1b[d] ?? N
+      const maxFolgas = capEfetiva - (input.demanda_por_dia[d] ?? 0)
       if (forcedFolgasByDay[d] > maxFolgas) {
-        // Não mata o grid — registra warning e deixa continuar com déficit visível
         folgaWarnings.push({
-          pessoa: -1, // sentinela: afeta o dia todo, não uma pessoa específica
+          pessoa: -1,
           dia: d,
           tipo: 'FF_CONFLITO',
-          coberturaRestante: N - forcedFolgasByDay[d],
+          coberturaRestante: capEfetiva - forcedFolgasByDay[d],
           demandaDia: input.demanda_por_dia[d] ?? 0,
         })
       }
@@ -300,22 +304,44 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
   // --- Step 2: Folgas semanais 5x2 (2 por semana) ---
   const hasDemanda = input.demanda_por_dia && input.demanda_por_dia.length >= 6
 
-  // Track folgas assigned per weekday (for demand-aware spreading)
-  const folgaCount = [0, 0, 0, 0, 0, 0] // SEG-SAB
+  // Capacidade efetiva por dia (exclui intermitentes NT). Fallback: N pra todos.
+  const capDia = input.capacidade_efetiva_por_dia ?? Array(6).fill(N) as number[]
 
-  // Pick best folga day considering demand surplus AND already-assigned folgas
-  const pickBestFolgaDay = (demanda: number[], exclude: number | null): number => {
-    let bestDay = 0
+  // Pré-computar FVs forçadas por dia — saber ANTES quais dias vão acumular folgas variáveis
+  // Isso evita que pickBestFolgaDay coloque FFs em dias que já vão ter FVs
+  const fvForcadasPorDia = [0, 0, 0, 0, 0, 0] // SEG-SAB
+  if (input.folgas_forcadas) {
+    for (const f of input.folgas_forcadas) {
+      if (f.folga_variavel_dia != null && f.folga_variavel_dia >= 0 && f.folga_variavel_dia < 6) {
+        // FV só se aplica em ~50% das semanas (quando trabalha DOM), mas ainda impacta
+        fvForcadasPorDia[f.folga_variavel_dia]++
+      }
+    }
+  }
+
+  // Track folgas por tipo: FF é toda semana, FV é ~50% (só semanas DT)
+  const ffCount = [0, 0, 0, 0, 0, 0] // Folgas fixas atribuídas por dia SEG-SAB
+  const fvCount = [0, 0, 0, 0, 0, 0] // Folgas variáveis atribuídas por dia SEG-SAB
+  // folgaCount total (pra warnings e redistribuição)
+  const folgaCount = [0, 0, 0, 0, 0, 0]
+
+  // Pick best folga day: FF e FV têm pesos diferentes no impacto
+  // FF impacta TODA semana, FV impacta ~50% das semanas
+  const pickBestFolgaDay = (demanda: number[], exclude: number | null, isFixa: boolean): number => {
+    let bestDay = -1
     let bestScore = -Infinity
     for (let d = 0; d < 6; d++) {
       if (d === exclude) continue
-      const score = (N - (demanda[d] ?? 0)) - folgaCount[d]
+      // FF (toda semana) pesa mais que FV (~50%) no cálculo de impacto real
+      const folgaImpacto = ffCount[d] + fvCount[d] * 0.5 + fvForcadasPorDia[d] * 0.5
+      // Espalhamento é PRIORIDADE: multiplicar por N
+      const score = ((capDia[d] ?? N) - (demanda[d] ?? 0)) - (folgaImpacto * N)
       if (score > bestScore) {
         bestScore = score
         bestDay = d
       }
     }
-    return bestDay
+    return bestDay >= 0 ? bestDay : 0
   }
 
   for (let p = 0; p < N; p++) {
@@ -323,12 +349,13 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     const isFixaDom = forcada?.folga_fixa_dom === true
 
     const base1 = forcada?.folga_fixa_dia
-      ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, null) : (p % 6))
+      ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, null, true) : (p % 6))
+    ffCount[base1]++
     folgaCount[base1]++
 
     // Detect FF assignment causing deficit
     if (hasDemanda) {
-      const cobRestante = N - folgaCount[base1]
+      const cobRestante = (capDia[base1] ?? N) - folgaCount[base1]
       const demDia = input.demanda_por_dia![base1] ?? 0
       if (cobRestante < demDia) {
         folgaWarnings.push({ pessoa: p, dia: base1, tipo: 'FF_CONFLITO', coberturaRestante: cobRestante, demandaDia: demDia })
@@ -338,13 +365,14 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     // folga_fixa_dom: variable loses meaning, use a second fixed weekday
     const base2 = isFixaDom ? null
       : (forcada?.folga_variavel_dia
-        ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, base1) : ((p + 3) % 6)))
+        ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, base1, false) : ((p + 3) % 6)))
     if (base2 != null) {
+      fvCount[base2]++
       folgaCount[base2]++
 
       // Detect FV assignment causing deficit
       if (hasDemanda) {
-        const cobRestante = N - folgaCount[base2]
+        const cobRestante = (capDia[base2] ?? N) - folgaCount[base2]
         const demDia = input.demanda_por_dia![base2] ?? 0
         if (cobRestante < demDia) {
           folgaWarnings.push({ pessoa: p, dia: base2, tipo: 'FV_CONFLITO', coberturaRestante: cobRestante, demandaDia: demDia })
@@ -398,7 +426,7 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     for (let pass = 0; pass < 3; pass++) {
       let moved = false
       for (let d = 0; d < 6; d++) {
-        const cob = N - folgaCount[d]
+        const cob = (capDia[d] ?? N) - folgaCount[d]
         const dem = input.demanda_por_dia![d] ?? 0
         if (cob >= dem) continue // no deficit on this day
 
@@ -418,7 +446,7 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
           let bestSurplus = -Infinity
           for (let dd = 0; dd < 6; dd++) {
             if (dd === d || dd === exclude) continue
-            const surplus = (N - folgaCount[dd]) - (input.demanda_por_dia![dd] ?? 0)
+            const surplus = ((capDia[dd] ?? N) - folgaCount[dd]) - (input.demanda_por_dia![dd] ?? 0)
             if (surplus > bestSurplus) {
               bestSurplus = surplus
               bestDay = dd
