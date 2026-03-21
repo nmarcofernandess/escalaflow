@@ -9,8 +9,8 @@
 ## Specs Ativas
 
 ### Phase 0 — Context Unificado + Redução de Tools
-- **Spec:** `docs/superpowers/specs/2026-03-21-context-tools-reduction-design.md` (a criar)
-- **Status:** Aguardando brainstorming
+- **Spec:** `docs/superpowers/specs/2026-03-21-context-tools-reduction-design.md`
+- **Status:** Design escrito, aguardando review
 - **Objetivo:** Expandir o discovery.ts com preview e dados que hoje só existem em tools. Reduzir tools de 33 → ~28-30 movendo info pro context. Criar CLI `--context` pra dev ver o que a IA vê.
 - **Dependências:** Nenhuma
 - **Quem bloqueia:** Phase 1 da spec Observabilidade (depende do context expandido)
