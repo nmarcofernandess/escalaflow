@@ -494,6 +494,42 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
     # Weekly chunks for dias_trabalho
     week_chunks = build_week_chunks(days)
 
+    # ── Detect fully-pinned collaborators (e.g. Tipo B pre-computed by bridge) ──
+    # These have ALL their days pre-determined — Phase 1 should HARD-fix their
+    # variables and skip per-collaborator constraints. Aggregate constraints
+    # (headcount, band coverage) still see their fixed values correctly.
+    fully_pinned: set = set()
+    pin_map: Dict[Tuple[int, int], int] = {}
+    if external_pins:
+        pins_per_c: Dict[int, int] = {}
+        for pin in external_pins:
+            c_idx, d_idx = pin["c"], pin["d"]
+            if c_idx < C and d_idx < D:
+                pins_per_c[c_idx] = pins_per_c.get(c_idx, 0) + 1
+                pin_map[(c_idx, d_idx)] = pin["band"]
+        for c_idx, count in pins_per_c.items():
+            non_blocked = D - len(blocked_days.get(c_idx, set()))
+            if non_blocked > 0 and count >= non_blocked * 0.9:
+                fully_pinned.add(c_idx)
+
+    # HARD-fix variables for fully-pinned collaborators
+    for (c_idx, d_idx), band in pin_map.items():
+        if c_idx not in fully_pinned:
+            continue
+        if d_idx in blocked_days.get(c_idx, set()):
+            continue
+        if band == BAND_OFF:
+            model.add(works_day[c_idx, d_idx] == 0)
+        elif band == BAND_MANHA:
+            model.add(is_manha[c_idx, d_idx] == 1)
+        elif band == BAND_TARDE:
+            model.add(is_tarde[c_idx, d_idx] == 1)
+        elif band == BAND_INTEGRAL:
+            model.add(is_integral[c_idx, d_idx] == 1)
+
+    if fully_pinned:
+        log(f"Phase 1: {len(fully_pinned)} colabs pre-pinned (fixed), solving for remaining {C - len(fully_pinned)}")
+
     if has_weighted_pins:
         # Soft pin constraints with hierarchical weights
         for pin in external_pins:
@@ -505,6 +541,8 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
 
             if d_idx >= D or c_idx >= C:
                 continue  # Guard: pin out of range
+            if c_idx in fully_pinned:
+                continue  # Already HARD-fixed above — skip soft pin
             if d_idx in blocked_days.get(c_idx, set()):
                 continue  # Blocked days are already HARD OFF — skip soft pin
 
@@ -525,30 +563,43 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
             penalty_terms.append(violated * weight)
 
         # DIAS_TRABALHO as SOFT — reuse existing function from constraints.py
-        add_dias_trabalho_soft_penalty(model, penalty_terms, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
+        add_dias_trabalho_soft_penalty(model, penalty_terms, works_day, colabs, C, D, week_chunks, blocked_days, days=days, skip_colabs=fully_pinned)
     else:
         # LEGACY: HARD pins (no origin/weight) — keep original behavior
-        add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days, days=days)
+        add_dias_trabalho(model, works_day, colabs, C, D, week_chunks, blocked_days, days=days, skip_colabs=fully_pinned)
 
     # HARD: max 6 consecutivos
-    add_h1_max_dias_consecutivos(model, works_day, C, D)
+    add_h1_max_dias_consecutivos(model, works_day, C, D, skip_colabs=fully_pinned)
 
     # HARD: folga fixa 5x2
-    add_folga_fixa_5x2(model, works_day, colabs, days, C, D)
+    add_folga_fixa_5x2(model, works_day, colabs, days, C, D, skip_colabs=fully_pinned)
 
     # HARD: folga variavel condicional
-    add_folga_variavel_condicional(model, works_day, colabs, days, C, D)
+    add_folga_variavel_condicional(model, works_day, colabs, days, C, D, skip_colabs=fully_pinned)
 
-    # HARD: headcount minimo por dia (from peak demand)
+    # SOFT headcount: Phase 1 is a lightweight pattern-finder. When teams are tight
+    # (e.g. 5 CLTs needing 4/day = 25 vs 26 needed), HARD headcount is impossible.
+    # Using SOFT with high penalty keeps Phase 1 feasible while strongly preferring
+    # patterns that maximize daily coverage. The main solver enforces real demand.
     peak_demand = _compute_peak_demand_per_day(
         data.get("demanda", []), days, D,
         demanda_excecao_data=data.get("demanda_excecao_data"),
     )
-    add_min_headcount_per_day(model, works_day, C, D, peak_demand, blocked_days)
+    for d in range(D):
+        target = peak_demand[d]
+        if target <= 0:
+            continue
+        available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+        if not available_c:
+            continue
+        effective_target = min(target, len(available_c))
+        hc_deficit = model.new_int_var(0, effective_target, f"p1_hc_deficit_{d}")
+        model.add(hc_deficit >= effective_target - sum(works_day[c, d] for c in available_c))
+        penalty_terms.append(hc_deficit * 5000)
 
     # HARD: domingo ciclo exato
     if h3_cycle_status == "HARD":
-        add_domingo_ciclo_hard(model, works_day, colabs, C, sunday_indices, blocked_days)
+        add_domingo_ciclo_hard(model, works_day, colabs, C, sunday_indices, blocked_days, skip_colabs=fully_pinned)
 
     # H3: max domingos consecutivos por sexo — policy-driven.
     if h3_status_m == "HARD" or h3_status_f == "HARD":
@@ -556,17 +607,34 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
             model, works_day, colabs, C, sunday_indices, blocked_days,
             hard_m=h3_status_m == "HARD",
             hard_f=h3_status_f == "HARD",
+            skip_colabs=fully_pinned,
         )
 
-    # HARD: band demand coverage (morning/afternoon halves)
+    # SOFT band coverage: same rationale as headcount — Phase 1 is a pattern-finder,
+    # not the final solver. Making band coverage SOFT prevents INFEASIBLE when the
+    # team is tight. Weight 3000 ensures bands are spread but won't block feasibility.
     morning_demand, afternoon_demand = _compute_half_demand(
         data.get("demanda", []), days, D, S, base_h, grid_min,
         demanda_excecao_data=data.get("demanda_excecao_data"),
     )
-    add_band_demand_coverage(
-        model, is_manha, is_tarde, is_integral, C, D,
-        morning_demand, afternoon_demand, blocked_days,
-    )
+    for d in range(D):
+        available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+        if not available_c:
+            continue
+        m_target = morning_demand[d]
+        if m_target > 0:
+            effective_m = min(m_target, len(available_c))
+            m_deficit = model.new_int_var(0, effective_m, f"p1_band_m_deficit_{d}")
+            m_cover = sum(is_manha[c, d] + is_integral[c, d] for c in available_c)
+            model.add(m_deficit >= effective_m - m_cover)
+            penalty_terms.append(m_deficit * 3000)
+        a_target = afternoon_demand[d]
+        if a_target > 0:
+            effective_a = min(a_target, len(available_c))
+            a_deficit = model.new_int_var(0, effective_a, f"p1_band_a_deficit_{d}")
+            a_cover = sum(is_tarde[c, d] + is_integral[c, d] for c in available_c)
+            model.add(a_deficit >= effective_a - a_cover)
+            penalty_terms.append(a_deficit * 3000)
 
     # Compute cycle info for diagnostics
     demand_by_slot, _ = parse_demand(
@@ -577,25 +645,33 @@ def solve_folga_pattern(data: dict, budget_s: float = 10.0) -> dict | None:
     cycle_days = cycle_weeks * 7
 
     # Objective: minimize spread (primary) + penalize all-integral (secondary)
+    # Exclude fully-pinned colabs from spread — their totals are fixed and would
+    # distort the balance calculation (e.g. Tipo B with 2 days vs CLTs with 5).
     work_totals = []
     for c in range(C):
+        if c in fully_pinned:
+            continue
         total = model.new_int_var(0, D, f"p1_total_{c}")
         model.add(total == sum(works_day[c, d] for d in range(D)))
         work_totals.append(total)
 
-    max_total = model.new_int_var(0, D, "p1_max_total")
-    min_total = model.new_int_var(0, D, "p1_min_total")
-    model.add_max_equality(max_total, work_totals)
-    model.add_min_equality(min_total, work_totals)
-    spread = model.new_int_var(0, D, "p1_spread")
-    model.add(spread == max_total - min_total)
+    if len(work_totals) >= 2:
+        max_total = model.new_int_var(0, D, "p1_max_total")
+        min_total = model.new_int_var(0, D, "p1_min_total")
+        model.add_max_equality(max_total, work_totals)
+        model.add_min_equality(min_total, work_totals)
+        spread = model.new_int_var(0, D, "p1_spread")
+        model.add(spread == max_total - min_total)
+    else:
+        spread = 0  # 0 or 1 free colab — spread is trivially 0
 
     # SOFT: penalize INTEGRAL assignments — fewer integral = more diversity
     # This makes the solver prefer MANHA/TARDE bands without causing infeasibility.
     # Weight 1000 on spread ensures balance is always the primary objective.
+    # Exclude fully-pinned colabs — their bands are fixed.
     total_integral = sum(
         is_integral[c, d] for c in range(C) for d in range(D)
-        if d not in blocked_days.get(c, set())
+        if c not in fully_pinned and d not in blocked_days.get(c, set())
     )
     model.minimize(spread * 1000 + total_integral + sum(penalty_terms))
 
@@ -1654,6 +1730,7 @@ def _solve_pass(
     patience_s: float,
     num_workers: int,
     pinned_folga: Dict[Tuple[int, int], int] | None = None,
+    hint_pattern: Dict[Tuple[int, int], int] | None = None,
 ) -> dict:
     """Execute a single solve pass with coverage-based stabilization.
 
@@ -1661,6 +1738,11 @@ def _solve_pass(
     1. OPTIMAL reached → immediate return
     2. Coverage stabilizes (no improvement in patience_s seconds) → stop
     3. max_time exceeded → safety net stop
+
+    hint_pattern: Optional folga pattern used ONLY as warm-start hints (AddHint).
+    Unlike pinned_folga, it does NOT add constraints in build_model.
+    Useful for Pass 2+ where Phase 1 constraints are dropped but the pattern
+    still provides a good starting point for the solver.
     """
     config = data.get("config", {})
 
@@ -1704,6 +1786,23 @@ def _solve_pass(
                 advisory_hints += S
         if advisory_hints > 0:
             log(f"Warm-start: {advisory_hints} hints do padrao advisory aplicados")
+
+    # Warm-start from hint_pattern (no constraints, just AddHint)
+    if hint_pattern and not pinned_folga:
+        hint_count = 0
+        for (c, d), band in hint_pattern.items():
+            if c >= C or d >= D:
+                continue
+            if band == 0:
+                for s in range(S):
+                    model.add_hint(work[c, d, s], 0)
+                hint_count += S
+            elif band == 3:
+                for s in range(S):
+                    model.add_hint(work[c, d, s], 1)
+                hint_count += S
+        if hint_count > 0:
+            log(f"Warm-start: {hint_count} hints do Phase 1 (sem constraints)")
 
     total_demand_slots = sum(demand_by_slot.values())
 
@@ -1968,7 +2067,8 @@ def solve(data: dict) -> dict:
         result = _solve_pass(
             data, pass_num=2, relaxations=pass2_relaxations,
             max_time=remaining_time(), patience_s=patience_s,
-            num_workers=num_workers, pinned_folga=None,  # drop pins — solver finds its own pattern
+            num_workers=num_workers, pinned_folga=None,  # drop pin constraints
+            hint_pattern=pinned_folga,  # keep Phase 1 as warm-start hints
         )
 
         if result and result.get("sucesso"):
@@ -1998,6 +2098,7 @@ def solve(data: dict) -> dict:
             data, pass_num=3, relaxations=pass3_relaxations,
             max_time=remaining_time(), patience_s=patience_s,
             num_workers=num_workers, pinned_folga=None,
+            hint_pattern=pinned_folga,  # keep Phase 1 as warm-start hints
         )
     else:
         result = result if result else {"sucesso": False, "status": "TIMEOUT"}

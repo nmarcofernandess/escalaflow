@@ -108,10 +108,13 @@ def add_h1_max_dias_consecutivos(
     works_day: WorksDay,
     C: int, D: int,
     max_consecutive: int = 6,
+    skip_colabs: set | None = None,
 ) -> None:
     """H1: Max 6 dias consecutivos. Art. 67 CLT + OJ 410 TST."""
     window = max_consecutive + 1
     for c in range(C):
+        if skip_colabs and c in skip_colabs:
+            continue
         for start in range(D - window + 1):
             model.add(
                 sum(works_day[c, start + i] for i in range(window)) <= max_consecutive
@@ -444,6 +447,7 @@ def add_dias_trabalho(
     week_chunks: List[List[int]],
     blocked_days: Dict[int, set] | None = None,
     days: List[str] | None = None,
+    skip_colabs: set | None = None,
 ) -> None:
     """Force correct number of work days per collaborator per weekly chunk.
 
@@ -469,6 +473,8 @@ def add_dias_trabalho(
                 folga_fixa_days[c] = {d for d in range(len(days)) if day_labels[d] == fixed_day}
 
     for c in range(C):
+        if skip_colabs and c in skip_colabs:
+            continue
         regime_days = _resolve_regime_days(colabs[c])
         if regime_days == 0:
             continue  # Intermitente sem dias ativos — skip
@@ -939,6 +945,7 @@ def add_folga_fixa_5x2(
     colabs: List[dict],
     days: List[str],
     C: int, D: int,
+    skip_colabs: set | None = None,
 ) -> None:
     """v4: Folga fixa 5x2 — hard constraint.
 
@@ -951,6 +958,8 @@ def add_folga_fixa_5x2(
     day_labels = [DAY_LABELS[dt_date.fromisoformat(day).weekday()] for day in days]
 
     for c in range(C):
+        if skip_colabs and c in skip_colabs:
+            continue
         if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE":
             continue
         fixed_day = colabs[c].get("folga_fixa_dia_semana")
@@ -967,6 +976,7 @@ def add_folga_variavel_condicional(
     colabs: List[dict],
     days: List[str],
     C: int, D: int,
+    skip_colabs: set | None = None,
 ) -> None:
     """Folga variavel condicional: XOR entre domingo e dia variavel.
 
@@ -987,6 +997,8 @@ def add_folga_variavel_condicional(
     OFFSET = {"SEG": -6, "TER": -5, "QUA": -4, "QUI": -3, "SEX": -2, "SAB": -1}
 
     for c in range(C):
+        if skip_colabs and c in skip_colabs:
+            continue
         if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE" \
            and not colabs[c].get("folga_variavel_dia_semana"):
             continue  # Tipo A only
@@ -1021,6 +1033,7 @@ def add_dom_max_consecutivo(
     *,
     hard_m: bool = True,
     hard_f: bool = True,
+    skip_colabs: set | None = None,
 ) -> None:
     """HARD: max domingos consecutivos trabalhados.
 
@@ -1033,6 +1046,8 @@ def add_dom_max_consecutivo(
         return
 
     for c in range(C):
+        if skip_colabs and c in skip_colabs:
+            continue
         if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE" \
            and not colabs[c].get("folga_variavel_dia_semana"):
             continue  # Tipo A only
@@ -1129,6 +1144,7 @@ def add_domingo_ciclo_hard(
     C: int,
     sunday_indices: List[int],
     blocked_days: Dict[int, set],
+    skip_colabs: set | None = None,
 ) -> None:
     """Phase 1: Hard domingo ciclo — same logic as add_domingo_ciclo_soft but HARD.
 
@@ -1140,6 +1156,8 @@ def add_domingo_ciclo_hard(
         return
 
     for c in range(C):
+        if skip_colabs and c in skip_colabs:
+            continue
         if colabs[c].get("tipo_trabalhador", "CLT") == "INTERMITENTE" \
            and not colabs[c].get("folga_variavel_dia_semana"):
             continue  # Tipo A only
@@ -1295,6 +1313,7 @@ def add_dias_trabalho_soft_penalty(
     blocked_days: dict,
     weight: int = 4000,
     days: List[str] | None = None,
+    skip_colabs: set | None = None,
 ) -> None:
     """DIAS_TRABALHO SOFT: penaliza desvio do numero esperado de dias/semana."""
     DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
@@ -1311,6 +1330,8 @@ def add_dias_trabalho_soft_penalty(
                 folga_fixa_days[c] = {d for d in range(len(days)) if day_labels[d] == fixed_day}
 
     for c in range(C):
+        if skip_colabs and c in skip_colabs:
+            continue
         regime_days = _resolve_regime_days(colabs[c])
         if regime_days == 0:
             continue  # Intermitente sem dias ativos — skip
