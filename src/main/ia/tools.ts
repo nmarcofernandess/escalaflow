@@ -283,7 +283,8 @@ const OficializarEscalaSchema = z.object({
 const PreflightSchema = z.object({
   setor_id: z.number().int().positive().describe('ID do setor para validar viabilidade. Resolva via contexto automático ou consultar.'),
   data_inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data inicial do período no formato YYYY-MM-DD.'),
-  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final do período no formato YYYY-MM-DD.')
+  data_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Data final do período no formato YYYY-MM-DD.'),
+  detalhado: z.boolean().optional().describe('Se true, roda checks ampliados de capacidade (buildSolverInput). Default: false.')
 })
 
 const PreflightCompletoSchema = z.object({
@@ -490,11 +491,6 @@ export const IA_TOOLS = [
         parameters: toJsonSchema(PreflightSchema)
     },
     {
-        name: 'preflight_completo',
-        description: 'Pré-flight ampliado (inclui checks de capacidade via buildSolverInput) para aproximar a visão da UI e reduzir falsos positivos de viabilidade.',
-        parameters: toJsonSchema(PreflightCompletoSchema)
-    },
-    {
         name: 'diagnosticar_escala',
         description: 'Revalida e resume uma escala existente (indicadores, top violações/antipadrões e próximas ações possíveis). Use quando o usuário pedir diagnóstico/análise/explicação. Não use como passo obrigatório antes de `oficializar_escala` quando o usuário já deu um `escala_id` explícito.',
         parameters: toJsonSchema(DiagnosticarEscalaSchema)
@@ -540,11 +536,6 @@ export const IA_TOOLS = [
         parameters: toJsonSchema(ResetarRegrasEmpresaSchema)
     },
     {
-        name: 'listar_perfis_horario',
-        description: 'Lista perfis de horário de um tipo de contrato (janelas de entrada/saída). Usado para ver perfis de estagiário, CLT etc.',
-        parameters: toJsonSchema(ListarPerfisHorarioSchema)
-    },
-    {
         name: 'salvar_perfil_horario',
         description: 'Cria ou atualiza um perfil de horário de contrato. Para criar: tipo_contrato_id + nome + janelas. Para atualizar: id + campos a mudar.',
         parameters: toJsonSchema(SalvarPerfilHorarioSchema)
@@ -568,11 +559,6 @@ export const IA_TOOLS = [
         name: 'salvar_conhecimento',
         description: 'Salva conhecimento na base de conhecimento. importance=high: salvamento explícito do usuário. importance=low: auto-capture pela IA. Use quando o usuário pedir "registra que...", "salva que...", "anota que...".',
         parameters: toJsonSchema(SalvarConhecimentoSchema)
-    },
-    {
-        name: 'listar_conhecimento',
-        description: 'Lista fontes de conhecimento salvas com estatísticas (chunks, entidades, último acesso). Use para "o que temos salvo?", "quantas fontes temos?". Filtrável por tipo (manual/auto_capture).',
-        parameters: toJsonSchema(ListarConhecimentoSchema)
     },
     {
         name: 'explorar_relacoes',
@@ -2487,6 +2473,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'preflight') {
         try {
             const { setor_id, data_inicio, data_fim } = args
+            const detalhado = args.detalhado === true
             const blockers: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
             const warnings: Array<{ codigo: string; severidade: string; mensagem: string; detalhe?: string }> = []
 
@@ -2527,6 +2514,27 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM feriados WHERE data BETWEEN ? AND ?', data_inicio, data_fim)
             )!.count
 
+            // detalhado=true: roda checks ampliados de capacidade (buildSolverInput)
+            let checksCapacidadeExecutados = false
+            if (detalhado && blockers.length === 0) {
+                try {
+                    const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim)
+                    enrichPreflightWithCapacityChecks(solverInput as any, blockers as any, warnings as any, {
+                        collectiveCode: 'CAPACIDADE_COLETIVA_INSUFICIENTE',
+                        collectiveMessageMode: 'coletiva',
+                        addNoBlockersWarning: true,
+                    })
+                    checksCapacidadeExecutados = true
+                } catch (err: any) {
+                    warnings.push({
+                        codigo: 'PREFLIGHT_DETALHADO_DIAGNOSTICO_INDISPONIVEL',
+                        severidade: 'WARNING',
+                        mensagem: 'Não foi possível executar checks detalhados de capacidade.',
+                        detalhe: err?.message ?? String(err),
+                    })
+                }
+            }
+
             const ok = blockers.length === 0
             return toolOk({
                 ok,
@@ -2539,6 +2547,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     colaboradores_ativos: colabsAtivos,
                     demandas_cadastradas: demandasCount,
                     feriados_no_periodo: feriadosNoPeriodo,
+                    ...(detalhado ? { checks_capacidade_executados: checksCapacidadeExecutados } : {}),
                 },
             }, {
                 summary: ok
@@ -2546,6 +2555,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   : `Preflight encontrou ${blockers.length} blocker(s) e ${warnings.length} warning(s) para o setor ${setor_id}.`,
                 meta: {
                   tool_kind: 'validation',
+                  validation_level: detalhado ? 'completo' : 'basico',
                   can_proceed_to: ok ? ['gerar_escala'] : [],
                   blockers_count: blockers.length,
                   warnings_count: warnings.length,
@@ -2564,83 +2574,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     }
 
     if (name === 'preflight_completo') {
-        try {
-            const { setor_id, data_inicio, data_fim } = args
-            const regimesOverride = normalizeRegimesOverride(args.regimes_override as any[] | undefined)
-
-            const base = await executeTool('preflight', { setor_id, data_inicio, data_fim })
-            if (base?.status === 'error') {
-              return {
-                ...base,
-                _meta: {
-                  ...(base?._meta ?? {}),
-                  semantic_wrapper: 'preflight_completo',
-                },
-              }
-            }
-
-            const blockers = Array.isArray(base?.blockers) ? [...base.blockers] : []
-            const warnings = Array.isArray(base?.warnings) ? [...base.warnings] : []
-
-            if (base?.ok !== false) {
-              try {
-                const solverInput = await buildSolverInput(setor_id, data_inicio, data_fim, undefined, {
-                  regimesOverride,
-                })
-                enrichPreflightWithCapacityChecks(solverInput as any, blockers as any, warnings as any, {
-                  collectiveCode: 'CAPACIDADE_COLETIVA_INSUFICIENTE',
-                  collectiveMessageMode: 'coletiva',
-                  addNoBlockersWarning: true,
-                })
-              } catch (err: any) {
-                warnings.push({
-                  codigo: 'PREFLIGHT_COMPLETO_DIAGNOSTICO_INDISPONIVEL',
-                  severidade: 'WARNING',
-                  mensagem: 'Não foi possível executar checks completos de capacidade.',
-                  detalhe: err?.message ?? String(err),
-                })
-              }
-            }
-
-            const ok = blockers.length === 0
-            const diagnostico = {
-              ...(base?.diagnostico ?? {}),
-              demanda_zero_fallback: (base?.diagnostico?.demandas_cadastradas ?? 0) === 0,
-              checks_capacidade_executados: base?.ok !== false,
-              regimes_override_count: regimesOverride.length,
-            }
-
-            return toolOk(
-              {
-                ok,
-                blockers,
-                warnings,
-                diagnostico,
-              },
-              {
-                summary: ok
-                  ? `Preflight completo OK para setor ${setor_id}. ${warnings.length} warning(s), 0 blocker(s).`
-                  : `Preflight completo encontrou ${blockers.length} blocker(s) e ${warnings.length} warning(s) para o setor ${setor_id}.`,
-                meta: {
-                  tool_kind: 'validation',
-                  validation_level: 'completo',
-                  can_proceed_to: ok ? ['gerar_escala'] : [],
-                  blockers_count: blockers.length,
-                  warnings_count: warnings.length,
-                  regimes_override_count: regimesOverride.length,
-                }
-              }
-            )
-        } catch (e: any) {
-            return toolError(
-              'PREFLIGHT_COMPLETO_FAILED',
-              `Erro ao executar preflight completo: ${e.message}`,
-              {
-                correction: 'Verifique setor_id, período e overrides. Se necessário, rode `preflight` simples primeiro.',
-                meta: { tool_kind: 'validation', validation_level: 'completo', next_tools_hint: ['preflight', 'consultar'] }
-              }
-            )
-        }
+        // Redirect: consolidado em preflight(detalhado=true)
+        return executeTool('preflight', { ...args, detalhado: true })
     }
 
     if (name === 'cadastrar_lote') {
@@ -2968,7 +2903,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 tool_kind: 'action',
                 action: 'save-collaborator-rule',
                 colaborador_id: colab.id,
-                ids_usaveis_em: ['buscar_colaborador', 'salvar_regra_horario_colaborador', 'gerar_escala', 'preflight_completo'],
+                ids_usaveis_em: ['buscar_colaborador', 'salvar_regra_horario_colaborador', 'gerar_escala', 'preflight'],
               }
             }
           )
@@ -3339,6 +3274,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
     // ==================== listar_perfis_horario ====================
     if (name === 'listar_perfis_horario') {
+        // Tool removida do surface — info agora vem via contexto (contratos_relevantes)
+        // Handler mantido para backward compat de LLMs com cache
         const { tipo_contrato_id } = args
         if (!tipo_contrato_id) {
             return toolError('LISTAR_PERFIS_PARAM', 'tipo_contrato_id é obrigatório.', {
@@ -3372,7 +3309,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 // UPDATE
                 const existing = await queryOne('SELECT id FROM contrato_perfis_horario WHERE id = ?', id)
                 if (!existing) {
-                    return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+                    return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use o contexto automático (contratos relevantes) para ver os IDs válidos.', meta: { tool_kind: 'action' } })
                 }
                 const fields: string[] = []
                 const values: unknown[] = []
@@ -3418,12 +3355,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     if (name === 'deletar_perfil_horario') {
         const { id } = args
         if (!id) {
-            return toolError('DELETAR_PERFIL_PARAM', 'id é obrigatório.', { correction: 'Informe o id do perfil. Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+            return toolError('DELETAR_PERFIL_PARAM', 'id é obrigatório.', { correction: 'Informe o id do perfil. Use o contexto automático (contratos relevantes) para ver os IDs válidos.', meta: { tool_kind: 'action' } })
         }
         try {
             const existing = await queryOne<{ id: number; nome: string }>('SELECT id, nome FROM contrato_perfis_horario WHERE id = ?', id)
             if (!existing) {
-                return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use listar_perfis_horario para ver os IDs válidos.', meta: { tool_kind: 'action' } })
+                return toolError('PERFIL_NAO_ENCONTRADO', `Perfil ${id} não encontrado.`, { correction: 'Use o contexto automático (contratos relevantes) para ver os IDs válidos.', meta: { tool_kind: 'action' } })
             }
             await execute('DELETE FROM contrato_perfis_horario WHERE id = ?', id)
             broadcastInvalidation(['tipos_contrato'])
@@ -3532,6 +3469,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     }
 
     if (name === 'listar_conhecimento') {
+        // Tool removida do surface — stats agora vêm via contexto (knowledge_catalogo)
+        // Handler mantido para backward compat
         const { tipo, limite } = args
         try {
             const sources = tipo === 'todos'

@@ -25,7 +25,7 @@ O fluxo completo: **UI → Bridge TS → Python solver → Validador TS → Banc
 │                        RENDERER (React 19)                   │
 │  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────┐ │
 │  │ SetorDetalhe│  │ EscalaPagina │  │ IaChatPanel         │ │
-│  │ (preview)   │  │ (escala real)│  │ (chat RH + 34 tools)│ │
+│  │ (preview)   │  │ (escala real)│  │ (chat RH + 30 tools)│ │
 │  └──────┬──────┘  └──────┬───────┘  └──────────┬──────────┘ │
 │         │                │                      │            │
 │         │           IPC (tipc)                   │            │
@@ -35,7 +35,7 @@ O fluxo completo: **UI → Bridge TS → Python solver → Validador TS → Banc
 │  ┌──────▼──────┐  ┌──────▼───────┐  ┌──────────▼──────────┐ │
 │  │ simula-     │  │ solver-      │  │ ia/                  │ │
 │  │ ciclo.ts    │  │ bridge.ts    │  │ tools.ts + cliente.ts│ │
-│  │ (preview)   │  │ (bridge)     │  │ (34 tools + LLM)     │ │
+│  │ (preview)   │  │ (bridge)     │  │ (30 tools + LLM)     │ │
 │  └─────────────┘  └──────┬───────┘  └─────────────────────┘ │
 │                          │                                   │
 │                   ┌──────▼───────┐                           │
@@ -380,5 +380,5 @@ Após o solver gerar e as alocações serem salvas, o **validador TypeScript** (
 | `motor-regras.md` | RFC canônico — 35 regras, decisões travadas | Detalhes de cada regra |
 | `motor-spec.md` | Spec técnica — edge cases, modelo de dados | Implementação detalhada |
 | `ANALYST_PIPELINE_SOLVER_COMPLETO.md` | Mapa de divergências entre engines | Debug de paridade preview/solver |
-| `ia-sistema.md` | Sistema de IA — 34 tools, discovery, RAG | Quando mexer na IA |
+| `ia-sistema.md` | Sistema de IA — 30 tools, discovery, RAG | Quando mexer na IA |
 | `knowledge/sistema/*.md` | Base de conhecimento pro RAG | Quando a IA precisa responder o RH |

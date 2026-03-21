@@ -21,7 +21,7 @@
 | Database | PGlite (Postgres 17 WASM, pgvector, FTS portugues, pg_trgm) |
 | Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) — multi-pass legal-first com modos OFFICIAL/EXPLORATORY |
 | Frontend | React 19 + Vite + Tailwind + shadcn/ui + Zustand + recharts |
-| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local via node-llama-cpp (Qwen 3.5) — 34 tools |
+| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local via node-llama-cpp (Qwen 3.5) — 30 tools |
 | Knowledge | RAG local: embeddings ONNX (multilingual-e5-small) + pgvector + Knowledge Graph |
 
 ### Fluxo macro
@@ -299,7 +299,7 @@ CLT.GRID_MINUTOS               = 15    // quantizacao universal
 
 ### 2.11 O que a IA precisa saber para operar
 
-**Entidades que a IA MANIPULA (write) — 34 tools total:**
+**Entidades que a IA MANIPULA (write) — 30 tools total:**
 - `alocacoes` — via tools `ajustar_alocacao`, `ajustar_horario`
 - `escalas` — via tools `gerar_escala`, `oficializar_escala`
 - `regra_empresa` — via tools `editar_regra`, `resetar_regras_empresa`
@@ -1173,7 +1173,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 - Resetar regras ao default (via `editar_regra` deletando a regra_empresa, ou orientando o usuario)
 - Gerar escalas com `rules_override` temporario (parametro do `gerar_escala`)
 
-**A IA TAMBÉM PODE (tools especializadas — 34 tools no total):**
+**A IA TAMBÉM PODE (tools especializadas — 30 tools no total):**
 - Criar/editar regras de horario por colaborador → `salvar_regra_horario_colaborador`
 - Criar/editar excecoes de horario por data → `upsert_regra_excecao_data`
 - Criar/editar perfis de horario por contrato → `listar_perfis_horario`, `salvar_perfil_horario`, `deletar_perfil_horario`
@@ -1401,7 +1401,7 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 
 ### 5.4 O que a IA pode vs nao pode acessar
 
-A IA tem **34 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
+A IA tem **30 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
 
 **A IA EXECUTA DIRETAMENTE (via 35 tools):**
 
@@ -1444,7 +1444,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
 
 > **Arquivos fonte:**
 > - `src/main/ia/cliente.ts` (~600 linhas) — orquestrador com streaming, compaction, conversa_id
-> - `src/main/ia/tools.ts` (~3800 linhas) — 34 tools com Zod + handlers
+> - `src/main/ia/tools.ts` (~3800 linhas) — 30 tools com Zod + handlers
 > - `src/main/ia/system-prompt.ts` (~370 linhas) — prompt com 8 secoes (reescrito, inclui degradacao graciosa)
 > - `src/main/ia/discovery.ts` (~300 linhas) — auto-contexto por pagina + alertas proativos + memorias
 > - `src/main/ia/config.ts` — buildModelFactory (reutilizavel por knowledge graph, session-processor)
@@ -1469,7 +1469,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
     |                    = [{role,content}...] com tool_calls  |
     |                          |                              |
     |                    getVercelAiTools()                    |
-    |                    = 34 tools com Zod + execute()         |
+    |                    = 30 tools com Zod + execute()         |
     |                          |                              |
     |                    streamText({                          |
     |                      model, system, messages,            |
@@ -1500,7 +1500,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
 async function iaEnviarMensagemStream(config, currentMsg, historico, contexto) {
     const fullSystemPrompt = buildFullSystemPrompt(contexto)
     const messages = buildChatMessages(historico, currentMsg)  // inclui tool_calls
-    const tools = getVercelAiTools()                           // 34 tools com Zod
+    const tools = getVercelAiTools()                           // 30 tools com Zod
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
     const result = streamText({
@@ -1572,7 +1572,7 @@ Gemini e OpenRouter usam Vercel AI SDK (`streamText`). Provider Local usa path p
 
 **Chat com tool calling:**
 - `localLlmChat()` cria `LlamaChatSession` com system prompt trimado (`LOCAL_SYSTEM_PROMPT`, ~90 linhas)
-- 34 tools convertidas via `defineChatSessionFunction` + `zodToJsonSchema`
+- 30 tools convertidas via `defineChatSessionFunction` + `zodToJsonSchema`
 - Reutiliza `executeTool()` existente — mesmos handlers que cloud providers
 - Emite mesmos `IaStreamEvent` via `broadcastToRenderer('ia:stream')` — UI identica
 - `onTextChunk` para streaming em tempo real
@@ -1628,12 +1628,12 @@ O `SYSTEM_PROMPT` em `system-prompt.ts` tem ~370 linhas com 8 secoes:
 | 2 | **Conhecimento CLT/CCT** | Contratos, regras legais, grid 15min, precedencia horarios, deficit SOFT |
 | 3 | **O Motor** | Fluxo solver, degradacao graciosa (multi-pass), solve_mode, INFEASIBLE + diagnosticar_infeasible |
 | 4 | **Entidades — O Modelo Mental** | Empresa, Setor, Colaborador, Demanda, Excecao, Funcao, Escala, 35 regras |
-| 5 | **Tools — Guia de Uso Inteligente** | 34 tools organizadas por workflow (discovery, CRUD, geracao, validacao, regras, knowledge, memorias) |
+| 5 | **Tools — Guia de Uso Inteligente** | 30 tools organizadas por workflow (discovery, CRUD, geracao, validacao, regras, knowledge, memorias) |
 | 6 | **Schema de referencia** | Tabelas com FKs explicitas |
 | 7 | **Workflows Comuns — Receitas Prontas** | 8+ receitas: gerar escala, ferias, INFEASIBLE (com diagnosticar_infeasible), Black Friday, etc |
 | 8 | **Memorias e Base de Conhecimento** | Memorias do RH (max 20, injetadas no discovery) + RAG + knowledge graph |
 
-**Detalhe da secao 5 — 34 tools por workflow:**
+**Detalhe da secao 5 — 30 tools por workflow:**
 O prompt organiza as tools por INTENCAO (nao por nome tecnico):
 - Discovery: `get_context`, `consultar`, `buscar_colaborador`, `obter_alertas`
 - CRUD: `criar`, `atualizar`, `deletar`, `cadastrar_lote`
@@ -1681,14 +1681,14 @@ O `buildContextBriefing()` e chamado ANTES da requisicao ao LLM e monta uma stri
 1. `get_context()` tool — JSON estruturado, sempre mais confiavel
 2. Auto-contexto — String markdown, complementar (pode estar desatualizado se usuario navegou)
 
-### 6.6 As 34 tools — visao geral
+### 6.6 As 30 tools — visao geral
 
 Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemini API e convertidas para formato Vercel AI SDK via `getVercelAiTools()`. Cada tool tem:
 - Schema Zod para validacao runtime
 - Funcao `execute()` que chama `executeTool(name, args)`
 - Descricao detalhada com exemplos (para o LLM)
 
-**Organizacao por categoria (34 tools):**
+**Organizacao por categoria (30 tools):**
 - Discovery: 7 | CRUD: 4 | Escalas: 6 | Validacao: 3 | Regras motor: 2
 - Regras colab: 4 | Perfis/horarios: 4 | KPI: 1 | Knowledge: 4 | Memorias: 3
 
@@ -2234,7 +2234,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
                      │                                             │
                      │  ┌─────────────────────────────────┐       │
                      │  │    CAPACIDADES DA IA             │       │
-                     │  │      (34 tools)                  │       │
+                     │  │      (30 tools)                  │       │
                      │  │                                  │       │
                      │  │  ✅ Discovery completo (18 tab)  │       │
                      │  │  ✅ CRUD generico (7 entidades)  │       │
@@ -2296,7 +2296,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 ### 8.5 Resumo executivo
 
 **O que esta BOM:**
-- 34 tools cobrem ~85% das operacoes: discovery, CRUD, geracao, ajuste, regras, regras colab, perfis, horarios, KPI, alertas, knowledge, memorias
+- 30 tools cobrem ~85% das operacoes: discovery, CRUD, geracao, ajuste, regras, regras colab, perfis, horarios, KPI, alertas, knowledge, memorias
 - Motor com degradacao graciosa (multi-pass): tenta o melhor possivel antes de falhar
 - `diagnosticar_infeasible` permite debugar conflitos (roda solver 6x isolando regras)
 - Knowledge Layer: RAG local (embeddings ONNX + pgvector + FTS portugues + knowledge graph)
@@ -2348,7 +2348,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 
 > Incluido na secao 2.9
 
-## Apendice C: Inventario de tools IA (34 tools)
+## Apendice C: Inventario de tools IA (30 tools)
 
 > **Atualizado em:** 2026-02-24 — inclui diagnosticar_infeasible, knowledge (4), memorias (3)
 

@@ -266,8 +266,7 @@ Engine configurável: empresa pode ligar/desligar regras editáveis.
 
 | Tool | Quando | Input |
 |------|--------|-------|
-| \`preflight\` | Checar viabilidade ANTES de gerar | \`setor_id\` + período |
-| \`preflight_completo\` | Preflight profundo (capacidade, blockers) | \`setor_id\` + período |
+| \`preflight\` | Checar viabilidade ANTES de gerar. Use \`detalhado=true\` para checks ampliados de capacidade. | \`setor_id\` + período (+ \`detalhado\` opcional) |
 | \`gerar_escala\` | Rodar o motor e salvar RASCUNHO com validação autoritativa | \`setor_id\` + período (+ \`solve_mode\` / \`rules_override\`) |
 | \`diagnosticar_escala\` | Analisar problemas de escala existente | \`escala_id\` |
 | \`ajustar_alocacao\` | Mudar status de uma pessoa num dia (TRABALHO/FOLGA) | \`escala_id\` + \`colaborador_id\` + \`data\` + \`status\` |
@@ -301,7 +300,6 @@ Engine configurável: empresa pode ligar/desligar regras editáveis.
 
 | Tool | Quando | Input |
 |------|--------|-------|
-| \`listar_perfis_horario\` | Ver perfis de um tipo de contrato (estagiário, CLT) | \`tipo_contrato_id\` |
 | \`salvar_perfil_horario\` | Criar/editar perfil (janela entrada/saída) | \`id\` (update) ou \`tipo_contrato_id\` + \`nome\` + janelas (create) |
 | \`deletar_perfil_horario\` | Remover perfil | \`id\` |
 
@@ -484,7 +482,7 @@ Elas são **SEMPRE injetadas** em toda conversa (você já as vê no contexto au
 Documentação pesquisável com chunks e busca semântica.
 
 - "Qual a política de X?" → \`buscar_conhecimento\`
-- "O que temos salvo?" → \`listar_conhecimento\`
+- "O que temos salvo?" → use o contexto automático (knowledge_catalogo injetado) ou \`buscar_conhecimento\`
 - \`consultar\` = dados estruturados (tabelas) ≠ \`buscar_conhecimento\` (texto livre semântico)
 
 **Busca inteligente (Self-RAG):**
@@ -572,15 +570,15 @@ INFEASIBLE: detectado em <1s. Mais tempo NÃO resolve. Use diagnosticar_infeasib
 
 ## Tools Disponíveis
 
-**Consultar:** consultar, buscar_colaborador, listar_perfis_horario
+**Consultar:** consultar, buscar_colaborador
 **CRUD:** criar, atualizar, deletar, cadastrar_lote
 **Escalas:** gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala
-**Validação:** preflight, preflight_completo, diagnosticar_escala, diagnosticar_infeasible, explicar_violacao
+**Validação:** preflight (detalhado=true para checks ampliados), diagnosticar_escala, diagnosticar_infeasible, explicar_violacao
 **Regras:** editar_regra, salvar_regra_horario_colaborador, upsert_regra_excecao_data, resetar_regras_empresa
 **Config:** configurar_horario_funcionamento, salvar_perfil_horario, deletar_perfil_horario
 **KPI:** resumir_horas_setor
 **Demanda:** salvar_demanda_excecao_data
-**Knowledge:** buscar_conhecimento, salvar_conhecimento, listar_conhecimento, explorar_relacoes
+**Knowledge:** buscar_conhecimento, salvar_conhecimento, explorar_relacoes
 **Memórias:** salvar_memoria, remover_memoria (memórias e alertas são injetados automaticamente no contexto)
 **Backup:** fazer_backup — cria snapshot do sistema a pedido do RH. O sistema tambem faz backups automaticos ao fechar e por intervalo configuravel.
 

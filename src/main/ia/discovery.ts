@@ -1,7 +1,62 @@
 import { queryOne, queryAll } from '../db/query'
 import { buildSolverInput, computeSolverScenarioHash } from '../motor/solver-bridge'
 import { searchKnowledge } from '../knowledge/search'
+import { gerarCicloFase1 } from '../../shared/simula-ciclo'
 import type { IaContexto } from '../../shared/types'
+
+// ─── Context Bundle Types ────────────────────────────────────────
+export interface ContextBundle {
+    rota: string
+    memorias?: string
+    rag?: string
+    global: {
+        setores: number
+        colaboradores: number
+        rascunhos: number
+        oficiais: number
+    }
+    feriados_proximos: Array<{ data: string; nome: string; proibido: boolean }>
+    regras_custom: Array<{ codigo: string; nome: string; de: string; para: string }>
+    setores_lista: Array<{ id: number; nome: string; horario: string; colabs: number }>
+    setor?: {
+        info: string
+        preview?: {
+            ciclo_semanas: number
+            cobertura_media: number
+            cobertura_por_dia: Array<{ dia: string; cobertura: number; demanda: number }>
+            deficit_max: number
+            ff_distribuicao: Record<string, number>
+            warnings: string[]
+        }
+        contratos_relevantes: Array<{
+            id: number
+            nome: string
+            horas_semanais: number
+            regime: string
+            perfis: Array<{ id: number; nome: string; inicio: string; fim: string }>
+        }>
+        escala_resumida?: {
+            id: number
+            status: string
+            cobertura_percent: number | null
+            violacoes_hard: number
+            violacoes_soft: number
+            equilibrio: number | null
+            pode_oficializar: boolean
+            desatualizada: boolean
+        }
+    }
+    colaborador?: string
+    snapshot?: string
+    alertas?: string
+    alertas_backup?: string
+    knowledge_catalogo: {
+        total_fontes: number
+        total_chunks: number
+        titulos_top: string[]
+    }
+    dica_pagina: string
+}
 
 /**
  * Auto-discovery: dado o contexto da página atual do usuário,
@@ -11,135 +66,285 @@ import type { IaContexto } from '../../shared/types'
  * O objetivo é que a IA NUNCA precise perguntar informações
  * básicas que já estão visíveis na tela do usuário.
  */
-export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuario?: string): Promise<string> {
-    if (!contexto) return ''
+
+// =============================================================================
+// buildContextBundle — monta o ContextBundle estruturado
+// =============================================================================
+export async function buildContextBundle(contexto?: IaContexto, mensagemUsuario?: string): Promise<ContextBundle | null> {
+    if (!contexto) return null
 
     const snap = contexto.store_snapshot as Record<string, any> | undefined
-    const sections: string[] = []
 
-    sections.push(`## CONTEXTO AUTOMÁTICO — PÁGINA ATUAL DO USUÁRIO`)
-    sections.push(`Rota: ${contexto.rota}`)
+    // ─── Global ─────────────────────────────────────────────────────
+    const global = await _resumoGlobal()
 
-    // ─── Memórias do RH (SEMPRE, todas) ────────────────────────────
+    // ─── Memórias ───────────────────────────────────────────────────
     const memorias = await _memorias()
-    if (memorias) sections.push(memorias)
 
-    // ─── Auto-RAG: busca semântica no knowledge ─────────────────────
+    // ─── Auto-RAG ───────────────────────────────────────────────────
+    let rag: string | undefined
     if (mensagemUsuario && mensagemUsuario.trim().length > 10) {
-        const ragContext = await _autoRag(mensagemUsuario)
-        if (ragContext) sections.push(ragContext)
+        rag = (await _autoRag(mensagemUsuario)) ?? undefined
     }
 
-    // ─── Resumo global (sempre) ──────────────────────────────────────
-    // Snapshot doesn't have global counts for all setores — always query
-    const resumo = await _resumoGlobal()
-    sections.push(`\n### Resumo do sistema`)
-    sections.push(`- Setores ativos: ${resumo.setores}`)
-    sections.push(`- Colaboradores ativos: ${resumo.colaboradores}`)
-    sections.push(`- Escalas RASCUNHO: ${resumo.rascunhos} | OFICIAL: ${resumo.oficiais}`)
-
-    // ─── Feriados próximos (30 dias) — snapshot doesn't cover ───────
-    const feriadosProximos = await queryAll<{ data: string; nome: string; proibido_trabalhar: boolean }>(`
+    // ─── Feriados próximos ──────────────────────────────────────────
+    const feriadosRows = await queryAll<{ data: string; nome: string; proibido_trabalhar: boolean }>(`
         SELECT data, nome, proibido_trabalhar
         FROM feriados
         WHERE data::date >= CURRENT_DATE AND data::date <= CURRENT_DATE + INTERVAL '30 days'
         ORDER BY data
     `)
-    if (feriadosProximos.length > 0) {
-        sections.push(`\n### Feriados nos próximos 30 dias`)
-        for (const f of feriadosProximos) {
-            const flag = f.proibido_trabalhar ? ' (PROIBIDO TRABALHAR)' : ''
-            sections.push(`- ${f.data}: ${f.nome}${flag}`)
-        }
-    }
+    const feriados_proximos = feriadosRows.map(f => ({ data: f.data, nome: f.nome, proibido: f.proibido_trabalhar }))
 
-    // ─── Regras customizadas (empresa overrides ativos) — snapshot doesn't cover ─
-    const regrasCustom = await queryAll<{ codigo: string; status: string; nome: string; status_sistema: string }>(`
+    // ─── Regras custom ──────────────────────────────────────────────
+    const regrasRows = await queryAll<{ codigo: string; status: string; nome: string; status_sistema: string }>(`
         SELECT re.codigo, re.status, rd.nome, rd.status_sistema
         FROM regra_empresa re
         JOIN regra_definicao rd ON re.codigo = rd.codigo
         WHERE re.status != rd.status_sistema
         ORDER BY re.codigo
     `)
-    if (regrasCustom.length > 0) {
-        sections.push(`\n### Regras com override da empresa`)
-        for (const r of regrasCustom) {
-            sections.push(`- **${r.codigo}** (${r.nome}): padrão ${r.status_sistema} → empresa ${r.status}`)
+    const regras_custom = regrasRows.map(r => ({ codigo: r.codigo, nome: r.nome, de: r.status_sistema, para: r.status }))
+
+    // ─── Lista de setores ───────────────────────────────────────────
+    const setoresRows = await queryAll<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string }>('SELECT id, nome, hora_abertura, hora_fechamento FROM setores WHERE ativo = true ORDER BY nome')
+    const setores_lista: ContextBundle['setores_lista'] = []
+    for (const s of setoresRows) {
+        let colabs: number
+        if (snap?.setor?.id === s.id && Array.isArray(snap.colaboradores)) {
+            colabs = snap.colaboradores.length
+        } else {
+            colabs = (await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id))?.c ?? 0
         }
+        setores_lista.push({ id: s.id, nome: s.nome, horario: `${s.hora_abertura}–${s.hora_fechamento}`, colabs })
     }
 
-    // ─── Lista de setores (sempre — são poucos) ──────────────────────
-    const setores = await queryAll<{ id: number; nome: string; hora_abertura: string; hora_fechamento: string; ativo: boolean }>('SELECT id, nome, hora_abertura, hora_fechamento, ativo FROM setores WHERE ativo = true ORDER BY nome')
-    if (setores.length > 0) {
-        sections.push(`\n### Setores disponíveis`)
-        for (const s of setores) {
-            // If snapshot has this setor loaded, use its colaborador count to skip query
-            if (snap?.setor?.id === s.id && snap.colaboradores) {
-                sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.hora_abertura}–${s.hora_fechamento}, ${snap.colaboradores.length} colaboradores`)
-            } else {
-                const countRow = await queryOne<{ c: number }>('SELECT COUNT(*)::int as c FROM colaboradores WHERE setor_id = ? AND ativo = true', s.id)
-                const numColabs = countRow?.c ?? 0
-                sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.hora_abertura}–${s.hora_fechamento}, ${numColabs} colaboradores`)
+    // ─── Contexto de SETOR específico ───────────────────────────────
+    let setorBundle: ContextBundle['setor'] | undefined
+    if (contexto.setor_id) {
+        let info: string | null = null
+        if (snap?.setor?.id === contexto.setor_id && snap.colaboradores) {
+            const snapInfo = _infoSetorFromSnapshot(snap)
+            const extraInfo = await _infoSetorExtras(contexto.setor_id, snap)
+            info = [snapInfo, extraInfo].filter(Boolean).join('\n') || null
+        } else {
+            info = await _infoSetor(contexto.setor_id)
+        }
+
+        // Escala resumida
+        const escalaRow = await queryOne<any>(`
+            SELECT id, status, data_inicio, data_fim, cobertura_percent,
+                   violacoes_hard, violacoes_soft, equilibrio, input_hash
+            FROM escalas
+            WHERE setor_id = ?
+            ORDER BY CASE status WHEN 'RASCUNHO' THEN 0 WHEN 'OFICIAL' THEN 1 ELSE 2 END, id DESC
+            LIMIT 1
+        `, contexto.setor_id)
+
+        type EscalaResumida = NonNullable<ContextBundle['setor']>['escala_resumida']
+        let escala_resumida: EscalaResumida | undefined
+        if (escalaRow) {
+            let desatualizada = false
+            if (escalaRow.input_hash) {
+                try {
+                    const currentInput = await buildSolverInput(contexto.setor_id, escalaRow.data_inicio, escalaRow.data_fim)
+                    const currentHash = computeSolverScenarioHash(currentInput)
+                    desatualizada = currentHash !== escalaRow.input_hash
+                } catch { /* skip */ }
+            }
+            escala_resumida = {
+                id: escalaRow.id,
+                status: escalaRow.status,
+                cobertura_percent: escalaRow.cobertura_percent ?? null,
+                violacoes_hard: escalaRow.violacoes_hard ?? 0,
+                violacoes_soft: escalaRow.violacoes_soft ?? 0,
+                equilibrio: escalaRow.equilibrio ?? null,
+                pode_oficializar: (escalaRow.violacoes_hard ?? 0) === 0 && escalaRow.status === 'RASCUNHO',
+                desatualizada,
+            }
+        }
+
+        // Preview de ciclo
+        const preview = await _buildPreview(contexto.setor_id)
+
+        // Contratos relevantes
+        const contratos_relevantes = await _contratosRelevantes(contexto.setor_id)
+
+        if (info) {
+            setorBundle = {
+                info,
+                preview: preview ?? undefined,
+                contratos_relevantes,
+                escala_resumida,
             }
         }
     }
 
-    // ─── Contexto de SETOR específico ────────────────────────────────
-    if (contexto.setor_id) {
-        // When snapshot covers this setor, use _infoSetorFromSnapshot (skips ~6 DB queries)
-        if (snap?.setor?.id === contexto.setor_id && snap.colaboradores) {
-            const snapInfo = _infoSetorFromSnapshot(snap)
-            if (snapInfo) sections.push(snapInfo)
-            // Still query the things snapshot doesn't cover: excecoes detail, regras horario, demandas detail, escala detail
-            const extraInfo = await _infoSetorExtras(contexto.setor_id, snap)
-            if (extraInfo) sections.push(extraInfo)
-        } else {
-            const setorInfo = await _infoSetor(contexto.setor_id)
-            if (setorInfo) sections.push(setorInfo)
-        }
-    }
-
-    // ─── Snapshot visual context — what the user is seeing now ──────
+    // ─── Snapshot visual ────────────────────────────────────────────
+    let snapshot: string | undefined
     if (snap) {
-        const snapSection = _snapshotBriefing(snap)
-        if (snapSection) sections.push(snapSection)
+        snapshot = _snapshotBriefing(snap) ?? undefined
     }
 
-    // ─── Contexto de COLABORADOR específico ──────────────────────────
+    // ─── Colaborador específico ─────────────────────────────────────
+    let colaborador: string | undefined
     if (contexto.colaborador_id) {
-        const colabInfo = await _infoColaborador(contexto.colaborador_id)
-        if (colabInfo) sections.push(colabInfo)
+        colaborador = (await _infoColaborador(contexto.colaborador_id)) ?? undefined
     }
 
-    // ─── Alertas proativos (escalas desatualizadas, violações, exceções) ──
-    const alertaLines = await _alertasProativos(contexto.setor_id)
-    if (alertaLines) sections.push(alertaLines)
+    // ─── Alertas proativos ──────────────────────────────────────────
+    const alertas = (await _alertasProativos(contexto.setor_id)) ?? undefined
 
-    // ─── Alerta de backup desatualizado ──────────────────────────────
+    // ─── Alerta de backup ───────────────────────────────────────────
+    let alertas_backup: string | undefined
     try {
         const backupConfig = await queryOne<{ ultimo_backup: string | null }>('SELECT ultimo_backup FROM configuracao_backup WHERE id = 1')
         if (backupConfig) {
             const last = backupConfig.ultimo_backup ? new Date(backupConfig.ultimo_backup) : null
             const daysAgo = last ? Math.floor((Date.now() - last.getTime()) / 86400000) : null
-
             if (!last) {
-                sections.push('\n### Alerta: Backup')
-                sections.push('- O sistema NUNCA fez backup. Sugira ao RH fazer um backup (tool fazer_backup).')
+                alertas_backup = '- O sistema NUNCA fez backup. Sugira ao RH fazer um backup (tool fazer_backup).'
             } else if (daysAgo !== null && daysAgo > 7) {
-                sections.push('\n### Alerta: Backup')
-                sections.push(`- O ultimo backup foi ha ${daysAgo} dias. Sugira ao RH fazer um backup.`)
+                alertas_backup = `- O ultimo backup foi ha ${daysAgo} dias. Sugira ao RH fazer um backup.`
             }
         }
     } catch { /* table might not exist yet */ }
 
-    // ─── Stats Knowledge Base ────────────────────────────────────────
-    const knowledgeStats = await _statsKnowledge()
-    if (knowledgeStats) sections.push(knowledgeStats)
+    // ─── Knowledge catálogo ─────────────────────────────────────────
+    const knowledge_catalogo = await _statsKnowledgeBundle()
 
-    // ─── Dica de página ──────────────────────────────────────────────
-    sections.push(_dicaPagina(contexto.pagina))
+    // ─── Dica de página ─────────────────────────────────────────────
+    const dica_pagina = _dicaPagina(contexto.pagina)
+
+    return {
+        rota: contexto.rota,
+        memorias: memorias ?? undefined,
+        rag,
+        global,
+        feriados_proximos,
+        regras_custom,
+        setores_lista,
+        setor: setorBundle,
+        colaborador,
+        snapshot,
+        alertas,
+        alertas_backup,
+        knowledge_catalogo,
+        dica_pagina,
+    }
+}
+
+// =============================================================================
+// renderContextBriefing — converte ContextBundle em markdown (mesmo formato antigo + novas seções)
+// =============================================================================
+export function renderContextBriefing(bundle: ContextBundle): string {
+    const sections: string[] = []
+
+    sections.push(`## CONTEXTO AUTOMÁTICO — PÁGINA ATUAL DO USUÁRIO`)
+    sections.push(`Rota: ${bundle.rota}`)
+
+    if (bundle.memorias) sections.push(bundle.memorias)
+    if (bundle.rag) sections.push(bundle.rag)
+
+    sections.push(`\n### Resumo do sistema`)
+    sections.push(`- Setores ativos: ${bundle.global.setores}`)
+    sections.push(`- Colaboradores ativos: ${bundle.global.colaboradores}`)
+    sections.push(`- Escalas RASCUNHO: ${bundle.global.rascunhos} | OFICIAL: ${bundle.global.oficiais}`)
+
+    if (bundle.feriados_proximos.length > 0) {
+        sections.push(`\n### Feriados nos próximos 30 dias`)
+        for (const f of bundle.feriados_proximos) {
+            const flag = f.proibido ? ' (PROIBIDO TRABALHAR)' : ''
+            sections.push(`- ${f.data}: ${f.nome}${flag}`)
+        }
+    }
+
+    if (bundle.regras_custom.length > 0) {
+        sections.push(`\n### Regras com override da empresa`)
+        for (const r of bundle.regras_custom) {
+            sections.push(`- **${r.codigo}** (${r.nome}): padrão ${r.de} → empresa ${r.para}`)
+        }
+    }
+
+    if (bundle.setores_lista.length > 0) {
+        sections.push(`\n### Setores disponíveis`)
+        for (const s of bundle.setores_lista) {
+            sections.push(`- **${s.nome}** (ID: ${s.id}) — ${s.horario}, ${s.colabs} colaboradores`)
+        }
+    }
+
+    if (bundle.setor) {
+        sections.push(bundle.setor.info)
+
+        if (bundle.setor.preview) {
+            const p = bundle.setor.preview
+            sections.push(`\n### Preview de Ciclo`)
+            sections.push(`- Ciclo: ${p.ciclo_semanas} semanas | Cobertura média: ${(p.cobertura_media * 100).toFixed(0)}%`)
+            sections.push(`- Déficit máximo: ${p.deficit_max} pessoa(s)`)
+            for (const d of p.cobertura_por_dia) {
+                sections.push(`- ${d.dia}: cobertura ${d.cobertura}/${d.demanda}`)
+            }
+            if (p.ff_distribuicao && Object.keys(p.ff_distribuicao).length > 0) {
+                const ffStr = Object.entries(p.ff_distribuicao).map(([dia, qt]) => `${dia}:${qt}`).join(', ')
+                sections.push(`- Folgas fixas por dia: ${ffStr}`)
+            }
+            if (p.warnings.length > 0) {
+                for (const w of p.warnings) sections.push(`- AVISO: ${w}`)
+            }
+        }
+
+        if (bundle.setor.contratos_relevantes.length > 0) {
+            sections.push(`\n### Contratos Relevantes no Setor`)
+            for (const c of bundle.setor.contratos_relevantes) {
+                sections.push(`- **${c.nome}** (ID: ${c.id}) — ${c.horas_semanais}h/sem, ${c.regime}`)
+                for (const p of c.perfis) {
+                    sections.push(`  - Perfil: ${p.nome} (${p.inicio}–${p.fim})`)
+                }
+            }
+        }
+
+        if (bundle.setor.escala_resumida) {
+            const e = bundle.setor.escala_resumida
+            const desatStr = e.desatualizada ? ' [DESATUALIZADA]' : ''
+            const podeStr = e.pode_oficializar ? ' — pode oficializar' : ''
+            sections.push(`\n### Escala Resumida${desatStr}`)
+            sections.push(`- Status: ${e.status} (ID: ${e.id})${podeStr}`)
+            sections.push(`- Cobertura: ${e.cobertura_percent ?? 'N/A'}% | Equilíbrio: ${e.equilibrio ?? 'N/A'}%`)
+            sections.push(`- Violações HARD: ${e.violacoes_hard} | SOFT: ${e.violacoes_soft}`)
+        }
+    }
+
+    if (bundle.snapshot) sections.push(bundle.snapshot)
+    if (bundle.colaborador) sections.push(bundle.colaborador)
+    if (bundle.alertas) sections.push(bundle.alertas)
+
+    if (bundle.alertas_backup) {
+        sections.push('\n### Alerta: Backup')
+        sections.push(bundle.alertas_backup)
+    }
+
+    // Base de Conhecimento (expandida com títulos)
+    const kc = bundle.knowledge_catalogo
+    if (kc.total_fontes > 0) {
+        sections.push(`\n### Base de Conhecimento`)
+        sections.push(`- ${kc.total_fontes} fonte(s) | ${kc.total_chunks} chunks indexados`)
+        if (kc.titulos_top.length > 0) {
+            sections.push(`- Fontes recentes: ${kc.titulos_top.join(', ')}`)
+        }
+    }
+
+    sections.push(bundle.dica_pagina)
 
     return sections.join('\n')
+}
+
+// =============================================================================
+// buildContextBriefing — wrapper mantendo assinatura original
+// =============================================================================
+export async function buildContextBriefing(contexto?: IaContexto, mensagemUsuario?: string): Promise<string> {
+    const bundle = await buildContextBundle(contexto, mensagemUsuario)
+    if (!bundle) return ''
+    return renderContextBriefing(bundle)
 }
 
 // =============================================================================
@@ -781,6 +986,189 @@ async function _statsKnowledge(): Promise<string | null> {
         return `\n### Base de Conhecimento\n- ${sources.count} fonte(s) | ${chunks?.count ?? 0} chunks indexados`
     } catch {
         return null
+    }
+}
+
+async function _statsKnowledgeBundle(): Promise<ContextBundle['knowledge_catalogo']> {
+    try {
+        const sources = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM knowledge_sources')
+        const chunks = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM knowledge_chunks')
+        const titulosRows = await queryAll<{ titulo: string }>('SELECT titulo FROM knowledge_sources ORDER BY atualizada_em DESC LIMIT 5')
+        return {
+            total_fontes: sources?.count ?? 0,
+            total_chunks: chunks?.count ?? 0,
+            titulos_top: titulosRows.map(r => r.titulo),
+        }
+    } catch {
+        return { total_fontes: 0, total_chunks: 0, titulos_top: [] }
+    }
+}
+
+// ─── DIA_PARA_IDX: mapeia string → índice 0-6 (SEG-DOM) ──────────────────────
+const DIA_PARA_IDX: Record<string, number> = { SEG: 0, TER: 1, QUA: 2, QUI: 3, SEX: 4, SAB: 5, DOM: 6 }
+const IDX_PARA_DIA = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
+
+type SetorPreview = NonNullable<NonNullable<ContextBundle['setor']>['preview']>
+type ContratosRelevantes = NonNullable<ContextBundle['setor']>['contratos_relevantes']
+
+async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
+    try {
+        // 1. Colaboradores do setor com regras
+        const colabs = await queryAll<{
+            id: number
+            tipo_trabalhador: string
+            funcao_id: number | null
+            folga_fixa_dia_semana: string | null
+            folga_variavel_dia_semana: string | null
+        }>(`
+            SELECT c.id, c.tipo_trabalhador, c.funcao_id,
+                   r.folga_fixa_dia_semana, r.folga_variavel_dia_semana
+            FROM colaboradores c
+            LEFT JOIN colaborador_regra_horario r
+                ON r.colaborador_id = c.id AND r.ativo = true AND r.dia_semana_regra IS NULL
+            WHERE c.setor_id = ? AND c.ativo = true
+        `, setor_id)
+
+        // 2. Demandas do setor
+        const demandasRows = await queryAll<{ dia_semana: string | null; min_pessoas: number }>('SELECT dia_semana, min_pessoas FROM demandas WHERE setor_id = ? ORDER BY dia_semana', setor_id)
+
+        // 3. Calcular demanda por dia [SEG..DOM] — usa max de registros globais (dia_semana=null) e por dia
+        const demanda_por_dia: number[] = new Array(7).fill(0)
+        const globalDemanda = demandasRows.filter(d => d.dia_semana === null)
+        const globalMax = globalDemanda.length > 0 ? Math.max(...globalDemanda.map(d => d.min_pessoas)) : 0
+        for (let i = 0; i < 7; i++) demanda_por_dia[i] = globalMax
+        for (const d of demandasRows) {
+            if (d.dia_semana && d.dia_semana in DIA_PARA_IDX) {
+                const idx = DIA_PARA_IDX[d.dia_semana]
+                demanda_por_dia[idx] = Math.max(demanda_por_dia[idx], d.min_pessoas)
+            }
+        }
+
+        // 4. Identificar titulares e intermitentes Tipo B
+        // Titular = tem funcao_id. Intermitente Tipo B = tipo_trabalhador=INTERMITENTE e folga_variavel != null
+        const titulares = colabs.filter(c => c.funcao_id !== null && c.tipo_trabalhador !== 'INTERMITENTE')
+        const intermediosB = colabs.filter(c => c.tipo_trabalhador === 'INTERMITENTE' && c.folga_variavel_dia_semana !== null)
+        const N = titulares.length + intermediosB.length
+        if (N < 1) return null
+
+        // 5. Calcular K: quantos trabalham domingo
+        // Cobertura garantida de DOM por Tipo A (intermitente com regra DOM e folga_variavel = null)
+        const tiposA = colabs.filter(c => c.tipo_trabalhador === 'INTERMITENTE' && c.folga_variavel_dia_semana === null)
+        // Tipo A com regra DOM = conta como 1 no domingo (cobertura garantida)
+        const tiposAComDom = await queryAll<{ colaborador_id: number }>(`
+            SELECT r.colaborador_id
+            FROM colaborador_regra_horario r
+            JOIN colaboradores c ON c.id = r.colaborador_id
+            WHERE c.setor_id = ? AND c.ativo = true AND r.ativo = true
+              AND r.dia_semana_regra = 'DOM' AND c.tipo_trabalhador = 'INTERMITENTE'
+        `, setor_id)
+        const tiposAComDomIds = new Set(tiposAComDom.map(r => r.colaborador_id))
+        const coberturaGarantidaDom = tiposA.filter(c => tiposAComDomIds.has(c.id)).length
+
+        const demandaDom = demanda_por_dia[6]
+        const K = Math.max(0, demandaDom - coberturaGarantidaDom)
+
+        // 6. Montar folgas_forcadas por pessoa (apenas titulares + intermitentes B na ordem)
+        const pool = [...titulares, ...intermediosB]
+        const folgas_forcadas = pool.map(c => ({
+            folga_fixa_dia: c.folga_fixa_dia_semana ? (DIA_PARA_IDX[c.folga_fixa_dia_semana] ?? null) : null,
+            folga_variavel_dia: c.folga_variavel_dia_semana ? (DIA_PARA_IDX[c.folga_variavel_dia_semana] ?? null) : null,
+            folga_fixa_dom: c.folga_fixa_dia_semana === 'DOM',
+        }))
+
+        // 7. Chamar gerarCicloFase1
+        const resultado = gerarCicloFase1({
+            num_postos: N,
+            trabalham_domingo: Math.min(K, N),
+            folgas_forcadas,
+            demanda_por_dia,
+        })
+
+        if (!resultado.sucesso || resultado.grid.length === 0) return null
+
+        // 8. Montar preview
+        const ciclo_semanas = resultado.ciclo_semanas
+
+        // Cobertura por dia: média das semanas do ciclo
+        const DIAS_NOMES = IDX_PARA_DIA
+        const cobertura_por_dia: SetorPreview['cobertura_por_dia'] = []
+        let totalCob = 0
+        let deficitMax = 0
+
+        for (let d = 0; d < 7; d++) {
+            // Média de quantos trabalham nesse dia nas semanas do ciclo
+            const semanas = resultado.cobertura_dia
+            const cobDia = semanas.length > 0
+                ? semanas.reduce((acc, sem) => acc + (sem.cobertura[d] ?? 0), 0) / semanas.length
+                : 0
+            const cobArredondado = Math.round(cobDia * 10) / 10
+            const dem = demanda_por_dia[d]
+            const deficit = Math.max(0, dem - cobArredondado)
+            if (deficit > deficitMax) deficitMax = deficit
+            totalCob += cobArredondado
+            cobertura_por_dia.push({ dia: DIAS_NOMES[d], cobertura: cobArredondado, demanda: dem })
+        }
+        const cobertura_media = 7 > 0 ? totalCob / 7 / Math.max(1, Math.max(...demanda_por_dia)) : 0
+
+        // Distribuição de folgas fixas
+        const ff_distribuicao: Record<string, number> = {}
+        for (const f of folgas_forcadas) {
+            if (f.folga_fixa_dia !== null) {
+                const diaStr = IDX_PARA_DIA[f.folga_fixa_dia] ?? 'desconhecido'
+                ff_distribuicao[diaStr] = (ff_distribuicao[diaStr] ?? 0) + 1
+            }
+        }
+
+        // Warnings
+        const warnings: string[] = []
+        if (resultado.folga_warnings && resultado.folga_warnings.length > 0) {
+            for (const w of resultado.folga_warnings) {
+                const tipo = w.tipo === 'FF_CONFLITO' ? 'Conflito folga fixa' : 'Conflito folga variável'
+                warnings.push(`${tipo} em ${IDX_PARA_DIA[w.dia] ?? w.dia}: cobertura ${w.coberturaRestante}/${w.demandaDia}`)
+            }
+        }
+
+        return {
+            ciclo_semanas,
+            cobertura_media: Math.min(1, cobertura_media),
+            cobertura_por_dia,
+            deficit_max: Math.round(deficitMax * 10) / 10,
+            ff_distribuicao,
+            warnings,
+        }
+    } catch {
+        return null
+    }
+}
+
+async function _contratosRelevantes(setor_id: number): Promise<ContratosRelevantes> {
+    try {
+        const contratos = await queryAll<{ id: number; nome: string; horas_semanais: number; regime_escala: string }>(`
+            SELECT DISTINCT tc.id, tc.nome, tc.horas_semanais, tc.regime_escala
+            FROM colaboradores c
+            JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
+            WHERE c.setor_id = ? AND c.ativo = true
+            ORDER BY tc.nome
+        `, setor_id)
+
+        const result: ContratosRelevantes = []
+        for (const tc of contratos) {
+            const perfisRows = await queryAll<{ id: number; nome: string; inicio: string | null; fim: string | null }>(`
+                SELECT id, nome, inicio, fim FROM contrato_perfis_horario
+                WHERE tipo_contrato_id = ? AND ativo = true
+                ORDER BY ordem, id
+            `, tc.id)
+            result.push({
+                id: tc.id,
+                nome: tc.nome,
+                horas_semanais: tc.horas_semanais,
+                regime: tc.regime_escala,
+                perfis: perfisRows.map(p => ({ id: p.id, nome: p.nome, inicio: p.inicio ?? '', fim: p.fim ?? '' })),
+            })
+        }
+        return result
+    } catch {
+        return []
     }
 }
 

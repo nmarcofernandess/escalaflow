@@ -36,6 +36,7 @@
     "solver:test:parity": "vitest run tests/main/solver-cli-parity.spec.ts",
     "solver:test": "npm run solver:test:real",
     "solver:cli": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/solver-cli.ts",
+    "preview:cli": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/preview-cli.ts",
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "model:download": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/download-embedding-model.ts",
     "knowledge:seed": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/knowledge-seed.ts",

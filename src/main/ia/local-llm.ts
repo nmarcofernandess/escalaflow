@@ -384,7 +384,7 @@ export async function localLlmChat(
       params: jsonSchema as any,
       handler: async (params: any) => {
         const callId = `local_${++toolCallCounter}`
-        const est = t.name === 'gerar_escala' ? 90 : t.name === 'preflight_completo' ? 10 : undefined
+        const est = t.name === 'gerar_escala' ? 90 : (t.name === 'preflight' || t.name === 'preflight_completo') ? 10 : undefined
         emitStream({ type: 'tool-call-start', stream_id: streamId, tool_call_id: callId, tool_name: t.name, args: params, estimated_seconds: est })
 
         try {

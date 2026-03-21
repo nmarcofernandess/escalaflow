@@ -456,7 +456,7 @@ async function _callWithVercelAiSdkToolsStreaming(
                 } else if (part.type === 'text-delta') {
                     emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
                 } else if (part.type === 'tool-call') {
-                    const est = part.toolName === 'gerar_escala' ? 90 : part.toolName === 'preflight_completo' ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
+                    const est = part.toolName === 'gerar_escala' ? 90 : (part.toolName === 'preflight' || part.toolName === 'preflight_completo') ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
                     emitStream({ type: 'tool-call-start', stream_id: streamId, tool_call_id: part.toolCallId, tool_name: part.toolName, args: normalizeToolArgs(part.input) ?? {}, estimated_seconds: est })
                 } else if (part.type === 'tool-result') {
                     emitStream({ type: 'tool-result', stream_id: streamId, tool_call_id: part.toolCallId, tool_name: part.toolName, result: part.output })
@@ -500,7 +500,7 @@ async function _callWithVercelAiSdkToolsStreaming(
             } else if (part.type === 'tool-call') {
                 // Estimativa de tempo: gerar_escala usa timeout operacional ~90s
                 const estimated_seconds = part.toolName === 'gerar_escala' ? 90
-                    : part.toolName === 'preflight_completo' ? 10
+                    : (part.toolName === 'preflight' || part.toolName === 'preflight_completo') ? 10
                     : part.toolName === 'diagnosticar_escala' ? 15
                     : undefined
                 emitStream({
@@ -570,7 +570,7 @@ async function _callWithVercelAiSdkToolsStreaming(
                 } else if (part.type === 'text-delta') {
                     emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
                 } else if (part.type === 'tool-call') {
-                    const estF = part.toolName === 'gerar_escala' ? 90 : part.toolName === 'preflight_completo' ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
+                    const estF = part.toolName === 'gerar_escala' ? 90 : (part.toolName === 'preflight' || part.toolName === 'preflight_completo') ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
                     emitStream({
                         type: 'tool-call-start',
                         stream_id: streamId,

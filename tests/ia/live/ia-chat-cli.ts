@@ -1,6 +1,8 @@
 import '../../setup/load-env'
 import * as readline from 'readline/promises'
 import { stdin, stdout } from 'process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { generateText, stepCountIs } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
@@ -32,7 +34,7 @@ async function loadRuntime() {
   return { getVercelAiTools, SYSTEM_PROMPT, buildContextBriefing }
 }
 
-function parseArgs(): { provider: Provider } {
+function parseArgs(): { provider: Provider; setorId?: number; pagina?: string } {
   const args = process.argv.slice(2)
   const providerIdx = args.indexOf('--provider')
   const provider = (providerIdx >= 0 ? args[providerIdx + 1] : 'gemini') as Provider
@@ -40,7 +42,11 @@ function parseArgs(): { provider: Provider } {
     console.error(`Provider invalido: ${provider}. Use: gemini | openrouter`)
     process.exit(1)
   }
-  return { provider }
+  const setorIdx = args.indexOf('--setor')
+  const setorId = setorIdx >= 0 ? parseInt(args[setorIdx + 1], 10) : undefined
+  const paginaIdx = args.indexOf('--pagina')
+  const pagina = paginaIdx >= 0 ? args[paginaIdx + 1] : undefined
+  return { provider, setorId, pagina }
 }
 
 function getApiKey(provider: Provider): string {
@@ -72,16 +78,36 @@ function summarizeResult(result: unknown): string {
 type HistoryMsg = { role: 'user'; content: string } | { role: 'assistant'; content: string }
 
 async function main() {
-  const { provider } = parseArgs()
+  const { provider, setorId, pagina } = parseArgs()
+
+  // ── DB init (deve vir antes de qualquer import que use queryOne/queryAll) ──
+  const __dirname = path.dirname(fileURLToPath(import.meta.url))
+  const rootDir = path.resolve(__dirname, '../../..')
+  process.env.ESCALAFLOW_DB_PATH =
+    process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'out', 'data', 'escalaflow-pg')
+
+  const { initDb } = await import('../../../src/main/db/pglite')
+  const { createTables } = await import('../../../src/main/db/schema')
+  await initDb()
+  await createTables()
+  console.log(c('green', '[OK] Banco inicializado'))
+
   const apiKey = getApiKey(provider)
   const { model, modelName } = createModel(provider, apiKey)
 
+  // ── Header ────────────────────────────────────────────────────────────────
   console.log('')
   console.log(c('cyan', '╔══════════════════════════════════════════════╗'))
   console.log(c('cyan', '║') + c('bold', '  EscalaFlow IA — CLI Chat                   ') + c('cyan', '║'))
   console.log(c('cyan', '╠══════════════════════════════════════════════╣'))
   console.log(c('cyan', '║') + `  Provider: ${c('green', provider.padEnd(32))}` + c('cyan', '║'))
   console.log(c('cyan', '║') + `  Model:    ${c('green', modelName.padEnd(32))}` + c('cyan', '║'))
+  if (setorId !== undefined) {
+    console.log(c('cyan', '║') + `  Setor:    ${c('green', String(setorId).padEnd(32))}` + c('cyan', '║'))
+  }
+  if (pagina) {
+    console.log(c('cyan', '║') + `  Pagina:   ${c('green', pagina.padEnd(32))}` + c('cyan', '║'))
+  }
   console.log(c('cyan', '╠══════════════════════════════════════════════╣'))
   console.log(c('cyan', '║') + c('dim', '  /clear  limpa historico                     ') + c('cyan', '║'))
   console.log(c('cyan', '║') + c('dim', '  /tools  lista tools disponiveis             ') + c('cyan', '║'))
@@ -89,6 +115,7 @@ async function main() {
   console.log(c('cyan', '╚══════════════════════════════════════════════╝'))
   console.log('')
 
+  // ── Runtime ───────────────────────────────────────────────────────────────
   let runtime: Awaited<ReturnType<typeof loadRuntime>>
   try {
     runtime = await loadRuntime()
@@ -98,8 +125,24 @@ async function main() {
     process.exit(1)
   }
 
+  // ── Context briefing (opcional) ───────────────────────────────────────────
+  let contextBriefing = ''
+  if (setorId !== undefined) {
+    const contexto = {
+      pagina: pagina || 'setor_detalhe',
+      rota: `/setores/${setorId}`,
+      setor_id: setorId,
+    }
+    contextBriefing = await runtime.buildContextBriefing(contexto as any)
+    console.log(c('green', `[OK] Contexto injetado — setor ${setorId} (${contextBriefing.length} chars)`))
+  }
+
   const tools = runtime.getVercelAiTools()
   const systemPrompt = runtime.SYSTEM_PROMPT
+  const fullSystemPrompt = contextBriefing
+    ? `${systemPrompt}\n\n${contextBriefing}`
+    : systemPrompt
+
   let history: HistoryMsg[] = []
 
   const rl = readline.createInterface({ input: stdin, output: stdout })
@@ -117,7 +160,7 @@ async function main() {
     const trimmed = input.trim()
     if (!trimmed) continue
     if (trimmed.toLowerCase() === 'sair' || trimmed.toLowerCase() === 'exit') {
-      console.log(c('dim', '\nAte mais! 👋\n'))
+      console.log(c('dim', '\nAte mais!\n'))
       break
     }
 
@@ -140,7 +183,7 @@ async function main() {
     try {
       const result = await generateText({
         model,
-        system: systemPrompt,
+        system: fullSystemPrompt,
         messages: history as any,
         tools,
         stopWhen: stepCountIs(10),
@@ -165,7 +208,7 @@ async function main() {
 
         const followUp = await generateText({
           model,
-          system: systemPrompt,
+          system: fullSystemPrompt,
           messages: followUpMessages,
         })
 

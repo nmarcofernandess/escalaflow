@@ -9,7 +9,7 @@ App desktop offline para geração automática de escalas de trabalho em varejo,
 - Geração automática de escala otimizada por período (motor Python OR-Tools CP-SAT)
 - 20 regras CLT/CCT aplicadas automaticamente (HARD bloqueantes + SOFT alertas + antipatterns)
 - 35 regras configuráveis por empresa (Engine de Regras com override granular)
-- Assistente IA integrado (Gemini/OpenRouter) com 34 tools — Chat RH contextual ao sistema
+- Assistente IA integrado (Gemini/OpenRouter) com 30 tools — Chat RH contextual ao sistema
 - Knowledge Layer com RAG: embeddings locais (ONNX), knowledge graph, memórias persistentes
 - Grid 15 minutos com simulação iterativa (click alterna TRABALHO/FOLGA, recalcula em tempo real)
 - Regras individuais por colaborador (janela horária, ciclo domingo, folga fixa, exceções por data)
@@ -37,7 +37,7 @@ App desktop offline para geração automática de escalas de trabalho em varejo,
 | Database | PGlite (Postgres 17 WASM) + pgvector | 0.3 |
 | Embeddings | @huggingface/transformers (multilingual-e5-small) | local ONNX |
 | Motor | Python OR-Tools CP-SAT | via bridge TS → stdin/stdout JSON |
-| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 34 tools |
+| IA | Vercel AI SDK + Gemini/OpenRouter | v6 / 30 tools |
 | Frontend | React | 19 |
 | Estilo | Tailwind CSS + shadcn/ui | 3 / 24 components |
 | Estado | Zustand | 5 |
@@ -327,7 +327,7 @@ escalaflow/
 │   │   ├── index.ts             # bootstrap, BrowserWindow, auto-updater
 │   │   ├── tipc.ts              # 90+ IPC handlers type-safe (@egoist/tipc)
 │   │   ├── db/                  # PGlite: schema, migrations, seed, conexão
-│   │   ├── ia/                  # Chat RH: system-prompt, 34 tools, discovery, cliente, session-processor
+│   │   ├── ia/                  # Chat RH: system-prompt, 30 tools, discovery, cliente, session-processor
 │   │   ├── knowledge/           # RAG: embeddings (ONNX), ingest, search, graph
 │   │   └── motor/               # solver-bridge.ts (→ Python) + validador.ts
 │   │

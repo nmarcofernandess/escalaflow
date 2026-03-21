@@ -79,7 +79,7 @@ Uma escala passa por tres estados:
 3. **Explicabilidade**: Cada decisao do motor vem com justificativa
 4. **Flexibilidade**: Regras configuraveis — a empresa pode relaxar regras SOFT sem violar a CLT
 5. **Multi-pass**: Se a geracao com regras estritas falha, relaxa automaticamente (graceful degradation)
-6. **IA assistente**: Chat integrado com 34 tools que executa acoes reais no sistema
+6. **IA assistente**: Chat integrado com 30 tools que executa acoes reais no sistema
 7. **Diagnostico**: Quando a geracao falha (INFEASIBLE), o sistema explica por que e sugere solucoes
-8. **IA Local offline**: Funciona sem internet via node-llama-cpp com mesmas 34 tools
+8. **IA Local offline**: Funciona sem internet via node-llama-cpp com mesmas 30 tools
 9. **Knowledge Layer**: RAG com embeddings locais + knowledge graph para perguntas sobre CLT/CCT

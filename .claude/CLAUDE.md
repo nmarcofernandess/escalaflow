@@ -12,7 +12,7 @@ Instruções para Claude Code ao trabalhar neste repositório.
 - **Motor Python (OR-Tools CP-SAT)** — o coração do sistema, via bridge TS → Python
 - **Electron 34** — shell desktop, IPC type-safe com @egoist/tipc
 - **20 regras CLT/CCT** aplicadas automaticamente ao gerar escalas
-- **IA integrada** — Chat RH com 34 tools (Vercel AI SDK + Gemini/OpenRouter + IA Local offline via node-llama-cpp)
+- **IA integrada** — Chat RH com 30 tools (Vercel AI SDK + Gemini/OpenRouter + IA Local offline via node-llama-cpp)
 - **Knowledge Layer** — RAG com embeddings locais, knowledge graph, memórias IA (PGlite + pgvector)
 
 ---
@@ -43,7 +43,7 @@ escalaflow/
 │   │   │   └── seed-local.ts    # seed dev: empresa, setores, colaboradores (gitignored)
 │   │   ├── ia/
 │   │   │   ├── system-prompt.ts # System prompt (370 linhas, 8 seções domínio RH/CLT)
-│   │   │   ├── tools.ts         # 33 IA tools (Zod schemas + handlers)
+│   │   │   ├── tools.ts         # 30 IA tools (Zod schemas + handlers)
 │   │   │   ├── discovery.ts     # Auto-contexto por request (alertas, feriados, regras, memórias)
 │   │   │   ├── cliente.ts       # Vercel AI SDK v6, multi-turn, compaction, DevTools
 │   │   │   ├── config.ts        # buildModelFactory — reutilizável por módulos
@@ -119,8 +119,8 @@ escalaflow/
 | Database | PGlite (Postgres 17 WASM) | 0.3 |
 | Embeddings | @huggingface/transformers (multilingual-e5-small) | local ONNX |
 | Motor | Python OR-Tools CP-SAT | via bridge |
-| IA (Cloud) | Vercel AI SDK + Gemini/OpenRouter | v6 / 34 tools |
-| IA (Local) | node-llama-cpp + Qwen 3.5 GGUF | offline, mesmas 34 tools |
+| IA (Cloud) | Vercel AI SDK + Gemini/OpenRouter | v6 / 30 tools |
+| IA (Local) | node-llama-cpp + Qwen 3.5 GGUF | offline, mesmas 30 tools |
 | Frontend | React | 19 |
 | Estilo | Tailwind CSS + shadcn/ui | 3 / 24 components |
 | Estado | Zustand | 5 |
@@ -248,7 +248,7 @@ renderer → IPC (ia.chat) → cliente.ts ─┬─ provider='gemini'|'openroute
 
                                         → system-prompt.ts (full 460 linhas cloud / ~90 linhas local)
                                         → discovery.ts (auto-contexto: alertas, feriados, regras, memórias)
-                                        → tools.ts (34 tools, Zod schemas + handlers — compartilhadas)
+                                        → tools.ts (30 tools, Zod schemas + handlers — compartilhadas)
                                         → knowledge/ (RAG: embeddings + search + graph)
 ```
 
@@ -257,7 +257,7 @@ renderer → IPC (ia.chat) → cliente.ts ─┬─ provider='gemini'|'openroute
 | Arquivo | Papel |
 |---------|-------|
 | `src/main/ia/system-prompt.ts` | System prompt — 8 seções: identidade, CLT/CCT, motor, entidades, tools, schema, workflows, conduta |
-| `src/main/ia/tools.ts` | 34 tools com Zod schemas, runtime validation, enrichment, 3-status pattern |
+| `src/main/ia/tools.ts` | 30 tools com Zod schemas, runtime validation, enrichment, 3-status pattern |
 | `src/main/ia/discovery.ts` | Auto-contexto: feriados, regras custom, exceções, alertas proativos, memórias IA |
 | `src/main/ia/cliente.ts` | Orquestrador: Vercel AI SDK v6, multi-turn, compaction, DevTools |
 | `src/main/ia/config.ts` | Factory de modelo (reutilizável por knowledge graph, session-processor, etc) |
@@ -271,7 +271,7 @@ renderer → IPC (ia.chat) → cliente.ts ─┬─ provider='gemini'|'openroute
 | Pattern | Implementação |
 |---------|---------------|
 | Response 3-status | `toolOk()`, `toolError()`, `toolTruncated()` — helpers centralizados |
-| Zod .describe() | Todos os 33 schemas com .describe() em cada campo |
+| Zod .describe() | Todos os 30 schemas com .describe() em cada campo |
 | Runtime validation | `safeParse` + mensagem de correção se falha |
 | FK enrichment | `enrichConsultarRows()` — traduz setor_id→setor_nome, etc |
 | Navigation metadata | `_meta.ids_usaveis_em`, `_meta.next_tools_hint` |
@@ -280,7 +280,7 @@ renderer → IPC (ia.chat) → cliente.ts ─┬─ provider='gemini'|'openroute
 | Truncation | CONSULTAR_MODEL_ROW_LIMIT = 50 com status 'truncated' |
 | SQL error translation | NOT NULL / UNIQUE / FK → mensagens acionáveis |
 
-### Tools (33)
+### Tools (30)
 
 **Discovery:** consultar, buscar_colaborador, listar_perfis_horario, obter_alertas
 **CRUD genérico:** criar, atualizar, deletar, cadastrar_lote
@@ -308,7 +308,7 @@ Provider `'local'` roda inferência in-process via `node-llama-cpp` — sem inte
 - Download GGUF do HuggingFace com resume (Range header + `.part` temp)
 - Lifecycle singleton: `getLlama()` → `loadModel()` → `createContext()`, auto GPU (Metal/CUDA/Vulkan)
 - Idle timer: unload após 5min sem uso
-- Chat: `LlamaChatSession` + `defineChatSessionFunction` (mesmas 34 tools via `zodToJsonSchema`)
+- Chat: `LlamaChatSession` + `defineChatSessionFunction` (mesmas 30 tools via `zodToJsonSchema`)
 - System prompt trimado (~90 linhas) via `buildLocalSystemPrompt()` em `system-prompt.ts`
 - Context guard: trim histórico a 20 msgs para modelos com janela menor
 - Emite mesmos `IaStreamEvent` que providers cloud — UI idêntica
@@ -730,4 +730,4 @@ Ver `specs/ANALYST_PIPELINE_SOLVER_COMPLETO.md` para mapeamento completo de:
 - [ ] Componentes shadcn verificados antes de criar div soup
 - [ ] Layout chain intacto (ver "Layout Contract") — sem `overflow-y-auto` em páginas, sem `scrollIntoView`
 - [ ] Novas tools IA: schema Zod + handler + entry no IA_TOOLS + TOOL_SCHEMAS
-- [ ] TOOL_SCHEMAS sincronizado com IA_TOOLS (34 entries)
+- [ ] TOOL_SCHEMAS sincronizado com IA_TOOLS (30 entries)

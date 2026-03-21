@@ -1,36 +1,45 @@
-# Context Unificado + Redução de Tools (Phase 0)
+# Context Unificado + Reducao de Tools (Phase 0)
 
-> **Status:** Design escrito, aguardando review humano
+> **Status:** Design revisado apos review de arquitetura
 > **Autor:** Marco + Codex
 > **Data:** 2026-03-21
-> **Referências:** `docs/como-funciona.md`, `docs/superpowers/specs/2026-03-21-observabilidade-sugestao-inteligente-design.md`, `specs/gestao-specs.md`, `src/main/ia/discovery.ts`, `src/main/ia/tools.ts`, `src/shared/simula-ciclo.ts`
+> **Referencia mae:** `docs/superpowers/specs/2026-03-21-observabilidade-sugestao-inteligente-design.md`
+> **Referencias:** `docs/como-funciona.md`, `docs/ia-sistema.md`, `specs/gestao-specs.md`, `src/main/ia/discovery.ts`, `src/main/ia/tools.ts`, `src/shared/simula-ciclo.ts`, `tests/ia/live/ia-chat-cli.ts`
 
 ---
 
 ## 1. TL;DR
 
-O Phase 0 existe para resolver um problema simples e feio: a IA do EscalaFlow faz round-trip demais porque o contexto ainda é pobre justamente nos pontos que mais importam para RH.
+O problema nao e so "faltou preview no discovery". O problema real e de **granularidade errada**:
 
-A proposta recomendada e a seguinte:
+- o contexto ainda e pobre nos pontos que importam
+- varias tools expostas ao LLM estao no nivel da storage, nao no nivel da tela ou do dominio
+- a CLI atual de IA nao reproduz o contexto real do app e nem inicializa o banco
 
-1. **Expandir o discovery** com 5 reforcos cirurgicos:
-   - preview do ciclo
-   - perfis de horario relevantes do setor
-   - titulos da base de conhecimento
-   - preflight rapido de setor
-   - mapa compacto das regras editaveis com status efetivo
-2. **Reduzir as tools de 33 para 30**:
-   - `preflight_completo` vira flag de `preflight`
-   - `listar_perfis_horario` sai
-   - `listar_conhecimento` sai
-3. **Adicionar `--context` ao futuro `preview:cli`** para imprimir exatamente o markdown gerado por `buildContextBriefing()` para um setor.
+Esta revisao muda a direcao da spec:
 
-Decisoes importantes:
+1. **Phase 0 continua reduzindo o custo imediato do chat RH**:
+   - adicionar preview ao context
+   - mover dados pequenos e estaveis para o discovery
+   - cortar listagens redundantes
+   - manter o alvo de reducao interna de **33 -> 30 tools**
+2. **Mas o North Star muda**:
+   - o contrato publico futuro nao deve ser `33 tools atomicas`
+   - o contrato publico deve convergir para poucas familias reutilizaveis:
+     - `consultar_contexto`
+     - `editar_ficha`
+     - `executar_acao`
+     - opcionalmente `buscar_rag`
+     - opcionalmente `salvar_memoria`
+3. **A base de contexto precisa virar asset reutilizavel**, nao string montada no improviso:
+   - `buildContextBundle()` monta um objeto estruturado
+   - `renderContextBriefing()` transforma esse bundle em markdown para o LLM
+4. **A CLI de IA atual falha como harness de validacao**:
+   - nao chama `initDb()`
+   - importa `buildContextBriefing` e nao usa
+   - portanto hoje ela nao testa o design context-first de verdade
 
-- **Nenhuma tool de acao sai nesta fase.**
-- **`explicar_violacao` fica.** Ainda e barata, deterministica e nao depende de RAG perfeito.
-- **`ajustar_alocacao` e `ajustar_horario` ficam separados.** Consolidar write path nao reduz round-trip e aumenta ambiguidade.
-- **Fonte de verdade do numero de tools e o codigo atual:** `src/main/ia/tools.ts` tem **33** tools. Alguns docs ainda falam em 34 e precisam ser corrigidos na implementacao.
+Conclusao: o corte de tools desta fase continua valido como passo tatico, mas a arquitetura correta para outros projetos e **contexto agregador + formulario schema-driven + comandos de dominio**, nao um zoologico de tool por tabela.
 
 ---
 
@@ -38,472 +47,594 @@ Decisoes importantes:
 
 ### Objetivos
 
-- Fazer a IA enxergar o preview TS em contexto de setor.
-- Mover para o discovery dados pequenos, estaveis e muito consultados.
-- Reduzir round-trips desnecessarios no chat RH.
-- Dar ao dev uma forma de inspecionar o mesmo briefing que a IA recebe.
+- Fazer a IA enxergar o preview TS e a saude real de um setor.
+- Mover para o context aquilo que hoje so existe em tools de listagem ou consulta repetitiva.
+- Definir uma **base de contexto estruturada** que sirva ao EscalaFlow e a outros projetos.
+- Definir um **contrato publico de tools** mais reutilizavel que o conjunto atual.
+- Dar ao dev um jeito real de inspecionar o mesmo contexto usado pela IA.
 
 ### Nao objetivos
 
-- Nao implementar nada nesta fase de design.
-- Nao reescrever system prompt inteiro.
-- Nao mudar semantica das tools de acao.
-- Nao resolver o caso de **overrides locais nao persistidos** do preview no `SetorDetalhe`.
-- Nao refatorar RAG/knowledge graph profundamente.
+- Nao implementar a consolidacao completa da superficie publica nesta fase.
+- Nao reescrever o system prompt inteiro.
+- Nao refatorar todo o write path agora.
+- Nao resolver overrides locais ainda nao persistidos no `SetorDetalhe`.
+- Nao redesenhar RAG/knowledge graph inteiro.
 
 ### Assumptions
 
-- O alvo principal de paridade do `--context` e o **chat dentro do detalhe do setor**, nao o MCP externo.
-- O preview em contexto, nesta fase, pode refletir o **estado persistido do setor**. Espelhar alteracoes locais ainda nao salvas fica fora do escopo.
+- O alvo principal de paridade continua sendo o **chat no detalhe do setor**.
+- O preview em contexto, nesta fase, pode refletir o **estado persistido**.
+- O corte para 30 tools e uma meta **interna/tatica**.
+- O contrato reutilizavel futuro pode esconder ferramentas internas sem necessariamente apagar handlers internos no primeiro passo.
 
 ---
 
-## 3. Brainstorming 360
+## 3. Reenquadramento da Arquitetura
 
-## Abordagem A — Context-first com poda cirurgica de tools
+### 3.1 O erro atual
 
-**Ideia:** enriquecer o discovery com dados pequenos e frequentes, mantendo as tools de leitura que sao query-specific, custosas ou abertas demais.
+Hoje o LLM ve tools demais no nivel errado:
 
-**Pros:**
-- Reduz latencia de conversa imediatamente.
-- Nao mexe em write path.
-- Ataca a causa real das chamadas redundantes.
-- Cria base para a Fase 1 da spec mae sem acoplamento desnecessario.
+- `listar_perfis_horario` quando o dominio certo e `contrato`
+- `salvar_demanda_excecao_data` quando o dominio certo e `ficha do setor`
+- `ajustar_horario` quando o dominio certo e `patch de celula da escala`
+- `listar_conhecimento` quando o dominio certo e pipeline de RAG
 
-**Cons:**
-- Aumenta o briefing.
-- Exige guardrails claros de budget de tokens.
+Isso funciona localmente, mas nao escala bem para:
 
-## Abordagem B — So adicionar preview e manter 33 tools
+- outros projetos
+- formularios schema-driven
+- contextos agregados por tela
+- contratos publicos mais estaveis
 
-**Ideia:** fazer apenas `buildPreviewBriefing()` e adiar o audit de tools.
+### 3.2 Contrato publico futuro recomendado
 
-**Pros:**
-- Menor risco de regressao.
-- Menor superficie de mudanca.
+O LLM deveria convergir para poucas familias:
 
-**Cons:**
-- Resolve so metade do problema.
-- Mantem round-trips redundantes.
-- Nao entrega o objetivo explicito desta Phase 0.
+#### A. `consultar_contexto`
 
-## Abordagem C — Criar camada de cache/reference separada
+Tool de leitura agregada, orientada a dominio/tela.
 
-**Ideia:** em vez de discovery maior, criar um mini cache de referencia para dados estaveis (perfis, knowledge titles, regras).
+Exemplo:
 
-**Pros:**
-- Contexto principal cresce menos.
-- Pode reaproveitar em outras interfaces.
+```ts
+consultar_contexto({
+  entidade: 'setor',
+  id: 4,
+  visao: 'operacional',
+  includes: [
+    'colaboradores',
+    'postos',
+    'ausencias',
+    'escala_atual',
+    'preview_ciclo',
+    'deficits_por_dia',
+    'cobertura_por_faixa',
+    'regras_efetivas',
+  ],
+})
+```
 
-**Cons:**
-- Complexidade extra agora.
-- Mais arquitetura do que resultado.
-- Nao ajuda o `--context`, que precisa mostrar o briefing real.
+#### B. `editar_ficha`
 
-## Recomendacao
+Tool schema-driven de formulario.
 
-**Escolha: Abordagem A.**
+Exemplo:
 
-Ela resolve exatamente o que esta doendo agora, reduz tool count de forma real, e nao inventa infraestrutura nova so para se sentir sofisticada. A regra aqui e: contexto maior, sim; contexto gordo e cego, nao.
+```ts
+editar_ficha({
+  entidade: 'setor',
+  id: 4,
+  patch: {
+    nome: 'Padaria Atendimento',
+    horario_funcionamento: { sabado_fecha_as: '20:00' },
+  },
+})
+```
+
+#### C. `executar_acao`
+
+Tool para comandos de dominio com semantica propria.
+
+Exemplo:
+
+```ts
+executar_acao({
+  entidade: 'escala',
+  acao: 'gerar',
+  args: { setor_id: 4, data_inicio: '2026-03-01', data_fim: '2026-03-31' },
+})
+```
+
+#### D. `buscar_rag` (opcional)
+
+So se o pipeline nao fizer retrieval antes do LLM. Se o app ja intercepta e injeta contexto semantico antes da pergunta, essa tool nem precisa ficar exposta no chat.
+
+#### E. `salvar_memoria` (opcional)
+
+Curta, operacional, explicita. Diferente de ingestao de conhecimento.
+
+### 3.3 Regra pratica
+
+- **Contexto agregado** substitui listagens pequenas e leituras repetitivas.
+- **Formulario schema-driven** absorve varios `criar/atualizar/salvar_*`.
+- **Comando de dominio** mantem coisas que realmente sao workflow, processamento pesado ou side effect importante.
 
 ---
 
 ## 4. Estado Atual
 
-### 4.1 Discovery atual: as 13 categorias injetadas hoje
-
-**Observacao:** o header `## CONTEXTO AUTOMATICO — PAGINA ATUAL DO USUARIO` + `Rota:` nao entra na contagem abaixo. As 13 categorias reais sao os blocos de dados adicionados depois.
+### 4.1 Discovery atual: 13 categorias
 
 | # | Categoria atual | O que injeta | Origem | Tokens estimados |
 |---|-----------------|--------------|--------|------------------|
-| 1 | Memorias do RH | Ate 50 memorias em bullets | Query DB `ia_memorias` | 0-350 tipico, 450+ pior caso |
-| 2 | Auto-RAG | Ate 3 fontes relevantes com titulo + `context_hint` | `searchKnowledge()` + query em `knowledge_sources` | 0-120 tipico, 180 max |
+| 1 | Memorias do RH | Ate 50 memorias em bullets | Query DB `ia_memorias` | 0-350 tipico |
+| 2 | Auto-RAG | Ate 3 fontes relevantes com titulo + `context_hint` | `searchKnowledge()` + DB | 0-180 |
 | 3 | Resumo do sistema | Contagem de setores, colaboradores e escalas | 4 queries de count | 20-35 |
 | 4 | Feriados proximos | Feriados nos proximos 30 dias | Query DB `feriados` | 15-80 |
-| 5 | Regras com override da empresa | So regras cujo status diverge do default | Join `regra_empresa` + `regra_definicao` | 20-120 |
-| 6 | Setores disponiveis | Todos os setores ativos com horario e numero de colaboradores | Query `setores` + count por setor ou snapshot do setor atual | 90-160 |
-| 7 | Setor em foco | Setor, colaboradores, postos, excecoes, regras de horario, demanda, escala atual, stats de alocacao | Queries de setor ou snapshot + queries complementares | 350-800 |
-| 8 | Snapshot visual da tela | Setor visivel, ausentes, proximos ausentes, avisos, escala atual | `store_snapshot` do React/Zustand | 20-120 |
-| 9 | Colaborador em foco | Perfil, contrato, regras e excecoes do colaborador atual | Queries em `colaboradores`, `colaborador_regra_horario`, `excecoes` | 120-280 |
-| 10 | Alertas ativos | Poucos colaboradores, sem escala, violacoes HARD, escala desatualizada, excecao expirando | `coreAlerts()` com queries + `buildSolverInput()` para hash drift | 20-180 |
-| 11 | Alerta de backup | Nunca fez backup ou backup velho | Query `configuracao_backup` + calculo de datas | 10-40 |
-| 12 | Base de conhecimento | So stats: total de fontes e chunks | Counts em `knowledge_sources` e `knowledge_chunks` | 15-45 |
-| 13 | Dica da pagina | Hint estatico por pagina (`dashboard`, `setor_detalhe`, etc.) | Mapa estatico em `discovery.ts` | 10-35 |
+| 5 | Regras com override da empresa | So regras que divergem do default | Join `regra_empresa` + `regra_definicao` | 20-120 |
+| 6 | Setores disponiveis | Todos os setores ativos com horario e numero de colaboradores | Query `setores` + counts/snapshot | 90-160 |
+| 7 | Setor em foco | Setor, colaboradores, postos, excecoes, regras, demanda, escala atual | Snapshot + queries complementares | 350-800 |
+| 8 | Snapshot visual da tela | Setor visivel, ausentes, avisos, escala atual | React/Zustand `store_snapshot` | 20-120 |
+| 9 | Colaborador em foco | Perfil, contrato, regras e excecoes | Queries em `colaboradores` + regras + excecoes | 120-280 |
+| 10 | Alertas ativos | Poucos colaboradores, sem escala, violacoes HARD, drift | Queries + hash drift | 20-180 |
+| 11 | Alerta de backup | Nunca fez backup ou backup velho | Query `configuracao_backup` | 10-40 |
+| 12 | Base de conhecimento | So stats agregadas | Counts em `knowledge_sources/chunks` | 15-45 |
+| 13 | Dica da pagina | Hint estatico por pagina | Mapa estatico | 10-35 |
 
 ### 4.2 Medicao real do briefing atual
 
-Medicao feita no banco local para `setor_id = 4` (`Padaria Atendimento`), com mensagem `"a distribuicao de folgas da padaria esta boa?"`:
+Medicao local para `setor_id = 4`:
 
-- **Tamanho total:** `3738` chars, cerca de **935 tokens**
-- **Secao dominante:** `Setor em foco` com cerca de **657 tokens**
-- **Secao secundaria relevante:** `Setores disponiveis` com cerca de **129 tokens**
-- **Auto-RAG:** nao trouxe nada neste sample (modelo de embedding local indisponivel, fallback keyword-only)
+- total: `3738` chars
+- cerca de **935 tokens**
+- secao dominante: `Setor em foco`
 
-Conclusao: o briefing atual ainda cabe com folga, mas qualquer expansao cega vai engordar justamente onde ja pesa. A implementacao precisa de **gating por pagina** e **formatos compactos**, nao de despejo textual.
+Conclusao: ainda ha espaco para crescer, mas nao para despejar tabela inteira do banco. O caminho e **pacote operacional enxuto**, nao dump bruto.
 
-### 4.3 Observacoes importantes do estado atual
+### 4.3 Problemas estruturais hoje
 
-- `store_snapshot` ja expõe `demanda.porDia`, `cobertura.porDia`, `deficitDias`, `dirty` e `ciclo`, mas o discovery hoje usa so uma parte pequena disso.
-- O preview TS real do `SetorDetalhe` nao esta no discovery.
-- A secao `Setores disponiveis` aparece mesmo quando o usuario ja esta dentro de um setor e ela vira custo de contexto com baixo valor marginal.
-- O tool server ja tem `GET /discovery?setor=...`, mas ele usa contexto sintetico `pagina: "externo"`, o que nao serve como paridade fiel do chat na pagina do setor.
-
----
-
-## 5. Audit das 33 Tools
-
-### 5.1 Leitura, diagnostico e referencia
-
-Frequencia inferida a partir de:
-
-- enfase no `system-prompt.ts`
-- workflows em `docs/como-funciona.md`
-- papel da tool no fluxo RH normal
-
-| Tool | O que faz | Classe | Context poderia substituir? | Frequencia | Decisao | Justificativa |
-|------|-----------|--------|-----------------------------|------------|---------|---------------|
-| `buscar_colaborador` | Resolve colaborador por nome/ID e retorna retrato enriquecido | CONSULTA | **Nao** | Alta | MANTER | Busca fuzzy cross-app e retrato detalhado continuam query-specific. |
-| `consultar` | Fallback generico para leitura estruturada no banco | CONSULTA | **Nao** | Alta | MANTER | E a valvula de escape do sistema. Contexto nunca cobre toda a entropia do banco. |
-| `preflight` | Checa blockers e warnings basicos antes da geracao | CONSULTA | **Parcialmente** | Alta | MANTER como alvo da consolidacao | Um resumo basico cabe no context, mas a validacao por periodo continua sendo on-demand. |
-| `preflight_completo` | Faz preflight ampliado com checks de capacidade | CONSULTA | **Parcialmente** | Media | CONSOLIDAR em `preflight(detalhado?: boolean)` | Mesmo dominio, mesma intencao, muda so profundidade. Contexto cobre o basico; tool unica cobre validacao exata por periodo. |
-| `diagnosticar_escala` | Revalida uma escala e retorna diagnostico + proximas acoes | CONSULTA | **Nao** | Alta | MANTER | Recalcula estado real apos ajustes; contexto so mostra resumo estatico da ultima escala. |
-| `explicar_violacao` | Explica codigo de regra/violacao | REFERENCIA | **Nao** | Baixa | MANTER | Injetar 35 explicacoes no context seria desperdicio. Tool e barata, deterministica e boa como fallback offline. |
-| `diagnosticar_infeasible` | Multi-solve exploratorio para achar regras culpadas | DIAGNOSTICO | **Nao** | Media | MANTER | E caro, period-specific e nao faz sentido no context. |
-| `resumir_horas_setor` | Agrega horas e dias por colaborador em um periodo | CONSULTA | **Nao** | Media | MANTER | Pedido claramente periodico e analitico. Contexto fixo nao substitui. |
-| `listar_perfis_horario` | Lista perfis por tipo de contrato | CONSULTA | **Sim** | Baixa | ELIMINAR apos mover para context | Dados pequenos, raramente mudam e `consultar("contrato_perfis_horario")` ja existe como fallback generico. |
-| `buscar_conhecimento` | Busca semantica na base de conhecimento | CONSULTA | **Nao** | Media | MANTER | Busca depende da pergunta; contexto so deve carregar catalogo leve, nao chunks. |
-| `listar_conhecimento` | Lista fontes salvas com stats | CONSULTA | **Sim** | Baixa | ELIMINAR apos mover titulos para context | O caso comum e “o que temos salvo?”. Stats + top titulos no context resolvem isso sem round-trip. Se um dia precisar catalogo admin completo, o caminho certo e abrir `knowledge_sources` no `consultar`, nao ressuscitar listagem dedicada. |
-| `explorar_relacoes` | Explora o knowledge graph por entidade | CONSULTA | **Nao** | Rara | MANTER | Traversal e investigacao especializada; contexto nao substitui. |
-
-### 5.2 Acoes
-
-| Tool | O que faz | Classe | Frequencia | Decisao | Justificativa |
-|------|-----------|--------|------------|---------|---------------|
-| `criar` | Cria registros genericos | ACAO | Media | MANTER | Write path. Context e read-only. |
-| `atualizar` | Atualiza registros genericos | ACAO | Media | MANTER | Write path. |
-| `deletar` | Remove registros permitidos | ACAO | Baixa | MANTER | Write path. |
-| `salvar_posto_setor` | CRUD semantico de posto/titular | ACAO | Media | MANTER | Tool especializada e segura para posto. |
-| `editar_regra` | Altera status de regra editavel | ACAO | Alta | MANTER | Acao central do dominio; nao pode virar context. |
-| `gerar_escala` | Roda solver e persiste RASCUNHO | ACAO | Alta | MANTER | Core do produto. |
-| `ajustar_alocacao` | Ajusta status da celula (TRABALHO/FOLGA/INDISPONIVEL) | ACAO | Media | MANTER SEPARADA | Altera semantica de status; merge com horario traria input ambiguidade sem reduzir round-trip. |
-| `ajustar_horario` | Ajusta hora_inicio/hora_fim de uma alocacao | ACAO | Media | MANTER SEPARADA | Path de validacao e payload diferentes de `ajustar_alocacao`. |
-| `oficializar_escala` | Oficializa escala sem violacao HARD | ACAO | Media | MANTER | Acao de lifecycle. |
-| `cadastrar_lote` | Insercao em lote | ACAO | Media | MANTER | Write path com semantica propria. |
-| `salvar_regra_horario_colaborador` | Cria/edita regra recorrente por colaborador | ACAO | Alta | MANTER | Acao muito frequente em RH. |
-| `salvar_demanda_excecao_data` | Cria demanda excepcional por data | ACAO | Media | MANTER | Write path. |
-| `upsert_regra_excecao_data` | Override pontual por colaborador/data | ACAO | Media | MANTER | Write path. |
-| `resetar_regras_empresa` | Remove overrides e volta ao padrao | ACAO | Baixa | MANTER | Acao perigosa; contexto nao substitui. |
-| `salvar_perfil_horario` | Cria/edita perfil de horario | ACAO | Baixa | MANTER | Mesmo com listagem indo para context, editar perfil continua sendo write. |
-| `deletar_perfil_horario` | Remove perfil de horario | ACAO | Rara | MANTER | Write path. |
-| `configurar_horario_funcionamento` | Ajusta horario da empresa ou setor | ACAO | Baixa | MANTER | Write path. |
-| `salvar_conhecimento` | Ingesta texto na knowledge base | ACAO | Baixa | MANTER | Write path e nao substituivel. |
-| `salvar_memoria` | Cria/atualiza memoria do RH | ACAO | Baixa | MANTER | Write path. |
-| `remover_memoria` | Remove memoria do RH | ACAO | Baixa | MANTER | Write path. |
-| `fazer_backup` | Cria snapshot operacional | ACAO | Rara | MANTER | Write path e operacao explicita. |
-
-### 5.3 Resultado do audit
-
-**Estado atual:** 33 tools
-
-**Mudancas propostas nesta fase:**
-
-1. `preflight_completo` absorvida por `preflight`
-2. `listar_perfis_horario` removida
-3. `listar_conhecimento` removida
-
-**Estado alvo:** **30 tools**
-
-### 5.4 Decisoes explicitamente rejeitadas nesta fase
-
-| Candidata | Decisao | Motivo |
-|-----------|---------|--------|
-| `ajustar_alocacao` + `ajustar_horario` | Nao consolidar agora | Sao duas mutacoes diferentes. Consolidar nao reduz ida/volta e piora clareza do schema. |
-| `explicar_violacao` | Nao matar agora | O ganho de contagem e pequeno e o fallback via RAG ainda nao e confiavel o suficiente para virar contrato. |
+- O preview TS nao entra no discovery.
+- O discovery ainda pensa em string, nao em bundle reutilizavel.
+- O conjunto de tools exposto ainda esta muito perto da storage.
+- A CLI `ia:chat` nao reproduz o contexto real do app.
 
 ---
 
-## 6. Expansao Proposta do Discovery
+## 5. Base de Contexto Necessaria
 
-### 6.1 Principio
+### 5.1 Mudanca estrutural recomendada
 
-O discovery deve ganhar **dados pequenos, altamente recorrentes e baratos**, nao relatorios enormes. A pergunta certa nao e “isso cabe no context?” e sim:
+Em vez de `buildContextBriefing()` montar tudo direto em markdown, a base correta e:
 
-> “isso evita uma tool call frequente sem empurrar ruido para todo turno?”
+1. `buildContextBundle(contexto, mensagem?)`
+2. `renderContextBriefing(bundle)`
 
-### 6.2 Propostas
+Isso permite:
 
-| Nova informacao | Onde entra | Trigger | Conteudo | Impacto estimado | Decisao |
-|-----------------|-----------|---------|----------|------------------|---------|
-| Preview do ciclo | Nova secao `### Preview de ciclo` | `contexto.setor_id` | ciclo, N/K, cobertura por dia, deficit maximo, distribuicao de FF/FV, warnings top 3, disclaimer | +140 a +220 tokens | ENTRAR |
-| Perfis de horario do setor | Subsecao dentro do setor em foco | `contexto.setor_id` + contratos presentes no setor | perfis ativos por contrato presente no setor, em formato compacto | +40 a +120 tokens | ENTRAR |
-| Titulos da knowledge base | Expandir secao `Base de conhecimento` | sempre que houver fontes | stats atuais + top 10 titulos agrupados por tipo | +60 a +120 tokens | ENTRAR |
-| Preflight rapido do setor | Nova secao `### Saude para geracao` | `contexto.setor_id` | blockers basicos e warnings basicos sem depender de periodo arbitrario | +40 a +90 tokens | ENTRAR |
-| Regras editaveis com status atual | Expandir secao de regras | sempre | mapa compacto de status efetivo (`HARD`, `SOFT`, `OFF`, `ON`) sem descricao longa | +90 a +160 tokens | ENTRAR |
+- reuso em outros projetos
+- CLI com dump real em markdown ou JSON
+- testes por secao
+- contratos mais claros para `consultar_contexto`
 
-### 6.3 Preview de ciclo: formato recomendado
+### 5.2 Bundle minimo global
 
-Exemplo de secao:
-
-```md
-### Preview de ciclo
-- Ciclo: 2 semanas | N=5 | K=3
-- Cobertura: SEG 4/4, TER 2/4, QUA 4/4, QUI 4/4, SEX 4/4, SAB 4/4, DOM 3/3
-- Deficit maximo: 2 pessoa(s) na TER
-- Folgas fixas: TER(2), SEX(1), SAB(1), DOM fixa(1)
-- Folgas variaveis: SEG(1), QUA(1)
-- Avisos: conflito de folga fixa na TER; cobertura insuficiente na TER
-- Nota: preview e heuristico e pode divergir do solver final por almoco, interjornada e jornada maxima
+```ts
+{
+  global: {
+    empresa: { id, nome, timezone, grid_minutos },
+    contratos: [
+      {
+        id,
+        nome,
+        jornada_padrao,
+        perfis_horario: [{ id, nome, inicio, fim, ativo }],
+      },
+    ],
+    regras_efetivas: {
+      hard: string[],
+      soft: string[],
+      on: string[],
+      off: string[],
+    },
+    knowledge_catalogo: {
+      total_fontes: number,
+      total_chunks: number,
+      titulos_top: string[],
+    },
+    alertas_globais: Alert[],
+  },
+}
 ```
 
-### 6.4 Como obter o preview
+### 5.3 Bundle minimo de setor
 
-`buildPreviewBriefing(setor_id)` deve:
-
-1. montar o mesmo insumo estrutural do `SetorDetalhe`
-2. rodar `gerarCicloFase1()` no main process
-3. devolver um resumo curto, focado em cobertura e distribuicao
-
-**Guardrail importante:** nesta fase o briefing pode refletir **dados persistidos** do setor. Nao e requisito espelhar overrides locais ainda nao salvos do componente React.
-
-### 6.5 Perfis de horario do setor
-
-Em vez de despejar todos os perfis do sistema, injetar so os perfis dos contratos presentes entre os colaboradores ativos do setor.
-
-Formato recomendado:
-
-```md
-### Perfis de horario relevantes
-- CLT 44h: sem perfis ativos
-- Estagiario: MANHA_08_12 (08:00-12:00), TARDE_1330_PLUS (13:30-20:00), ESTUDA_NOITE_08_14 (08:00-14:00)
+```ts
+{
+  setor: {
+    meta: {
+      id,
+      nome,
+      horario_funcionamento,
+      dirty,
+    },
+    equipe: {
+      ativos: number,
+      em_posto: PessoaResumo[],
+      reserva_operacional: PessoaResumo[],
+      ausentes: AusenciaResumo[],
+      proximos_ausentes: AusenciaResumo[],
+      usando_padrao: number,
+      usando_especifico: number,
+    },
+    postos: {
+      ocupados: PostoResumo[],
+      em_espera: PostoResumo[],
+    },
+    demanda: {
+      segmentos_semanais: number,
+      por_dia: DiaResumo[],
+      por_faixa_top: FaixaResumo[],
+    },
+    preview: {
+      ciclo,
+      cobertura_por_dia,
+      deficit_por_dia,
+      ff_fv,
+      warnings,
+    },
+    escala_atual: {
+      id,
+      status,
+      resumo_user,
+      cobertura_percent,
+      violacoes_hard,
+      violacoes_soft,
+      pode_oficializar,
+      desatualizada,
+    },
+    historico_curto: {
+      ultimas_escalas: EscalaResumo[],
+      ultimas_falhas: FalhaGeracaoResumo[],
+    },
+  },
+}
 ```
 
-### 6.6 Titulos da knowledge base
+### 5.4 Bundle minimo de colaborador
 
-Hoje o discovery so diz “9 fontes / 50 chunks”. Isso ajuda pouco.
-
-Formato recomendado:
-
-```md
-### Base de conhecimento
-- 9 fontes | 50 chunks indexados
-- Titulos: clt - contratos; clt - feriados-cct; clt - intervalos-descanso; clt - jornada-regras; sistema - entidades; sistema - fluxos-trabalho; +3
+```ts
+{
+  colaborador: {
+    ficha,
+    contrato,
+    posto_atual,
+    regras_recorrentes,
+    excecoes_por_data,
+    excecoes_ausencia,
+  },
+}
 ```
 
-### 6.7 Preflight rapido do setor
+### 5.5 O que NAO entra no context por padrao
 
-Isso **nao** substitui o preflight por periodo. Ele responde perguntas como:
+- grid completo de alocacoes
+- chunks inteiros da knowledge base
+- logs brutos de solver
+- historico completo de escalas
+- todas as relacoes do knowledge graph
 
-- “esse setor esta minimamente pronto para gerar?”
-- “tem algum blocker obvio antes de eu chamar o motor?”
+Esses dados ficam para:
 
-Formato recomendado:
+- `consultar` interno
+- `consultar_contexto(..., visao='detalhada')`
+- tool analitica especifica
 
-```md
-### Saude para geracao
-- Colaboradores ativos: 6
-- Demandas cadastradas: 43 segmentos
-- Blockers basicos: nenhum
-- Warnings basicos: setor com capacidade apertada para a demanda media
-```
+### 5.6 Secoes obrigatorias para o detalhe do setor
 
-### 6.8 Regras editaveis com status atual
+| Secao | Conteudo minimo | Objetivo |
+|------|------------------|----------|
+| Resumo curto | contadores e alertas | orientacao rapida |
+| Setor em foco | equipe, postos, ausencias, demanda | contexto operacional |
+| Preview de ciclo | ciclo, cobertura, deficit, FF/FV, warnings | qualidade antes do solver |
+| Escala atual | status, resumo_user, drift, pode_oficializar | conversa sobre escala |
+| Regras efetivas | agrupadas por status | evitar tool de consulta de regra |
+| Contratos relevantes | contratos presentes com perfis embutidos | matar listagem separada |
+| Conhecimento | stats + top titulos | matar `listar_conhecimento` |
 
-Injetar **status**, nao descricoes longas. O discovery ja mostra overrides; falta a fotografia completa do estado efetivo.
+### 5.7 Budget alvo do contexto de setor
 
-Formato recomendado:
+| Bloco | Alvo |
+|------|------|
+| Resumo curto | 40-80 tokens |
+| Setor em foco | 350-600 |
+| Preview | 140-220 |
+| Escala atual | 80-140 |
+| Regras efetivas | 90-140 |
+| Contratos + perfis | 60-120 |
+| Knowledge catalogo | 50-100 |
 
-```md
-### Regras editaveis (status efetivo)
-- HARD: DIAS_TRABALHO, H1, H6, H10, MIN_DIARIO, H3_DOM_MAX_CONSEC_F, H3_DOM_MAX_CONSEC_M
-- SOFT: H3_DOM_CICLO_EXATO
-- ON: AP1, AP2, AP3, AP4, AP5, AP6, AP7, AP8, AP9, AP10, AP15, AP16, S_DEFICIT, S_SURPLUS, S_TURNO_PREF, S_CONSISTENCIA, S_SPREAD, S_AP1_EXCESS
-- OFF: nenhuma
-```
-
-### 6.9 Guardrails de budget
-
-Para o context nao virar um peru de Natal recheado de log inutil:
-
-1. **Setores disponiveis completos** so em `dashboard`, `setor_lista` e `externo`.
-2. Em `setor_detalhe`, manter apenas:
-   - resumo global curto
-   - setor em foco detalhado
-   - preview
-   - saude para geracao
-3. **Titulos da knowledge base** cap em 10.
-4. **Preview** cap em:
-   - 1 linha de ciclo
-   - 1 linha de cobertura
-   - 1 linha de deficit
-   - 1 linha de FF/FV
-   - max 3 warnings
-5. **Regras editaveis** em formato agrupado por status, nunca 28 linhas com descricao.
-
-### 6.10 Budget alvo
-
-Tomando o sample atual de ~935 tokens como base:
-
-- preview: +180
-- perfis: +80
-- knowledge titles: +90
-- preflight rapido: +60
-- regras compactas: +120
-
-**Delta bruto esperado:** +530 tokens
-
-Com gating da secao `Setores disponiveis` fora de paginas de setor, o delta liquido deve cair para algo perto de **+350 a +430 tokens**.
-
-**Meta operacional:** briefing tipico de detalhe de setor ficar em **<= 1500 tokens** sem Auto-RAG e **<= 1800 tokens** com Auto-RAG.
+**Meta operacional:** contexto tipico de detalhe de setor em **<= 1500 tokens** sem Auto-RAG e **<= 1800 tokens** com Auto-RAG.
 
 ---
 
-## 7. Reducao de Tools
+## 6. Audit das 33 Tools
 
-### 7.1 Matriz final
+### 6.1 Leitura, diagnostico e referencia
 
-| Tool atual | Destino | Justificativa |
-|------------|---------|---------------|
-| `preflight` | Mantida como `preflight` | Continua sendo a tool unica de validacao pre-geracao. |
-| `preflight_completo` | Absorvida por `preflight(detalhado?: boolean)` | Mesma intencao, profundidade diferente. |
-| `listar_perfis_horario` | Removida | Contexto cobre o caso comum; `consultar("contrato_perfis_horario")` cobre fallback. |
-| `listar_conhecimento` | Removida | Contexto passa a carregar stats + titulos. Se surgir demanda real de catalogo completo, expor `knowledge_sources` via `consultar` e melhor que manter tool dedicada. |
+| Tool | Classe | Phase 0 | North Star | Justificativa |
+|------|--------|---------|------------|---------------|
+| `buscar_colaborador` | CONSULTA | MANTER | ABSORVER em `consultar_contexto(colaborador)` | Hoje ainda resolve fuzzy + ficha rica; no futuro isso e visao de contexto. |
+| `consultar` | CONSULTA | MANTER | MANTER interno como fallback | Continua sendo valvula de escape tecnica. |
+| `preflight` | VALIDACAO | MANTER | VIRAR `executar_acao('preflight')` ou visao especifica | Continua necessario por periodo. |
+| `preflight_completo` | VALIDACAO | CONSOLIDAR em `preflight(detalhado?: boolean)` | ABSORVER na mesma acao | Mesmo dominio, profundidade diferente. |
+| `diagnosticar_escala` | DIAGNOSTICO | MANTER TEMPORARIAMENTE | ABSORVER em `consultar_contexto(escala)` | So deixa de existir quando toda mutacao recalcular e persistir o resumo canonico automaticamente. |
+| `explicar_violacao` | REFERENCIA | MANTER TEMPORARIAMENTE | ABSORVER em dicionario/contexto | Boa enquanto o dicionario ainda nao estiver bem ancorado no context. |
+| `diagnosticar_infeasible` | DIAGNOSTICO | MANTER TEMPORARIAMENTE | ABSORVER em historico de falhas persistido | Se a geracao falha e a causa fica salva no historico, a tool separada perde sentido. |
+| `resumir_horas_setor` | ANALITICA | MANTER | PODE VIRAR visao de `consultar_contexto` | Continua sendo pergunta periodica util. |
+| `listar_perfis_horario` | CONSULTA | REMOVER | ABSORVIDA pelo contexto de contrato | Perfil de horario e dado de contrato, nao tool publica. |
+| `buscar_conhecimento` | RAG | MANTER | OPCIONAL | So fica exposta se o retrieval nao acontecer antes do LLM. |
+| `listar_conhecimento` | CONSULTA | REMOVER | NAO EXISTE no contrato publico | Catalogo pequeno deve estar no contexto. |
+| `explorar_relacoes` | KNOWLEDGE | MANTER FORA DO CHAT RH | ADMIN/DEBUG APENAS | Muito especializada para ficar no surface padrao. |
 
-### 7.2 Contagem
+### 6.2 Acoes de cadastro, ficha e escala
+
+| Tool | Classe | Phase 0 | North Star | Justificativa |
+|------|--------|---------|------------|---------------|
+| `criar` | ACAO | MANTER | ABSORVER em `editar_ficha` | Form schema-driven cobre bem criacao generica. |
+| `atualizar` | ACAO | MANTER | ABSORVER em `editar_ficha` | Mesmo motivo. |
+| `deletar` | ACAO | MANTER | `executar_acao('remover')` ou fluxo admin | Remocao continua acao explicita. |
+| `salvar_posto_setor` | ACAO | MANTER | ABSORVER em `editar_ficha(setor/postos)` | Posto e subdominio da ficha de setor. |
+| `editar_regra` | ACAO | MANTER | `editar_ficha(regras)` | Continua write path. |
+| `gerar_escala` | ACAO | MANTER | `executar_acao('gerar_escala')` | Core do produto. |
+| `ajustar_alocacao` | ACAO | MANTER | `executar_acao('patch_celula')` | Hoje e patch de status numa celula. |
+| `ajustar_horario` | ACAO | MANTER | `executar_acao('patch_celula')` | Hoje e patch de horario numa celula. Nome atual vaza implementacao. |
+| `oficializar_escala` | ACAO | MANTER | `executar_acao('oficializar_escala')` | Lifecycle de dominio. |
+| `cadastrar_lote` | ACAO | MANTER | `editar_ficha(..., modo='lote')` ou acao separada | Batch continua util. |
+| `salvar_regra_horario_colaborador` | ACAO | MANTER | ABSORVER em `editar_ficha(colaborador)` | Regra recorrente faz parte da ficha do colaborador. |
+| `salvar_demanda_excecao_data` | ACAO | MANTER | ABSORVER em `editar_ficha(setor.demanda)` | Faz parte da ficha operacional do setor. |
+| `upsert_regra_excecao_data` | ACAO | MANTER | ABSORVER em `editar_ficha(colaborador.excecoes)` | Tambem ficha, nao tool publica isolada. |
+| `resetar_regras_empresa` | ACAO | MANTER so como admin | VIRAR fluxo manual/admin | Nao e tool central do chat RH. |
+| `salvar_perfil_horario` | ACAO | MANTER | ABSORVER em `editar_ficha(contrato)` | Perfil pertence ao contrato. |
+| `deletar_perfil_horario` | ACAO | MANTER | ABSORVER em `editar_ficha(contrato)` ou admin | Mesmo motivo. |
+| `configurar_horario_funcionamento` | ACAO | MANTER | ABSORVER em `editar_ficha(empresa/setor)` | E formulario, nao comando especial. |
+
+### 6.3 Knowledge, memoria e operacao
+
+| Tool | Classe | Phase 0 | North Star | Justificativa |
+|------|--------|---------|------------|---------------|
+| `salvar_conhecimento` | ACAO | RETIRAR DO CHAT RH | BACKOFFICE APENAS | Ingestao de conhecimento e tarefa admin, nao conversa comum com a IA. |
+| `salvar_memoria` | ACAO | MANTER | MANTER opcional | Memoria curta continua valida no chat. |
+| `remover_memoria` | ACAO | MANTER | `editar_ficha(memoria)` ou acao leve | Continua util se o chat pode esquecer algo. |
+| `fazer_backup` | ACAO | MANTER FORA DO USO COMUM | `executar_acao('backup')` admin | Operacao explicita, rara e administrativa. |
+
+### 6.4 Contagem e leitura correta da meta
+
+**Meta tatico-interna do Phase 0:**
 
 ```text
 33 atual
 - 1  (merge preflight_completo -> preflight)
 - 1  (remove listar_perfis_horario)
 - 1  (remove listar_conhecimento)
-= 30 tools
+= 30 tools internas expostas
 ```
 
-### 7.3 Contrato recomendado para `preflight`
+**North Star publico:**
 
-Schema alvo:
-
-```ts
-preflight({
-  setor_id: number,
-  data_inicio: string,
-  data_fim: string,
-  detalhado?: boolean,
-  regimes_override?: Array<{ colaborador_id: number; regime_escala: '5X2' | '6X1' }>
-})
-```
-
-Sem `detalhado`, roda o caminho leve.
-Com `detalhado: true`, incorpora os checks hoje feitos por `preflight_completo`.
-
-### 7.4 O que nao deve ser removido
-
-Mesmo sendo read-only:
-
-- `consultar`
-- `buscar_colaborador`
-- `diagnosticar_escala`
-- `diagnosticar_infeasible`
-- `explicar_violacao`
-- `buscar_conhecimento`
-- `explorar_relacoes`
-- `resumir_horas_setor`
-
-Essas tools continuam necessarias porque o contexto nao consegue, nem deve, antecipar todas as perguntas detalhadas ou caras.
+- 3 tools nucleares
+- 2 tools opcionais
+- fallback tecnico interno nao precisa desaparecer do codigo no primeiro passo
 
 ---
 
-## 8. CLI `--context`
+## 7. Reducao de Tools: decisao final desta fase
 
-### 8.1 Objetivo
+### 7.1 Remocoes e consolidacao obrigatorias
 
-Dar ao dev uma forma de ver **o mesmo markdown** que o modelo recebe, sem abrir a UI e sem depender do tool server HTTP.
+| Tool atual | Destino | Motivo |
+|------------|---------|--------|
+| `preflight_completo` | `preflight(detalhado?: boolean)` | Mesma intencao, profundidade diferente |
+| `listar_perfis_horario` | sai da superficie | Dado pequeno e estavel, deve vir via contrato/contexto |
+| `listar_conhecimento` | sai da superficie | Catalogo pequeno e estavel, deve vir via contexto |
 
-### 8.2 Contrato proposto
+### 7.2 Reclassificacoes importantes
+
+Mesmo que continuem existindo por enquanto:
+
+- `diagnosticar_escala` deixa de ser pilar arquitetural; passa a ser compensacao temporaria por falta de persistencia canonica apos ajuste manual
+- `diagnosticar_infeasible` deixa de ser pilar arquitetural; passa a ser compensacao temporaria por falta de historico de falha rico
+- `salvar_conhecimento`, `explorar_relacoes`, `resetar_regras_empresa`, `fazer_backup` saem do centro do chat RH e viram superficie admin/opcional
+
+### 7.3 O que nao deve ser colapsado cedo demais
+
+- `gerar_escala`
+- `oficializar_escala`
+- `patch de celula da escala`
+- `backup`
+
+Essas continuam sendo comandos de dominio, nao formularios.
+
+---
+
+## 8. CLI, Harness e Teste Real
+
+### 8.1 `preview:cli --context`
+
+Continua obrigatorio.
+
+Contrato proposto:
 
 ```bash
 npm run preview:cli -- <setor_id> --context
 ```
 
-### 8.3 Comportamento
+Comportamento:
 
-Quando `--context` estiver presente, `scripts/preview-cli.ts` deve:
-
-1. inicializar o DB igual ao `solver-cli`
-2. validar se o setor existe
-3. montar um `IaContexto` sintetico com:
-   - `rota: /setores/<id>`
-   - `pagina: setor_detalhe`
+1. inicializa DB
+2. resolve setor
+3. monta `IaContexto` sintetico realista:
+   - `pagina: 'setor_detalhe'`
+   - `rota: '/setores/<id>'`
    - `setor_id: <id>`
-4. chamar `buildContextBriefing()`
-5. imprimir **somente** o markdown bruto no stdout
+4. chama `buildContextBundle()`
+5. renderiza com `renderContextBriefing()`
+6. imprime markdown bruto
 
-### 8.4 Decisao de design
+### 8.2 `ia:chat` precisa virar harness de verdade
 
-`--context` deve ser **modo exclusivo**, nao “append” no output visual do preview.
+Hoje a CLI de chat deveria servir para validar o design context-first. Nao serve.
 
-Motivo: o objetivo e debugar contexto, nao misturar preview ANSI com briefing markdown e produzir uma sopa radioativa ilegivel.
+Ela precisa ganhar no minimo:
 
-### 8.5 O que esta fora desta fase
+- `initDb()` antes de tool calls
+- `--setor <id>`
+- `--pagina <pagina>`
+- injecao real de `buildContextBriefing()` no system/context da conversa
 
-- `--message "..."` para simular Auto-RAG
-- diffs entre contextos
-- dump em JSON estruturado por secao
-- paridade com `pagina: externo` do tool server
+Sem isso, o teste da IA ao vivo mede outra coisa.
 
-### 8.6 Relacao com o tool server atual
+### 8.3 Teste executado nesta revisao
 
-O `src/main/tool-server.ts` ja expõe `GET /discovery?setor=...`, mas:
+Comando rodado em `2026-03-21`:
 
-- usa `pagina: "externo"`
-- nao e a interface dev principal desejada
-- nao substitui um CLI local de loop rapido
+```bash
+printf 'a distribuicao de folgas da padaria esta boa?\nsair\n' | npm run ia:chat -- --provider gemini
+```
 
-Logo, o `preview-cli --context` deve chamar `buildContextBriefing()` **direto**, nao via HTTP.
+Resultado observado:
+
+1. a CLI sobe e carrega `33 tools`
+2. o modelo chama `consultar({ entidade: 'setores', filtros: { nome: 'Padaria' } })`
+3. a tool falha com:
+
+```text
+DB not initialized. Call initDb() first.
+```
+
+4. a resposta final ao usuario vira erro generico
+
+### 8.4 Onde a CLI atual "toma no cu"
+
+Finding 1:
+
+- `tests/ia/live/ia-chat-cli.ts` nao inicializa o banco antes de usar as tools
+
+Finding 2:
+
+- o arquivo importa `buildContextBriefing`
+- mas nao concatena esse briefing na conversa
+- portanto a CLI atual nao testa discovery/contexto de verdade
+
+Finding 3:
+
+- mesmo se o DB estivesse inicializado, o prompt de teste ainda estaria cego para preview, alertas e pacote real de setor
+
+Conclusao:
+
+**A CLI atual nao pode ser acceptance harness do Phase 0 sem antes corrigir inicializacao de DB e injecao de contexto.**
 
 ---
 
-## 9. Riscos e Mitigacoes
+## 9. Definition of Done
+
+O Phase 0 so esta pronto quando TODOS os itens abaixo forem verdade ao mesmo tempo:
+
+### 9.1 Contexto
+
+- existe um `buildContextBundle()` estruturado
+- existe um `renderContextBriefing()` que usa esse bundle
+- o detalhe de setor injeta:
+  - preview de ciclo
+  - contratos relevantes com perfis embutidos
+  - escala atual resumida
+  - deficits por dia
+  - cobertura por faixa resumida
+  - regras efetivas agrupadas
+  - knowledge catalogo resumido
+
+### 9.2 Tools
+
+- `IA_TOOLS.length` cai de `33` para `30`
+- `preflight_completo` deixa de existir como tool separada
+- `listar_perfis_horario` deixa de existir
+- `listar_conhecimento` deixa de existir
+- `salvar_conhecimento` deixa de sair no surface principal do chat RH, mesmo que o handler ainda exista para backoffice
+
+### 9.3 CLI e validacao
+
+- `npm run preview:cli -- 4 --context` imprime o markdown bruto do contexto
+- `npm run ia:chat -- --provider gemini --setor 4 --pagina setor_detalhe` ou equivalente:
+  - inicializa DB corretamente
+  - injeta contexto real
+  - permite testar prompts de setor sem tool call de listagem basica
+
+### 9.4 Comportamento esperado em prompts-chave
+
+Para prompts como:
+
+- "a distribuicao de folgas da padaria esta boa?"
+- "quais contratos do setor usam perfil especifico?"
+- "tem deficit em algum dia?"
+- "quais pessoas estao fora do posto?"
+
+o modelo deve responder a partir do contexto sem precisar chamar:
+
+- `listar_perfis_horario`
+- `listar_conhecimento`
+- `preflight_completo`
+
+### 9.5 Limites aceitos
+
+- grid completo da escala continua fora do context padrao
+- override local nao salvo continua fora do escopo
+- diagnosticos ricos ainda podem sobreviver temporariamente enquanto o resumo canonico nao for persistido apos toda mutacao
+
+---
+
+## 10. Riscos e Mitigacoes
 
 | # | Risco | Impacto | Mitigacao |
 |---|-------|---------|-----------|
-| 1 | Contexto crescer demais | Latencia e custo sobem | Gating por pagina + formatos compactos + metas de budget |
-| 2 | Preview em contexto divergir do que o usuario editou localmente | IA ainda nao ver “exatamente” a tela em casos de override local nao salvo | Assumir persistido nesta fase e documentar limite |
-| 3 | Remover tool de listagem sem fallback claro | Regressao em perguntas de catalogo | Remover apenas listagens pequenas; para knowledge, contexto cobre o caso RH e um eventual fallback admin deve entrar via `consultar("knowledge_sources")` |
-| 4 | Consolidar `preflight` quebrar callers existentes | Regressao silenciosa | Fazer consolidacao com compat shim durante implementacao |
-| 5 | Docs continuarem falando em 34 tools | Confusao em chats futuros | Atualizar docs que citam 34 durante a implementacao do plan |
-
----
-
-## 10. Critérios de Sucesso
-
-1. **Mapeamento fechado:** as 13 categorias atuais do discovery e as 33 tools atuais estao documentadas nesta spec.
-2. **Reducao objetiva:** `IA_TOOLS.length` cai de **33 para 30** sem remover nenhuma tool de acao.
-3. **Discovery expandido:** briefing de setor inclui preview, perfis relevantes, knowledge titles, preflight rapido e status compacto de regras.
-4. **Budget controlado:** briefing tipico de detalhe de setor fica em **<= 1500 tokens** sem Auto-RAG.
-5. **CLI de debug:** `npm run preview:cli -- <setor_id> --context` imprime o markdown bruto do `buildContextBriefing()`.
-6. **Fonte de verdade corrigida:** implementacao atualiza docs que ainda falam em 34 tools.
+| 1 | Contexto virar dump cru de banco | Token explode e IA piora | Bundle estruturado + render compacto + caps por secao |
+| 2 | Consolidar tool demais cedo demais | Perda de semantica de dominio | Separar `editar_ficha` de `executar_acao` |
+| 3 | Diagnosticos deixarem de existir antes do resumo canonico | Respostas stale apos ajuste manual | Manter tools temporarias ate o write path persistir resumo atualizado |
+| 4 | CLI continuar fake | Testes enganosos | Corrigir `ia:chat` para init DB + context injection |
+| 5 | RAG continuar exposto no lugar errado | Tool desnecessaria no chat | Tratar retrieval como etapa anterior ao LLM quando possivel |
 
 ---
 
 ## 11. Checklist para o futuro plan
 
-- [ ] Extrair builder compartilhado do preview para uso no main process
-- [ ] Adicionar secao `Preview de ciclo` ao discovery
-- [ ] Adicionar perfis relevantes por contrato do setor
-- [ ] Expandir `Base de conhecimento` com top titulos
-- [ ] Adicionar `Saude para geracao`
-- [ ] Adicionar status compacto das regras editaveis
-- [ ] Aplicar gating da secao `Setores disponiveis`
+- [ ] Extrair `buildContextBundle()` do discovery atual
+- [ ] Criar `renderContextBriefing(bundle)`
+- [ ] Adicionar preview ao bundle de setor
+- [ ] Embutir perfis de horario dentro de contratos relevantes
+- [ ] Embutir knowledge catalogo resumido no contexto
+- [ ] Embutir escala atual resumida + drift + ultimas falhas
 - [ ] Consolidar `preflight_completo` em `preflight`
 - [ ] Remover `listar_perfis_horario`
 - [ ] Remover `listar_conhecimento`
+- [ ] Rebaixar `salvar_conhecimento` para backoffice/admin
 - [ ] Criar `scripts/preview-cli.ts` com `--context`
-- [ ] Atualizar docs que citam 34 tools
+- [ ] Corrigir `tests/ia/live/ia-chat-cli.ts` para inicializar DB
+- [ ] Corrigir `tests/ia/live/ia-chat-cli.ts` para injetar contexto real
+- [ ] Atualizar docs que ainda falam em 34 tools
 
 ---
 
 ## 12. Decisao Final
 
-**Phase 0 deve ser implementada como um ajuste context-first, nao como refactor de acoes.**
+**Phase 0 continua sendo context-first, mas agora com uma leitura mais correta:**
 
-Se o objetivo e fazer a IA parecer mais inteligente, o caminho nao e ensinar ela a chamar mais tool. E parar de esconder dela o que o proprio sistema ja sabe.
+- reduzir round-trip e a meta imediata
+- toolkit reutilizavel e a meta arquitetural
+
+Se a IA vai servir de base para outros projetos com RAG e formularios, o desenho certo nao e "uma tool por tabela". O desenho certo e:
+
+- **contexto agregado por tela/domino**
+- **edicao schema-driven de ficha**
+- **comandos de dominio para workflow**
+
+O resto e barulho travestido de flexibilidade.
