@@ -367,30 +367,33 @@ UI (EscalaPagina)
   │     ├── _analyze_capacity(data) → analise pre-solve de capacidade vs demanda
   │     ├── parse_demand() → grid de demanda por (dia_idx, slot_idx)
   │     │
-  │     ├── Pass 1 (Normal — 50% do tempo):
+  │     ├── Phase 1 (solve_folga_pattern — padrao de folgas):
+  │     │     ├── Modelo CP-SAT leve com bands: OFF/MANHA/TARDE/INTEGRAL
+  │     │     ├── Detecta colabs fully-pinned (Tipo B) → HARD-fixa variaveis
+  │     │     ├── Constraints: H1, folga_fixa, folga_variavel, ciclo domingo
+  │     │     ├── SOFT: headcount (5000), band coverage (3000) — evita INFEASIBLE
+  │     │     └── Retorna pattern que alimenta Pass 1 como warm-start
+  │     │
+  │     ├── Pass 1 (Normal — Phase 1 como constraints + hints):
   │     │     ├── build_model() sem relaxations
   │     │     ├── Variaveis: work[c,d,s], works_day[c,d], block_starts[c,d,s]
-  │     │     ├── Pinned cells → force work[c,d,s] = 0 ou 1
+  │     │     ├── Phase 1 pattern → slots pinados (OFF, MANHA, TARDE, INTEGRAL)
   │     │     ├── Warm-start hints → model.add_hint()
   │     │     ├── Blocked days (feriados proibidos, excecoes, aprendiz dom/feriado)
-  │     │     ├── HARD constraints (H1-H19, DIAS_TRABALHO, MIN_DIARIO, janela, folga fixa)
+  │     │     ├── HARD constraints (H1-H18, DIAS_TRABALHO, MIN_DIARIO, janela, folga fixa)
   │     │     ├── SOFT penalties (deficit, surplus, domingo_ciclo, turno_pref, consistencia, spread, ap1_excess)
   │     │     └── model.minimize(sum(objective_terms))
   │     │     Se OPTIMAL/FEASIBLE → retorna
   │     │
-  │     ├── Pass 1b (se Pass 1 falhou com pattern de folga viavel):
-  │     │     ├── Mantem o padrao de folgas da Fase 1
-  │     │     ├── Relaxa apenas DIAS_TRABALHO e MIN_DIARIO
-  │     │     └── Se resolver → retorna com diagnostico.pass_usado='1b'
-  │     │
-  │     ├── Pass 2 (Relaxed Product Rules — 30% do tempo):
-  │     │     ├── Remove o pin de folgas e continua relaxando so DIAS_TRABALHO e MIN_DIARIO
+  │     ├── Pass 2 (Relaxed Product Rules — Phase 1 como hints only):
+  │     │     ├── Remove Phase 1 como constraints, mantem como warm-start hints
+  │     │     ├── Relaxa DIAS_TRABALHO e MIN_DIARIO para SOFT
   │     │     ├── H10 segue a policy efetiva (nao e auto-elastic no modo OFFICIAL)
   │     │     ├── H1/H6 so entram no relax se generation_mode = EXPLORATORY
   │     │     └── Se resolver → retorna com diagnostico.pass_usado=2
   │     │
   │     ├── Pass 3:
-  │     │     ├── OFFICIAL: relaxa DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW
+  │     │     ├── OFFICIAL: relaxa DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW, H10_ELASTIC
   │     │     ├── EXPLORATORY: usa ALL_PRODUCT_RULES como ultimo recurso
   │     │     ├── H2, H4, H5, H11-H18 ficam HARD
   │     │     └── diagnostico.modo_emergencia reflete o path exploratorio
@@ -687,12 +690,12 @@ O campo `solve_mode` no JSON e mantido por backward-compatibility mas e **ignora
 
 **Multi-pass (cada pass usa o callback internamente):**
 
-| Pass | Objetivo | Tempo alocado | Relaxations |
-|------|----------|---------------|-------------|
-| Pass 1 | Normal (todas regras conforme config) | remaining_time() | Nenhuma |
-| Pass 1b | Manter pattern de folgas | remaining_time() | DIAS_TRABALHO, MIN_DIARIO |
-| Pass 2 | Relaxar product rules | remaining_time() | DIAS_TRABALHO, MIN_DIARIO |
-| Pass 3 | Fallback legal-first | remaining_time() | DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW |
+| Pass | Objetivo | Warm-start | Relaxations |
+|------|----------|------------|-------------|
+| Phase 1 | Padrao de folgas (OFF/MANHA/TARDE/INTEGRAL) | — | SOFT headcount, band coverage |
+| Pass 1 | Normal (todas regras conforme config) | Phase 1 como constraints + hints | Nenhuma |
+| Pass 2 | Relaxar product rules | Phase 1 como hints only | DIAS_TRABALHO, MIN_DIARIO |
+| Pass 3 | Fallback legal-first | Phase 1 como hints only | DIAS_TRABALHO, MIN_DIARIO, FOLGA_FIXA, FOLGA_VARIAVEL, TIME_WINDOW, H10_ELASTIC |
 
 **INFEASIBLE e provado em <1s** — dar mais tempo NAO resolve. Se o CP-SAT prova impossibilidade matematica, e instantaneo. O multi-pass tenta com regras relaxadas, nao com mais tempo. O patience so roda no pass que encontra solucao.
 

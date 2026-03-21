@@ -115,10 +115,10 @@ O solver tem dois modos de geração:
 
 No modo **\`OFFICIAL\`**, o motor usa fallback legal-first:
 
-- **Pass 1**: roda com a policy efetiva da geração
-- **Pass 1b**: mantém o padrão de folgas e relaxa só \`DIAS_TRABALHO\` e \`MIN_DIARIO\`
-- **Pass 2**: remove o pin de folgas e continua relaxando só regras de produto
-- **Pass 3**: fallback oficial relaxando \`DIAS_TRABALHO\`, \`MIN_DIARIO\`, \`FOLGA_FIXA\`, \`FOLGA_VARIAVEL\` e \`TIME_WINDOW\`
+- **Phase 1**: resolve padrão de folgas (OFF/MANHA/TARDE/INTEGRAL) — modelo leve
+- **Pass 1**: roda com a policy efetiva + Phase 1 como constraints e warm-start
+- **Pass 2**: relaxa \`DIAS_TRABALHO\` e \`MIN_DIARIO\`, mantém Phase 1 como hints
+- **Pass 3**: fallback oficial relaxando \`DIAS_TRABALHO\`, \`MIN_DIARIO\`, \`FOLGA_FIXA\`, \`FOLGA_VARIAVEL\`, \`TIME_WINDOW\` e \`H10_ELASTIC\`
 
 No modo **\`EXPLORATORY\`**, o solver pode explorar relaxações adicionais:
 
@@ -134,7 +134,7 @@ Pontos críticos:
 O campo \`diagnostico\` do resultado explica:
 - \`generation_mode\` — \`OFFICIAL\` ou \`EXPLORATORY\`
 - \`policy_adjustments\` — ajustes automáticos aplicados pela policy compartilhada
-- \`pass_usado\` — qual pass resolveu (\`1\`, \`1b\`, \`2\` ou \`3\`)
+- \`pass_usado\` — qual pass resolveu (\`1\`, \`2\` ou \`3\`)
 - \`regras_relaxadas[]\` — quais regras foram rebaixadas
 - \`capacidade_vs_demanda\` — análise aritmética de capacidade vs demanda
 - \`modo_emergencia\` — true se entrou no last resort exploratório

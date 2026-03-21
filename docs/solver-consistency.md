@@ -1,5 +1,8 @@
-# PROMPT: Resolver Inconsistência Solver Python vs Validador TypeScript
+# [HISTORICO] Resolver Inconsistência Solver Python vs Validador TypeScript
 
+> **NOTA:** Este doc é HISTÓRICO. O problema foi resolvido em 2026-03-13.
+> Para documentação atual do pipeline, veja `docs/como-funciona.md`.
+>
 > **Status em 2026-03-13:** este documento virou registro historico do problema original.
 >
 > **Como o sistema funciona hoje:**
