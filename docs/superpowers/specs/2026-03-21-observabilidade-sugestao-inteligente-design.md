@@ -124,6 +124,14 @@ npm run preview:cli -- list
 
 Isso mostra se o Phase 1 tá respeitando e refinando o que o preview calcula, ou se tá divergindo.
 
+**Flag `--context`:** Dumpa o briefing completo que a IA do EscalaFlow recebe (o output do `discovery.ts`). Isso permite que o dev veja EXATAMENTE a mesma informação que a IA tem — memórias do RH, alertas proativos, regras custom, feriados, colaboradores, demanda, preview. Essencial pra debugar por que a IA respondeu de um jeito ou de outro.
+
+```
+npm run preview:cli -- 4 --context
+# Output: o Markdown completo do buildContextBriefing() pra setor 4
+# Inclui: memórias, alertas, regras, colaboradores, demanda, preview
+```
+
 **Arquivo:** `scripts/preview-cli.ts` (análogo ao `scripts/solver-cli.ts` existente)
 
 **Requer:** App ter rodado ao menos 1x (banco populado). Mesmo requisito do solver:cli.
@@ -206,6 +214,8 @@ Todas as tools de ação (criar, atualizar, deletar, gerar_escala, oficializar, 
 **Meta:** Reduzir de 33 → ~30 tools (eliminando ~2 por context, consolidando ~1 par — `preflight`/`preflight_completo`). A consolidação `ajustar_alocacao`/`ajustar_horario` será avaliada no audit mas pode ter razões técnicas pra manter separados. O audit final define os números exatos antes de implementar.
 
 **Entrega:** Documento `docs/tools-audit.md` com decisão final tool-a-tool, antes de implementar. Serve como referência para qualquer Claude que for trabalhar nas tools.
+
+**Referência de fluxo de dados:** O mapa completo de como os dados fluem entre as 3 engines (preview → solver → validador), o que cada um recebe e retorna, e como a IA se encaixa está documentado em `docs/como-funciona.md`. O tools audit DEVE ser lido em conjunto com esse doc pra entender POR QUE certas tools são redundantes — a informação já existe no fluxo, só não estava sendo exposta no context.
 
 ---
 
@@ -484,6 +494,22 @@ Se o solver principal divergir do Phase 1 (ex: "Phase 1 disse 96% mas solver deu
 
 Essa transparência é ESSENCIAL. Hoje o RH vê "o sugerir disse 100% mas a escala ficou 93%?!" e perde confiança. Com o diagnóstico, ele entende que a diferença é estrutural, não bug.
 
+**Por que "sempre muda algo" vai diminuir com essas mudanças:**
+
+Hoje o solver "sempre muda algo" pós-geração porque:
+1. O Phase 1 é rubber stamp → não otimiza → pattern de folgas é subótimo
+2. O solver recebe esse pattern subótimo como constraints HARD no Pass 1
+3. Pass 1 fica INFEASIBLE (constraints muito apertadas) → cai pro Pass 2
+4. Pass 2 relaxa DIAS_TRABALHO → redistribui folgas → "mudou algo"
+
+Com as mudanças da Fase 2:
+1. O Phase 1 vira otimizador → gera o MELHOR pattern possível
+2. O solver recebe esse pattern otimizado como warm-start
+3. O solver TEM MENOS motivo pra divergir → "mudou algo" vira raro
+4. Quando diverge, é por constraints de slot (almoço, interjornada) — diferença pequena e explicada
+
+Isso é a raiz do problema que motivou esta spec: o Phase 1 fazendo trabalho ruim → solver compensando → RH confuso.
+
 ---
 
 ## 6. Arquivos Impactados
@@ -519,7 +545,8 @@ Essa transparência é ESSENCIAL. Hoje o RH vê "o sugerir disse 100% mas a esca
 
 ### Fase 1
 - [ ] `npm run preview:cli -- 4` exibe grid, cobertura, stats da Padaria com dados reais
-- [ ] `npm run preview:cli -- 4 --compare` mostra diff preview vs solver
+- [ ] `npm run preview:cli -- 4 --compare` mostra diff preview vs Phase 1
+- [ ] `npm run preview:cli -- 4 --context` dumpa o briefing completo que a IA recebe (discovery)
 - [ ] IA do EscalaFlow responde "a distribuição tá boa?" com dados do preview (não mais "tá ok" cego)
 - [ ] Tools audit completo (`docs/tools-audit.md`) com decisão por tool: manter/context/consolidar/matar
 - [ ] Redução implementada conforme audit (meta ~30, número exato definido pelo audit)
