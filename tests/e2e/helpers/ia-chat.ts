@@ -129,3 +129,20 @@ export async function startFreshIaConversation(page: Page): Promise<void> {
   }
   await waitForChatReady(page)
 }
+
+/**
+ * Extrai o turn metadata (context-meta) da última mensagem do assistente.
+ * Retorna null se não houver metadata ou se o parse falhar.
+ */
+export async function getTurnMeta(page: Page): Promise<{
+  pagina?: string
+  rota?: string
+  setor_id?: number
+  bundle_sections: string[]
+  briefing_chars: number
+} | null> {
+  const lastMsg = page.locator('[data-testid="ia-assistant-message"]').last()
+  const metaStr = await lastMsg.getAttribute('data-turn-meta')
+  if (!metaStr) return null
+  try { return JSON.parse(metaStr) } catch { return null }
+}
