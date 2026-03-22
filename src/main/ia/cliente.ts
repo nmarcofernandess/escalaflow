@@ -3,7 +3,7 @@ import type { ModelMessage, UserContent } from '@ai-sdk/provider-utils'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { SYSTEM_PROMPT } from './system-prompt'
-import { getVercelAiTools } from './tools'
+import { getVercelAiFamilyTools } from './tools'
 import { buildContextBundle, renderContextBriefing, buildContextBriefing } from './discovery'
 import { maybeCompact } from './session-processor'
 import { queryOne } from '../db/query'
@@ -93,6 +93,17 @@ function safeCompactJson(value: unknown, maxChars: number): string {
     } catch {
         return truncateText(String(value), maxChars)
     }
+}
+
+/** Estimated seconds for tool-call progress UI. Peeks into family tool args. */
+function estimateToolSeconds(toolName: string, input: unknown): number | undefined {
+    if (toolName === 'executar_acao') {
+        const acao = (input as Record<string, any>)?.acao
+        if (acao === 'gerar_escala') return 90
+        if (acao === 'preflight') return 10
+        if (acao === 'diagnosticar') return 15
+    }
+    return undefined
 }
 
 function toolResultToText(result: unknown): string {
@@ -336,7 +347,7 @@ async function _callWithVercelAiSdkTools(
 
     const fullSystemPrompt = await buildFullSystemPrompt(contexto, currentMsg)
     const messages = buildChatMessages(historico, currentMsg, resumoCompactado, anexos)
-    const tools = getVercelAiTools()
+    const tools = getVercelAiFamilyTools()
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
     let result
@@ -443,7 +454,7 @@ async function _callWithVercelAiSdkToolsStreaming(
         emitStream({ type: 'context-meta', stream_id: streamId, meta: contextMeta })
     }
     const messages = buildChatMessages(historico, currentMsg, resumoCompactado, anexos)
-    const tools = getVercelAiTools()
+    const tools = getVercelAiFamilyTools()
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
     let stepIndex = 0
@@ -479,7 +490,7 @@ async function _callWithVercelAiSdkToolsStreaming(
                 } else if (part.type === 'text-delta') {
                     emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
                 } else if (part.type === 'tool-call') {
-                    const est = part.toolName === 'gerar_escala' ? 90 : (part.toolName === 'preflight' || part.toolName === 'preflight_completo') ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
+                    const est = estimateToolSeconds(part.toolName, part.input)
                     emitStream({ type: 'tool-call-start', stream_id: streamId, tool_call_id: part.toolCallId, tool_name: part.toolName, args: normalizeToolArgs(part.input) ?? {}, estimated_seconds: est })
                 } else if (part.type === 'tool-result') {
                     emitStream({ type: 'tool-result', stream_id: streamId, tool_call_id: part.toolCallId, tool_name: part.toolName, result: part.output })
@@ -521,11 +532,7 @@ async function _callWithVercelAiSdkToolsStreaming(
             } else if (part.type === 'text-delta') {
                 emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
             } else if (part.type === 'tool-call') {
-                // Estimativa de tempo: gerar_escala usa timeout operacional ~90s
-                const estimated_seconds = part.toolName === 'gerar_escala' ? 90
-                    : (part.toolName === 'preflight' || part.toolName === 'preflight_completo') ? 10
-                    : part.toolName === 'diagnosticar_escala' ? 15
-                    : undefined
+                const estimated_seconds = estimateToolSeconds(part.toolName, part.input)
                 emitStream({
                     type: 'tool-call-start',
                     stream_id: streamId,
@@ -593,7 +600,7 @@ async function _callWithVercelAiSdkToolsStreaming(
                 } else if (part.type === 'text-delta') {
                     emitStream({ type: 'text-delta', stream_id: streamId, delta: part.text })
                 } else if (part.type === 'tool-call') {
-                    const estF = part.toolName === 'gerar_escala' ? 90 : (part.toolName === 'preflight' || part.toolName === 'preflight_completo') ? 10 : part.toolName === 'diagnosticar_escala' ? 15 : undefined
+                    const estF = estimateToolSeconds(part.toolName, part.input)
                     emitStream({
                         type: 'tool-call-start',
                         stream_id: streamId,

@@ -3627,3 +3627,36 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
       meta: { tool_name: name }
     })
 }
+
+// ==================== FAMILY TOOLS (5 tools LLM-facing) ====================
+
+import { FAMILY_TOOLS, FAMILY_SCHEMAS, executeFamilyTool } from './tool-families'
+
+/**
+ * Registry publico com 5 family tools (JSON Schema).
+ * Substitui IA_TOOLS no surface LLM — menos tokens, mesma cobertura.
+ */
+export const IA_TOOLS_PUBLIC = FAMILY_TOOLS.map(t => ({
+    name: t.name,
+    description: t.description,
+    parameters: toJsonSchema(FAMILY_SCHEMAS[t.name]),
+}))
+
+/**
+ * Converte family tools pro formato Vercel AI SDK.
+ * Reutiliza schemas Zod + executeFamilyTool().
+ */
+export function getVercelAiFamilyTools() {
+    const tools: Record<string, any> = {}
+    for (const t of FAMILY_TOOLS) {
+        const zodSchema = FAMILY_SCHEMAS[t.name]
+        tools[t.name] = {
+            description: t.description,
+            parameters: zodSchema,
+            execute: async (args: Record<string, any>) => {
+                return await executeFamilyTool(t.name, args)
+            }
+        }
+    }
+    return tools
+}

@@ -363,16 +363,17 @@ export async function localLlmChat(
     emitStream({ type: 'text-delta', stream_id: streamId, delta: '_Conversa longa — usando contexto recente para IA local._\n\n' })
   }
 
-  // Build tools for node-llama-cpp
-  const { IA_TOOLS, TOOL_SCHEMAS, executeTool } = await import('./tools')
+  // Build tools for node-llama-cpp (5 family tools instead of 30 atomic)
+  const { IA_TOOLS_PUBLIC } = await import('./tools')
+  const { FAMILY_SCHEMAS, executeFamilyTool } = await import('./tool-families')
   const { defineChatSessionFunction } = await getLlamaCpp()
 
   const functions: Record<string, any> = {}
   const toolCallsCollected: ToolCall[] = []
   let toolCallCounter = 0
 
-  for (const t of IA_TOOLS) {
-    const zodSchema = TOOL_SCHEMAS[t.name]
+  for (const t of IA_TOOLS_PUBLIC) {
+    const zodSchema = FAMILY_SCHEMAS[t.name]
     if (!zodSchema) continue
 
     // Convert Zod to JSON Schema for node-llama-cpp
@@ -384,11 +385,13 @@ export async function localLlmChat(
       params: jsonSchema as any,
       handler: async (params: any) => {
         const callId = `local_${++toolCallCounter}`
-        const est = t.name === 'gerar_escala' ? 90 : (t.name === 'preflight' || t.name === 'preflight_completo') ? 10 : undefined
+        const est = t.name === 'executar_acao' && params?.acao === 'gerar_escala' ? 90
+          : t.name === 'executar_acao' && (params?.acao === 'preflight') ? 10
+          : undefined
         emitStream({ type: 'tool-call-start', stream_id: streamId, tool_call_id: callId, tool_name: t.name, args: params, estimated_seconds: est })
 
         try {
-          const result = await executeTool(t.name, params)
+          const result = await executeFamilyTool(t.name, params)
           emitStream({ type: 'tool-result', stream_id: streamId, tool_call_id: callId, tool_name: t.name, result })
           toolCallsCollected.push({ id: callId, name: t.name, args: params, result })
           return result
