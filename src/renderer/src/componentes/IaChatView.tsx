@@ -15,7 +15,7 @@ import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
 import { IaToolCallsCollapsible } from './IaToolCallsCollapsible'
 import { toolLabel, toolEstimatedSeconds } from '@/lib/tool-labels'
-import type { IaMensagem, IaAnexo, IaContexto, ToolCall, IaStreamEvent } from '@shared/index'
+import type { IaMensagem, IaAnexo, IaContexto, ToolCall, IaStreamEvent, IaContextMeta } from '@shared/index'
 import { toast } from 'sonner'
 
 // Token estimation constants
@@ -108,6 +108,10 @@ export function IaChatView() {
 
   const tokensEstimados = useMemo(() => estimarTokens(mensagens), [mensagens])
 
+  // Turn metadata — tracks context-meta per assistant turn (keyed by stream_id)
+  const [turnMetaMap, setTurnMetaMap] = useState<Record<string, IaContextMeta>>({})
+  const pendingTurnMetaRef = useRef<IaContextMeta | null>(null)
+
   // Edit state
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
@@ -133,7 +137,12 @@ export function IaChatView() {
   useEffect(() => {
     const handler = (...args: unknown[]) => {
       const event = args[0] as IaStreamEvent
-      if (event) processarStreamEventStable(event)
+      if (!event) return
+      if (event.type === 'context-meta') {
+        pendingTurnMetaRef.current = event.meta
+        return
+      }
+      processarStreamEventStable(event)
     }
     // .on() returns a disposer that removes only THIS handler (not all listeners)
     const dispose = window.electron.ipcRenderer.on('ia:stream', handler)
@@ -239,6 +248,12 @@ export function IaChatView() {
         papel: 'assistente',
         conteudo: resp.resposta,
         tool_calls: toolCallsAoVivo.length > 0 ? toolCallsAoVivo : undefined,
+      }
+
+      // Attach pending context-meta to this assistant message
+      if (pendingTurnMetaRef.current) {
+        setTurnMetaMap(prev => ({ ...prev, [mensagemId]: pendingTurnMetaRef.current! }))
+        pendingTurnMetaRef.current = null
       }
 
       await adicionarMensagem(mensagemAssistente)
@@ -370,6 +385,7 @@ export function IaChatView() {
                     onEdit={m.papel === 'usuario' ? handleStartEdit : undefined}
                     onRegenerate={handleRegenerate}
                     showActions={!carregando && modelConfig.canSendMessages}
+                    turnMeta={turnMetaMap[m.id]}
                   />
                 )}
                 {m.papel === 'usuario' && m.anexos && m.anexos.length > 0 && (

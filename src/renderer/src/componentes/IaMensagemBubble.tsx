@@ -3,13 +3,14 @@ import ReactMarkdown from 'react-markdown'
 import { Copy, Check, Pencil, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { IaMensagem } from '@shared/index'
+import type { IaMensagem, IaContextMeta } from '@shared/index'
 
 interface Props {
   msg: IaMensagem
   onEdit?: (msg: IaMensagem) => void
   onRegenerate?: (msg: IaMensagem) => void
   showActions?: boolean
+  turnMeta?: IaContextMeta
 }
 
 function formatDate(iso: string): string {
@@ -21,7 +22,7 @@ function formatDate(iso: string): string {
   }
 }
 
-export function IaMensagemBubble({ msg, onEdit, onRegenerate, showActions = true }: Props) {
+export function IaMensagemBubble({ msg, onEdit, onRegenerate, showActions = true, turnMeta }: Props) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -52,6 +53,7 @@ export function IaMensagemBubble({ msg, onEdit, onRegenerate, showActions = true
       ) : (
         <div
           data-testid="ia-assistant-message"
+          data-turn-meta={turnMeta ? JSON.stringify(turnMeta) : undefined}
           className="max-w-[88%] leading-relaxed prose prose-sm dark:prose-invert
           prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
           prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-sm

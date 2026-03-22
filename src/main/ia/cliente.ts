@@ -4,11 +4,11 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { SYSTEM_PROMPT } from './system-prompt'
 import { getVercelAiTools } from './tools'
-import { buildContextBriefing } from './discovery'
+import { buildContextBundle, renderContextBriefing, buildContextBriefing } from './discovery'
 import { maybeCompact } from './session-processor'
 import { queryOne } from '../db/query'
 import { resolveProviderApiKey, resolveModel, buildModelFactory, PROVIDER_DEFAULTS } from './config'
-import type { IaMensagem, IaAnexo, ToolCall, IaConfiguracao, IaContexto, IaStreamEvent } from '../../shared/types'
+import type { IaMensagem, IaAnexo, ToolCall, IaConfiguracao, IaContexto, IaStreamEvent, IaContextMeta } from '../../shared/types'
 
 import { createRequire } from 'node:module'
 const _require = createRequire(import.meta.url)
@@ -232,6 +232,26 @@ async function buildFullSystemPrompt(contexto?: IaContexto, mensagemUsuario?: st
         : SYSTEM_PROMPT
 }
 
+async function buildSystemPromptWithMeta(contexto?: IaContexto, mensagemUsuario?: string): Promise<{ systemPrompt: string; meta: IaContextMeta | null }> {
+    const bundle = await buildContextBundle(contexto, mensagemUsuario)
+    if (!bundle) {
+        return { systemPrompt: SYSTEM_PROMPT, meta: null }
+    }
+    const briefing = renderContextBriefing(bundle)
+    const systemPrompt = briefing
+        ? `${SYSTEM_PROMPT}\n\n---\n${briefing}`
+        : SYSTEM_PROMPT
+    const meta: IaContextMeta = {
+        pagina: contexto?.pagina,
+        rota: contexto?.rota,
+        setor_id: contexto?.setor_id,
+        colaborador_id: contexto?.colaborador_id,
+        bundle_sections: Object.keys(bundle).filter(k => (bundle as unknown as Record<string, unknown>)[k] != null),
+        briefing_chars: briefing.length,
+    }
+    return { systemPrompt, meta }
+}
+
 function extractToolCallsFromSteps(steps: any[] | undefined): ToolCall[] {
     const acoes: ToolCall[] = []
     if (!steps) return acoes
@@ -418,7 +438,10 @@ async function _callWithVercelAiSdkToolsStreaming(
         }
     }
 
-    const fullSystemPrompt = await buildFullSystemPrompt(contexto, currentMsg)
+    const { systemPrompt: fullSystemPrompt, meta: contextMeta } = await buildSystemPromptWithMeta(contexto, currentMsg)
+    if (contextMeta) {
+        emitStream({ type: 'context-meta', stream_id: streamId, meta: contextMeta })
+    }
     const messages = buildChatMessages(historico, currentMsg, resumoCompactado, anexos)
     const tools = getVercelAiTools()
     const model = await maybeWrapModelWithDevTools(createModel(modelo))

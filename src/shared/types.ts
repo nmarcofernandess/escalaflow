@@ -877,7 +877,17 @@ export interface IaMensagemDB extends IaMensagem {
   conversa_id: string
 }
 
+export interface IaContextMeta {
+  pagina?: string
+  rota?: string
+  setor_id?: number
+  colaborador_id?: number
+  bundle_sections: string[]
+  briefing_chars: number
+}
+
 export type IaStreamEvent =
+  | { type: 'context-meta'; stream_id: string; meta: IaContextMeta }
   | { type: 'text-delta'; stream_id: string; delta: string }
   | { type: 'tool-call-start'; stream_id: string; tool_call_id: string; tool_name: string; args: Record<string, unknown>; estimated_seconds?: number }
   | { type: 'tool-result'; stream_id: string; tool_call_id: string; tool_name: string; result: unknown }
