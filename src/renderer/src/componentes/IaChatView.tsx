@@ -112,6 +112,9 @@ export function IaChatView() {
   const [turnMetaMap, setTurnMetaMap] = useState<Record<string, IaContextMeta>>({})
   const pendingTurnMetaRef = useRef<IaContextMeta | null>(null)
 
+  // Clear turn metadata when conversation changes
+  useEffect(() => { setTurnMetaMap({}); pendingTurnMetaRef.current = null }, [conversa_ativa_id])
+
   // Edit state
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
