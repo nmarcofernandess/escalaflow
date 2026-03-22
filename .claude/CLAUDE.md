@@ -12,7 +12,7 @@ Instruções para Claude Code ao trabalhar neste repositório.
 - **Motor Python (OR-Tools CP-SAT)** — o coração do sistema, via bridge TS → Python
 - **Electron 34** — shell desktop, IPC type-safe com @egoist/tipc
 - **20 regras CLT/CCT** aplicadas automaticamente ao gerar escalas
-- **IA integrada** — Chat RH com 5 tools públicas (Vercel AI SDK + Gemini/OpenRouter + IA Local offline via node-llama-cpp)
+- **IA integrada** — Chat RH com 3 tools públicas (Vercel AI SDK + Gemini/OpenRouter + IA Local offline via node-llama-cpp)
 - **Knowledge Layer** — RAG com embeddings locais, knowledge graph, memórias IA (PGlite + pgvector)
 
 ---
@@ -280,11 +280,11 @@ renderer → IPC (ia.chat) → cliente.ts ─┬─ provider='gemini'|'openroute
 | Truncation | CONSULTAR_MODEL_ROW_LIMIT = 50 com status 'truncated' |
 | SQL error translation | NOT NULL / UNIQUE / FK → mensagens acionáveis |
 
-### Tools (5 públicas, 30 internas)
+### Tools (3 públicas, 30 internas)
 
-O LLM vê 5 tools públicas (família). O adapter `tool-families.ts` roteia para as 30 tools internas.
+O LLM vê 3 tools públicas (família). O adapter `tool-families.ts` roteia para as 30 tools internas.
 
-**Públicas (LLM-facing):** consultar_contexto, editar_ficha, executar_acao, salvar_memoria, remover_memoria
+**Públicas (LLM-facing):** consultar_contexto, editar_ficha, executar_acao
 **Internas (30):** consultar, buscar_colaborador, criar, atualizar, deletar, cadastrar_lote, gerar_escala, ajustar_alocacao, ajustar_horario, oficializar_escala, preflight, preflight_completo, diagnosticar_escala, diagnosticar_infeasible, explicar_violacao, editar_regra, salvar_regra_horario_colaborador, upsert_regra_excecao_data, resetar_regras_empresa, configurar_horario_funcionamento, salvar_perfil_horario, deletar_perfil_horario, resumir_horas_setor, salvar_demanda_excecao_data, buscar_conhecimento, salvar_conhecimento, listar_conhecimento, explorar_relacoes, salvar_memoria, listar_memorias, remover_memoria
 
 ### IA Local (Offline)

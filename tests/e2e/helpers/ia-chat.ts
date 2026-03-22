@@ -4,6 +4,10 @@ import { E2E_SETOR_PADARIA_NOME } from '../constants'
 
 /** Tools consideradas mutação / escrita (heurística para E2E). */
 export const IA_WRITE_TOOL_NAMES = new Set([
+  // Family tools (LLM-facing)
+  'editar_ficha',
+  'executar_acao',
+  // Internal tools (may appear in logs/results)
   'criar',
   'atualizar',
   'deletar',

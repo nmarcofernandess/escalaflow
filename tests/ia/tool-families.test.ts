@@ -86,6 +86,34 @@ describe('tool-families routing', () => {
       expect(route.internalArgs.filtros).toEqual({ colaborador_id: 5 })
     })
 
+    it('routes conhecimento to buscar_conhecimento', () => {
+      const route = routeFamilyTool('consultar_contexto', {
+        entidade: 'conhecimento',
+        filtros: { consulta: 'CLT hora extra' },
+      })
+      expect(route.internalTool).toBe('buscar_conhecimento')
+      expect(route.internalArgs.consulta).toBe('CLT hora extra')
+    })
+
+    it('routes conhecimento with query alias', () => {
+      const route = routeFamilyTool('consultar_contexto', {
+        entidade: 'conhecimento',
+        filtros: { query: 'interjornada 11h' },
+      })
+      expect(route.internalTool).toBe('buscar_conhecimento')
+      expect(route.internalArgs.consulta).toBe('interjornada 11h')
+    })
+
+    it('routes conhecimento with limite', () => {
+      const route = routeFamilyTool('consultar_contexto', {
+        entidade: 'conhecimento',
+        filtros: { consulta: 'ferias', limite: 5 },
+      })
+      expect(route.internalTool).toBe('buscar_conhecimento')
+      expect(route.internalArgs.consulta).toBe('ferias')
+      expect(route.internalArgs.limite).toBe(5)
+    })
+
     it('merges id into filtros for non-colaborador entities', () => {
       const route = routeFamilyTool('consultar_contexto', {
         entidade: 'setor',
@@ -354,23 +382,59 @@ describe('tool-families routing', () => {
     })
   })
 
-  // ==================== salvar_memoria / remover_memoria ====================
+  // ==================== memoria via editar_ficha ====================
 
-  describe('salvar_memoria', () => {
-    it('passes through as-is', () => {
-      const route = routeFamilyTool('salvar_memoria', {
-        conteudo: 'Joao prefere manha',
+  describe('memoria via editar_ficha', () => {
+    it('routes memoria criar to salvar_memoria', () => {
+      const route = routeFamilyTool('editar_ficha', {
+        entidade: 'memoria',
+        operacao: 'criar',
+        dados: { conteudo: 'Cleunice não pode sábado' },
+      })
+      expect(route.internalTool).toBe('salvar_memoria')
+      expect(route.internalArgs.conteudo).toBe('Cleunice não pode sábado')
+    })
+
+    it('routes memoria remover to remover_memoria', () => {
+      const route = routeFamilyTool('editar_ficha', {
+        entidade: 'memoria',
+        id: 5,
+        operacao: 'remover',
+        dados: {},
+      })
+      expect(route.internalTool).toBe('remover_memoria')
+      expect(route.internalArgs.id).toBe(5)
+    })
+
+    it('routes memoria remover without dados to remover_memoria', () => {
+      const route = routeFamilyTool('editar_ficha', {
+        entidade: 'memoria',
+        id: 5,
+        operacao: 'remover',
+      })
+      expect(route.internalTool).toBe('remover_memoria')
+      expect(route.internalArgs.id).toBe(5)
+    })
+
+    it('routes memoria atualizar to salvar_memoria with id', () => {
+      const route = routeFamilyTool('editar_ficha', {
+        entidade: 'memoria',
+        id: 3,
+        operacao: 'atualizar',
+        dados: { conteudo: 'Updated memory' },
+      })
+      expect(route.internalTool).toBe('salvar_memoria')
+      expect(route.internalArgs.id).toBe(3)
+      expect(route.internalArgs.conteudo).toBe('Updated memory')
+    })
+
+    it('routes memoria default operacao to salvar_memoria', () => {
+      const route = routeFamilyTool('editar_ficha', {
+        entidade: 'memoria',
+        dados: { conteudo: 'Joao prefere manha' },
       })
       expect(route.internalTool).toBe('salvar_memoria')
       expect(route.internalArgs.conteudo).toBe('Joao prefere manha')
-    })
-  })
-
-  describe('remover_memoria', () => {
-    it('passes through as-is', () => {
-      const route = routeFamilyTool('remover_memoria', { id: 3 })
-      expect(route.internalTool).toBe('remover_memoria')
-      expect(route.internalArgs.id).toBe(3)
     })
   })
 

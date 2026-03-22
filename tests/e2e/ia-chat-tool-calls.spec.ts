@@ -71,18 +71,18 @@ describeIa('IA chat E2E (Electron real)', () => {
     expect(reply.length).toBeGreaterThan(10)
   })
 
-  test('acao: salvar_memoria e ver na pagina Memoria', async () => {
+  test('acao: salvar_memoria via editar_ficha e ver na pagina Memoria', async () => {
     const marker = `E2E_MEM_${crypto.randomUUID()}`
     await sendIaMessage(
       page,
-      `Use a ferramenta salvar_memoria para gravar exatamente este texto (uma linha): "${marker}". Depois confirme que salvou.`,
+      `Use a ferramenta editar_ficha com entidade "memoria" para gravar exatamente este texto (uma linha): "${marker}". Depois confirme que salvou.`,
     )
     await waitForAssistantTurnComplete(page, { minAssistantChars: 5 })
 
     const tools = await getToolCallNamesInOrder(page)
     if (tools.length > 0) {
       expect(tools.some((n) => IA_WRITE_TOOL_NAMES.has(n))).toBe(true)
-      expect(tools).toContain('salvar_memoria')
+      expect(tools).toContain('editar_ficha')
     }
 
     await navigateHash(page, '/memoria')

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EscalaFlow — 5 Tools vs 30 Tools</title>
+<title>EscalaFlow — 30 → 5 → 3 Tools</title>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -19,6 +19,7 @@
     --red: #ff5555;
     --blue: #58a6ff;
     --cyan: #22d3ee;
+    --gold: #f5c842;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -27,13 +28,16 @@
     color: var(--text);
     min-height: 100vh;
     padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
   }
   h1 { font-size: 1.6em; color: var(--accent); margin-bottom: 4px; }
-  h2 { font-size: 1.1em; color: var(--cyan); margin: 24px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h2 { font-size: 1.1em; color: var(--cyan); margin: 32px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
   h3 { font-size: 0.95em; color: var(--orange); margin: 16px 0 8px; }
   .subtitle { color: var(--text2); font-size: 0.85em; margin-bottom: 24px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid, .grid-3 { grid-template-columns: 1fr; } }
 
   .card {
     background: var(--surface);
@@ -44,6 +48,7 @@
   }
   .card:hover { border-color: var(--accent); }
   .card.full { grid-column: 1 / -1; }
+  .card.highlight-card { border-color: var(--gold); box-shadow: 0 0 20px rgba(245,200,66,0.08); }
 
   .tag {
     display: inline-block;
@@ -58,6 +63,8 @@
   .tag-memory { background: #1a2a3a; color: var(--blue); }
   .tag-old { background: #2a1a1a; color: var(--red); opacity: 0.7; }
   .tag-new { background: #1a2a1a; color: var(--green); }
+  .tag-absorbed { background: #2a2a1a; color: var(--gold); }
+  .tag-context { background: #1a2a2a; color: var(--cyan); border: 1px solid var(--cyan); }
 
   .tool-list { list-style: none; font-size: 0.85em; }
   .tool-list li { padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
@@ -79,7 +86,7 @@
   .context-block::-webkit-scrollbar { width: 6px; }
   .context-block::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-  .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
   .tab {
     padding: 6px 14px;
     border: 1px solid var(--border);
@@ -92,11 +99,7 @@
     transition: all 0.2s;
   }
   .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
-
-  .stat-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.85em; }
-  .stat-label { color: var(--text2); }
-  .stat-value { color: var(--green); font-weight: 600; }
-  .stat-value.bad { color: var(--red); }
+  .tab.tab-gold.active { background: var(--gold); color: #0a0a0f; border-color: var(--gold); }
 
   .routing-example {
     background: var(--surface2);
@@ -113,7 +116,8 @@
   .comparison { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: start; }
   .vs { color: var(--accent); font-weight: bold; font-size: 1.2em; align-self: center; text-align: center; }
 
-  .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; }
+  @media (max-width: 700px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
   .metric {
     background: var(--surface2);
     border-radius: 8px;
@@ -129,13 +133,50 @@
     color: var(--text2);
   }
   .flow-diagram .highlight { color: var(--green); font-weight: 600; }
-  .flow-diagram .dim { opacity: 0.5; }
+
+  .section-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.7em;
+    font-weight: 700;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .badge-auto { background: var(--green); color: #0a0a0f; }
+  .badge-tool { background: var(--orange); color: #0a0a0f; }
+  .badge-both { background: var(--cyan); color: #0a0a0f; }
+
+  .context-section {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 8px 0;
+    overflow: hidden;
+  }
+  .context-section-header {
+    background: var(--surface2);
+    padding: 8px 12px;
+    font-size: 0.8em;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .context-section-header:hover { background: var(--border); }
+  .context-section-body {
+    padding: 12px;
+    font-size: 0.8em;
+    border-top: 1px solid var(--border);
+    display: none;
+    line-height: 1.6;
+  }
+  .context-section-body.open { display: block; }
 </style>
 </head>
 <body>
 
-<h1>EscalaFlow — 30 Tools → 5 Tools</h1>
-<p class="subtitle">O que a IA vê agora vs antes. Context-first: preview no briefing, surface enxuta.</p>
+<h1>EscalaFlow — Context-First Architecture</h1>
+<p class="subtitle">De 30 tools cegas para 3 tools com contexto rico. A IA vê tudo antes de decidir.</p>
 
 <div class="metric-grid">
   <div class="metric">
@@ -143,8 +184,12 @@
     <div class="metric-label">Tools antes</div>
   </div>
   <div class="metric">
-    <div class="metric-value" style="color: var(--green)">5</div>
-    <div class="metric-label">Tools agora</div>
+    <div class="metric-value" style="color: var(--orange)">5</div>
+    <div class="metric-label">Fase 1 (atual)</div>
+  </div>
+  <div class="metric">
+    <div class="metric-value" style="color: var(--gold)">3</div>
+    <div class="metric-label">Fase 2 (alvo)</div>
   </div>
   <div class="metric">
     <div class="metric-value" style="color: var(--cyan)">7/7</div>
@@ -152,119 +197,139 @@
   </div>
 </div>
 
-<h2>As 5 Famílias</h2>
-<div class="grid">
-  <div class="card">
+<!-- ============================================================ -->
+<h2>O Princípio: Contexto é Leitura, Tool é Escrita</h2>
+<!-- ============================================================ -->
+
+<div class="card full">
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px; font-size:0.85em;">
+    <div>
+      <h3 style="color:var(--green)">O que o CONTEXTO faz (automático, pre-LLM)</h3>
+      <p style="color:var(--text2); margin-bottom:8px">Injetado no system prompt ANTES da IA pensar. Ela já sabe tudo isso quando lê a pergunta.</p>
+      <ul style="list-style:none; line-height:2">
+        <li><span class="section-badge badge-auto">AUTO</span> Memórias do RH (todas, sempre)</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Knowledge RAG (busca semântica na pergunta)</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Preview de ciclo (cobertura, déficit, folgas)</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Equipe completa (colaboradores, postos, regras)</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Demanda planejada (por dia e faixa)</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Escala atual (status, violações)</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Contratos + perfis de horário</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Alertas ativos</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Feriados próximos</li>
+        <li><span class="section-badge badge-auto">AUTO</span> Regras com override</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--orange)">O que as TOOLS fazem (sob demanda, pós-LLM)</h3>
+      <p style="color:var(--text2); margin-bottom:8px">Só quando o contexto não basta ou precisa ESCREVER algo.</p>
+      <ul style="list-style:none; line-height:2">
+        <li><span class="section-badge badge-tool">TOOL</span> Consulta detalhada (filtros específicos)</li>
+        <li><span class="section-badge badge-tool">TOOL</span> Busca explícita no RAG (se auto-RAG falhou)</li>
+        <li><span class="section-badge badge-tool">TOOL</span> Criar/atualizar/remover registros</li>
+        <li><span class="section-badge badge-tool">TOOL</span> Salvar/apagar memórias</li>
+        <li><span class="section-badge badge-tool">TOOL</span> Gerar escala (motor OR-Tools)</li>
+        <li><span class="section-badge badge-tool">TOOL</span> Oficializar escala</li>
+        <li><span class="section-badge badge-tool">TOOL</span> Preflight, diagnóstico</li>
+        <li><span class="section-badge badge-tool">TOOL</span> Backup</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>As 3 Famílias (Fase 2)</h2>
+<!-- ============================================================ -->
+
+<div class="grid-3">
+  <div class="card highlight-card">
     <h3>1. consultar_contexto <span class="tag tag-read">READ</span></h3>
-    <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Consulta detalhada quando o contexto automático não basta.</p>
+    <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Leitura sob demanda. Só quando o contexto automático não basta.</p>
     <ul class="tool-list">
-      <li><span class="tool-name">entidade: 'setor'</span> <span class="arrow">→</span> <span class="internal">consultar</span></li>
-      <li><span class="tool-name">entidade: 'colaborador', id: 5</span> <span class="arrow">→</span> <span class="internal">buscar_colaborador</span></li>
-      <li><span class="tool-name">entidade: 'escala'</span> <span class="arrow">→</span> <span class="internal">consultar</span></li>
-      <li><span class="tool-name">entidade: 'regras'</span> <span class="arrow">→</span> <span class="internal">consultar</span></li>
+      <li><span class="tool-name">setor</span> <span class="arrow">→</span> <span>consultar</span></li>
+      <li><span class="tool-name">colaborador + id</span> <span class="arrow">→</span> <span>buscar_colaborador</span></li>
+      <li><span class="tool-name">escala, regras, contrato</span> <span class="arrow">→</span> <span>consultar</span></li>
+      <li style="border-top: 2px solid var(--gold); padding-top:6px"><span class="tool-name" style="color:var(--gold)">conhecimento</span> <span class="arrow">→</span> <span>buscar_conhecimento</span></li>
     </ul>
+    <p style="font-size:0.7em; color:var(--gold); margin-top:6px">★ NOVO: busca RAG explícita quando auto-RAG falhou</p>
   </div>
 
-  <div class="card">
+  <div class="card highlight-card">
     <h3>2. editar_ficha <span class="tag tag-write">WRITE</span></h3>
     <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Cria, atualiza ou remove qualquer entidade.</p>
     <ul class="tool-list">
-      <li><span class="tool-name">posto, criar</span> <span class="arrow">→</span> <span class="internal">salvar_posto_setor</span></li>
-      <li><span class="tool-name">regra_horario</span> <span class="arrow">→</span> <span class="internal">salvar_regra_horario_colaborador</span></li>
-      <li><span class="tool-name">perfil_horario, remover</span> <span class="arrow">→</span> <span class="internal">deletar_perfil_horario</span></li>
-      <li><span class="tool-name">colaborador, id:5</span> <span class="arrow">→</span> <span class="internal">atualizar</span></li>
-      <li><span class="tool-name">excecao, criar</span> <span class="arrow">→</span> <span class="internal">criar</span></li>
-      <li><span class="tool-name">demanda + data_especifica</span> <span class="arrow">→</span> <span class="internal">salvar_demanda_excecao_data</span></li>
+      <li><span class="tool-name">colaborador, setor, excecao...</span> <span class="arrow">→</span> <span>criar/atualizar/deletar</span></li>
+      <li><span class="tool-name">posto</span> <span class="arrow">→</span> <span>salvar_posto_setor</span></li>
+      <li><span class="tool-name">regra_horario</span> <span class="arrow">→</span> <span>salvar_regra_horario</span></li>
+      <li style="border-top: 2px solid var(--gold); padding-top:6px"><span class="tool-name" style="color:var(--gold)">memoria, criar</span> <span class="arrow">→</span> <span>salvar_memoria</span></li>
+      <li><span class="tool-name" style="color:var(--gold)">memoria, remover</span> <span class="arrow">→</span> <span>remover_memoria</span></li>
     </ul>
+    <p style="font-size:0.7em; color:var(--gold); margin-top:6px">★ NOVO: memória absorvida como entidade</p>
   </div>
 
-  <div class="card">
+  <div class="card highlight-card">
     <h3>3. executar_acao <span class="tag tag-action">ACTION</span></h3>
     <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Comandos de domínio com side effects.</p>
     <ul class="tool-list">
-      <li><span class="tool-name">gerar_escala</span> <span class="arrow">→</span> <span class="internal">gerar_escala</span></li>
-      <li><span class="tool-name">oficializar</span> <span class="arrow">→</span> <span class="internal">oficializar_escala</span></li>
-      <li><span class="tool-name">ajustar_celula</span> <span class="arrow">→</span> <span class="internal">ajustar_alocacao</span></li>
-      <li><span class="tool-name">preflight</span> <span class="arrow">→</span> <span class="internal">preflight</span></li>
-      <li><span class="tool-name">diagnosticar</span> <span class="arrow">→</span> <span class="internal">diagnosticar_escala</span></li>
-      <li><span class="tool-name">backup</span> <span class="arrow">→</span> <span class="internal">fazer_backup</span></li>
-    </ul>
-  </div>
-
-  <div class="card">
-    <h3>4-5. Memórias <span class="tag tag-memory">MEMORY</span></h3>
-    <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Passthrough direto — mesma interface de antes.</p>
-    <ul class="tool-list">
-      <li><span class="tool-name">salvar_memoria</span> <span class="arrow">→</span> <span class="internal">salvar_memoria</span></li>
-      <li><span class="tool-name">remover_memoria</span> <span class="arrow">→</span> <span class="internal">remover_memoria</span></li>
+      <li><span class="tool-name">gerar_escala</span> <span class="arrow">→</span> <span>gerar_escala</span></li>
+      <li><span class="tool-name">oficializar</span> <span class="arrow">→</span> <span>oficializar_escala</span></li>
+      <li><span class="tool-name">ajustar_celula</span> <span class="arrow">→</span> <span>ajustar_alocacao</span></li>
+      <li><span class="tool-name">preflight</span> <span class="arrow">→</span> <span>preflight</span></li>
+      <li><span class="tool-name">diagnosticar</span> <span class="arrow">→</span> <span>diagnosticar_escala</span></li>
+      <li><span class="tool-name">backup</span> <span class="arrow">→</span> <span>fazer_backup</span></li>
     </ul>
   </div>
 </div>
 
-<h2>Comparação: Antes vs Agora</h2>
+<!-- ============================================================ -->
+<h2>O Contexto Completo que a IA Vê (Padaria — dados reais)</h2>
+<p style="font-size:0.8em; color:var(--text2); margin-bottom:4px">Cada seção abaixo é injetada no system prompt ANTES da IA ver a pergunta. Clique pra expandir.</p>
+<p style="font-size:0.75em; color:var(--gold); margin-bottom:12px">★ = seção que garante que a IA não faz cagada naquele assunto</p>
+<!-- ============================================================ -->
 
 <div class="card full">
-  <h3>Exemplo: "muda o horário da Cleunice pra entrar às 09:00"</h3>
-  <div class="comparison">
-    <div>
-      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools):</p>
-      <div class="routing-example">
-        <div class="from">1. buscar_colaborador({ nome: "Cleunice" })</div>
-        <div class="from">2. salvar_regra_horario_colaborador({ colaborador_id: 1, hora_inicio_min: "09:00" })</div>
-        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">2 tool calls, LLM escolheu entre 30 opções</div>
-      </div>
+
+  <!-- MEMORIAS -->
+  <div class="context-section">
+    <div class="context-section-header" onclick="toggleSection(this)">
+      <span><span class="section-badge badge-auto">AUTO</span> ★ Memórias do RH — sempre presentes, toda mensagem</span>
+      <span style="color:var(--text2)">▼</span>
     </div>
-    <div class="vs">→</div>
-    <div>
-      <p style="font-size:0.75em; color:var(--green); margin-bottom:6px">AGORA (5 tools):</p>
-      <div class="routing-example">
-        <div class="to">1. editar_ficha({ entidade: "regra_horario", dados: { colaborador_id: 1, hora_inicio_min: "09:00" } })</div>
-        <div class="internal">↳ adapter roteia → salvar_regra_horario_colaborador</div>
-        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">1 tool call, LLM escolheu entre 5 opções</div>
-      </div>
+    <div class="context-section-body">
+<pre>### Memórias do RH (3/50)
+- Cleunice nunca troca turno com ninguém
+- Black Friday precisa de 8 pessoas no Caixa
+- Maria Clara só pode trabalhar DOM e SEG (acordo verbal)</pre>
+      <p style="color:var(--gold); margin-top:8px; font-size:0.85em">★ A IA vê TODAS as memórias em TODA mensagem. Se alguém pergunta "a Cleunice pode trocar turno?", a IA já sabe: NÃO. Zero tool calls.</p>
+      <p style="color:var(--text2); margin-top:4px; font-size:0.8em">Pra SALVAR nova memória → <code>editar_ficha({ entidade: 'memoria', operacao: 'criar', dados: { conteudo: '...' } })</code></p>
+      <p style="color:var(--text2); font-size:0.8em">Pra APAGAR → <code>editar_ficha({ entidade: 'memoria', id: 3, operacao: 'remover' })</code></p>
     </div>
   </div>
-</div>
 
-<div class="card full">
-  <h3>Exemplo: "a distribuição de folgas da padaria tá boa?"</h3>
-  <div class="comparison">
-    <div>
-      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools, sem preview):</p>
-      <div class="routing-example">
-        <div class="from">1. consultar({ entidade: "setores", filtros: { nome: "Padaria" } })</div>
-        <div class="from">2. consultar({ entidade: "colaboradores", filtros: { setor_id: 4 } })</div>
-        <div class="from">3. consultar({ entidade: "alocacoes", filtros: { setor_id: 4 } })</div>
-        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">3+ tool calls, IA não via o preview</div>
-      </div>
+  <!-- AUTO-RAG -->
+  <div class="context-section">
+    <div class="context-section-header" onclick="toggleSection(this)">
+      <span><span class="section-badge badge-auto">AUTO</span> ★ Knowledge RAG — busca automática por embedding na pergunta</span>
+      <span style="color:var(--text2)">▼</span>
     </div>
-    <div class="vs">→</div>
-    <div>
-      <p style="font-size:0.75em; color:var(--green); margin-bottom:6px">AGORA (5 tools, com preview no contexto):</p>
-      <div class="routing-example">
-        <div class="to">0 tool calls — responde direto do contexto!</div>
-        <div class="internal">O preview já mostra: Ciclo 2 semanas, Cobertura 100%, Déficit 0</div>
-        <div class="internal">⚠️ Conflito folga variável em SEG: cobertura 3/4</div>
-        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">Zero round-trips. Contexto basta.</div>
-      </div>
+    <div class="context-section-body">
+<pre>### Conhecimento relevante (confiança: 78%)
+- <b>sistema — regras-colaborador</b>: Regras de horário, folga fixa, folga variável, tipo A/B
+- <b>sistema — perguntas-frequentes</b>: FAQ sobre ciclo, cobertura, oficialização
+- <b>sistema — fluxos-trabalho</b>: Passo a passo para gerar e oficializar escalas</pre>
+      <p style="color:var(--gold); margin-top:8px; font-size:0.85em">★ Roda AUTOMATICAMENTE se a pergunta tem mais de 10 caracteres. Busca semântica (embeddings) nos 50 chunks da knowledge base. A IA já recebe os docs relevantes ANTES de pensar.</p>
+      <p style="color:var(--text2); margin-top:4px; font-size:0.8em">Se score baixo e a IA precisa de mais → <code>consultar_contexto({ entidade: 'conhecimento', filtros: { consulta: 'query reformulada' } })</code></p>
+      <p style="color:var(--text2); font-size:0.8em">Retry natural: o Vercel AI SDK roda até 10 steps de tool calls. Se o RAG volta fraco, a IA reformula e tenta de novo.</p>
     </div>
   </div>
-</div>
 
-<h2>O Contexto que a IA Vê (Padaria Atendimento)</h2>
-<p style="font-size:0.8em; color:var(--text2); margin-bottom:12px">Isso é injetado no system prompt antes de cada mensagem. A IA lê isso e decide se precisa de tool ou se o contexto basta.</p>
-
-<div class="tabs" id="contextTabs">
-  <button class="tab active" onclick="showTab('preview')">Preview</button>
-  <button class="tab" onclick="showTab('equipe')">Equipe</button>
-  <button class="tab" onclick="showTab('demanda')">Demanda</button>
-  <button class="tab" onclick="showTab('global')">Global</button>
-  <button class="tab" onclick="showTab('full')">Briefing Completo</button>
-</div>
-
-<div class="card full">
-  <div id="tab-preview" class="tab-content">
-    <pre class="context-block">### Preview de Ciclo
+  <!-- PREVIEW -->
+  <div class="context-section">
+    <div class="context-section-header" onclick="toggleSection(this)">
+      <span><span class="section-badge badge-auto">AUTO</span> ★ Preview de Ciclo — cobertura, déficit, folgas</span>
+      <span style="color:var(--text2)">▼</span>
+    </div>
+    <div class="context-section-body">
+<pre>### Preview de Ciclo
 - Ciclo: 2 semanas | Cobertura média: 100%
 - Déficit máximo: 0 pessoa(s)
 - SEG: cobertura 5/4
@@ -274,20 +339,19 @@
 - SEX: cobertura 5.1/4
 - SAB: cobertura 4/4
 - DOM: cobertura 3/3
-- AVISO: Conflito folga variável em SEG: cobertura 3/4
-
-### Contratos Relevantes no Setor
-- CLT 44h (ID: 2) — 44h/sem, 5X2
-- Intermitente (ID: 1) — 0h/sem, 6X1
-
-💡 A IA vê TUDO isso antes de responder.
-   Se alguém pergunta "tem déficit?", ela já sabe: 0 pessoa(s).
-   Se pergunta "qual o ciclo?", ela já sabe: 2 semanas.
-   ZERO tool calls necessários.</pre>
+- AVISO: Conflito folga variável em SEG: cobertura 3/4</pre>
+      <p style="color:var(--gold); margin-top:8px; font-size:0.85em">★ "Tem déficit?" → Não, 0 pessoa(s). Mas tem conflito de folga variável na SEG com 3/4. ZERO tools.</p>
+    </div>
   </div>
 
-  <div id="tab-equipe" class="tab-content" style="display:none">
-    <pre class="context-block">### 🎯 Setor em foco: Padaria Atendimento (ID: 4)
+  <!-- EQUIPE -->
+  <div class="context-section">
+    <div class="context-section-header" onclick="toggleSection(this)">
+      <span><span class="section-badge badge-auto">AUTO</span> ★ Equipe — colaboradores, postos, titulares, regras</span>
+      <span style="color:var(--text2)">▼</span>
+    </div>
+    <div class="context-section-body">
+<pre>### 🎯 Setor em foco: Padaria Atendimento (ID: 4)
 - Horário: 07:00 – 19:30
 
 #### Colaboradores (6 ativos):
@@ -308,32 +372,37 @@
 
 #### Regras de horário individuais:
 - Maria Clara: padrão, DOM 08:00–17:00, SEG 08:00–17:00
-- Sem regra individual: Célia, Milena, Rafaela, Roberta, Érica
-
-💡 A IA sabe QUEM trabalha, ONDE está, e QUAL o horário.
-   "Quem tá na padaria?" → responde direto, sem buscar_colaborador.
-   "A Maria Clara trabalha domingo?" → SIM, 08:00–17:00.</pre>
+- Sem regra individual: Célia, Milena, Rafaela, Roberta, Érica</pre>
+      <p style="color:var(--gold); margin-top:8px; font-size:0.85em">★ "Quem tá na Padaria?" → 6 pessoas listadas. "A Maria Clara trabalha domingo?" → SIM, 08:00–17:00. ZERO tools.</p>
+      <p style="color:var(--text2); margin-top:4px; font-size:0.8em">Pra editar → <code>editar_ficha({ entidade: 'colaborador', id: 25, dados: { nome: 'Célia Maria' } })</code></p>
+    </div>
   </div>
 
-  <div id="tab-demanda" class="tab-content" style="display:none">
-    <pre class="context-block">#### Demanda planejada (Padaria):
+  <!-- DEMANDA -->
+  <div class="context-section">
+    <div class="context-section-header" onclick="toggleSection(this)">
+      <span><span class="section-badge badge-auto">AUTO</span> ★ Demanda planejada — cobertura mínima por faixa</span>
+      <span style="color:var(--text2)">▼</span>
+    </div>
+    <div class="context-section-body">
+<pre>#### Demanda planejada:
 - DOM: 07:00–13:00 → mín 3 pessoa(s)
-- SEG-SEX: 07:00–19:30 (várias faixas, pico 4 pessoas 10:00–12:00)
-- SAB: similar a SEG-SEX
-
-💡 Quando alguém pergunta "precisa de mais gente na padaria?",
-   a IA compara a demanda com o preview de cobertura:
-   - DOM: demanda 3, cobertura 3 → ok ✓
-   - SEG: demanda 4 (pico), cobertura 5 → ok ✓
-   - AVISO: conflito folga variável SEG → 3/4 em uma semana
-
-   Tudo isso SEM chamar tool nenhuma.</pre>
+- SEG: 07:00–08:00 → mín 1 | 08:00–10:00 → mín 2 | 10:00–12:00 → mín 4 (pico)
+- TER a SEX: padrão similar, pico 4 pessoas 10:00–12:00
+- SAB: similar SEG-SEX</pre>
+      <p style="color:var(--gold); margin-top:8px; font-size:0.85em">★ "Precisa de mais gente?" → Compara demanda com preview: DOM 3/3 ✓, pico 4 com cobertura 5 ✓.</p>
+    </div>
   </div>
 
-  <div id="tab-global" class="tab-content" style="display:none">
-    <pre class="context-block">### Resumo do sistema
-- Setores ativos: 9
-- Colaboradores ativos: 39
+  <!-- GLOBAL -->
+  <div class="context-section">
+    <div class="context-section-header" onclick="toggleSection(this)">
+      <span><span class="section-badge badge-auto">AUTO</span> Global — resumo, feriados, alertas, knowledge stats</span>
+      <span style="color:var(--text2)">▼</span>
+    </div>
+    <div class="context-section-body">
+<pre>### Resumo do sistema
+- Setores ativos: 9 | Colaboradores ativos: 39
 - Escalas RASCUNHO: 1 | OFICIAL: 0
 
 ### Feriados nos próximos 30 dias
@@ -341,178 +410,242 @@
 - 2026-04-21: Tiradentes
 
 ### Regras com override da empresa
-- S_DEFICIT (Deficit de cobertura): padrão HARD → empresa ON
+- S_DEFICIT: padrão HARD → empresa ON
 
 ### Alertas ativos
 - INFO: Padaria Atendimento: nenhuma escala gerada.
 
 ### Base de Conhecimento
 - 9 fonte(s) | 50 chunks indexados
-
-💡 Resumo global + alertas + feriados.
-   A IA sabe que Sexta-feira Santa tá chegando
-   e pode alertar proativamente.</pre>
-  </div>
-
-  <div id="tab-full" class="tab-content" style="display:none">
-    <pre class="context-block" style="max-height:600px">## CONTEXTO AUTOMÁTICO — PÁGINA ATUAL DO USUÁRIO
-Rota: /setores/4
-
-### Resumo do sistema
-- Setores ativos: 9
-- Colaboradores ativos: 39
-- Escalas RASCUNHO: 1 | OFICIAL: 0
-
-### Feriados nos próximos 30 dias
-- 2026-04-03: Sexta-feira Santa
-- 2026-04-21: Tiradentes
-
-### Regras com override da empresa
-- S_DEFICIT (Deficit de cobertura): padrão HARD → empresa ON
-
-### Setores disponíveis
-- Acougue (ID: 2) — 07:00–19:15, 5 colaboradores
-- Caixa (ID: 1) — 08:00–20:00, 6 colaboradores
-- Depósito (ID: 7) — 08:00–17:00, 1 colaboradores
-- Escritório (ID: 8) — 08:00–18:00, 8 colaboradores
-- Limpeza (ID: 6) — 08:00–20:00, 1 colaboradores
-- Padaria Atendimento (ID: 4) — 07:00–19:30, 6 colaboradores
-- Reposição (ID: 5) — 08:00–20:00, 6 colaboradores
-- Rotisseria (ID: 3) — 05:30–17:00, 4 colaboradores
-- SAC (ID: 9) — 08:00–20:00, 2 colaboradores
-
-### 🎯 Setor em foco: Padaria Atendimento (ID: 4)
-- Horário: 07:00 – 19:30
-- Ativo: sim
-
-#### Colaboradores (6 ativos):
-- Célia (ID: 25) — CLT 44h 44h
-- Maria Clara (ID: 27) — Intermitente 0h
-- Milena (ID: 22) — CLT 44h 44h
-- Rafaela (ID: 26) — CLT 44h 44h
-- Roberta (ID: 23) — CLT 44h 44h
-- Érica (ID: 24) — CLT 44h 44h
-
-#### Postos do setor (6):
-- ATPA1 — CLT 44h — titular: Milena (ID: 22)
-- ATPA2 — CLT 44h — titular: Roberta (ID: 23)
-- ATPA3 — CLT 44h — titular: Érica (ID: 24)
-- ATPA4 — CLT 44h — titular: Célia (ID: 25)
-- ATPA5 — CLT 44h — titular: Rafaela (ID: 26)
-- ATPA6 — Intermitente — titular: Maria Clara (ID: 27)
-
-#### Regras de horário individuais:
-- Maria Clara: padrão, DOM entrada:08:00 saída:17:00, SEG entrada:08:00 saída:17:00
-- Sem regra individual: Célia, Milena, Rafaela, Roberta, Érica
-
-#### Demanda planejada:
-- DOM: 07:00–13:00 → mín 3 pessoa(s)
-- SEG-SEX: 07:00–19:30 (faixas variadas, pico 4p 10:00-12:00)
-- SAB: 07:00–19:30 (faixas variadas, pico 4p 10:00-12:00)
-
-📋 Nenhuma escala encontrada para este setor.
-
-### Preview de Ciclo
-- Ciclo: 2 semanas | Cobertura média: 100%
-- Déficit máximo: 0 pessoa(s)
-- SEG: cobertura 5/4
-- TER: cobertura 4.5/4
-- QUA: cobertura 4.5/4
-- QUI: cobertura 4/4
-- SEX: cobertura 5.1/4
-- SAB: cobertura 4/4
-- DOM: cobertura 3/3
-- AVISO: Conflito folga variável em SEG: cobertura 3/4
 
 ### Contratos Relevantes no Setor
 - CLT 44h (ID: 2) — 44h/sem, 5X2
 - Intermitente (ID: 1) — 0h/sem, 6X1
 
-### Alertas ativos
-- INFO: Padaria Atendimento: nenhuma escala gerada.
-
-### Base de Conhecimento
-- 9 fonte(s) | 50 chunks indexados
-
 💡 O usuário está na página de detalhe do setor.</pre>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<h2>Comparações: Antes vs Agora</h2>
+<!-- ============================================================ -->
+
+<div class="card full">
+  <h3>Exemplo: "lembra que a Cleunice não pode trabalhar sábado"</h3>
+  <div class="comparison">
+    <div>
+      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools):</p>
+      <div class="routing-example">
+        <div class="from">1. salvar_memoria({ conteudo: "Cleunice não pode sábado" })</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">1 tool call — tool dedicada entre 30 opções</div>
+      </div>
+    </div>
+    <div class="vs">→</div>
+    <div>
+      <p style="font-size:0.75em; color:var(--gold); margin-bottom:6px">FASE 2 (3 tools):</p>
+      <div class="routing-example">
+        <div class="to">1. editar_ficha({ entidade: "memoria", operacao: "criar", dados: { conteudo: "Cleunice não pode sábado" } })</div>
+        <div class="internal">↳ adapter roteia → salvar_memoria</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">1 tool call — mesma família que editar colaborador</div>
+      </div>
+    </div>
   </div>
 </div>
 
-<h2>Fluxo de Decisão da IA</h2>
+<div class="card full">
+  <h3>Exemplo: "o que diz a CLT sobre hora extra?"</h3>
+  <div class="comparison">
+    <div>
+      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools):</p>
+      <div class="routing-example">
+        <div class="from">1. buscar_conhecimento({ consulta: "CLT hora extra" })</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">1 tool call — tool dedicada. Sem retry automático.</div>
+      </div>
+    </div>
+    <div class="vs">→</div>
+    <div>
+      <p style="font-size:0.75em; color:var(--gold); margin-bottom:6px">FASE 2 (3 tools):</p>
+      <div class="routing-example">
+        <div class="to">0 tool calls — auto-RAG já injetou no contexto!</div>
+        <div class="internal">discovery._autoRag("CLT hora extra") → encontrou docs relevantes</div>
+        <div style="color:var(--green); margin-top:4px">Se score baixo → IA chama:</div>
+        <div class="to">consultar_contexto({ entidade: "conhecimento", filtros: { consulta: "CLT Art 59 hora extra limite" } })</div>
+        <div class="internal">↳ adapter roteia → buscar_conhecimento</div>
+        <div class="internal">↳ score ainda baixo? → IA reformula e tenta de novo (até 3x no tool loop)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card full">
+  <h3>Exemplo: "a distribuição de folgas da padaria tá boa?"</h3>
+  <div class="comparison">
+    <div>
+      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools, sem preview):</p>
+      <div class="routing-example">
+        <div class="from">1. consultar({ entidade: "setores", filtros: { nome: "Padaria" } })</div>
+        <div class="from">2. consultar({ entidade: "colaboradores", filtros: { setor_id: 4 } })</div>
+        <div class="from">3. consultar({ entidade: "alocacoes", filtros: { setor_id: 4 } })</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">3+ tool calls. IA cega pro preview.</div>
+      </div>
+    </div>
+    <div class="vs">→</div>
+    <div>
+      <p style="font-size:0.75em; color:var(--gold); margin-bottom:6px">FASE 2 (3 tools, com preview no contexto):</p>
+      <div class="routing-example">
+        <div class="to">0 tool calls — responde direto do contexto!</div>
+        <div class="internal">Preview: Ciclo 2 semanas, Cobertura 100%, Déficit 0</div>
+        <div class="internal">⚠️ Conflito folga variável em SEG: 3/4</div>
+        <div class="internal">+ Memórias: "Maria Clara só pode DOM e SEG"</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">A IA cruza preview + memórias + equipe pra responder.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card full">
+  <h3>Exemplo: "muda o horário da Cleunice pra entrar às 09:00"</h3>
+  <div class="comparison">
+    <div>
+      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools):</p>
+      <div class="routing-example">
+        <div class="from">1. buscar_colaborador({ nome: "Cleunice" })</div>
+        <div class="from">2. salvar_regra_horario_colaborador({ colaborador_id: 1, hora_inicio_min: "09:00" })</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">2 tool calls. Precisou buscar antes.</div>
+      </div>
+    </div>
+    <div class="vs">→</div>
+    <div>
+      <p style="font-size:0.75em; color:var(--gold); margin-bottom:6px">FASE 2 (3 tools):</p>
+      <div class="routing-example">
+        <div class="to">1. editar_ficha({ entidade: "regra_horario", dados: { colaborador_id: 1, hora_inicio_min: "09:00" } })</div>
+        <div class="internal">↳ Cleunice ID:1 já estava no contexto (equipe)</div>
+        <div class="internal">↳ adapter roteia → salvar_regra_horario_colaborador</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">1 tool call. ID veio do contexto.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>Fluxo Completo de Decisão</h2>
+<!-- ============================================================ -->
+
 <div class="card full">
   <div class="flow-diagram">
     <pre>
-  Usuário pergunta algo
+  Usuário manda mensagem
        │
        ▼
-  ┌─────────────────────────────────┐
-  │  O CONTEXTO JÁ TEM A RESPOSTA? │
-  │  (preview, equipe, demanda...)  │
-  └───────┬──────────┬──────────────┘
-          │          │
-        <span class="highlight">SIM</span>        NÃO
-          │          │
-          ▼          ▼
-   <span class="highlight">Responde       Qual família?</span>
-   <span class="highlight">direto</span>         │
-   (0 tools)      ├── Precisa de dados? → <span style="color:var(--cyan)">consultar_contexto</span>
-                  ├── Precisa editar?   → <span style="color:var(--orange)">editar_ficha</span>
-                  ├── Precisa executar? → <span style="color:var(--accent)">executar_acao</span>
-                  └── Precisa lembrar?  → <span style="color:var(--blue)">salvar_memoria</span>
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │ Adapter roteia  │
-                  │ para handler    │
-                  │ interno (30)    │
-                  └─────────────────┘
+  ┌──────────────────────────────────────────────────────┐
+  │  <span class="highlight">DISCOVERY (pre-LLM, automático)</span>                      │
+  │                                                      │
+  │  1. Memórias do RH (ia_memorias) ─────── INJETADAS   │
+  │  2. Auto-RAG (embedding search) ─────── INJETADO     │
+  │  3. Preview de ciclo ────────────────── INJETADO      │
+  │  4. Equipe + postos + regras ────────── INJETADO      │
+  │  5. Demanda planejada ───────────────── INJETADA      │
+  │  6. Escala atual + alertas ──────────── INJETADOS     │
+  │  7. Feriados + contratos ────────────── INJETADOS     │
+  └───────────────────────┬──────────────────────────────┘
+                          │
+                          ▼
+  ┌──────────────────────────────────────────────────────┐
+  │  <span class="highlight">LLM lê o contexto + a pergunta</span>                      │
+  │                                                      │
+  │  "A resposta já está no contexto?"                   │
+  │                                                      │
+  │   SIM ──► Responde direto (0 tools)                  │
+  │                                                      │
+  │   NÃO ──► Qual família?                              │
+  │           ├── Precisa de dados? → <span style="color:var(--cyan)">consultar_contexto</span>  │
+  │           │   (entidade, id, filtros, conhecimento)   │
+  │           ├── Precisa editar?   → <span style="color:var(--orange)">editar_ficha</span>        │
+  │           │   (colaborador, memoria, regra, posto...) │
+  │           └── Precisa executar? → <span style="color:var(--accent)">executar_acao</span>       │
+  │               (gerar, oficializar, diagnosticar...)  │
+  └───────────────────────┬──────────────────────────────┘
+                          │
+                          ▼
+  ┌──────────────────────────────────────────────────────┐
+  │  <span class="highlight">ADAPTER (tool-families.ts)</span>                           │
+  │                                                      │
+  │  Roteia família → handler interno (30 handlers)      │
+  │  Mesmo código, mesmo resultado                       │
+  └──────────────────────────────────────────────────────┘
     </pre>
   </div>
 </div>
 
-<h2>Cobertura: 27 Internas Alcançáveis + 3 Removidas</h2>
+<!-- ============================================================ -->
+<h2>Cobertura: 30 Internas Alcançáveis</h2>
+<!-- ============================================================ -->
+
 <div class="card full">
-  <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; font-size:0.75em">
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">buscar_colaborador <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">consultar <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">criar <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">atualizar <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">deletar <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_posto_setor <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">editar_regra <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">gerar_escala <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">ajustar_alocacao <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">ajustar_horario <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">oficializar_escala <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">preflight <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">diagnosticar_escala <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">diagnosticar_infeasible <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">explicar_violacao <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">cadastrar_lote <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_regra_horario <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_demanda_excecao <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">upsert_regra_excecao <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">resumir_horas_setor <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">resetar_regras_empresa <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_perfil_horario <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">deletar_perfil_horario <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">config_horario_func <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">fazer_backup <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_memoria <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">remover_memoria <span class="tag tag-new">✓</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.5">buscar_conhecimento <span class="tag tag-old">removida</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.5">salvar_conhecimento <span class="tag tag-old">removida</span></div>
-    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.5">explorar_relacoes <span class="tag tag-old">removida</span></div>
+  <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; font-size:0.75em">
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--cyan)">buscar_colaborador <span class="tag tag-read">consultar_contexto</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--cyan)">consultar <span class="tag tag-read">consultar_contexto</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--gold)">buscar_conhecimento <span class="tag tag-absorbed">consultar_contexto</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">criar <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">atualizar <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">deletar <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">salvar_posto_setor <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">editar_regra <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">salvar_regra_horario <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">salvar_demanda_excecao <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">upsert_regra_excecao <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">salvar_perfil_horario <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">deletar_perfil_horario <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--orange)">config_horario_func <span class="tag tag-write">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--gold)">salvar_memoria <span class="tag tag-absorbed">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--gold)">remover_memoria <span class="tag tag-absorbed">editar_ficha</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">gerar_escala <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">oficializar_escala <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">ajustar_alocacao <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">ajustar_horario <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">preflight <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">diagnosticar_escala <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">diagnosticar_infeasible <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">explicar_violacao <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">resumir_horas_setor <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">resetar_regras <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">cadastrar_lote <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--accent)">fazer_backup <span class="tag tag-action">executar_acao</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.4">salvar_conhecimento <span class="tag tag-old">backoffice</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.4">explorar_relacoes <span class="tag tag-old">admin</span></div>
   </div>
+  <p style="font-size:0.75em; color:var(--text2); margin-top:12px">
+    <span style="color:var(--gold)">■</span> absorvido na Fase 2 &nbsp;
+    <span style="color:var(--cyan)">■</span> já absorvido (Fase 1) &nbsp;
+    <span style="color:var(--orange)">■</span> editar_ficha &nbsp;
+    <span style="color:var(--accent)">■</span> executar_acao &nbsp;
+    <span style="color:var(--red)">■</span> removido (backoffice/admin)
+  </p>
+</div>
+
+<div style="text-align:center; padding: 32px 0; color:var(--text2); font-size:0.8em">
+  EscalaFlow — Context-First Tool Architecture — 2026-03-22
 </div>
 
 <script>
+function toggleSection(header) {
+  const body = header.nextElementSibling;
+  body.classList.toggle('open');
+  const arrow = header.querySelector('span:last-child');
+  arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
+}
+
 function showTab(name) {
   document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).style.display = 'block';
   event.target.classList.add('active');
 }
+
+// Auto-expand first section
+document.querySelector('.context-section-body').classList.add('open');
 </script>
 
 </body>

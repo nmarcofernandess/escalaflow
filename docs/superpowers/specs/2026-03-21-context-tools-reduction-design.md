@@ -1,8 +1,8 @@
 # Context Unificado + Reducao de Tools (Phase 0)
 
-> **Status:** Design revisado apos review de arquitetura
-> **Autor:** Marco + Codex
-> **Data:** 2026-03-21
+> **Status:** Phase 0 IMPLEMENTADO (2026-03-22). North Star 5 tools em execucao.
+> **Autor:** Marco + Codex + Monday (review 2026-03-22)
+> **Data:** 2026-03-21 (revisado 2026-03-22)
 > **Referencia mae:** `docs/superpowers/specs/2026-03-21-observabilidade-sugestao-inteligente-design.md`
 > **Referencias:** `docs/como-funciona.md`, `docs/ia-sistema.md`, `specs/gestao-specs.md`, `src/main/ia/discovery.ts`, `src/main/ia/tools.ts`, `src/shared/simula-ciclo.ts`, `tests/ia/live/ia-chat-cli.ts`
 
@@ -147,13 +147,15 @@ executar_acao({
 })
 ```
 
-#### D. `buscar_rag` (opcional)
-
-So se o pipeline nao fizer retrieval antes do LLM. Se o app ja intercepta e injeta contexto semantico antes da pergunta, essa tool nem precisa ficar exposta no chat.
-
-#### E. `salvar_memoria` (opcional)
+#### D. `salvar_memoria`
 
 Curta, operacional, explicita. Diferente de ingestao de conhecimento.
+
+#### E. `remover_memoria`
+
+Remove memoria por ID. Pode ser absorvida em `executar_acao` no futuro.
+
+> **Decisao 2026-03-22:** `buscar_rag` NAO e tool publica separada. O RAG ja roda como auto-discovery (pre-LLM) em `buildContextBundle()` quando `mensagemUsuario.length > 10`. Manter como pipeline interno, nao surface do LLM. Total: **5 tools publicas**.
 
 ### 3.3 Regra pratica
 
@@ -193,12 +195,23 @@ Medicao local para `setor_id = 4`:
 
 Conclusao: ainda ha espaco para crescer, mas nao para despejar tabela inteira do banco. O caminho e **pacote operacional enxuto**, nao dump bruto.
 
-### 4.3 Problemas estruturais hoje
+### 4.3 Problemas estruturais hoje (atualizado 2026-03-22)
 
-- O preview TS nao entra no discovery.
-- O discovery ainda pensa em string, nao em bundle reutilizavel.
-- O conjunto de tools exposto ainda esta muito perto da storage.
-- A CLI `ia:chat` nao reproduz o contexto real do app.
+- ~~O preview TS nao entra no discovery.~~ ✅ FEITO — `_buildPreview()` em discovery.ts:1014-1142
+- ~~O discovery ainda pensa em string, nao em bundle reutilizavel.~~ ✅ FEITO — `buildContextBundle()` + `renderContextBriefing()` implementados
+- O conjunto de tools exposto ainda esta muito perto da storage. ← **PENDENTE (North Star 5 tools)**
+- ~~A CLI `ia:chat` nao reproduz o contexto real do app.~~ PARCIAL — CLI injeta context, mas sem `mensagemUsuario` (sem RAG)
+
+### 4.4 Bugs encontrados na revisao (2026-03-22)
+
+**Bug 1: cobertura_media errada (discovery.ts:1111)**
+Formula divide por `max_demanda` global em vez de normalizar por dia. Resultado: 78% quando deveria ser 93%.
+
+**Bug 2: CLI e evals sem mensagemUsuario**
+`ia-chat-cli.ts:136` e `run-evals.ts:187` chamam `buildContextBriefing(contexto)` sem segundo arg. Auto-RAG nunca roda nesses caminhos.
+
+**Bug 3: Preview pode contradizer warnings**
+Resumo usa media global, warnings usam por-semana. Briefing pode dizer "deficit zero" e mostrar "cobertura 3/4".
 
 ---
 
@@ -421,11 +434,11 @@ Esses dados ficam para:
 = 30 tools internas expostas
 ```
 
-**North Star publico:**
+**North Star publico (revisado 2026-03-22):**
 
-- 3 tools nucleares
-- 2 tools opcionais
-- fallback tecnico interno nao precisa desaparecer do codigo no primeiro passo
+- 5 tools publicas: `consultar_contexto`, `editar_ficha`, `executar_acao`, `salvar_memoria`, `remover_memoria`
+- `buscar_rag` absorvida no pipeline pre-LLM (auto-discovery)
+- handlers internos (30) continuam como roteamento, nao expostos ao LLM
 
 ---
 
@@ -607,20 +620,26 @@ o modelo deve responder a partir do contexto sem precisar chamar:
 
 ## 11. Checklist para o futuro plan
 
-- [ ] Extrair `buildContextBundle()` do discovery atual
-- [ ] Criar `renderContextBriefing(bundle)`
-- [ ] Adicionar preview ao bundle de setor
-- [ ] Embutir perfis de horario dentro de contratos relevantes
-- [ ] Embutir knowledge catalogo resumido no contexto
-- [ ] Embutir escala atual resumida + drift + ultimas falhas
-- [ ] Consolidar `preflight_completo` em `preflight`
-- [ ] Remover `listar_perfis_horario`
-- [ ] Remover `listar_conhecimento`
-- [ ] Rebaixar `salvar_conhecimento` para backoffice/admin
-- [ ] Criar `scripts/preview-cli.ts` com `--context`
-- [ ] Corrigir `tests/ia/live/ia-chat-cli.ts` para inicializar DB
-- [ ] Corrigir `tests/ia/live/ia-chat-cli.ts` para injetar contexto real
-- [ ] Atualizar docs que ainda falam em 34 tools
+- [x] Extrair `buildContextBundle()` do discovery atual
+- [x] Criar `renderContextBriefing(bundle)`
+- [x] Adicionar preview ao bundle de setor
+- [x] Embutir perfis de horario dentro de contratos relevantes
+- [x] Embutir knowledge catalogo resumido no contexto
+- [x] Embutir escala atual resumida + drift + ultimas falhas
+- [x] Consolidar `preflight_completo` em `preflight`
+- [x] Remover `listar_perfis_horario`
+- [x] Remover `listar_conhecimento`
+- [x] Rebaixar `salvar_conhecimento` para backoffice/admin
+- [x] Criar `scripts/preview-cli.ts` com `--context`
+- [x] Corrigir `tests/ia/live/ia-chat-cli.ts` para inicializar DB
+- [x] Corrigir `tests/ia/live/ia-chat-cli.ts` para injetar contexto real
+- [x] Atualizar docs que ainda falam em 34 tools
+- [ ] **BUG** Corrigir cobertura_media (discovery.ts:1111)
+- [ ] **BUG** Passar mensagemUsuario na CLI e evals
+- [ ] **BUG** Corrigir contradicao preview vs warnings
+- [ ] Colapsar surface publica de 30 → 5 tools
+- [ ] E2E no Electron real provando contexto
+- [ ] System prompt reescrito para 5 tools
 
 ---
 

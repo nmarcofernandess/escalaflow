@@ -363,7 +363,7 @@ export async function localLlmChat(
     emitStream({ type: 'text-delta', stream_id: streamId, delta: '_Conversa longa — usando contexto recente para IA local._\n\n' })
   }
 
-  // Build tools for node-llama-cpp (5 family tools instead of 30 atomic)
+  // Build tools for node-llama-cpp (3 family tools instead of 30 atomic)
   const { IA_TOOLS_PUBLIC } = await import('./tools')
   const { FAMILY_SCHEMAS, executeFamilyTool } = await import('./tool-families')
   const { defineChatSessionFunction } = await getLlamaCpp()

@@ -3628,12 +3628,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
     })
 }
 
-// ==================== FAMILY TOOLS (5 tools LLM-facing) ====================
+// ==================== FAMILY TOOLS (3 tools LLM-facing) ====================
 
 import { FAMILY_TOOLS, FAMILY_SCHEMAS, executeFamilyTool } from './tool-families'
 
 /**
- * Registry publico com 5 family tools (JSON Schema).
+ * Registry publico com 3 family tools (JSON Schema).
  * Substitui IA_TOOLS no surface LLM — menos tokens, mesma cobertura.
  */
 export const IA_TOOLS_PUBLIC = FAMILY_TOOLS.map(t => ({

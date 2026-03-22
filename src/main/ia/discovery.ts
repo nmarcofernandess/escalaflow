@@ -967,7 +967,7 @@ async function _autoRag(query: string): Promise<string | null> {
         const confianca = Math.round(bestScore * 100)
         const header = confianca >= 60
             ? `### Conhecimento relevante (confiança: ${confianca}%)`
-            : `### Conhecimento relevante (confiança baixa: ${confianca}% — use buscar_conhecimento com query reformulada para melhores resultados)`
+            : `### Conhecimento relevante (confiança baixa: ${confianca}% — use consultar_contexto com entidade "conhecimento" e query reformulada para melhores resultados)`
 
         return `\n${header}\n${lines.join('\n')}`
     } catch {

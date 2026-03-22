@@ -1,6 +1,6 @@
 /**
  * PARITY TEST: Prova que CADA uma das 30 tools internas é alcançável
- * através das 5 tools públicas (famílias).
+ * através das 3 tools públicas (famílias).
  *
  * Se alguma tool interna ficar "órfã" (sem caminho via família),
  * o teste falha e mostra qual tool ficou de fora.
@@ -8,9 +8,10 @@
 import { describe, expect, it } from 'vitest'
 import { routeFamilyTool } from '../../src/main/ia/tool-families'
 
-// Todas as 30 tools internas que existiam antes da migração
+// Todas as tools internas que devem ser alcançáveis via famílias
 const ALL_INTERNAL_TOOLS = [
   'buscar_colaborador',
+  'buscar_conhecimento',
   'consultar',
   'criar',
   'atualizar',
@@ -210,29 +211,36 @@ const PARITY_MAP: Array<{
     description: 'fazer_backup via executar_acao (backup)',
   },
 
-  // ===== passthrough =====
+  // ===== memoria via editar_ficha =====
   {
     internalTool: 'salvar_memoria',
-    family: 'salvar_memoria',
-    familyArgs: { conteudo: 'Teste de memória' },
-    description: 'salvar_memoria (passthrough)',
+    family: 'editar_ficha',
+    familyArgs: { entidade: 'memoria', operacao: 'criar', dados: { conteudo: 'Teste de memória' } },
+    description: 'salvar_memoria via editar_ficha (memoria criar)',
   },
   {
     internalTool: 'remover_memoria',
-    family: 'remover_memoria',
-    familyArgs: { id: 1 },
-    description: 'remover_memoria (passthrough)',
+    family: 'editar_ficha',
+    familyArgs: { entidade: 'memoria', id: 1, operacao: 'remover' },
+    description: 'remover_memoria via editar_ficha (memoria remover)',
+  },
+
+  // ===== conhecimento via consultar_contexto =====
+  {
+    internalTool: 'buscar_conhecimento',
+    family: 'consultar_contexto',
+    familyArgs: { entidade: 'conhecimento', filtros: { consulta: 'CLT hora extra' } },
+    description: 'buscar_conhecimento via consultar_contexto (conhecimento)',
   },
 ]
 
-describe('tool-families PARITY: 30 internas → 5 famílias', () => {
+describe('tool-families PARITY: 30 internas → 3 famílias', () => {
   // Test 1: Cada tool interna tem ao menos um caminho via família
-  it('todas as 27 tools internas roteáveis são alcançáveis via famílias', () => {
+  it('todas as 28 tools internas roteáveis são alcançáveis via famílias', () => {
     const reachable = new Set(PARITY_MAP.map(p => p.internalTool))
 
     // Tools que foram intencionalmente removidas da surface (knowledge layer)
     const intentionallyRemoved = [
-      'buscar_conhecimento',  // RAG é pre-LLM (auto-discovery)
       'salvar_conhecimento',  // backoffice, não chat RH
       'explorar_relacoes',    // admin/debug, não chat RH
     ]
@@ -247,15 +255,6 @@ describe('tool-families PARITY: 30 internas → 5 famílias', () => {
   // Test 2: Cada mapeamento roteia para a tool interna correta
   describe('routing parity', () => {
     for (const mapping of PARITY_MAP) {
-      // salvar_memoria e remover_memoria são passthrough (não passam por routeFamilyTool)
-      if (mapping.family === 'salvar_memoria' || mapping.family === 'remover_memoria') {
-        it(`${mapping.description} — passthrough direto`, () => {
-          // passthrough: família === interna
-          expect(mapping.family).toBe(mapping.internalTool)
-        })
-        continue
-      }
-
       it(`${mapping.description} → ${mapping.internalTool}`, () => {
         const route = routeFamilyTool(mapping.family, mapping.familyArgs)
         expect(route.internalTool, `Expected ${mapping.family}(${JSON.stringify(mapping.familyArgs)}) to route to ${mapping.internalTool}, got ${route.internalTool}`).toBe(mapping.internalTool)
@@ -263,13 +262,19 @@ describe('tool-families PARITY: 30 internas → 5 famílias', () => {
     }
   })
 
-  // Test 3: Knowledge tools são intencionalmente excluídas (não órfãs)
-  it('knowledge tools removidas intencionalmente da surface do LLM', () => {
-    const knowledgeTools = ['buscar_conhecimento', 'salvar_conhecimento', 'explorar_relacoes']
-    for (const tool of knowledgeTools) {
+  // Test 3: Knowledge admin tools são intencionalmente excluídas (não órfãs)
+  it('knowledge admin tools removidas intencionalmente da surface do LLM', () => {
+    const adminTools = ['salvar_conhecimento', 'explorar_relacoes']
+    for (const tool of adminTools) {
       const reachable = PARITY_MAP.some(p => p.internalTool === tool)
       expect(reachable, `${tool} NÃO deve ser alcançável via família (removida por design)`).toBe(false)
     }
+  })
+
+  // Test 3b: buscar_conhecimento IS reachable via consultar_contexto
+  it('buscar_conhecimento é alcançável via consultar_contexto', () => {
+    const reachable = PARITY_MAP.some(p => p.internalTool === 'buscar_conhecimento')
+    expect(reachable, 'buscar_conhecimento DEVE ser alcançável via consultar_contexto').toBe(true)
   })
 
   // Test 4: Nenhuma ação desconhecida passa silenciosamente
