@@ -145,7 +145,7 @@ function extractToolCallsFromSteps(steps: any[] | undefined) {
 type RuntimeBits = {
   getVercelAiTools: () => Record<string, any>
   SYSTEM_PROMPT: string
-  buildContextBriefing: (contexto?: any) => Promise<string>
+  buildContextBriefing: (contexto?: any, mensagemUsuario?: string) => Promise<string>
   initDb: () => Promise<any>
   getDb: () => any
 }
