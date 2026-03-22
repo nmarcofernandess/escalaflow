@@ -126,22 +126,21 @@ async function main() {
   }
 
   // ── Context briefing (opcional) ───────────────────────────────────────────
-  let contextBriefing = ''
-  if (setorId !== undefined) {
-    const contexto = {
-      pagina: pagina || 'setor_detalhe',
-      rota: `/setores/${setorId}`,
-      setor_id: setorId,
-    }
-    contextBriefing = await runtime.buildContextBriefing(contexto as any)
-    console.log(c('green', `[OK] Contexto injetado — setor ${setorId} (${contextBriefing.length} chars)`))
+  const contexto = setorId !== undefined
+    ? {
+        pagina: pagina || 'setor_detalhe',
+        rota: `/setores/${setorId}`,
+        setor_id: setorId,
+      }
+    : undefined
+
+  if (contexto !== undefined) {
+    const initialBriefing = await runtime.buildContextBriefing(contexto as any)
+    console.log(c('green', `[OK] Contexto injetado — setor ${setorId} (${initialBriefing.length} chars)`))
   }
 
   const tools = runtime.getVercelAiTools()
   const systemPrompt = runtime.SYSTEM_PROMPT
-  const fullSystemPrompt = contextBriefing
-    ? `${systemPrompt}\n\n${contextBriefing}`
-    : systemPrompt
 
   let history: HistoryMsg[] = []
 
@@ -177,6 +176,14 @@ async function main() {
       console.log('')
       continue
     }
+
+    // Rebuild context per-message passing trimmed so Auto-RAG runs on user input
+    const contextBriefing = contexto !== undefined
+      ? await runtime.buildContextBriefing(contexto as any, trimmed)
+      : ''
+    const fullSystemPrompt = contextBriefing
+      ? `${systemPrompt}\n\n${contextBriefing}`
+      : systemPrompt
 
     history.push({ role: 'user', content: trimmed })
 

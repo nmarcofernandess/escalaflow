@@ -179,12 +179,13 @@ async function runCase(
     model: any
     tools: Record<string, any>
     systemPrompt: string
-    buildContextBriefing: (contexto?: any) => Promise<string>
+    buildContextBriefing: (contexto?: any, mensagemUsuario?: string) => Promise<string>
   },
 ): Promise<EvalRunOutput> {
   // Injeta contexto real (default=dashboard) — IA recebe discovery do DB como no app
+  // Passa tc.input como mensagemUsuario para que Auto-RAG rode na base de conhecimento
   const contexto = tc.contexto ?? DEFAULT_EVAL_CONTEXTO
-  const contextBriefing = await deps.buildContextBriefing(contexto)
+  const contextBriefing = await deps.buildContextBriefing(contexto, tc.input)
   const system = contextBriefing
     ? `${deps.systemPrompt}\n\n---\n${contextBriefing}`
     : deps.systemPrompt
