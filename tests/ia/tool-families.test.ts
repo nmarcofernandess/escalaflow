@@ -159,6 +159,18 @@ describe('tool-families routing', () => {
       expect(route.internalArgs.apelido).toBe('Caixa 2')
     })
 
+    it('routes posto remover to deletar funcoes', () => {
+      const route = routeFamilyTool('editar_ficha', {
+        entidade: 'posto',
+        id: 5,
+        operacao: 'remover',
+        dados: {},
+      })
+      expect(route.internalTool).toBe('deletar')
+      expect(route.internalArgs.entidade).toBe('funcoes')
+      expect(route.internalArgs.id).toBe(5)
+    })
+
     it('routes regra to editar_regra', () => {
       const route = routeFamilyTool('editar_ficha', {
         entidade: 'regra',

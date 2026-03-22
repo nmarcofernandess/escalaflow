@@ -21,7 +21,7 @@ export const ConsultarContextoSchema = z.object({
 export const EditarFichaSchema = z.object({
   entidade: z.enum([
     'colaborador', 'setor', 'empresa', 'contrato',
-    'excecao', 'demanda', 'feriado', 'posto', 'regra',
+    'excecao', 'demanda', 'feriado', 'feriados', 'posto', 'regra',
     'regra_horario', 'perfil_horario', 'horario_funcionamento',
   ]).describe('Tipo de entidade a editar.'),
   id: z.number().int().positive().optional().describe('ID do registro. Omitir para criar novo.'),
@@ -127,6 +127,9 @@ export function routeFamilyTool(familyName: string, args: Record<string, any>): 
 
     // Special cases first (entidade-specific tools)
     if (entidade === 'posto') {
+      if (operacao === 'remover') {
+        return { internalTool: 'deletar', internalArgs: { entidade: 'funcoes', id: id ?? dados?.id } }
+      }
       return {
         internalTool: 'salvar_posto_setor',
         internalArgs: { ...(dados ?? {}), ...(id ? { id } : {}) },
