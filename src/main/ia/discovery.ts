@@ -281,6 +281,15 @@ export function renderContextBriefing(bundle: ContextBundle): string {
             sections.push(`\n### Preview de Ciclo`)
             sections.push(`- Ciclo: ${p.ciclo_semanas} semanas | Cobertura média: ${(p.cobertura_media * 100).toFixed(0)}%`)
             sections.push(`- Déficit máximo: ${p.deficit_max} pessoa(s)`)
+            const worstDay = p.cobertura_por_dia.reduce(
+                (worst, d) => (d.demanda > 0 && d.cobertura / d.demanda < (worst?.ratio ?? 1))
+                    ? { dia: d.dia, ratio: d.cobertura / d.demanda, cobertura: d.cobertura, demanda: d.demanda }
+                    : worst,
+                null as { dia: string; ratio: number; cobertura: number; demanda: number } | null
+            )
+            if (worstDay && worstDay.ratio < 0.9) {
+                sections.push(`⚠️ Pior dia: ${worstDay.dia} (${worstDay.cobertura}/${worstDay.demanda} pessoas)`)
+            }
             for (const d of p.cobertura_por_dia) {
                 sections.push(`- ${d.dia}: cobertura ${d.cobertura}/${d.demanda}`)
             }
@@ -1108,7 +1117,9 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
             totalCob += cobArredondado
             cobertura_por_dia.push({ dia: DIAS_NOMES[d], cobertura: cobArredondado, demanda: dem })
         }
-        const cobertura_media = 7 > 0 ? totalCob / 7 / Math.max(1, Math.max(...demanda_por_dia)) : 0
+        const cobertura_media = cobertura_por_dia.length > 0
+            ? cobertura_por_dia.reduce((sum, d) => sum + (d.demanda > 0 ? Math.min(1, d.cobertura / d.demanda) : 1), 0) / cobertura_por_dia.length
+            : 0
 
         // Distribuição de folgas fixas
         const ff_distribuicao: Record<string, number> = {}
