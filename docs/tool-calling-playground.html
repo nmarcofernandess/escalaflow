@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EscalaFlow — 5 Tools vs 30 Tools</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a28;
+    --border: #2a2a3a;
+    --text: #e0e0ec;
+    --text2: #8888aa;
+    --accent: #7c6cf0;
+    --accent2: #5a4fd0;
+    --green: #3ddc84;
+    --orange: #ffa033;
+    --red: #ff5555;
+    --blue: #58a6ff;
+    --cyan: #22d3ee;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+  }
+  h1 { font-size: 1.6em; color: var(--accent); margin-bottom: 4px; }
+  h2 { font-size: 1.1em; color: var(--cyan); margin: 24px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 0.95em; color: var(--orange); margin: 16px 0 8px; }
+  .subtitle { color: var(--text2); font-size: 0.85em; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card.full { grid-column: 1 / -1; }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    font-weight: 600;
+  }
+  .tag-read { background: #1a3a2a; color: var(--green); }
+  .tag-write { background: #3a2a1a; color: var(--orange); }
+  .tag-action { background: #2a1a3a; color: var(--accent); }
+  .tag-memory { background: #1a2a3a; color: var(--blue); }
+  .tag-old { background: #2a1a1a; color: var(--red); opacity: 0.7; }
+  .tag-new { background: #1a2a1a; color: var(--green); }
+
+  .tool-list { list-style: none; font-size: 0.85em; }
+  .tool-list li { padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .tool-list li:last-child { border-bottom: none; }
+  .tool-name { color: var(--cyan); }
+  .arrow { color: var(--text2); margin: 0 8px; }
+
+  pre {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 0.8em;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+  .context-block { max-height: 400px; overflow-y: auto; }
+  .context-block::-webkit-scrollbar { width: 6px; }
+  .context-block::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .tab {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px 6px 0 0;
+    background: var(--surface2);
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 0.8em;
+    font-family: inherit;
+    transition: all 0.2s;
+  }
+  .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+  .stat-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.85em; }
+  .stat-label { color: var(--text2); }
+  .stat-value { color: var(--green); font-weight: 600; }
+  .stat-value.bad { color: var(--red); }
+
+  .routing-example {
+    background: var(--surface2);
+    border-left: 3px solid var(--accent);
+    padding: 10px 14px;
+    margin: 8px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.8em;
+  }
+  .routing-example .from { color: var(--red); text-decoration: line-through; opacity: 0.6; }
+  .routing-example .to { color: var(--green); }
+  .routing-example .internal { color: var(--text2); font-style: italic; }
+
+  .comparison { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: start; }
+  .vs { color: var(--accent); font-weight: bold; font-size: 1.2em; align-self: center; text-align: center; }
+
+  .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  .metric {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .metric-value { font-size: 1.8em; font-weight: 700; }
+  .metric-label { font-size: 0.75em; color: var(--text2); margin-top: 4px; }
+
+  .flow-diagram {
+    font-size: 0.8em;
+    line-height: 1.8;
+    color: var(--text2);
+  }
+  .flow-diagram .highlight { color: var(--green); font-weight: 600; }
+  .flow-diagram .dim { opacity: 0.5; }
+</style>
+</head>
+<body>
+
+<h1>EscalaFlow — 30 Tools → 5 Tools</h1>
+<p class="subtitle">O que a IA vê agora vs antes. Context-first: preview no briefing, surface enxuta.</p>
+
+<div class="metric-grid">
+  <div class="metric">
+    <div class="metric-value" style="color: var(--red)">30</div>
+    <div class="metric-label">Tools antes</div>
+  </div>
+  <div class="metric">
+    <div class="metric-value" style="color: var(--green)">5</div>
+    <div class="metric-label">Tools agora</div>
+  </div>
+  <div class="metric">
+    <div class="metric-value" style="color: var(--cyan)">7/7</div>
+    <div class="metric-label">E2E passando</div>
+  </div>
+</div>
+
+<h2>As 5 Famílias</h2>
+<div class="grid">
+  <div class="card">
+    <h3>1. consultar_contexto <span class="tag tag-read">READ</span></h3>
+    <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Consulta detalhada quando o contexto automático não basta.</p>
+    <ul class="tool-list">
+      <li><span class="tool-name">entidade: 'setor'</span> <span class="arrow">→</span> <span class="internal">consultar</span></li>
+      <li><span class="tool-name">entidade: 'colaborador', id: 5</span> <span class="arrow">→</span> <span class="internal">buscar_colaborador</span></li>
+      <li><span class="tool-name">entidade: 'escala'</span> <span class="arrow">→</span> <span class="internal">consultar</span></li>
+      <li><span class="tool-name">entidade: 'regras'</span> <span class="arrow">→</span> <span class="internal">consultar</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>2. editar_ficha <span class="tag tag-write">WRITE</span></h3>
+    <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Cria, atualiza ou remove qualquer entidade.</p>
+    <ul class="tool-list">
+      <li><span class="tool-name">posto, criar</span> <span class="arrow">→</span> <span class="internal">salvar_posto_setor</span></li>
+      <li><span class="tool-name">regra_horario</span> <span class="arrow">→</span> <span class="internal">salvar_regra_horario_colaborador</span></li>
+      <li><span class="tool-name">perfil_horario, remover</span> <span class="arrow">→</span> <span class="internal">deletar_perfil_horario</span></li>
+      <li><span class="tool-name">colaborador, id:5</span> <span class="arrow">→</span> <span class="internal">atualizar</span></li>
+      <li><span class="tool-name">excecao, criar</span> <span class="arrow">→</span> <span class="internal">criar</span></li>
+      <li><span class="tool-name">demanda + data_especifica</span> <span class="arrow">→</span> <span class="internal">salvar_demanda_excecao_data</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>3. executar_acao <span class="tag tag-action">ACTION</span></h3>
+    <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Comandos de domínio com side effects.</p>
+    <ul class="tool-list">
+      <li><span class="tool-name">gerar_escala</span> <span class="arrow">→</span> <span class="internal">gerar_escala</span></li>
+      <li><span class="tool-name">oficializar</span> <span class="arrow">→</span> <span class="internal">oficializar_escala</span></li>
+      <li><span class="tool-name">ajustar_celula</span> <span class="arrow">→</span> <span class="internal">ajustar_alocacao</span></li>
+      <li><span class="tool-name">preflight</span> <span class="arrow">→</span> <span class="internal">preflight</span></li>
+      <li><span class="tool-name">diagnosticar</span> <span class="arrow">→</span> <span class="internal">diagnosticar_escala</span></li>
+      <li><span class="tool-name">backup</span> <span class="arrow">→</span> <span class="internal">fazer_backup</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>4-5. Memórias <span class="tag tag-memory">MEMORY</span></h3>
+    <p style="font-size:0.8em; color:var(--text2); margin-bottom:8px">Passthrough direto — mesma interface de antes.</p>
+    <ul class="tool-list">
+      <li><span class="tool-name">salvar_memoria</span> <span class="arrow">→</span> <span class="internal">salvar_memoria</span></li>
+      <li><span class="tool-name">remover_memoria</span> <span class="arrow">→</span> <span class="internal">remover_memoria</span></li>
+    </ul>
+  </div>
+</div>
+
+<h2>Comparação: Antes vs Agora</h2>
+
+<div class="card full">
+  <h3>Exemplo: "muda o horário da Cleunice pra entrar às 09:00"</h3>
+  <div class="comparison">
+    <div>
+      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools):</p>
+      <div class="routing-example">
+        <div class="from">1. buscar_colaborador({ nome: "Cleunice" })</div>
+        <div class="from">2. salvar_regra_horario_colaborador({ colaborador_id: 1, hora_inicio_min: "09:00" })</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">2 tool calls, LLM escolheu entre 30 opções</div>
+      </div>
+    </div>
+    <div class="vs">→</div>
+    <div>
+      <p style="font-size:0.75em; color:var(--green); margin-bottom:6px">AGORA (5 tools):</p>
+      <div class="routing-example">
+        <div class="to">1. editar_ficha({ entidade: "regra_horario", dados: { colaborador_id: 1, hora_inicio_min: "09:00" } })</div>
+        <div class="internal">↳ adapter roteia → salvar_regra_horario_colaborador</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">1 tool call, LLM escolheu entre 5 opções</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card full">
+  <h3>Exemplo: "a distribuição de folgas da padaria tá boa?"</h3>
+  <div class="comparison">
+    <div>
+      <p style="font-size:0.75em; color:var(--red); margin-bottom:6px">ANTES (30 tools, sem preview):</p>
+      <div class="routing-example">
+        <div class="from">1. consultar({ entidade: "setores", filtros: { nome: "Padaria" } })</div>
+        <div class="from">2. consultar({ entidade: "colaboradores", filtros: { setor_id: 4 } })</div>
+        <div class="from">3. consultar({ entidade: "alocacoes", filtros: { setor_id: 4 } })</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">3+ tool calls, IA não via o preview</div>
+      </div>
+    </div>
+    <div class="vs">→</div>
+    <div>
+      <p style="font-size:0.75em; color:var(--green); margin-bottom:6px">AGORA (5 tools, com preview no contexto):</p>
+      <div class="routing-example">
+        <div class="to">0 tool calls — responde direto do contexto!</div>
+        <div class="internal">O preview já mostra: Ciclo 2 semanas, Cobertura 100%, Déficit 0</div>
+        <div class="internal">⚠️ Conflito folga variável em SEG: cobertura 3/4</div>
+        <div style="color:var(--text2); font-size:0.9em; margin-top:6px">Zero round-trips. Contexto basta.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>O Contexto que a IA Vê (Padaria Atendimento)</h2>
+<p style="font-size:0.8em; color:var(--text2); margin-bottom:12px">Isso é injetado no system prompt antes de cada mensagem. A IA lê isso e decide se precisa de tool ou se o contexto basta.</p>
+
+<div class="tabs" id="contextTabs">
+  <button class="tab active" onclick="showTab('preview')">Preview</button>
+  <button class="tab" onclick="showTab('equipe')">Equipe</button>
+  <button class="tab" onclick="showTab('demanda')">Demanda</button>
+  <button class="tab" onclick="showTab('global')">Global</button>
+  <button class="tab" onclick="showTab('full')">Briefing Completo</button>
+</div>
+
+<div class="card full">
+  <div id="tab-preview" class="tab-content">
+    <pre class="context-block">### Preview de Ciclo
+- Ciclo: 2 semanas | Cobertura média: 100%
+- Déficit máximo: 0 pessoa(s)
+- SEG: cobertura 5/4
+- TER: cobertura 4.5/4
+- QUA: cobertura 4.5/4
+- QUI: cobertura 4/4
+- SEX: cobertura 5.1/4
+- SAB: cobertura 4/4
+- DOM: cobertura 3/3
+- AVISO: Conflito folga variável em SEG: cobertura 3/4
+
+### Contratos Relevantes no Setor
+- CLT 44h (ID: 2) — 44h/sem, 5X2
+- Intermitente (ID: 1) — 0h/sem, 6X1
+
+💡 A IA vê TUDO isso antes de responder.
+   Se alguém pergunta "tem déficit?", ela já sabe: 0 pessoa(s).
+   Se pergunta "qual o ciclo?", ela já sabe: 2 semanas.
+   ZERO tool calls necessários.</pre>
+  </div>
+
+  <div id="tab-equipe" class="tab-content" style="display:none">
+    <pre class="context-block">### 🎯 Setor em foco: Padaria Atendimento (ID: 4)
+- Horário: 07:00 – 19:30
+
+#### Colaboradores (6 ativos):
+- Célia (ID: 25) — CLT 44h
+- Maria Clara (ID: 27) — Intermitente 0h
+- Milena (ID: 22) — CLT 44h
+- Rafaela (ID: 26) — CLT 44h
+- Roberta (ID: 23) — CLT 44h
+- Érica (ID: 24) — CLT 44h
+
+#### Postos do setor (6):
+- ATPA1 — CLT 44h — titular: Milena
+- ATPA2 — CLT 44h — titular: Roberta
+- ATPA3 — CLT 44h — titular: Érica
+- ATPA4 — CLT 44h — titular: Célia
+- ATPA5 — CLT 44h — titular: Rafaela
+- ATPA6 — Intermitente — titular: Maria Clara
+
+#### Regras de horário individuais:
+- Maria Clara: padrão, DOM 08:00–17:00, SEG 08:00–17:00
+- Sem regra individual: Célia, Milena, Rafaela, Roberta, Érica
+
+💡 A IA sabe QUEM trabalha, ONDE está, e QUAL o horário.
+   "Quem tá na padaria?" → responde direto, sem buscar_colaborador.
+   "A Maria Clara trabalha domingo?" → SIM, 08:00–17:00.</pre>
+  </div>
+
+  <div id="tab-demanda" class="tab-content" style="display:none">
+    <pre class="context-block">#### Demanda planejada (Padaria):
+- DOM: 07:00–13:00 → mín 3 pessoa(s)
+- SEG-SEX: 07:00–19:30 (várias faixas, pico 4 pessoas 10:00–12:00)
+- SAB: similar a SEG-SEX
+
+💡 Quando alguém pergunta "precisa de mais gente na padaria?",
+   a IA compara a demanda com o preview de cobertura:
+   - DOM: demanda 3, cobertura 3 → ok ✓
+   - SEG: demanda 4 (pico), cobertura 5 → ok ✓
+   - AVISO: conflito folga variável SEG → 3/4 em uma semana
+
+   Tudo isso SEM chamar tool nenhuma.</pre>
+  </div>
+
+  <div id="tab-global" class="tab-content" style="display:none">
+    <pre class="context-block">### Resumo do sistema
+- Setores ativos: 9
+- Colaboradores ativos: 39
+- Escalas RASCUNHO: 1 | OFICIAL: 0
+
+### Feriados nos próximos 30 dias
+- 2026-04-03: Sexta-feira Santa
+- 2026-04-21: Tiradentes
+
+### Regras com override da empresa
+- S_DEFICIT (Deficit de cobertura): padrão HARD → empresa ON
+
+### Alertas ativos
+- INFO: Padaria Atendimento: nenhuma escala gerada.
+
+### Base de Conhecimento
+- 9 fonte(s) | 50 chunks indexados
+
+💡 Resumo global + alertas + feriados.
+   A IA sabe que Sexta-feira Santa tá chegando
+   e pode alertar proativamente.</pre>
+  </div>
+
+  <div id="tab-full" class="tab-content" style="display:none">
+    <pre class="context-block" style="max-height:600px">## CONTEXTO AUTOMÁTICO — PÁGINA ATUAL DO USUÁRIO
+Rota: /setores/4
+
+### Resumo do sistema
+- Setores ativos: 9
+- Colaboradores ativos: 39
+- Escalas RASCUNHO: 1 | OFICIAL: 0
+
+### Feriados nos próximos 30 dias
+- 2026-04-03: Sexta-feira Santa
+- 2026-04-21: Tiradentes
+
+### Regras com override da empresa
+- S_DEFICIT (Deficit de cobertura): padrão HARD → empresa ON
+
+### Setores disponíveis
+- Acougue (ID: 2) — 07:00–19:15, 5 colaboradores
+- Caixa (ID: 1) — 08:00–20:00, 6 colaboradores
+- Depósito (ID: 7) — 08:00–17:00, 1 colaboradores
+- Escritório (ID: 8) — 08:00–18:00, 8 colaboradores
+- Limpeza (ID: 6) — 08:00–20:00, 1 colaboradores
+- Padaria Atendimento (ID: 4) — 07:00–19:30, 6 colaboradores
+- Reposição (ID: 5) — 08:00–20:00, 6 colaboradores
+- Rotisseria (ID: 3) — 05:30–17:00, 4 colaboradores
+- SAC (ID: 9) — 08:00–20:00, 2 colaboradores
+
+### 🎯 Setor em foco: Padaria Atendimento (ID: 4)
+- Horário: 07:00 – 19:30
+- Ativo: sim
+
+#### Colaboradores (6 ativos):
+- Célia (ID: 25) — CLT 44h 44h
+- Maria Clara (ID: 27) — Intermitente 0h
+- Milena (ID: 22) — CLT 44h 44h
+- Rafaela (ID: 26) — CLT 44h 44h
+- Roberta (ID: 23) — CLT 44h 44h
+- Érica (ID: 24) — CLT 44h 44h
+
+#### Postos do setor (6):
+- ATPA1 — CLT 44h — titular: Milena (ID: 22)
+- ATPA2 — CLT 44h — titular: Roberta (ID: 23)
+- ATPA3 — CLT 44h — titular: Érica (ID: 24)
+- ATPA4 — CLT 44h — titular: Célia (ID: 25)
+- ATPA5 — CLT 44h — titular: Rafaela (ID: 26)
+- ATPA6 — Intermitente — titular: Maria Clara (ID: 27)
+
+#### Regras de horário individuais:
+- Maria Clara: padrão, DOM entrada:08:00 saída:17:00, SEG entrada:08:00 saída:17:00
+- Sem regra individual: Célia, Milena, Rafaela, Roberta, Érica
+
+#### Demanda planejada:
+- DOM: 07:00–13:00 → mín 3 pessoa(s)
+- SEG-SEX: 07:00–19:30 (faixas variadas, pico 4p 10:00-12:00)
+- SAB: 07:00–19:30 (faixas variadas, pico 4p 10:00-12:00)
+
+📋 Nenhuma escala encontrada para este setor.
+
+### Preview de Ciclo
+- Ciclo: 2 semanas | Cobertura média: 100%
+- Déficit máximo: 0 pessoa(s)
+- SEG: cobertura 5/4
+- TER: cobertura 4.5/4
+- QUA: cobertura 4.5/4
+- QUI: cobertura 4/4
+- SEX: cobertura 5.1/4
+- SAB: cobertura 4/4
+- DOM: cobertura 3/3
+- AVISO: Conflito folga variável em SEG: cobertura 3/4
+
+### Contratos Relevantes no Setor
+- CLT 44h (ID: 2) — 44h/sem, 5X2
+- Intermitente (ID: 1) — 0h/sem, 6X1
+
+### Alertas ativos
+- INFO: Padaria Atendimento: nenhuma escala gerada.
+
+### Base de Conhecimento
+- 9 fonte(s) | 50 chunks indexados
+
+💡 O usuário está na página de detalhe do setor.</pre>
+  </div>
+</div>
+
+<h2>Fluxo de Decisão da IA</h2>
+<div class="card full">
+  <div class="flow-diagram">
+    <pre>
+  Usuário pergunta algo
+       │
+       ▼
+  ┌─────────────────────────────────┐
+  │  O CONTEXTO JÁ TEM A RESPOSTA? │
+  │  (preview, equipe, demanda...)  │
+  └───────┬──────────┬──────────────┘
+          │          │
+        <span class="highlight">SIM</span>        NÃO
+          │          │
+          ▼          ▼
+   <span class="highlight">Responde       Qual família?</span>
+   <span class="highlight">direto</span>         │
+   (0 tools)      ├── Precisa de dados? → <span style="color:var(--cyan)">consultar_contexto</span>
+                  ├── Precisa editar?   → <span style="color:var(--orange)">editar_ficha</span>
+                  ├── Precisa executar? → <span style="color:var(--accent)">executar_acao</span>
+                  └── Precisa lembrar?  → <span style="color:var(--blue)">salvar_memoria</span>
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │ Adapter roteia  │
+                  │ para handler    │
+                  │ interno (30)    │
+                  └─────────────────┘
+    </pre>
+  </div>
+</div>
+
+<h2>Cobertura: 27 Internas Alcançáveis + 3 Removidas</h2>
+<div class="card full">
+  <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; font-size:0.75em">
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">buscar_colaborador <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">consultar <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">criar <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">atualizar <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">deletar <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_posto_setor <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">editar_regra <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">gerar_escala <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">ajustar_alocacao <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">ajustar_horario <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">oficializar_escala <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">preflight <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">diagnosticar_escala <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">diagnosticar_infeasible <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">explicar_violacao <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">cadastrar_lote <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_regra_horario <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_demanda_excecao <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">upsert_regra_excecao <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">resumir_horas_setor <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">resetar_regras_empresa <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_perfil_horario <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">deletar_perfil_horario <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">config_horario_func <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">fazer_backup <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">salvar_memoria <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--green)">remover_memoria <span class="tag tag-new">✓</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.5">buscar_conhecimento <span class="tag tag-old">removida</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.5">salvar_conhecimento <span class="tag tag-old">removida</span></div>
+    <div style="padding:4px 8px; background:var(--surface2); border-radius:4px; border-left:3px solid var(--red); opacity:0.5">explorar_relacoes <span class="tag tag-old">removida</span></div>
+  </div>
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).style.display = 'block';
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>
