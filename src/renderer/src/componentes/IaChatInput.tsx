@@ -209,6 +209,7 @@ export function IaChatInput({
 
         {/* Textarea sem borda */}
         <Textarea
+          data-testid="ia-chat-input"
           placeholder="Escreva sua mensagem..."
           className="border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none min-h-[60px] text-sm"
           value={value}
@@ -255,6 +256,7 @@ export function IaChatInput({
           />
 
           <Button
+            data-testid="ia-chat-send"
             size="icon"
             className="size-8 rounded-full"
             disabled={!canSend}

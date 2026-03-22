@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:build": "npm run build && playwright test",
     "test:ia:eval": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/evals/run-evals.ts",
     "test:ia:live": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/live/live-smoke.ts",
     "ia:chat": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/live/ia-chat-cli.ts",

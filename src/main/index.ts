@@ -6,6 +6,7 @@ import { execSync } from 'node:child_process'
 import electron from 'electron'
 import { createTables } from './db/schema'
 import { seedData, seedLocalData } from './db/seed'
+import { seedE2eData } from './db/seed-e2e'
 import { initDb, closeDb } from './db/pglite'
 import { startToolServer, stopToolServer } from './tool-server'
 import pkg from 'electron-updater'
@@ -263,6 +264,7 @@ async function bootstrap(): Promise<void> {
   await createTables()
   await seedData()
   await seedLocalData()
+  await seedE2eData()
   startToolServer()
 
   const { app, BrowserWindow, shell, ipcMain, Menu } = electron

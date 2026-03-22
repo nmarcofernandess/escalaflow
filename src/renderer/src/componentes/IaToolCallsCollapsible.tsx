@@ -70,7 +70,7 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <Card className="w-full min-w-0 max-w-full border-muted bg-muted/30 overflow-hidden">
+      <Card data-testid="ia-tool-calls-panel" className="w-full min-w-0 max-w-full border-muted bg-muted/30 overflow-hidden">
         <CollapsibleTrigger className="flex w-full min-w-0 items-center justify-between p-3 text-sm hover:bg-muted/50 transition-colors">
           <div className="flex items-center gap-2">
             <Wrench className="size-3.5 text-muted-foreground" />
@@ -111,6 +111,8 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
               return (
                 <div
                   key={call.id}
+                  data-testid="ia-tool-call"
+                  data-tool-name={call.name}
                   className="w-full min-w-0 max-w-full border-b border-muted last:border-0 p-3 text-xs space-y-2"
                 >
                   <div className="flex min-w-0 items-center gap-2">
