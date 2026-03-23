@@ -56,6 +56,9 @@ models/embeddings/
 # Knowledge seed manifest (gerado por knowledge:seed)
 knowledge/.manifest.json
 
+# Playwright
+test-results/
+
 # Testes / artefatos temporários
 horario/teste/.venv/
 horario/teste/__pycache__/
