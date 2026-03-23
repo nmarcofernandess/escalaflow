@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableRow, TableCell } from '@/components/ui/table'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { servicoConhecimento } from '@/servicos/conhecimento'
@@ -130,10 +130,12 @@ export function RagPlayground() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              <SelectItem value="session">Session</SelectItem>
-              <SelectItem value="sistema">Sistema</SelectItem>
-              <SelectItem value="manual">Manual</SelectItem>
+              <SelectGroup>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="session">Session</SelectItem>
+                <SelectItem value="sistema">Sistema</SelectItem>
+                <SelectItem value="manual">Manual</SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
         </div>
@@ -141,9 +143,9 @@ export function RagPlayground() {
         <Separator />
 
         <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-0.5 p-2">
+          <div className="flex flex-col gap-0.5 p-2">
             {loadingSources ? (
-              <div className="space-y-2 p-2">
+              <div className="flex flex-col gap-2 p-2">
                 {Array.from({ length: 8 }).map((_, i) => (
                   <Skeleton key={i} className={cn('h-6', i % 3 === 2 ? 'w-3/4' : 'w-full')} />
                 ))}
@@ -170,7 +172,7 @@ export function RagPlayground() {
                         </button>
                       </CollapsibleTrigger>
                       <CollapsibleContent>
-                        <div className="ml-4 space-y-0.5">
+                        <div className="ml-4 flex flex-col gap-0.5">
                           {sourceChunks[source.id] ? (
                             sourceChunks[source.id].map(chunk => (
                               <button
@@ -189,7 +191,7 @@ export function RagPlayground() {
                               </button>
                             ))
                           ) : (
-                            <div className="space-y-1 py-1">
+                            <div className="flex flex-col gap-1 py-1">
                               <Skeleton className="h-5 w-full" />
                               <Skeleton className="h-5 w-3/4" />
                               <Skeleton className="h-5 w-1/2" />
@@ -209,7 +211,7 @@ export function RagPlayground() {
 
       {/* ── CENTER: Search + Results ── */}
       <div className="flex min-h-0 flex-col">
-        <div className="space-y-2 p-3">
+        <div className="flex flex-col gap-2 p-3">
           <div className="flex gap-2">
             <Input
               placeholder="Digite uma query pra testar o retrieval..."
@@ -237,7 +239,7 @@ export function RagPlayground() {
         )}
 
         <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-2 p-3">
+          <div className="flex flex-col gap-2 p-3">
             {results.length === 0 && !searching && (
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
                 <Search className="mb-3 size-8 opacity-30" />
@@ -247,7 +249,7 @@ export function RagPlayground() {
             )}
 
             {searching && (
-              <div className="space-y-3">
+              <div className="flex flex-col gap-3">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <Card key={i} className="p-3 shadow-none">
                     <div className="mb-2 flex items-center justify-between">
@@ -323,7 +325,7 @@ export function RagPlayground() {
               <p className="text-xs">Selecione um chunk pra inspecionar</p>
             </div>
           ) : (
-            <div className="space-y-4 p-3">
+            <div className="flex flex-col gap-4 p-3">
               {/* Stats grid */}
               <div className="grid grid-cols-2 gap-1.5">
                 <Card className="p-2.5 shadow-none">
@@ -422,7 +424,7 @@ export function RagPlayground() {
                       <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Enrichment
                       </div>
-                      <Card className="space-y-2 p-3 shadow-none">
+                      <Card className="flex flex-col gap-2 p-3 shadow-none">
                         <p className="text-xs leading-relaxed text-foreground">{enr.resumo}</p>
                         <div className="flex flex-wrap gap-1">
                           {enr.tags.map((tag, i) => (
@@ -447,7 +449,7 @@ export function RagPlayground() {
                   <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Chunks Vizinhos ({sourceChunks[selectedSource.id].length} no source)
                   </div>
-                  <div className="space-y-1">
+                  <div className="flex flex-col gap-1">
                     {sourceChunks[selectedSource.id].map(c => (
                       <button
                         key={c.id}

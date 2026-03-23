@@ -41,10 +41,10 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
   const comSoft = grupos.filter((g) => g.soft.length > 0 && g.hard.length === 0)
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* HARD Violations */}
       {comHard.length > 0 && (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-destructive flex items-center gap-2">
             <XCircle className="size-4" />
             Problemas Críticos
@@ -54,7 +54,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
               key={grupo.colaborador_id}
               className={cn('border-2', CORES_VIOLACAO.HARD.border, CORES_VIOLACAO.HARD.bg)}
             >
-              <CardContent className="p-4 space-y-3">
+              <CardContent className="flex flex-col gap-3 p-4">
                 {/* Avatar + Nome */}
                 <div className="flex items-center gap-3">
                   <Avatar className="size-10">
@@ -74,7 +74,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
                 </div>
 
                 {/* Problemas por dia */}
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   {grupo.hard.map((v, i) => (
                     <div key={i} className="flex items-start gap-2 text-xs">
                       <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
@@ -98,7 +98,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
 
       {/* SOFT Violations */}
       {comSoft.length > 0 && (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-warning flex items-center gap-2">
             <AlertTriangle className="size-4" />
             Alertas
@@ -108,7 +108,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
               key={grupo.colaborador_id}
               className={cn('border', CORES_VIOLACAO.SOFT.border, CORES_VIOLACAO.SOFT.bg)}
             >
-              <CardContent className="p-3 space-y-2">
+              <CardContent className="flex flex-col gap-2 p-3">
                 {/* Avatar + Nome */}
                 <div className="flex items-center gap-2">
                   <Avatar className="size-8">
@@ -120,7 +120,7 @@ export function ViolacoesAgrupadas({ violacoes }: ViolacoesAgrupadasProps) {
                 </div>
 
                 {/* Problemas */}
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   {grupo.soft.map((v, i) => (
                     <div key={i} className="flex items-start gap-2 text-xs">
                       <AlertTriangle className="mt-0.5 size-3 shrink-0 text-warning" />

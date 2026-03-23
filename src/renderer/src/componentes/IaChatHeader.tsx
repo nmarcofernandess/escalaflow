@@ -63,30 +63,30 @@ export function IaChatHeader() {
           onClick={handleNovaConversa}
           title="Nova conversa"
         >
-          <Plus className="size-4" />
+          <Plus />
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="size-8 shrink-0">
-              <MoreVertical className="size-4" />
+              <MoreVertical />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={irParaHistorico}>
-              <History className="mr-2 size-3.5" />
+              <History />
               Historico
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleCopiarChat} disabled={!hasMensagens}>
-              <Copy className="mr-2 size-3.5" />
+              <Copy />
               Copiar chat
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleExportar('md')} disabled={!hasMensagens}>
-              <FileDown className="mr-2 size-3.5" />
+              <FileDown />
               Exportar .md
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleExportar('json')} disabled={!hasMensagens}>
-              <FileJson className="mr-2 size-3.5" />
+              <FileJson />
               Exportar .json
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -104,7 +104,7 @@ export function IaChatHeader() {
         onClick={() => setTela('chat')}
         title="Voltar ao chat"
       >
-        <ChevronLeft className="size-3.5" />
+        <ChevronLeft />
         <span className="text-xs">Voltar</span>
       </Button>
       <span className="text-sm font-semibold flex-1 text-center">Histórico</span>
@@ -115,7 +115,7 @@ export function IaChatHeader() {
         onClick={handleNovaConversa}
         title="Nova conversa"
       >
-        <Plus className="size-4" />
+        <Plus />
       </Button>
     </div>
   )

@@ -65,9 +65,9 @@ export function IaPagina() {
             onClick={() => setSidebarAberta((v) => !v)}
           >
             {sidebarAberta ? (
-              <PanelLeftClose className="size-4" />
+              <PanelLeftClose />
             ) : (
-              <PanelLeft className="size-4" />
+              <PanelLeft />
             )}
           </Button>
         </TooltipTrigger>
@@ -95,7 +95,7 @@ export function IaPagina() {
             className="size-7"
             onClick={() => novaConversa()}
           >
-            <Plus className="size-4" />
+            <Plus />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">Nova conversa</TooltipContent>
@@ -104,20 +104,20 @@ export function IaPagina() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="size-7">
-            <MoreVertical className="size-4" />
+            <MoreVertical />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={handleCopiarChat} disabled={!hasMensagens}>
-            <Copy className="mr-2 size-3.5" />
+            <Copy />
             Copiar chat
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => handleExportar('md')} disabled={!hasMensagens}>
-            <FileDown className="mr-2 size-3.5" />
+            <FileDown />
             Exportar .md
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => handleExportar('json')} disabled={!hasMensagens}>
-            <FileJson className="mr-2 size-3.5" />
+            <FileJson />
             Exportar .json
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -96,6 +96,14 @@ logs/security/
 # Gemini / AI agent
 .gemini/
 
+# Skills CLI (shadcn/ui skills, agent configs)
+.agents/
+.agent/
+.factory/
+skills/
+skills-lock.json
+.claude/skills/
+
 # Temporários de dev
 tmp/
 agora.md

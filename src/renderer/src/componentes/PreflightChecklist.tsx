@@ -22,7 +22,7 @@ export function PreflightChecklist({ items }: PreflightChecklistProps) {
       <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Antes de gerar
       </p>
-      <ul className="space-y-1">
+      <ul className="flex flex-col gap-1">
         {items.map((item, idx) => {
           const Icon = item.ok ? CheckCircle2 : CircleAlert
           const content = (

@@ -1,4 +1,5 @@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 interface Props {
   tokens: number
@@ -32,7 +33,7 @@ export function IaContextBadge({ tokens, limit }: Props) {
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className={`flex items-center justify-center size-6 ${color}`}>
+          <div className={cn("flex items-center justify-center size-6", color)}>
             <svg width="20" height="20" viewBox="0 0 20 20" className="rotate-[-90deg]">
               <circle
                 cx="10" cy="10" r="7"

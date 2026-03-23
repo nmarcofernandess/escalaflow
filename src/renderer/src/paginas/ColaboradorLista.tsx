@@ -36,6 +36,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -77,6 +78,7 @@ import { funcoesService } from '@/servicos/funcoes'
 import { useApiData } from '@/hooks/useApiData'
 import { useAppDataStore } from '@/store/appDataStore'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { Colaborador, Excecao, Funcao, PerfilHorarioContrato } from '@shared/index'
 
 const novoColabSchema = z.object({
@@ -321,7 +323,7 @@ export function ColaboradorLista() {
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Colaboradores' }]}
         actions={
           <Button size="sm" onClick={() => setShowNewDialog(true)}>
-            <Plus className="mr-1 size-3.5" />
+            <Plus />
             Novo Colaborador
           </Button>
         }
@@ -343,7 +345,7 @@ export function ColaboradorLista() {
           <Popover>
             <PopoverTrigger asChild>
               <Button variant={activeFilterCount > 0 ? 'secondary' : 'outline'} size="sm">
-                <Filter className="mr-1.5 size-3.5" />
+                <Filter />
                 Filtros
                 {activeFilterCount > 0 && (
                   <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5 text-xs font-semibold">
@@ -353,65 +355,73 @@ export function ColaboradorLista() {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-72" align="start">
-              <div className="space-y-3">
+              <div className="flex flex-col gap-3">
                 <p className="text-xs font-medium text-muted-foreground">Filtrar por</p>
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <Label className="text-xs text-muted-foreground">Setor</Label>
                   <Select value={setorFilter} onValueChange={setSetorFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todos os setores" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todos os setores</SelectItem>
-                      {setoresList.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          {s.nome}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        <SelectItem value="all">Todos os setores</SelectItem>
+                        {setoresList.map((s) => (
+                          <SelectItem key={s.id} value={String(s.id)}>
+                            {s.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <Label className="text-xs text-muted-foreground">Contrato</Label>
                   <Select value={contratoFilter} onValueChange={setContratoFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todos contratos" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todos contratos</SelectItem>
-                      {contratosList.map((tc) => (
-                        <SelectItem key={tc.id} value={String(tc.id)}>
-                          {tc.nome}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        <SelectItem value="all">Todos contratos</SelectItem>
+                        {contratosList.map((tc) => (
+                          <SelectItem key={tc.id} value={String(tc.id)}>
+                            {tc.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <Label className="text-xs text-muted-foreground">Situacao</Label>
                   <Select value={situacaoFilter} onValueChange={(v) => setSituacaoFilter(v as SituacaoFilter)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todas situacoes" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todos">Todas situacoes</SelectItem>
-                      <SelectItem value="disponivel">Disponivel</SelectItem>
-                      <SelectItem value="ferias">Em ferias</SelectItem>
-                      <SelectItem value="atestado">Em atestado</SelectItem>
-                      <SelectItem value="bloqueio">Bloqueado</SelectItem>
+                      <SelectGroup>
+                        <SelectItem value="todos">Todas situacoes</SelectItem>
+                        <SelectItem value="disponivel">Disponivel</SelectItem>
+                        <SelectItem value="ferias">Em ferias</SelectItem>
+                        <SelectItem value="atestado">Em atestado</SelectItem>
+                        <SelectItem value="bloqueio">Bloqueado</SelectItem>
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <Label className="text-xs text-muted-foreground">Sexo</Label>
                   <Select value={sexoFilter} onValueChange={setSexoFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Todos" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="F">Feminino</SelectItem>
-                      <SelectItem value="M">Masculino</SelectItem>
+                      <SelectGroup>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="F">Feminino</SelectItem>
+                        <SelectItem value="M">Masculino</SelectItem>
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
@@ -419,7 +429,7 @@ export function ColaboradorLista() {
                   <>
                     <div className="border-t" />
                     <Button variant="ghost" size="sm" className="w-full" onClick={clearFilters}>
-                      <X className="mr-1.5 size-3.5" />
+                      <X />
                       Limpar filtros
                     </Button>
                   </>
@@ -433,7 +443,7 @@ export function ColaboradorLista() {
             size="sm"
             onClick={() => setShowArchived(!showArchived)}
           >
-            <Archive className="mr-1 size-3.5" />
+            <Archive />
             Arquivados ({arquivados.length})
           </Button>
           <ViewToggle mode={viewMode} onChange={setViewMode} />
@@ -455,7 +465,7 @@ export function ColaboradorLista() {
             action={
               !showArchived ? (
                 <Button size="sm" onClick={() => setShowNewDialog(true)}>
-                  <Plus className="mr-1 size-3.5" />
+                  <Plus />
                   Novo Colaborador
                 </Button>
               ) : undefined
@@ -510,12 +520,12 @@ export function ColaboradorLista() {
                         {colab.ativo ? (
                           <Button variant="ghost" size="sm" asChild>
                             <Link to={`/colaboradores/${colab.id}`}>
-                              <ArrowRight className="size-4" />
+                              <ArrowRight />
                             </Link>
                           </Button>
                         ) : (
                           <Button variant="ghost" size="sm" onClick={() => handleRestaurar(colab.id)}>
-                            <RotateCcw className="mr-1 size-3" /> Restaurar
+                            <RotateCcw /> Restaurar
                           </Button>
                         )}
                       </TableCell>
@@ -540,9 +550,9 @@ export function ColaboradorLista() {
                 return (
                   <Card
                     key={colab.id}
-                    className={`transition-shadow hover:shadow-md ${!colab.ativo ? 'opacity-60' : ''}`}
+                    className={cn("transition-shadow hover:shadow-md", !colab.ativo && "opacity-60")}
                   >
-                    <CardContent className="p-4 space-y-3">
+                    <CardContent className="flex flex-col gap-3 p-4">
                       {/* Header: Icon + Nome + Setor badge */}
                       <div className="flex items-center gap-2.5">
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -573,7 +583,7 @@ export function ColaboradorLista() {
                           <>
                             <Button variant="outline" size="sm" className="flex-1" asChild>
                               <Link to={`/colaboradores/${colab.id}`}>
-                                Ver detalhes <ArrowRight className="ml-1 size-3" />
+                                Ver detalhes <ArrowRight />
                               </Link>
                             </Button>
                             <Button
@@ -582,12 +592,12 @@ export function ColaboradorLista() {
                               className="size-8 shrink-0 text-destructive hover:bg-destructive/10"
                               onClick={() => setArchivingId(colab.id)}
                             >
-                              <Trash2 className="size-3.5" />
+                              <Trash2 />
                             </Button>
                           </>
                         ) : (
                           <Button variant="outline" size="sm" className="flex-1" onClick={() => handleRestaurar(colab.id)}>
-                            <RotateCcw className="mr-1 size-3" /> Restaurar
+                            <RotateCcw /> Restaurar
                           </Button>
                         )}
                       </div>
@@ -637,7 +647,7 @@ export function ColaboradorLista() {
             </DialogDescription>
           </DialogHeader>
           <Form {...novoColabForm}>
-            <form onSubmit={novoColabForm.handleSubmit(handleCriar)} className="space-y-4 py-4">
+            <form onSubmit={novoColabForm.handleSubmit(handleCriar)} className="flex flex-col gap-4 py-4">
               <FormField
                 control={novoColabForm.control}
                 name="nome"
@@ -665,8 +675,10 @@ export function ColaboradorLista() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="F">Feminino</SelectItem>
-                          <SelectItem value="M">Masculino</SelectItem>
+                          <SelectGroup>
+                            <SelectItem value="F">Feminino</SelectItem>
+                            <SelectItem value="M">Masculino</SelectItem>
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -686,11 +698,13 @@ export function ColaboradorLista() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {setoresList.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.nome}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            {setoresList.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                {s.nome}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -711,11 +725,13 @@ export function ColaboradorLista() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {contratosList.map((tc) => (
-                          <SelectItem key={tc.id} value={String(tc.id)}>
-                            {tc.nome}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          {contratosList.map((tc) => (
+                            <SelectItem key={tc.id} value={String(tc.id)}>
+                              {tc.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -736,12 +752,14 @@ export function ColaboradorLista() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="none">Sem perfil</SelectItem>
-                          {perfisNovo.map((p) => (
-                            <SelectItem key={p.id} value={String(p.id)}>
-                              {p.nome}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            <SelectItem value="none">Sem perfil</SelectItem>
+                            {perfisNovo.map((p) => (
+                              <SelectItem key={p.id} value={String(p.id)}>
+                                {p.nome}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -762,9 +780,11 @@ export function ColaboradorLista() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="CLT">CLT</SelectItem>
-                        <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
-                        <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
+                        <SelectGroup>
+                          <SelectItem value="CLT">CLT</SelectItem>
+                          <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
+                          <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -784,12 +804,14 @@ export function ColaboradorLista() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="none">Sem funcao</SelectItem>
-                        {funcoesNovo.map((f) => (
-                          <SelectItem key={f.id} value={String(f.id)}>
-                            {f.apelido}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          <SelectItem value="none">Sem funcao</SelectItem>
+                          {funcoesNovo.map((f) => (
+                            <SelectItem key={f.id} value={String(f.id)}>
+                              {f.apelido}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     <FormMessage />

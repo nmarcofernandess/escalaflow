@@ -9,6 +9,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select'
@@ -133,14 +134,16 @@ function FolgaSelect({
         </span>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="__none__" className="text-xs">
-          -
-        </SelectItem>
-        {dias.map((dia) => (
-          <SelectItem key={dia} value={dia} className="text-xs">
-            {DIAS_CURTOS[dia]}
+        <SelectGroup>
+          <SelectItem value="__none__" className="text-xs">
+            -
           </SelectItem>
-        ))}
+          {dias.map((dia) => (
+            <SelectItem key={dia} value={dia} className="text-xs">
+              {DIAS_CURTOS[dia]}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   )

@@ -244,7 +244,7 @@ export function TimelineGrid({
   }, [dow, setor.hora_abertura, setor.hora_fechamento, horariosSemana])
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* Day Navigation */}
       <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-4 py-2.5">
         <Button
@@ -440,7 +440,7 @@ export function TimelineGrid({
                                     {showLabel ? `${segment.start} - ${segment.end}` : ''}
                                   </div>
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="text-xs space-y-1">
+                                <TooltipContent side="top" className="flex flex-col gap-1 text-xs">
                                   <p className="font-semibold">{colab.nome}</p>
                                   <p>{contrato?.nome ?? 'Contrato'}</p>
                                   <p>
@@ -485,7 +485,7 @@ export function TimelineGrid({
                                   ALM
                                 </div>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs space-y-1">
+                              <TooltipContent side="top" className="flex flex-col gap-1 text-xs">
                                 <p className="font-semibold">{colab.nome}</p>
                                 <p>Almoço: {lunch.start} → {lunch.end}</p>
                                 <p>Pausa no fluxo</p>

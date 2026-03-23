@@ -202,7 +202,7 @@ function ResumoTable({
                 {isExpanded && (
                   <TableRow key={`${colab.id}-detail`} className="bg-muted/30 hover:bg-muted/30">
                     <TableCell colSpan={6} className="py-3 px-4">
-                      <div className="space-y-2">
+                      <div className="flex flex-col gap-2">
                         {hard.map((v, i) => (
                           <div key={`h-${i}`} className="flex items-start gap-2 text-xs">
                             <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
@@ -600,7 +600,7 @@ export function EscalaPagina() {
         </div>
       ) : null}
 
-      <div className="flex-1 space-y-4 p-6">
+      <div className="flex flex-1 flex-col gap-4 p-6">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -710,7 +710,7 @@ export function EscalaPagina() {
               </Alert>
             )}
 
-            <Tabs defaultValue="escala" className="space-y-4">
+            <Tabs defaultValue="escala" className="flex flex-col gap-4">
               <TabsList>
                 <TabsTrigger value="escala">Escala</TabsTrigger>
                 <TabsTrigger value="apontamentos" className="gap-1.5">
@@ -723,7 +723,7 @@ export function EscalaPagina() {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="apontamentos" className="space-y-4">
+              <TabsContent value="apontamentos" className="flex flex-col gap-4">
                 {(() => {
                   const ind = escalaCompleta.indicadores
                   const coberturaEfetiva = ind.cobertura_efetiva_percent ?? ind.cobertura_percent
@@ -850,7 +850,7 @@ export function EscalaPagina() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="escala" className="space-y-4">
+              <TabsContent value="escala" className="flex flex-col gap-4">
                 <Card>
                   <CardHeader className="pb-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -965,7 +965,7 @@ export function EscalaPagina() {
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base font-semibold">Por Funcionario</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-3">
+                    <CardContent className="flex flex-col gap-3">
                       <ResumoFolgas
                         colaboradores={equipeEscala.colaboradores}
                         alocacoes={escalaCompleta.alocacoes}

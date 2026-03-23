@@ -19,6 +19,7 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible'
 import { servicoConhecimento } from '@/servicos/conhecimento'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const MAX_PREVIEW_CHARS = 50_000
@@ -197,9 +198,7 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
           <>
             {/* Drop Zone */}
             <div
-              className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer ${
-                dragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-              }`}
+              className={cn("flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer", dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-muted-foreground/50")}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -253,7 +252,7 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
             </div>
 
             {/* Título */}
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="titulo">Título</Label>
                 {iaDisponivel && !gerando.titulo && conteudo && (
@@ -283,7 +282,7 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
             </div>
 
             {/* Sobre o quê */}
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="quando">Sobre o quê?</Label>
                 {iaDisponivel && !gerando.quando && conteudo && (
@@ -319,7 +318,7 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
             <Collapsible open={previewAberto} onOpenChange={setPreviewAberto}>
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-muted-foreground">
-                  <ChevronDown className={`size-3.5 transition-transform ${previewAberto ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={cn("size-3.5 transition-transform", previewAberto && "rotate-180")} />
                   Ver conteúdo
                 </Button>
               </CollapsibleTrigger>

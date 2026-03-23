@@ -96,7 +96,7 @@ export function SimulaCicloPagina() {
         ]}
         actions={
           <Button variant="outline" size="sm" onClick={resetar}>
-            <RotateCcw className="mr-1 size-3.5" />
+            <RotateCcw />
             Resetar
           </Button>
         }
@@ -116,7 +116,7 @@ export function SimulaCicloPagina() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="n">Pessoas no setor</Label>
                 <Input
                   id="n"
@@ -128,7 +128,7 @@ export function SimulaCicloPagina() {
                   className="w-28"
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="k">Trabalham domingo</Label>
                 <div className="flex items-center gap-2">
                   <Input

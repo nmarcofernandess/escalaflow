@@ -45,7 +45,7 @@ export function AvisosSection({ avisos, onAnalisarIa }: AvisosSectionProps) {
         )}
       </div>
 
-      <div className="space-y-1.5">
+      <div className="flex flex-col gap-1.5">
         {avisos.map(aviso => {
           const config = NIVEL_CONFIG[aviso.nivel]
           const Icon = config.icon

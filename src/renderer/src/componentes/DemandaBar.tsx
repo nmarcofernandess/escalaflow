@@ -247,7 +247,7 @@ export function DemandaBar({
             </TooltipTrigger>
           </PopoverTrigger>
 
-          <TooltipContent side="top" className="space-y-1 text-xs">
+          <TooltipContent side="top" className="flex flex-col gap-1 text-xs">
             <div className="flex items-center gap-1.5 font-medium">
               <Clock className="size-3" />
               {horaInicio} - {horaFim}
@@ -259,9 +259,9 @@ export function DemandaBar({
           </TooltipContent>
         </Tooltip>
 
-        <PopoverContent side="top" align="end" className="w-64 p-4 space-y-4">
+        <PopoverContent side="top" align="end" className="flex w-64 flex-col gap-4 p-4">
           {/* Time inputs */}
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Label className="text-xs text-muted-foreground">Horario</Label>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
               <Input
@@ -290,7 +290,7 @@ export function DemandaBar({
           </div>
 
           {/* People stepper */}
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Label className="text-xs text-muted-foreground">Min. pessoas</Label>
             <div className="flex items-center justify-center gap-3">
               <Button

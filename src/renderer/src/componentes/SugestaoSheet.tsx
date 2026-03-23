@@ -148,7 +148,7 @@ function LegacyProposalSection({ diff }: { diff: AdvisoryDiffItem[] }) {
   const unchangedCount = diff.length - changedItems.length
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <Zap className="size-4 text-amber-500" />
         <h4 className="text-sm font-semibold">Ajustes sugeridos</h4>
@@ -215,17 +215,17 @@ function ViolationsSection({ violations }: { violations: AdvisoryPinViolation[] 
   const userViolations = violations.filter(v => v.origin === 'manual' || v.origin === 'saved')
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* User section — expanded by default, highlighted */}
       {userViolations.length > 0 && (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <AlertTriangle className="size-4 text-amber-500" />
             <h4 className="text-sm font-semibold">
               Mudancas nas suas escolhas ({userViolations.length})
             </h4>
           </div>
-          <div className="space-y-1.5 pl-6">
+          <div className="flex flex-col gap-1.5 pl-6">
             {userViolations.map((v, i) => (
               <div key={`user-${v.colaborador_id}-${v.dia}-${i}`} className="text-sm">
                 <span className="font-medium">{v.nome}</span>
@@ -238,7 +238,7 @@ function ViolationsSection({ violations }: { violations: AdvisoryPinViolation[] 
 
       {/* Auto section — collapsed by default */}
       {autoViolations.length > 0 && (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <button
             onClick={() => setAutoExpanded(!autoExpanded)}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -247,7 +247,7 @@ function ViolationsSection({ violations }: { violations: AdvisoryPinViolation[] 
             <span>Ajustes automaticos ({autoViolations.length})</span>
           </button>
           {autoExpanded && (
-            <div className="pl-6 space-y-1 text-sm text-muted-foreground">
+            <div className="flex flex-col gap-1 pl-6 text-sm text-muted-foreground">
               {autoViolations.map((v, i) => (
                 <div key={`auto-${v.colaborador_id}-${v.dia}-${i}`}>
                   <span className="font-medium text-foreground/80">{v.nome}</span>: {v.descricao}
@@ -314,14 +314,14 @@ export function SugestaoSheet({
 
         {/* Content */}
         {!loading && advisory && (
-          <div className="space-y-6 py-4">
+          <div className="flex flex-col gap-6 py-4">
             {/* Diagnostics (errors + warnings only) */}
             {diagnosticsToShow.length > 0 && (
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Avisos
                 </h4>
-                <div className="space-y-1.5">
+                <div className="flex flex-col gap-1.5">
                   {diagnosticsToShow.map((d, idx) => (
                     <DiagnosticRow key={`${d.code}-${idx}`} diag={d} />
                   ))}

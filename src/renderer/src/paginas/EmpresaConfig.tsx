@@ -180,7 +180,7 @@ export function EmpresaConfig() {
                 Informacoes exibidas nos relatorios e exportacoes de escala.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="flex flex-col gap-6">
               <FormField
                 control={form.control}
                 name="nome"
@@ -262,7 +262,7 @@ export function EmpresaConfig() {
             {horarios.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">Carregando horarios...</p>
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 {DIAS_SEMANA.map(({ key, label }) => {
                   const h = horarios.find((x) => x.dia_semana === key)
                   if (!h) return null

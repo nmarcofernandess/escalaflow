@@ -27,7 +27,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +52,7 @@ import { servicoMemorias } from '@/servicos/memorias'
 import { toast } from 'sonner'
 import { client } from '@/servicos/client'
 import { ENTITY_TYPE_COLORS } from '@/lib/cores'
+import { cn } from '@/lib/utils'
 import type { IaMemoria } from '@shared/types'
 
 type FonteComChunks = {
@@ -377,7 +378,7 @@ export function MemoriaPagina() {
           </div>
 
           {/* ── TAB MEMORIAS ── */}
-          <TabsContent value="memorias" className="mt-4 space-y-4">
+          <TabsContent value="memorias" className="mt-4 flex flex-col gap-4">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -387,18 +388,20 @@ export function MemoriaPagina() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="manual">
-                          <span className="flex items-center gap-1.5">
-                            <Brain className="size-3.5" />
-                            Memorias do RH
-                          </span>
-                        </SelectItem>
-                        <SelectItem value="auto">
-                          <span className="flex items-center gap-1.5">
-                            <Sparkles className="size-3.5" />
-                            Memorias Automaticas
-                          </span>
-                        </SelectItem>
+                        <SelectGroup>
+                          <SelectItem value="manual">
+                            <span className="flex items-center gap-1.5">
+                              <Brain className="size-3.5" />
+                              Memorias do RH
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="auto">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles className="size-3.5" />
+                              Memorias Automaticas
+                            </span>
+                          </SelectItem>
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     <Badge variant="outline" className="text-xs">
@@ -417,7 +420,7 @@ export function MemoriaPagina() {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="flex flex-col gap-3">
                 {filtroMem === 'manual' && (
                   <>
                     {/* Input nova memoria */}
@@ -466,7 +469,7 @@ export function MemoriaPagina() {
                     }
                   />
                 ) : (
-                  <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
                     {memoriasFiltradas.map((m) => (
                       <MemoriaItem
                         key={m.id}
@@ -485,7 +488,7 @@ export function MemoriaPagina() {
               <CardContent className="pt-4">
                 <div className="flex gap-3">
                   <Lightbulb className="mt-0.5 size-4 shrink-0 text-warning" />
-                  <div className="space-y-1 text-sm text-muted-foreground">
+                  <div className="flex flex-col gap-1 text-sm text-muted-foreground">
                     <p><strong>Memorias do RH</strong> sao fatos que voce ensina a IA. Ela lembra em TODA conversa.</p>
                     <p><strong>Memorias Automaticas</strong> sao extraidas das conversas quando voce troca de chat.</p>
                     <p><strong>Documentos</strong> sao textos longos (CLT, PDFs, manuais) que a IA consulta quando relevante.</p>
@@ -496,7 +499,7 @@ export function MemoriaPagina() {
           </TabsContent>
 
           {/* ── TAB DOCUMENTOS ── */}
-          <TabsContent value="documentos" className="mt-4 space-y-4">
+          <TabsContent value="documentos" className="mt-4 flex flex-col gap-4">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -506,18 +509,20 @@ export function MemoriaPagina() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="usuario">
-                          <span className="flex items-center gap-1.5">
-                            <User className="size-3.5" />
-                            Meus Documentos
-                          </span>
-                        </SelectItem>
-                        <SelectItem value="sistema">
-                          <span className="flex items-center gap-1.5">
-                            <BookOpen className="size-3.5" />
-                            Sistema
-                          </span>
-                        </SelectItem>
+                        <SelectGroup>
+                          <SelectItem value="usuario">
+                            <span className="flex items-center gap-1.5">
+                              <User className="size-3.5" />
+                              Meus Documentos
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="sistema">
+                            <span className="flex items-center gap-1.5">
+                              <BookOpen className="size-3.5" />
+                              Sistema
+                            </span>
+                          </SelectItem>
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     <Badge variant="outline" className="text-xs">
@@ -557,7 +562,7 @@ export function MemoriaPagina() {
                     />
                   )
                 ) : (
-                  <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
                     {fontesFiltradas.map((fonte) => (
                       <FonteItem
                         key={fonte.id}
@@ -620,7 +625,7 @@ export function MemoriaPagina() {
           )}
 
           {/* ── TAB RELACOES ── */}
-          <TabsContent value="relacoes" className="mt-4 space-y-4">
+          <TabsContent value="relacoes" className="mt-4 flex flex-col gap-4">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -630,24 +635,26 @@ export function MemoriaPagina() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="todos">
-                          <span className="flex items-center gap-1.5">
-                            <Network className="size-3.5" />
-                            Todos
-                          </span>
-                        </SelectItem>
-                        <SelectItem value="usuario">
-                          <span className="flex items-center gap-1.5">
-                            <User className="size-3.5" />
-                            Minhas Relacoes
-                          </span>
-                        </SelectItem>
-                        <SelectItem value="sistema">
-                          <span className="flex items-center gap-1.5">
-                            <BookOpen className="size-3.5" />
-                            Sistema
-                          </span>
-                        </SelectItem>
+                        <SelectGroup>
+                          <SelectItem value="todos">
+                            <span className="flex items-center gap-1.5">
+                              <Network className="size-3.5" />
+                              Todos
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="usuario">
+                            <span className="flex items-center gap-1.5">
+                              <User className="size-3.5" />
+                              Minhas Relacoes
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="sistema">
+                            <span className="flex items-center gap-1.5">
+                              <BookOpen className="size-3.5" />
+                              Sistema
+                            </span>
+                          </SelectItem>
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     {graphStats && graphStats.entities_count > 0 && (
@@ -683,7 +690,7 @@ export function MemoriaPagina() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4" ref={graphContainerRef}>
+              <CardContent className="flex flex-col gap-4" ref={graphContainerRef}>
                 {!graphStats || (graphStats.entities_count === 0 && graphStats.relations_count === 0) ? (
                   <EmptyState
                     icon={Network}
@@ -702,11 +709,7 @@ export function MemoriaPagina() {
                             <button
                               key={t.tipo}
                               onClick={() => toggleType(t.tipo)}
-                              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                                isActive
-                                  ? 'border-transparent text-white'
-                                  : 'border-border text-muted-foreground opacity-50'
-                              }`}
+                              className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors", isActive ? "border-transparent text-white" : "border-border text-muted-foreground opacity-50")}
                               style={isActive ? { backgroundColor: color } : undefined}
                             >
                               {t.tipo} ({t.count})
@@ -757,11 +760,11 @@ export function MemoriaPagina() {
                           </div>
 
                           {exploredData && exploredData.relacoes.length > 0 ? (
-                            <div className="mt-3 space-y-1.5">
+                            <div className="mt-3 flex flex-col gap-1.5">
                               <p className="text-xs font-medium text-muted-foreground">
                                 Conexoes ({exploredData.relacoes.length})
                               </p>
-                              <div className="max-h-[200px] overflow-y-auto space-y-1">
+                              <div className="max-h-[200px] overflow-y-auto flex flex-col gap-1">
                                 {exploredData.relacoes.map((r, i) => (
                                   <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                     <span className="font-medium text-foreground">{r.from_nome}</span>
@@ -792,7 +795,7 @@ export function MemoriaPagina() {
                   <div className="rounded-lg bg-muted/30 px-4 py-3">
                     <div className="flex gap-3">
                       <Lightbulb className="mt-0.5 size-4 shrink-0 text-warning" />
-                      <div className="space-y-1 text-xs text-muted-foreground">
+                      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                         <p>A analise faz <strong>1 chamada de IA por chunk</strong> dos documentos ativos. Pode levar alguns minutos e consumir creditos da API.</p>
                         <p>A IA usa o grafo automaticamente ao responder no chat (tool <code>explorar_relacoes</code>).</p>
                       </div>
@@ -836,7 +839,7 @@ function FonteItem({
   onToggleAtivo?: (ativo: boolean) => void
 }) {
   return (
-    <div className={`flex items-center justify-between rounded-lg border px-4 py-3 transition-opacity ${!fonte.ativo ? 'opacity-50' : ''}`}>
+    <div className={cn("flex items-center justify-between rounded-lg border px-4 py-3 transition-opacity", !fonte.ativo && "opacity-50")}>
       <div className="flex items-center gap-3 min-w-0">
         <FileText className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0">

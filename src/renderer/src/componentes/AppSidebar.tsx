@@ -234,7 +234,7 @@ export function AppSidebar() {
             align="start"
             className="w-64 border-amber-500/40 bg-background"
           >
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
                 Visualizando backup de {snapshotLabel}. Somente leitura.
               </p>
@@ -269,7 +269,7 @@ export function AppSidebar() {
                 >
                   {saindo ? (
                     <>
-                      <Loader2 className="mr-1 size-3 animate-spin" />
+                      <Loader2 className="animate-spin" />
                       Saindo...
                     </>
                   ) : (
@@ -336,7 +336,7 @@ export function AppSidebar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
-                    <Palette className="size-4" />
+                    <Palette />
                     <span>Tema</span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="min-w-[140px]">
@@ -349,10 +349,10 @@ export function AppSidebar() {
                           theme === opcao.value && 'bg-accent',
                         )}
                       >
-                        <opcao.icon className="size-4" />
+                        <opcao.icon />
                         <span>{opcao.label}</span>
                         {theme === opcao.value && (
-                          <Check className="ml-auto size-3.5 text-muted-foreground" />
+                          <Check className="ml-auto text-muted-foreground" />
                         )}
                       </DropdownMenuItem>
                     ))}
@@ -360,13 +360,13 @@ export function AppSidebar() {
                 </DropdownMenuSub>
                 <DropdownMenuItem asChild>
                   <Link to="/empresa">
-                    <Building2 className="size-4" />
+                    <Building2 />
                     <span>Empresa</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/configuracoes">
-                    <Settings className="size-4" />
+                    <Settings />
                     <span>Configuracoes</span>
                   </Link>
                 </DropdownMenuItem>
@@ -376,13 +376,13 @@ export function AppSidebar() {
                     startTour()
                   }}
                 >
-                  <HelpCircle className="size-4" />
+                  <HelpCircle />
                   <span>Como Funciona?</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled className="flex flex-col items-start gap-0.5 opacity-70">
                   <div className="flex items-center gap-2">
-                    <Info className="size-4" />
+                    <Info />
                     <span>Sobre</span>
                   </div>
                   <span className="pl-6 text-xs text-muted-foreground">

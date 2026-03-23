@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { Setor, Demanda, SetorHorarioSemana, DiaSemana, SalvarTimelineDiaInput } from '@shared/index'
 import { DIAS_SEMANA } from '@shared/constants'
 
@@ -283,7 +284,7 @@ export function DemandaTimelineSingleLane({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <Tabs value={tab} onValueChange={(v) => { setTab(v as 'PADRAO' | DiaSemana); setSelectedIdx(0) }}>
         <TabsList>
           <TabsTrigger value="PADRAO">Padrao</TabsTrigger>
@@ -338,7 +339,7 @@ export function DemandaTimelineSingleLane({
 
       {baseDia.ativo ? (
         <>
-          <div className="space-y-2 rounded-lg border p-3">
+          <div className="flex flex-col gap-2 rounded-lg border p-3">
             <div className="flex h-16 overflow-hidden rounded-md border bg-muted/20">
               {diaRender.segmentos.map((s, i) => {
                 const dur = Math.max(30, toMin(s.hora_fim) - toMin(s.hora_inicio))
@@ -349,7 +350,7 @@ export function DemandaTimelineSingleLane({
                     type="button"
                     style={{ width: `${pct}%` }}
                     onClick={() => setSelectedIdx(i)}
-                    className={`h-full border-r px-2 text-left text-xs ${selectedIdx === i ? 'bg-primary/20' : 'bg-background'} ${podeEditarSegmento ? 'cursor-pointer' : 'cursor-default'}`}
+                    className={cn("h-full border-r px-2 text-left text-xs", selectedIdx === i ? "bg-primary/20" : "bg-background", podeEditarSegmento ? "cursor-pointer" : "cursor-default")}
                   >
                     <p className="font-medium">{s.hora_inicio}-{s.hora_fim}</p>
                     <p>{s.min_pessoas} pessoas</p>
@@ -366,7 +367,7 @@ export function DemandaTimelineSingleLane({
 
           {selected && (
             <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-2">
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Segmento selecionado</Label>
                 <p className="text-sm text-muted-foreground">{selected.hora_inicio} - {selected.hora_fim}</p>
                 <div className="flex items-center gap-2">
@@ -379,17 +380,17 @@ export function DemandaTimelineSingleLane({
                   <Label>Override quasi-hard</Label>
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Acoes</Label>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={splitSegment} disabled={!podeEditarSegmento}>
-                    <Split className="mr-1 size-3.5" /> Dividir
+                    <Split /> Dividir
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => moveBoundary(-30)} disabled={!podeEditarSegmento || selectedIdx >= diaRender.segmentos.length - 1}>
-                    <MoveHorizontal className="mr-1 size-3.5" /> Divisor -30
+                    <MoveHorizontal /> Divisor -30
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => moveBoundary(30)} disabled={!podeEditarSegmento || selectedIdx >= diaRender.segmentos.length - 1}>
-                    <MoveHorizontal className="mr-1 size-3.5" /> Divisor +30
+                    <MoveHorizontal /> Divisor +30
                   </Button>
                   <Button size="sm" variant="outline" onClick={mergeWithNext} disabled={!podeEditarSegmento || selectedIdx >= diaRender.segmentos.length - 1}>
                     Unir com proximo
@@ -408,7 +409,7 @@ export function DemandaTimelineSingleLane({
           Cancelar
         </Button>
         <Button size="sm" onClick={() => salvarDia(diaAtual)} disabled={salvando}>
-          <Save className="mr-1 size-3.5" />
+          <Save />
           Salvar dia
         </Button>
         <Button size="sm" variant="outline" onClick={salvarSemana} disabled={salvando}>

@@ -77,7 +77,7 @@ export function MemoriaItem({ memoria, onSalvar, onRemover }: MemoriaItemProps) 
 
   if (editando) {
     return (
-      <div className="rounded-lg border p-3 space-y-2">
+      <div className="flex flex-col gap-2 rounded-lg border p-3">
         <Textarea
           ref={textareaRef}
           rows={2}
@@ -96,13 +96,13 @@ export function MemoriaItem({ memoria, onSalvar, onRemover }: MemoriaItemProps) 
         />
         <div className="flex justify-end gap-1.5">
           <Button variant="ghost" size="sm" onClick={cancelar} disabled={salvando}>
-            <X className="mr-1 size-3" /> Cancelar
+            <X /> Cancelar
           </Button>
           <Button size="sm" onClick={salvar} disabled={salvando || !conteudoEdit.trim()}>
             {salvando ? (
-              <Loader2 className="mr-1 size-3 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Check className="mr-1 size-3" />
+              <Check />
             )}
             Salvar
           </Button>
@@ -139,7 +139,7 @@ export function MemoriaItem({ memoria, onSalvar, onRemover }: MemoriaItemProps) 
             }}
             title="Editar"
           >
-            <Pencil className="size-3" />
+            <Pencil />
           </Button>
           <Button
             variant="ghost"
@@ -150,9 +150,9 @@ export function MemoriaItem({ memoria, onSalvar, onRemover }: MemoriaItemProps) 
             title="Remover"
           >
             {removendo ? (
-              <Loader2 className="size-3 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Trash2 className="size-3" />
+              <Trash2 />
             )}
           </Button>
         </div>

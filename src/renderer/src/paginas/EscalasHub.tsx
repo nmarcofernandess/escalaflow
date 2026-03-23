@@ -337,13 +337,13 @@ export function EscalasHub() {
         ]}
         actions={
           <Button variant="outline" size="sm" onClick={() => setMassaOpen(true)}>
-            <Download className="mr-1 size-3.5" />
+            <Download />
             Exportar em Massa
           </Button>
         }
       />
 
-      <div className="flex-1 space-y-4 p-6">
+      <div className="flex flex-1 flex-col gap-4 p-6">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Escalas</h1>
           <p className="text-sm text-muted-foreground">
@@ -360,7 +360,7 @@ export function EscalasHub() {
             <p className="text-sm text-muted-foreground">Nenhum setor encontrado.</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
             {items.map((item) => {
               const { setor, selectedEscalaId } = item
               const selectedEscala = getSelectedEscala(item)
@@ -394,7 +394,7 @@ export function EscalasHub() {
                           onClick={() => handleToggleSetorCard(item)}
                           aria-label={isExpanded ? 'Recolher card' : 'Expandir card'}
                         >
-                          {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          {isExpanded ? <ChevronDown /> : <ChevronRight />}
                         </Button>
                         <div className="min-w-0">
                           <CardTitle className="truncate text-base">{setor.nome}</CardTitle>
@@ -421,14 +421,14 @@ export function EscalasHub() {
                           <Button variant="outline" size="sm" asChild>
                             <Link to={`/setores/${setor.id}/escala?escalaId=${selectedEscala.id}`}>
                               Ver tudo
-                              <ExternalLink className="ml-1 size-3.5" />
+                              <ExternalLink />
                             </Link>
                           </Button>
                         ) : (
                           <Button variant="outline" size="sm" asChild>
                             <Link to={`/setores/${setor.id}`}>
                               Abrir setor
-                              <ExternalLink className="ml-1 size-3.5" />
+                              <ExternalLink />
                             </Link>
                           </Button>
                         )}

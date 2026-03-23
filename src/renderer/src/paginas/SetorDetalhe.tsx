@@ -61,6 +61,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -252,8 +253,8 @@ function TitularAssignmentPanel({
   loading: boolean
 }) {
   return (
-    <div className="space-y-3 p-3">
-      <div className="space-y-2">
+    <div className="flex flex-col gap-3 p-3">
+      <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium">Titular atual</p>
           {titular && onRemoveTitular && (
@@ -285,7 +286,7 @@ function TitularAssignmentPanel({
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         <p className="text-xs font-medium">Buscar colaborador</p>
         <Input
           value={searchTerm}
@@ -296,7 +297,7 @@ function TitularAssignmentPanel({
       </div>
 
       <ScrollArea className="h-48 rounded-md border bg-background/60">
-        <div className="space-y-1 p-2 pr-3">
+        <div className="flex flex-col gap-1 p-2 pr-3">
           {candidatos.length === 0 ? (
             <p className="rounded-md border border-dashed px-2 py-2 text-xs text-muted-foreground">
               Nenhum colaborador encontrado.
@@ -2688,18 +2689,18 @@ export function SetorDetalhe() {
               title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
             >
               {salvandoTudo ? (
-                <Loader2 className="mr-1 size-3.5 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : isDirty ? (
-                <Save className="mr-1 size-3.5" />
+                <Save />
               ) : (
-                <Check className="mr-1 size-3.5" />
+                <Check />
               )}
               {salvandoTudo ? 'Salvando...' : isDirty ? 'Salvar' : 'Salvo'}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5" disabled={isPreviewMode}>
-                  <Archive className="mr-1 size-3.5" />
+                  <Archive />
                   Arquivar
                 </Button>
               </AlertDialogTrigger>
@@ -2730,7 +2731,7 @@ export function SetorDetalhe() {
                 Informacoes do Setor
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="flex flex-col gap-4">
               <FormField
                 control={setorForm.control}
                 name="nome"
@@ -2799,8 +2800,10 @@ export function SetorDetalhe() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="5X2">5x2 (5 dias + 2 folgas)</SelectItem>
-                          <SelectItem value="6X1">6x1 (6 dias + 1 folga)</SelectItem>
+                          <SelectGroup>
+                            <SelectItem value="5X2">5x2 (5 dias + 2 folgas)</SelectItem>
+                            <SelectItem value="6X1">6x1 (6 dias + 1 folga)</SelectItem>
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -2812,7 +2815,7 @@ export function SetorDetalhe() {
           </Card>
         </Form>
 
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           <Collapsible defaultOpen className="group/equipe">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -2822,17 +2825,17 @@ export function SetorDetalhe() {
                 </CollapsibleTrigger>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={openCreatePostoDialog}>
-                    <Plus className="mr-1 size-3.5" /> Novo Posto
+                    <Plus /> Novo Posto
                   </Button>
                   <Button variant="outline" size="sm" asChild>
                     <Link to="/colaboradores">
-                      <Users className="mr-1 size-3.5" /> Gerenciar
+                      <Users /> Gerenciar
                     </Link>
                   </Button>
                 </div>
               </CardHeader>
               <CollapsibleContent>
-                <CardContent className="space-y-4">
+                <CardContent className="flex flex-col gap-4">
                   {orderedColabs.length === 0 && (
                     <div className="rounded-md border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
                       Nenhum colaborador vinculado a este setor.
@@ -2851,7 +2854,7 @@ export function SetorDetalhe() {
 
                     return (
                       <>
-                        <div className="space-y-3">
+                        <div className="flex flex-col gap-3">
                           <div className="flex items-center gap-2">
                             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               Reserva e ausentes
@@ -2892,7 +2895,7 @@ export function SetorDetalhe() {
                     )
                   })()}
 
-                  <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Postos
                       <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
@@ -2991,10 +2994,12 @@ export function SetorDetalhe() {
                                                 <SelectValue />
                                               </SelectTrigger>
                                               <SelectContent>
-                                                <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                                                {DIAS_SEMANA.filter((d) => d !== 'DOM').map((dia) => (
-                                                  <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
-                                                ))}
+                                                <SelectGroup>
+                                                  <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                                  {DIAS_SEMANA.filter((d) => d !== 'DOM').map((dia) => (
+                                                    <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                                  ))}
+                                                </SelectGroup>
                                               </SelectContent>
                                             </Select>
                                           )
@@ -3025,10 +3030,12 @@ export function SetorDetalhe() {
                                                 <SelectValue />
                                               </SelectTrigger>
                                               <SelectContent>
-                                                <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                                                {DIAS_SEMANA.map((dia) => (
-                                                  <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
-                                                ))}
+                                                <SelectGroup>
+                                                  <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                                                  {DIAS_SEMANA.map((dia) => (
+                                                    <SelectItem key={dia} value={dia} className="text-xs">{dia}</SelectItem>
+                                                  ))}
+                                                </SelectGroup>
                                               </SelectContent>
                                             </Select>
                                           )
@@ -3068,7 +3075,7 @@ export function SetorDetalhe() {
                                                 disabled={postoAssignmentLoading}
                                                 aria-label={`Editar posto ${posto.apelido}`}
                                               >
-                                                <Pencil className="size-3.5" />
+                                                <Pencil />
                                               </Button>
                                             </TooltipTrigger>
                                             <TooltipContent>Editar posto</TooltipContent>
@@ -3092,7 +3099,7 @@ export function SetorDetalhe() {
                                                     disabled={postoAssignmentLoading}
                                                     aria-label={`Gerenciar titular de ${posto.apelido}`}
                                                   >
-                                                    <Users className="size-3.5" />
+                                                    <Users />
                                                   </Button>
                                                 </PopoverTrigger>
                                               </TooltipTrigger>
@@ -3129,7 +3136,7 @@ export function SetorDetalhe() {
                                               <TooltipTrigger asChild>
                                                 <Button variant="ghost" size="icon" className="size-7" asChild>
                                                   <Link to={`/colaboradores/${ocupante.id}`} aria-label={`Ver perfil de ${ocupante.nome}`}>
-                                                    <ArrowRight className="size-3.5" />
+                                                    <ArrowRight />
                                                   </Link>
                                                 </Button>
                                               </TooltipTrigger>
@@ -3149,7 +3156,7 @@ export function SetorDetalhe() {
                     )}
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Banco de espera
                       <span className="ml-2 text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
@@ -3204,7 +3211,7 @@ export function SetorDetalhe() {
                                             onClick={() => { void handleAtivarPostoEspera(posto) }}
                                             aria-label={`Ativar posto ${posto.apelido}`}
                                           >
-                                            <RotateCcw className="size-3.5" />
+                                            <RotateCcw />
                                           </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>Ativar posto</TooltipContent>
@@ -3222,7 +3229,7 @@ export function SetorDetalhe() {
                                                 disabled={postoAssignmentLoading || deletandoPosto}
                                                 aria-label={`Deletar posto ${posto.apelido}`}
                                               >
-                                                <Trash2 className="size-3.5" />
+                                                <Trash2 />
                                               </Button>
                                             </AlertDialogTrigger>
                                           </TooltipTrigger>
@@ -3354,9 +3361,9 @@ export function SetorDetalhe() {
                                 aria-label="Validar arranjo"
                               >
                                 {advisoryLoading ? (
-                                  <Loader2 className="size-4 animate-spin" />
+                                  <Loader2 className="animate-spin" />
                                 ) : (
-                                  <ShieldCheck className="size-4" />
+                                  <ShieldCheck />
                                 )}
                               </Button>
                             </TooltipTrigger>
@@ -3371,7 +3378,7 @@ export function SetorDetalhe() {
                             onClick={() => setSolverConfigOpen(true)}
                             aria-label="Configurar simulacao"
                           >
-                            <SlidersHorizontal className="size-4" />
+                            <SlidersHorizontal />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>Configurar simulacao</TooltipContent>
@@ -3396,12 +3403,12 @@ export function SetorDetalhe() {
                       >
                         {gerandoLabel || gerando ? (
                           <>
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <Loader2 className="animate-spin" />
                             {gerandoLabel ?? 'Gerando...'}
                           </>
                         ) : (
                           <>
-                            <Play className="size-3.5" />
+                            <Play />
                             Gerar Escala
                           </>
                         )}
@@ -3439,9 +3446,9 @@ export function SetorDetalhe() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="flex flex-col gap-4">
               {escalaTab === 'simulacao' && (
-                <div className="space-y-4">
+                <div className="flex flex-col gap-4">
                   <PreflightChecklist items={[
                     { ok: !!empresa, label: 'Empresa configurada', linkTo: '/empresa' },
                     { ok: (tiposContrato?.length ?? 0) > 0, label: 'Tipo de contrato cadastrado', linkTo: '/tipos-contrato' },
@@ -3450,7 +3457,7 @@ export function SetorDetalhe() {
                   ]} />
 
                   {simulacaoPreview.resultado.sucesso && simulacaoGridData ? (
-                    <div className="space-y-3">
+                    <div className="flex flex-col gap-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold">Ciclo Rotativo</p>
                         <Badge variant="outline" className="text-xs">Preview</Badge>
@@ -3514,7 +3521,7 @@ export function SetorDetalhe() {
               />
 
               {escalaTab === 'oficial' && (
-                <div className="space-y-4">
+                <div className="flex flex-col gap-4">
                   {!escalaOficialAtual ? (
                     <div className="rounded-lg border border-dashed px-4 py-5">
                       <p className="text-sm font-medium text-foreground">Nenhuma escala oficial encontrada</p>
@@ -3530,7 +3537,7 @@ export function SetorDetalhe() {
                       <Loader2 className="size-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : oficialCompleta ? (
-                    <div className="space-y-3">
+                    <div className="flex flex-col gap-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold">Ciclo Rotativo</p>
                         <StatusBadge status="OFICIAL" />
@@ -3554,7 +3561,7 @@ export function SetorDetalhe() {
               )}
 
               {escalaTab === 'historico' && (
-                <div className="space-y-4">
+                <div className="flex flex-col gap-4">
                   {escalasHistorico.length === 0 ? (
                     <div className="rounded-lg border border-dashed px-4 py-5">
                       <p className="text-sm font-medium text-foreground">Historico vazio</p>
@@ -3566,13 +3573,13 @@ export function SetorDetalhe() {
                       </Button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="flex flex-col gap-3">
                       {carregandoTabEscala ? (
                         <div className="flex items-center justify-center py-10">
                           <Loader2 className="size-5 animate-spin text-muted-foreground" />
                         </div>
                       ) : historicoCompleta ? (
-                        <div className="space-y-3">
+                        <div className="flex flex-col gap-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-sm font-semibold">Ciclo Rotativo</p>
                             <Badge variant="outline" className="text-xs">
@@ -3625,7 +3632,7 @@ export function SetorDetalhe() {
                       </div>
                     ) : (
                       solverLogs.map((line, i) => (
-                        <p key={i} className={`text-xs leading-relaxed ${i === solverLogs.length - 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                        <p key={i} className={cn("text-xs leading-relaxed", i === solverLogs.length - 1 ? "text-foreground font-medium" : "text-muted-foreground")}>
                           {line}
                         </p>
                       ))
@@ -3685,8 +3692,8 @@ export function SetorDetalhe() {
               Defina uma demanda diferente para uma data especifica (feriado, evento, etc.).
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-2">
               <Label>Data</Label>
               <Input
                 type="date"
@@ -3695,7 +3702,7 @@ export function SetorDetalhe() {
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Hora Inicio</Label>
                 <Input
                   type="time"
@@ -3704,7 +3711,7 @@ export function SetorDetalhe() {
                   onChange={(e) => setExcDemandaForm((p) => ({ ...p, hora_inicio: e.target.value }))}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Hora Fim</Label>
                 <Input
                   type="time"
@@ -3714,7 +3721,7 @@ export function SetorDetalhe() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label>Minimo de Pessoas</Label>
               <Input
                 type="number"
@@ -3757,8 +3764,8 @@ export function SetorDetalhe() {
                 : 'Atualize o nome do posto e o titular anexado. Quando ele sair da hierarquia, mova para espera.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-5 py-4">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-5 py-4">
+            <div className="flex flex-col gap-2">
               <Label>Nome do Posto</Label>
               <Input
                 placeholder="Ex: Caixa, Repositor, Seguranca"
@@ -3773,7 +3780,7 @@ export function SetorDetalhe() {
                 autoFocus
               />
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label>Titular</Label>
               <div className="flex items-start justify-between gap-3 rounded-md border px-3 py-3">
                 <div className="min-w-0">
@@ -3807,7 +3814,7 @@ export function SetorDetalhe() {
                           disabled={salvandoPosto || deletandoPosto}
                           aria-label="Gerenciar titular"
                         >
-                          <Users className="size-4" />
+                          <Users />
                         </Button>
                       </PopoverTrigger>
                     </TooltipTrigger>
@@ -3857,7 +3864,7 @@ export function SetorDetalhe() {
                   disabled={salvandoPosto || deletandoPosto}
                   onClick={() => { void handleMoverPostoDialogParaEspera() }}
                 >
-                  <Archive className="size-4" />
+                  <Archive />
                   Mover para espera
                 </Button>
               )}

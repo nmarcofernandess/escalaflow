@@ -346,7 +346,7 @@ function SectionTabs({
   }, [equipeEscala.colaboradores, escalaCompleta, tiposContrato])
 
   return (
-    <Tabs defaultValue="escala" className="space-y-3">
+    <Tabs defaultValue="escala" className="flex flex-col gap-3">
       <TabsList className="h-8">
         <TabsTrigger value="escala" className="text-xs">Escala</TabsTrigger>
         <TabsTrigger value="resumo" className="text-xs gap-1">
@@ -485,7 +485,7 @@ function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataI
               </TableCell>
               <TableCell className="py-2">
                 {colabV.length > 0 ? (
-                  <div className="space-y-0.5">
+                  <div className="flex flex-col gap-0.5">
                     {colabV.map((v, i) => (
                       <p key={i} className={cn(
                         'text-xs leading-tight',

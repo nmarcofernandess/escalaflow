@@ -119,7 +119,7 @@ export function IaModelCatalogPicker({
         <Popover>
           <PopoverTrigger asChild>
             <Button variant={hasFilters ? 'secondary' : 'outline'} size="sm">
-              <Filter className="mr-1.5 size-3.5" />
+              <Filter />
               Filtros
               {hasFilters && (
                 <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5 text-xs font-semibold">
@@ -129,7 +129,7 @@ export function IaModelCatalogPicker({
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-56" align="start">
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <p className="text-xs font-medium text-muted-foreground">Filtrar por</p>
               <div className="flex items-center gap-2">
                 <Checkbox id="filter-tools" checked={filterToolCalling} onCheckedChange={(c) => setFilterToolCalling(c as boolean)} />
@@ -153,7 +153,7 @@ export function IaModelCatalogPicker({
 
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={handleClearFilters}>
-            <X className="mr-1 size-3.5" />
+            <X />
             Limpar
           </Button>
         )}
@@ -162,9 +162,9 @@ export function IaModelCatalogPicker({
           {onTestFreeModels ? (
             <Button type="button" variant="outline" size="sm" onClick={onTestFreeModels} disabled={testingFreeModels}>
               {testingFreeModels ? (
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <FlaskConical className="mr-1.5 size-3.5" />
+                <FlaskConical />
               )}
               {testingFreeModels ? 'Testando gratuitos...' : 'Testar gratuitos'}
             </Button>

@@ -33,7 +33,7 @@ const tourSteps: TourStep[] = [
         <p className="text-sm text-muted-foreground mt-1">
           O fluxo recomendado para comecar:
         </p>
-        <ol className="text-sm text-muted-foreground mt-1 list-decimal pl-4 space-y-0.5">
+        <ol className="text-sm text-muted-foreground mt-1 list-decimal pl-4 flex flex-col gap-0.5">
           <li>Cadastre os <strong>Setores</strong> (departamentos)</li>
           <li>Cadastre os <strong>Colaboradores</strong></li>
           <li>Gere a <strong>Escala</strong> dentro de cada setor</li>
@@ -97,7 +97,7 @@ const tourSteps: TourStep[] = [
         <p className="text-sm text-muted-foreground mt-1">
           Cada colaborador tem um perfil configuravel. Dentro dele voce pode:
         </p>
-        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
+        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 flex flex-col gap-0.5">
           <li>Registrar <strong>ferias e atestados</strong> como excecoes</li>
           <li>Definir <strong>horario de trabalho</strong> por dia da semana (arraste a barra)</li>
           <li>Configurar <strong>ciclo de domingo</strong> (1 a cada N semanas)</li>
@@ -133,7 +133,7 @@ const tourSteps: TourStep[] = [
           Dentro de cada escala voce gera, ajusta manualmente na
           timeline, exporta (PDF, HTML, CSV) e oficializa.
         </p>
-        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
+        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 flex flex-col gap-0.5">
           <li>
             <strong>Badge de compliance</strong> mostra aderencia por
             categoria (CLT, Otimização, Boas Práticas)
@@ -171,7 +171,7 @@ const tourSteps: TourStep[] = [
         <p className="text-sm text-muted-foreground mt-1">
           Aqui voce acessa:
         </p>
-        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
+        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 flex flex-col gap-0.5">
           <li><strong>Empresa</strong> — dados cadastrais e horarios de funcionamento</li>
           <li><strong>Configuracoes</strong> — chave de IA, provedor, tema e backup</li>
           <li><strong>Tema</strong> — alterne entre claro e escuro</li>
@@ -190,7 +190,7 @@ const tourSteps: TourStep[] = [
           Use <strong>Cmd+J</strong> ou clique aqui para abrir o chat.
           A IA conhece todo o contexto do seu supermercado e pode:
         </p>
-        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 space-y-0.5">
+        <ul className="text-sm text-muted-foreground mt-1 list-disc pl-4 flex flex-col gap-0.5">
           <li>Gerar escalas e explicar violacoes</li>
           <li>Cadastrar ferias, atestados e excecoes</li>
           <li>Ajustar horarios e alocacoes</li>

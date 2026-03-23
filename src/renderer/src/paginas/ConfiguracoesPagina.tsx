@@ -800,7 +800,7 @@ export function ConfiguracoesPagina() {
             </CardTitle>
             <CardDescription>Personalize o visual do sistema</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="flex flex-col gap-6">
             <div>
               <h4 className="mb-1 text-sm font-medium">Modo</h4>
               <p className="mb-4 text-sm text-muted-foreground">
@@ -920,7 +920,7 @@ export function ConfiguracoesPagina() {
                 {updateStatus === 'downloading' && (
                   <div className="flex items-center gap-3">
                     <Loader2 className="size-4 animate-spin text-blue-600 dark:text-blue-400" />
-                    <div className="space-y-1">
+                    <div className="flex flex-col gap-1">
                       <p className="text-sm">Baixando atualizacao... {downloadProgress}%</p>
                       <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
                         <div
@@ -947,7 +947,7 @@ export function ConfiguracoesPagina() {
               <div className="flex shrink-0 gap-2">
                 {updateStatus === 'ready' ? (
                   <Button size="sm" onClick={handleInstallUpdate}>
-                    <RefreshCw className="mr-1.5 size-3.5" />
+                    <RefreshCw />
                     Reiniciar e instalar
                   </Button>
                 ) : (
@@ -958,7 +958,7 @@ export function ConfiguracoesPagina() {
                     disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
                   >
                     <RefreshCw
-                      className={cn('mr-1.5 size-3.5', updateStatus === 'checking' && 'animate-spin')}
+                      className={cn(updateStatus === 'checking' && 'animate-spin')}
                     />
                     Verificar atualizacoes
                   </Button>
@@ -976,7 +976,7 @@ export function ConfiguracoesPagina() {
               Backup
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex flex-col gap-4">
             {backupConfig && (
               <>
                 <div className="flex items-center justify-between">
@@ -1028,21 +1028,21 @@ export function ConfiguracoesPagina() {
                     title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
                   >
                     {(backupNowLoading || exportLoading) ? (
-                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                      <Loader2 className="animate-spin" />
                     ) : (
-                      <Save className="mr-1.5 size-3.5" />
+                      <Save />
                     )}
                     {backupNowLoading ? 'Salvando...' : exportLoading ? 'Exportando...' : 'Backup'}
-                    <ChevronDown className="ml-1.5 size-3.5" />
+                    <ChevronDown />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <DropdownMenuItem onClick={handleBackupNow}>
-                    <Save className="mr-2 size-4" />
+                    <Save />
                     Backup Agora
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleExportarCompleto}>
-                    <Download className="mr-2 size-4" />
+                    <Download />
                     Backup Completo...
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -1055,9 +1055,9 @@ export function ConfiguracoesPagina() {
                 title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
               >
                 {importLoading ? (
-                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  <Loader2 className="animate-spin" />
                 ) : (
-                  <Upload className="mr-1.5 size-3.5" />
+                  <Upload />
                 )}
                 Importar
               </Button>
@@ -1066,7 +1066,7 @@ export function ConfiguracoesPagina() {
                 variant="outline"
                 onClick={() => setTimeMachineOpen(true)}
               >
-                <History className="mr-1.5 size-3.5" />
+                <History />
                 Maquina do Tempo
               </Button>
             </div>
@@ -1098,7 +1098,7 @@ export function ConfiguracoesPagina() {
           </CardHeader>
           <CardContent>
             <Form {...iaForm}>
-              <form className="space-y-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
+              <form className="flex flex-col gap-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
                 <IaModelPill
                   variant="inline"
                   provider={iaProvider}
@@ -1132,7 +1132,7 @@ export function ConfiguracoesPagina() {
 
                 {/* API Key (cloud) ou Model cards (local) */}
                 {iaProvider === 'local' ? (
-                  <div className="space-y-3">
+                  <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <WifiOff className="size-4 shrink-0" />
                       <span>Roda no seu computador, sem internet.</span>
@@ -1182,7 +1182,7 @@ export function ConfiguracoesPagina() {
                                   className="h-8 text-destructive hover:text-destructive"
                                   onClick={() => handleLocalDelete(model.id)}
                                 >
-                                  <Trash2 className="mr-1 size-3.5" />
+                                  <Trash2 />
                                   Remover
                                 </Button>
                               ) : isDownloading ? (
@@ -1198,14 +1198,14 @@ export function ConfiguracoesPagina() {
                                   onClick={() => handleLocalDownload(model.id)}
                                   disabled={!!localDownloading}
                                 >
-                                  <Download className="mr-1 size-3.5" />
+                                  <Download />
                                   Baixar ({sizeLabel})
                                 </Button>
                               )}
                             </div>
                           </div>
                           {isDownloading && localProgress && (
-                            <div className="mt-2 space-y-1">
+                            <div className="mt-2 flex flex-col gap-1">
                               <Progress value={progressPct} className="h-1.5" />
                               <p className="text-xs text-muted-foreground">
                                 {progressPct}% — {(localProgress.downloaded / 1e9).toFixed(1)} / {(localProgress.total / 1e9).toFixed(1)} GB
@@ -1220,7 +1220,7 @@ export function ConfiguracoesPagina() {
                     </p>
                   </div>
                 ) : (
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <Label>{tokenFieldLabel}</Label>
                     {IA_PROVIDER_DOCS[iaProvider] && (
@@ -1269,7 +1269,7 @@ export function ConfiguracoesPagina() {
 
                 {/* Picker de modelos OpenRouter */}
                 {iaProvider === 'openrouter' && remoteCatalog?.models?.length ? (
-                  <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
                     <Label>Modelo</Label>
                     <IaModelCatalogPicker
                       models={remoteCatalog.models}
@@ -1316,14 +1316,14 @@ export function ConfiguracoesPagina() {
                     Cancelar
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa || !selectedProviderAvailability.available}>
-                    {testandoIa ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
+                    {testandoIa ? <Loader2 className="animate-spin" /> : null}
                     Testar conexao
                   </Button>
                   <Button type="submit" size="sm" disabled={salvandoIa}>
                     {salvandoIa ? (
-                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                      <Loader2 className="animate-spin" />
                     ) : (
-                      <Save className="mr-1.5 size-3.5" />
+                      <Save />
                     )}
                     Salvar
                   </Button>

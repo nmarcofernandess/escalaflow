@@ -1002,7 +1002,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                 }}
                 disabled={dem.min_pessoas <= 1}
               >
-                <Minus className="size-3" />
+                <Minus />
               </Button>
               <span className="w-6 text-center text-sm font-medium tabular-nums">{dem.min_pessoas}</span>
               <Button
@@ -1016,7 +1016,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                 }}
                 disabled={dem.min_pessoas >= maxPessoas}
               >
-                <Plus className="size-3" />
+                <Plus />
               </Button>
             </div>
           )}
@@ -1033,7 +1033,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-7 text-destructive hover:text-destructive">
-                  <Trash2 className="size-3.5" />
+                  <Trash2 />
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -1061,7 +1061,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
         <div className="flex flex-col items-center justify-center py-8 text-xs text-muted-foreground gap-2">
           <span>Nenhuma faixa definida</span>
           <Button variant="ghost" size="sm" onClick={handleNovaFaixa}>
-            <Plus className="mr-1 size-3.5" /> Adicionar faixa
+            <Plus /> Adicionar faixa
           </Button>
         </div>
       )
@@ -1110,8 +1110,8 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
           <MoreHorizontal className="size-3.5" />
         </button>
       </PopoverTrigger>
-      <PopoverContent side="bottom" align="end" className="w-64 p-4 space-y-4">
-        <div className="space-y-2">
+      <PopoverContent side="bottom" align="end" className="flex w-64 flex-col gap-4 p-4">
+        <div className="flex flex-col gap-2">
           <Label className="text-xs text-muted-foreground">Horario do dia</Label>
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
             <Input
@@ -1248,13 +1248,13 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
         </div>
 
         {/* ── Double divider (all-day separator pattern) ── */}
-        <div className="mx-4 space-y-px">
+        <div className="mx-4 flex flex-col gap-px">
           <div className="border-t border-border/60" />
           <div className="border-t border-border/60" />
         </div>
 
         {/* ── Demand bars ── */}
-        <div className="relative space-y-1.5 pt-4 pb-2">
+        <div className="relative flex flex-col gap-1.5 pt-4 pb-2">
           {liveDisabledBefore > 0 && (
             <div
               className="pointer-events-none absolute inset-y-3 left-0 z-0 rounded-l-md bg-muted/60 dark:bg-muted/50"
@@ -1278,7 +1278,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
             <div className="flex flex-col items-center justify-center py-8 text-xs text-muted-foreground gap-2">
               <span>Nenhuma faixa definida</span>
               <Button variant="ghost" size="sm" onClick={handleNovaFaixa}>
-                <Plus className="mr-1 size-3.5" /> Adicionar faixa
+                <Plus /> Adicionar faixa
               </Button>
             </div>
           ) : (
@@ -1386,7 +1386,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
         description="Defina ao menos uma faixa para iniciar o planejamento"
         action={
           <Button variant="outline" size="sm" onClick={handleNovaFaixa}>
-            <Plus className="mr-1 size-3.5" /> Nova Faixa
+            <Plus /> Nova Faixa
           </Button>
         }
       />
@@ -1394,7 +1394,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'padrao' | DiaSemana)}>
         <div className="flex items-center justify-between gap-2">
           <TabsList>
@@ -1442,7 +1442,7 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                 onClick={() => setViewMode('timeline')}
                 title="Timeline"
               >
-                <BarChart3 className="size-3.5" />
+                <BarChart3 />
               </Button>
               <Button
                 variant={viewMode === 'tabela' ? 'secondary' : 'ghost'}
@@ -1451,18 +1451,18 @@ export const DemandaEditor = forwardRef<DemandaEditorRef, DemandaEditorProps>(fu
                 onClick={() => setViewMode('tabela')}
                 title="Tabela"
               >
-                <Table2 className="size-3.5" />
+                <Table2 />
               </Button>
             </div>
 
             <Button variant="outline" size="sm" onClick={handleNovaFaixa} disabled={!canEditCurrent}>
-              <Plus className="mr-1 size-3.5" /> Nova Faixa
+              <Plus /> Nova Faixa
             </Button>
           </div>
         </div>
 
         <TabsContent value={activeTab} className="mt-3">
-          <div className="space-y-3">
+          <div className="flex flex-col gap-3">
             {null}
             <div className={cn(isDiaHerdandoPadrao && 'pointer-events-none select-none opacity-60')}>
               {viewMode === 'timeline' ? renderTimelineView() : (

@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -92,11 +93,13 @@ function RegraCategoriaCard({
                 <SelectValue placeholder="Selecionar..." />
               </SelectTrigger>
               <SelectContent>
-                {bulkOptions.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt === 'OFF' ? 'Desativado' : opt}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {bulkOptions.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt === 'OFF' ? 'Desativado' : opt}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>
@@ -142,14 +145,16 @@ function RegraCategoriaCard({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {statusOptions.map((opt) => {
-                      if (r.codigo === 'H10' && opt.value === 'OFF') return null
-                      return (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      )
-                    })}
+                    <SelectGroup>
+                      {statusOptions.map((opt) => {
+                        if (r.codigo === 'H10' && opt.value === 'OFF') return null
+                        return (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
@@ -284,7 +289,7 @@ export function RegrasPagina() {
             onClick={handleResetarSistema}
             disabled={resetando}
           >
-            <RotateCcw className="mr-1 size-3.5" />
+            <RotateCcw />
             {resetando ? 'Restaurando...' : 'Restaurar Padrões'}
           </Button>
         }
@@ -299,7 +304,7 @@ export function RegrasPagina() {
                 Como o sistema conta as horas da semana para cada colaborador.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="flex flex-col gap-6">
               <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
                 <FormField
                   control={form.control}
@@ -323,13 +328,15 @@ export function RegrasPagina() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="SEG_DOM">Segunda</SelectItem>
-                          <SelectItem value="TER_SEG">Terca</SelectItem>
-                          <SelectItem value="QUA_TER">Quarta</SelectItem>
-                          <SelectItem value="QUI_QUA">Quinta</SelectItem>
-                          <SelectItem value="SEX_QUI">Sexta</SelectItem>
-                          <SelectItem value="SAB_SEX">Sabado</SelectItem>
-                          <SelectItem value="DOM_SAB">Domingo</SelectItem>
+                          <SelectGroup>
+                            <SelectItem value="SEG_DOM">Segunda</SelectItem>
+                            <SelectItem value="TER_SEG">Terca</SelectItem>
+                            <SelectItem value="QUA_TER">Quarta</SelectItem>
+                            <SelectItem value="QUI_QUA">Quinta</SelectItem>
+                            <SelectItem value="SEX_QUI">Sexta</SelectItem>
+                            <SelectItem value="SAB_SEX">Sabado</SelectItem>
+                            <SelectItem value="DOM_SAB">Domingo</SelectItem>
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -465,7 +472,7 @@ export function RegrasPagina() {
                         </span>
                       </div>
                     ) : (
-                      <ul className="space-y-2">
+                      <ul className="flex flex-col gap-2">
                         {customizadas.map((r) => (
                           <li
                             key={r.codigo}
@@ -493,7 +500,7 @@ export function RegrasPagina() {
                                 disabled={deletandoRegra === r.codigo}
                                 onClick={() => handleDeletarCustomizacao(r.codigo)}
                               >
-                                <X className="size-3.5" />
+                                <X />
                               </Button>
                             </div>
                           </li>

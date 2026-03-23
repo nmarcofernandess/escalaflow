@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -94,7 +95,7 @@ export function FeriadosPagina() {
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Feriados' }]}
         actions={
           <Button variant="outline" size="sm" onClick={() => setShowFeriadoDialog(true)}>
-            <Plus className="mr-1 size-3.5" />
+            <Plus />
             Novo Feriado
           </Button>
         }
@@ -117,7 +118,7 @@ export function FeriadosPagina() {
                 Nenhum feriado cadastrado. Clique em &quot;Novo Feriado&quot; para adicionar.
               </p>
             ) : (
-              <div className="space-y-1">
+              <div className="flex flex-col gap-1">
                 {(feriados ?? []).sort((a, b) => a.data.localeCompare(b.data)).map((f) => {
                   const isLocked = f.proibido_trabalhar
                   return (
@@ -147,7 +148,7 @@ export function FeriadosPagina() {
                           className="size-7 text-muted-foreground hover:text-destructive"
                           onClick={() => handleDeletarFeriado(f.id)}
                         >
-                          <Trash2 className="size-3.5" />
+                          <Trash2 />
                         </Button>
                       )}
                     </div>
@@ -164,8 +165,8 @@ export function FeriadosPagina() {
           <DialogHeader>
             <DialogTitle>Adicionar Feriado</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex flex-col gap-1.5">
               <Label>Data</Label>
               <Input
                 type="date"
@@ -173,7 +174,7 @@ export function FeriadosPagina() {
                 onChange={(e) => setNovoFeriadoData(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <Label>Nome</Label>
               <Input
                 placeholder="Ex: Aniversario da cidade"
@@ -181,16 +182,18 @@ export function FeriadosPagina() {
                 onChange={(e) => setNovoFeriadoNome(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <Label>Tipo</Label>
               <Select value={novoFeriadoTipo} onValueChange={setNovoFeriadoTipo}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="NACIONAL">Nacional</SelectItem>
-                  <SelectItem value="ESTADUAL">Estadual</SelectItem>
-                  <SelectItem value="MUNICIPAL">Municipal</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value="NACIONAL">Nacional</SelectItem>
+                    <SelectItem value="ESTADUAL">Estadual</SelectItem>
+                    <SelectItem value="MUNICIPAL">Municipal</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>

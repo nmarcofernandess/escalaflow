@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -32,6 +33,7 @@ import type {
   SetorHorarioSemana,
   RegraHorarioColaborador,
 } from '@shared/index'
+import { cn } from '@/lib/utils'
 import type { Aviso } from '@/componentes/AvisosSection'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -195,7 +197,7 @@ export function ExportModal(props: ExportModalProps) {
             <DialogTitle>{titulo}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
             <p className="text-sm text-muted-foreground">
               Selecione os setores com escala oficial.
             </p>
@@ -217,7 +219,7 @@ export function ExportModal(props: ExportModalProps) {
             </div>
 
             {/* Setor list */}
-            <div className="space-y-1 max-h-[300px] overflow-y-auto">
+            <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto">
               {massaData?.setores.map((setor) => {
                 const isOficial = setor.status === 'OFICIAL'
                 const isChecked = selectedSetores.has(setor.id)
@@ -230,9 +232,7 @@ export function ExportModal(props: ExportModalProps) {
                 return (
                   <div
                     key={setor.id}
-                    className={`flex items-center justify-between rounded-md px-3 py-2 ${
-                      isOficial ? '' : 'opacity-30'
-                    }`}
+                    className={cn("flex items-center justify-between rounded-md px-3 py-2", !isOficial && "opacity-30")}
                   >
                     <div className="flex items-center gap-2">
                       <Checkbox
@@ -240,13 +240,11 @@ export function ExportModal(props: ExportModalProps) {
                         onCheckedChange={(checked) => handleToggleSetor(setor.id, !!checked)}
                         disabled={!isOficial}
                       />
-                      <span className={`text-sm ${isOficial ? '' : 'text-muted-foreground'}`}>
+                      <span className={cn("text-sm", !isOficial && "text-muted-foreground")}>
                         {setor.nome}
                       </span>
                     </div>
-                    <span className={`text-xs ${
-                      isOficial ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'
-                    }`}>
+                    <span className={cn("text-xs", isOficial ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground")}>
                       {statusLabel}
                     </span>
                   </div>
@@ -346,7 +344,7 @@ export function ExportModal(props: ExportModalProps) {
           </div>
 
           {/* Right: Options */}
-          <div className={`space-y-5 overflow-y-auto ${mode === 'funcionario' ? 'flex-[1.5]' : 'flex-[2]'}`}>
+          <div className={cn("flex flex-col gap-5 overflow-y-auto", mode === 'funcionario' ? "flex-[1.5]" : "flex-[2]")}>
             {mode === 'setor' ? (
               <SetorOptions
                 toggles={toggles}
@@ -377,9 +375,9 @@ export function ExportModal(props: ExportModalProps) {
                 disabled={loading || !hasAnyToggleOn}
               >
                 {loading ? (
-                  <Loader2 className="mr-1 size-4 animate-spin" />
+                  <Loader2 className="animate-spin" />
                 ) : (
-                  <FileSpreadsheet className="mr-1 size-4" />
+                  <FileSpreadsheet />
                 )}
                 CSV
               </Button>
@@ -390,9 +388,9 @@ export function ExportModal(props: ExportModalProps) {
               disabled={loading || !hasAnyToggleOn}
             >
               {loading ? (
-                <Loader2 className="mr-1 size-4 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <Download className="mr-1 size-4" />
+                <Download />
               )}
               Baixar HTML
             </Button>
@@ -401,9 +399,9 @@ export function ExportModal(props: ExportModalProps) {
               disabled={loading || !hasAnyToggleOn}
             >
               {loading ? (
-                <Loader2 className="mr-1 size-4 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <Printer className="mr-1 size-4" />
+                <Printer />
               )}
               Imprimir
             </Button>
@@ -419,9 +417,9 @@ export function ExportModal(props: ExportModalProps) {
               disabled={loading}
             >
               {loading ? (
-                <Loader2 className="mr-1 size-4 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <Download className="mr-1 size-4" />
+                <Download />
               )}
               Baixar HTML
             </Button>
@@ -430,9 +428,9 @@ export function ExportModal(props: ExportModalProps) {
               disabled={loading}
             >
               {loading ? (
-                <Loader2 className="mr-1 size-4 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <Printer className="mr-1 size-4" />
+                <Printer />
               )}
               Imprimir
             </Button>
@@ -457,7 +455,7 @@ function SetorOptions({
   onTimelineModeChange: (mode: 'barras' | 'grid') => void
 }) {
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <Label className="text-sm font-medium">Conteudo da exportacao</Label>
       <div className="rounded-md border">
         {/* Ciclo Rotativo */}
@@ -502,8 +500,10 @@ function SetorOptions({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="barras">Barras</SelectItem>
-                    <SelectItem value="grid">Grid</SelectItem>
+                    <SelectGroup>
+                      <SelectItem value="barras">Barras</SelectItem>
+                      <SelectItem value="grid">Grid</SelectItem>
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
@@ -557,9 +557,9 @@ function FuncionarioInfo({
   const periodo = `${formatDate(escala.data_inicio)} a ${formatDate(escala.data_fim)}`
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <Label className="text-sm font-medium">Escala de</Label>
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3">
         <div>
           <p className="text-base font-semibold">{colaborador.nome}</p>
           <p className="text-sm text-muted-foreground">
@@ -567,7 +567,7 @@ function FuncionarioInfo({
           </p>
         </div>
 
-        <div className="space-y-1.5 text-sm">
+        <div className="flex flex-col gap-1.5 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Contrato</span>
             <span>{tipoContrato.nome}</span>

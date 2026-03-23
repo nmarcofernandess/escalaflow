@@ -20,6 +20,7 @@ import { StatusBadge } from '@/componentes/StatusBadge'
 import { EmptyState } from '@/componentes/EmptyState'
 import { dashboardService } from '@/servicos/dashboard'
 import { useApiData } from '@/hooks/useApiData'
+import { cn } from '@/lib/utils'
 import type { DashboardResumo } from '@shared/index'
 
 const statConfig = [
@@ -66,14 +67,14 @@ export function Dashboard() {
     <div className="flex flex-1 flex-col">
       <PageHeader breadcrumbs={[{ label: 'Dashboard' }]} />
 
-      <div className="flex-1 space-y-6 p-6">
+      <div className="flex flex-1 flex-col gap-6 p-6">
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {statConfig.map((stat) => (
             <Card key={stat.key}>
               <CardContent className="flex items-center gap-4 p-4">
-                <div className={`flex size-10 items-center justify-center rounded-lg ${stat.bgColor}`}>
-                  <stat.icon className={`size-5 ${stat.color}`} />
+                <div className={cn("flex size-10 items-center justify-center rounded-lg", stat.bgColor)}>
+                  <stat.icon className={cn("size-5", stat.color)} />
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">{dados[stat.key]}</p>
@@ -92,11 +93,11 @@ export function Dashboard() {
                 <CardTitle className="text-base font-semibold">Setores</CardTitle>
                 <Button variant="ghost" size="sm" asChild>
                   <Link to="/setores">
-                    Ver todos <ArrowRight className="ml-1 size-3" />
+                    Ver todos <ArrowRight />
                   </Link>
                 </Button>
               </CardHeader>
-              <CardContent className="space-y-3 pb-4">
+              <CardContent className="flex flex-col gap-3 pb-4">
                 {dados.setores.length === 0 ? (
                   <EmptyState
                     icon={Building2}
@@ -128,7 +129,7 @@ export function Dashboard() {
                       <div className="flex items-center gap-3">
                         <StatusBadge status={setor.escala_atual} />
                         {setor.violacoes_pendentes > 0 && (
-                          <Badge variant="outline" className={`${CORES_VIOLACAO.HARD.border} ${CORES_VIOLACAO.HARD.bg} ${CORES_VIOLACAO.HARD.text}`}>
+                          <Badge variant="outline" className={cn(CORES_VIOLACAO.HARD.border, CORES_VIOLACAO.HARD.bg, CORES_VIOLACAO.HARD.text)}>
                             {setor.violacoes_pendentes} {setor.violacoes_pendentes === 1 ? 'violacao' : 'violacoes'}
                           </Badge>
                         )}
@@ -145,7 +146,7 @@ export function Dashboard() {
                         {(setor.escala_atual === 'OFICIAL' || setor.escala_atual === 'RASCUNHO') && (
                           <Button variant="ghost" size="sm" asChild>
                             <Link to={`/setores/${setor.id}/escala`}>
-                              <CalendarDays className="mr-1 size-3" /> Detalhes
+                              <CalendarDays /> Detalhes
                             </Link>
                           </Button>
                         )}
@@ -166,7 +167,7 @@ export function Dashboard() {
                   Alertas
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 pb-4">
+              <CardContent className="flex flex-col gap-3 pb-4">
                 {dados.alertas.length === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">
                     Nenhum alerta ativo
@@ -183,12 +184,12 @@ export function Dashboard() {
                     return (
                       <div
                         key={i}
-                        className={`flex items-start gap-3 rounded-lg border p-3 ${borderCls}`}
+                        className={cn("flex items-start gap-3 rounded-lg border p-3", borderCls)}
                       >
-                        <CircleAlert className={`mt-0.5 size-4 shrink-0 ${iconCls}`} />
+                        <CircleAlert className={cn("mt-0.5 size-4 shrink-0", iconCls)} />
                         <div className="flex-1">
-                          <p className={`text-xs font-medium ${titleCls}`}>{alerta.setor_nome}</p>
-                          <p className={`text-xs ${textCls}`}>{alerta.mensagem}</p>
+                          <p className={cn("text-xs font-medium", titleCls)}>{alerta.setor_nome}</p>
+                          <p className={cn("text-xs", textCls)}>{alerta.mensagem}</p>
                         </div>
                       </div>
                     )

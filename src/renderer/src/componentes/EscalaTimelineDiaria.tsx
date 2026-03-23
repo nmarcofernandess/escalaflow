@@ -145,7 +145,7 @@ export function EscalaTimelineDiaria({
   }
 
   return (
-    <div className={cn('space-y-4', className)}>
+    <div className={cn('flex flex-col gap-4', className)}>
       {allDates.map((date) => {
         const dateStr = toDateStr(date)
         const diaKey = getDiaSemanaKey(date)

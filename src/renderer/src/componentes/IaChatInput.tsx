@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { IaModelPill } from './IaModelPill'
 import { IaContextBadge } from './IaContextBadge'
 import { IaAnexoPreviewStrip } from './IaAnexoPreviewStrip'
+import { cn } from '@/lib/utils'
 import type { IaProviderId, IaAnexo } from '@shared/index'
 
 type ProviderOption = {
@@ -200,7 +201,7 @@ export function IaChatInput({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      <div className={`rounded-xl border p-1 transition-colors ${isDragging ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'bg-muted/30'}`}>
+      <div className={cn("rounded-xl border p-1 transition-colors", isDragging ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "bg-muted/30")}>
         {/* Preview strip de anexos */}
         <IaAnexoPreviewStrip
           anexos={anexos}

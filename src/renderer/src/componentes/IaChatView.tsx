@@ -332,7 +332,7 @@ export function IaChatView() {
           {mensagens.length === 0 && modelConfig.showUnconfiguredState && (
             <div className="flex flex-col items-center justify-center text-center gap-4 text-muted-foreground py-16">
               <Bot className="size-12 opacity-20" />
-              <div className="space-y-1">
+              <div className="flex flex-col gap-1">
                 <p className="text-sm font-medium text-foreground">Nenhuma IA disponível</p>
                 <p className="text-xs max-w-[260px] leading-relaxed">
                   Configure Gemini/OpenRouter ou baixe um modelo local para liberar o assistente.
@@ -410,7 +410,7 @@ export function IaChatView() {
             ))}
 
           {carregando && (
-            <div className="min-w-0 max-w-full space-y-2">
+            <div className="flex min-w-0 max-w-full flex-col gap-2">
               {/* Tools em andamento — pills com countdown */}
               {toolsEmAndamentoEntries.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">

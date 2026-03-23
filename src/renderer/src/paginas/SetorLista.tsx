@@ -62,6 +62,7 @@ import { colaboradoresService } from '@/servicos/colaboradores'
 import { escalasService } from '@/servicos/escalas'
 import { useApiData } from '@/hooks/useApiData'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { Setor, Colaborador } from '@shared/index'
 
 const novoSetorSchema = z.object({
@@ -184,13 +185,13 @@ export function SetorLista() {
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Setores' }]}
         actions={
           <Button size="sm" onClick={() => setShowNewDialog(true)}>
-            <Plus className="mr-1 size-3.5" />
+            <Plus />
             Novo Setor
           </Button>
         }
       />
 
-      <div className="flex-1 space-y-4 p-6">
+      <div className="flex flex-1 flex-col gap-4 p-6">
         {/* Toolbar */}
         <div className="flex items-center gap-3">
           <div className="relative max-w-sm flex-1">
@@ -207,7 +208,7 @@ export function SetorLista() {
             size="sm"
             onClick={() => setShowArchived(!showArchived)}
           >
-            <Archive className="mr-1 size-3.5" />
+            <Archive />
             Arquivados ({arquivados.length})
           </Button>
           <ViewToggle mode={viewMode} onChange={setViewMode} />
@@ -229,7 +230,7 @@ export function SetorLista() {
             action={
               !showArchived ? (
                 <Button size="sm" onClick={() => setShowNewDialog(true)}>
-                  <Plus className="mr-1 size-3.5" />
+                  <Plus />
                   Novo Setor
                 </Button>
               ) : undefined
@@ -244,9 +245,9 @@ export function SetorLista() {
               return (
                 <Card
                   key={setor.id}
-                  className={`transition-shadow hover:shadow-md ${!setor.ativo ? 'opacity-60' : ''}`}
+                  className={cn("transition-shadow hover:shadow-md", !setor.ativo && "opacity-60")}
                 >
-                  <CardContent className="p-4 space-y-3">
+                  <CardContent className="flex flex-col gap-3 p-4">
                     {/* Header: Icon + Nome */}
                     <div className="flex items-center gap-2.5">
                       <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -285,7 +286,7 @@ export function SetorLista() {
                         <>
                           <Button variant="outline" size="sm" className="flex-1" asChild>
                             <Link to={`/setores/${setor.id}`}>
-                              Abrir <ArrowRight className="ml-1 size-3" />
+                              Abrir <ArrowRight />
                             </Link>
                           </Button>
                           <Button
@@ -294,12 +295,12 @@ export function SetorLista() {
                             className="size-8 shrink-0 text-destructive hover:bg-destructive/10"
                             onClick={() => setArchivingId(setor.id)}
                           >
-                            <Trash2 className="size-3.5" />
+                            <Trash2 />
                           </Button>
                         </>
                       ) : (
                         <Button variant="outline" size="sm" className="flex-1" onClick={() => handleRestaurar(setor.id)}>
-                          <RotateCcw className="mr-1 size-3" /> Restaurar
+                          <RotateCcw /> Restaurar
                         </Button>
                       )}
                     </div>
@@ -356,12 +357,12 @@ export function SetorLista() {
                       {setor.ativo ? (
                         <Button variant="ghost" size="sm" asChild>
                           <Link to={`/setores/${setor.id}`}>
-                            <ArrowRight className="size-4" />
+                            <ArrowRight />
                           </Link>
                         </Button>
                       ) : (
                         <Button variant="ghost" size="sm" onClick={() => handleRestaurar(setor.id)}>
-                          <RotateCcw className="mr-1 size-3" /> Restaurar
+                          <RotateCcw /> Restaurar
                         </Button>
                       )}
                     </TableCell>
@@ -385,7 +386,7 @@ export function SetorLista() {
             <DialogDescription>Adicione um novo setor ao supermercado.</DialogDescription>
           </DialogHeader>
           <Form {...novoSetorForm}>
-            <form onSubmit={novoSetorForm.handleSubmit(handleCriar)} className="space-y-4 py-4">
+            <form onSubmit={novoSetorForm.handleSubmit(handleCriar)} className="flex flex-col gap-4 py-4">
               <FormField
                 control={novoSetorForm.control}
                 name="nome"

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -280,7 +281,7 @@ export function ContratoLista() {
         breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tipos de Contrato' }]}
         actions={
           <Button size="sm" onClick={abrirDialogCriar}>
-            <Plus className="mr-1 size-3.5" />
+            <Plus />
             Novo Tipo
           </Button>
         }
@@ -309,7 +310,7 @@ export function ContratoLista() {
             action={
               !search ? (
                 <Button size="sm" onClick={abrirDialogCriar}>
-                  <Plus className="mr-1 size-3.5" />
+                  <Plus />
                   Criar Template
                 </Button>
               ) : undefined
@@ -356,7 +357,7 @@ export function ContratoLista() {
                           title="Perfis de Horario"
                           onClick={() => abrirPerfisDialog(tc.id)}
                         >
-                          <Settings2 className="size-3.5" />
+                          <Settings2 />
                         </Button>
                         <Button
                           variant="ghost"
@@ -364,7 +365,7 @@ export function ContratoLista() {
                           className="size-8"
                           onClick={() => abrirDialogEditar(tc)}
                         >
-                          <Edit className="size-3.5" />
+                          <Edit />
                         </Button>
                         <Button
                           variant="ghost"
@@ -374,7 +375,7 @@ export function ContratoLista() {
                           title={tc.protegido_sistema ? 'Contrato de sistema nao pode ser deletado' : 'Excluir contrato'}
                           onClick={() => setDeletingId(tc.id)}
                         >
-                          <Trash2 className="size-3.5" />
+                          <Trash2 />
                         </Button>
                       </div>
                     </TableCell>
@@ -395,7 +396,7 @@ export function ContratoLista() {
                         <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
                           <FileText className="size-5 text-primary" />
                         </div>
-                        <div className="space-y-1">
+                        <div className="flex flex-col gap-1">
                           <h3 className="text-sm font-semibold text-foreground">{tc.nome}</h3>
                           {tc.protegido_sistema && (
                             <span className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
@@ -425,10 +426,10 @@ export function ContratoLista() {
                     </div>
                     <div className="mt-3 flex items-center gap-1">
                       <Button variant="outline" size="sm" onClick={() => abrirPerfisDialog(tc.id)}>
-                        <Settings2 className="mr-1 size-3" /> Perfis
+                        <Settings2 /> Perfis
                       </Button>
                       <Button variant="outline" size="sm" className="flex-1" onClick={() => abrirDialogEditar(tc)}>
-                        <Edit className="mr-1 size-3" /> Editar
+                        <Edit /> Editar
                       </Button>
                       <Button
                         variant="outline"
@@ -438,7 +439,7 @@ export function ContratoLista() {
                         title={tc.protegido_sistema ? 'Contrato de sistema nao pode ser deletado' : 'Excluir contrato'}
                         onClick={() => setDeletingId(tc.id)}
                       >
-                        <Trash2 className="size-3" />
+                        <Trash2 />
                       </Button>
                     </div>
                   </CardContent>
@@ -471,7 +472,7 @@ export function ContratoLista() {
           </Alert>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-2">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
               <FormField
                 control={form.control}
                 name="nome"
@@ -521,8 +522,10 @@ export function ContratoLista() {
                             <SelectValue placeholder="Selecione o regime" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="6X1">6x1 (6 dias + 1 folga)</SelectItem>
-                            <SelectItem value="5X2">5x2 (5 dias + 2 folgas)</SelectItem>
+                            <SelectGroup>
+                              <SelectItem value="6X1">6x1 (6 dias + 1 folga)</SelectItem>
+                              <SelectItem value="5X2">5x2 (5 dias + 2 folgas)</SelectItem>
+                            </SelectGroup>
                           </SelectContent>
                         </Select>
                       </FormControl>
@@ -605,7 +608,7 @@ export function ContratoLista() {
           {perfisLoading ? (
             <p className="text-sm text-muted-foreground py-4">Carregando...</p>
           ) : showPerfilForm ? (
-            <div className="space-y-3 py-2">
+            <div className="flex flex-col gap-3 py-2">
               <div>
                 <Label className="text-xs">Nome do Perfil</Label>
                 <Input
@@ -642,9 +645,11 @@ export function ContratoLista() {
                     <SelectValue placeholder="Sem preferencia" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_none">Sem preferencia</SelectItem>
-                    <SelectItem value="MANHA">Manha</SelectItem>
-                    <SelectItem value="TARDE">Tarde</SelectItem>
+                    <SelectGroup>
+                      <SelectItem value="_none">Sem preferencia</SelectItem>
+                      <SelectItem value="MANHA">Manha</SelectItem>
+                      <SelectItem value="TARDE">Tarde</SelectItem>
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
@@ -658,13 +663,13 @@ export function ContratoLista() {
               </DialogFooter>
             </div>
           ) : (
-            <div className="space-y-3 py-2">
+            <div className="flex flex-col gap-3 py-2">
               {perfis.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">
                   Nenhum perfil cadastrado. Perfis definem janelas de horario (ex: Manha 06:00-08:00, Tarde 12:00-18:00).
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   {perfis.map((p) => (
                     <div key={p.id} className="flex items-center justify-between rounded-md border px-3 py-2">
                       <div>
@@ -676,10 +681,10 @@ export function ContratoLista() {
                       </div>
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="icon" className="size-7" onClick={() => abrirPerfilEditar(p)}>
-                          <Edit className="size-3" />
+                          <Edit />
                         </Button>
                         <Button variant="ghost" size="icon" className="size-7 text-destructive" onClick={() => deletarPerfil(p.id)}>
-                          <Trash2 className="size-3" />
+                          <Trash2 />
                         </Button>
                       </div>
                     </div>
@@ -687,7 +692,7 @@ export function ContratoLista() {
                 </div>
               )}
               <Button variant="outline" size="sm" className="w-full" onClick={abrirPerfilCriar}>
-                <Plus className="mr-1 size-3" /> Novo Perfil
+                <Plus /> Novo Perfil
               </Button>
             </div>
           )}

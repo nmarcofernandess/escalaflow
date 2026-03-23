@@ -20,6 +20,7 @@ import { Button } from '../components/ui/button'
 import { ScrollArea } from '../components/ui/scroll-area'
 import { History, RotateCcw, Trash2, Clock, Bot, Hand, Power, Save, Loader2, Eye } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { SnapshotInfo } from '../../../shared/types'
 import { useRestorePreviewStore } from '@/store/restorePreviewStore'
 
@@ -204,7 +205,7 @@ export function TimeMachineModal({ open, onOpenChange }: TimeMachineModalProps) 
                 </Button>
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="flex flex-col gap-1">
                 {snapshots.map((snap) => {
                   const trigger = TRIGGER_LABELS[snap.meta.trigger] ?? TRIGGER_LABELS.manual
                   const Icon = trigger.icon
@@ -215,11 +216,7 @@ export function TimeMachineModal({ open, onOpenChange }: TimeMachineModalProps) 
                       key={snap.filename}
                       role="button"
                       tabIndex={0}
-                      className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-                        isSelected
-                          ? 'bg-primary/10 ring-1 ring-primary/30 ring-inset'
-                          : 'hover:bg-muted/50'
-                      }`}
+                      className={cn("flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors", isSelected ? "bg-primary/10 ring-1 ring-primary/30 ring-inset" : "hover:bg-muted/50")}
                       onClick={() => setSelected(snap.filename)}
                       onKeyDown={(e) => { if (e.key === 'Enter') setSelected(snap.filename) }}
                     >

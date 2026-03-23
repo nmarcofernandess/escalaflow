@@ -1,7 +1,7 @@
 import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import type { IaProviderId } from '@shared/index'
 import { cn } from '@/lib/utils'
@@ -46,40 +46,44 @@ export function IaModelPill({
   const compact = variant === 'popover'
 
   const content = (
-    <div className={cn('space-y-4', !compact && 'rounded-2xl border bg-card p-6 shadow-sm')}>
-      <div className="space-y-2">
+    <div className={cn('flex flex-col gap-4', !compact && 'rounded-2xl border bg-card p-6 shadow-sm')}>
+      <div className="flex flex-col gap-2">
         <Label className={cn(compact ? 'text-xs' : 'text-sm')}>Provedor</Label>
         <Select value={provider} onValueChange={(value) => onProviderChange(value as IaProviderId)}>
           <SelectTrigger className={cn(compact ? 'h-8 text-xs' : 'h-12 text-sm')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {providerOptions.map((option) => (
-              <SelectItem key={option.provider} value={option.provider} disabled={option.disabled} className={cn(compact ? 'text-xs' : 'text-sm')}>
-                {option.label}
-              </SelectItem>
-            ))}
+            <SelectGroup>
+              {providerOptions.map((option) => (
+                <SelectItem key={option.provider} value={option.provider} disabled={option.disabled} className={cn(compact ? 'text-xs' : 'text-sm')}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         <Label className={cn(compact ? 'text-xs' : 'text-sm')}>Modelo</Label>
         <Select value={modelo} onValueChange={onModeloChange} disabled={modelSelectDisabled}>
           <SelectTrigger className={cn(compact ? 'h-8 text-xs' : 'h-12 text-sm')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {modelOptions.length > 0 ? (
-              modelOptions.map((model) => (
-                <SelectItem key={model.id} value={model.id} disabled={model.disabled} className={cn(compact ? 'text-xs' : 'text-sm')}>
-                  {model.label}
+            <SelectGroup>
+              {modelOptions.length > 0 ? (
+                modelOptions.map((model) => (
+                  <SelectItem key={model.id} value={model.id} disabled={model.disabled} className={cn(compact ? 'text-xs' : 'text-sm')}>
+                    {model.label}
+                  </SelectItem>
+                ))
+              ) : modelo ? (
+                <SelectItem value={modelo} className={cn(compact ? 'text-xs' : 'text-sm')} disabled>
+                  {modeloLabel || modelo}
                 </SelectItem>
-              ))
-            ) : modelo ? (
-              <SelectItem value={modelo} className={cn(compact ? 'text-xs' : 'text-sm')} disabled>
-                {modeloLabel || modelo}
-              </SelectItem>
-            ) : null}
+              ) : null}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>

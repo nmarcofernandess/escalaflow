@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -133,7 +134,7 @@ export function SolverConfigDrawer({
         ]
 
     return (
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             {titulo}
@@ -145,11 +146,13 @@ export function SolverConfigDrawer({
                 <SelectValue placeholder="..." />
               </SelectTrigger>
               <SelectContent>
-                {bulkOptions.map((opt) => (
-                  <SelectItem key={opt} value={opt} className="text-xs">
-                    {opt === 'OFF' ? 'Desativado' : opt}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {bulkOptions.map((opt) => (
+                    <SelectItem key={opt} value={opt} className="text-xs">
+                      {opt === 'OFF' ? 'Desativado' : opt}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>
@@ -189,14 +192,16 @@ export function SolverConfigDrawer({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {statusOptions.map((opt) => {
-                      if (r.codigo === 'H10' && opt.value === 'OFF') return null
-                      return (
-                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                          {opt.label}
-                        </SelectItem>
-                      )
-                    })}
+                    <SelectGroup>
+                      {statusOptions.map((opt) => {
+                        if (r.codigo === 'H10' && opt.value === 'OFF') return null
+                        return (
+                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                            {opt.label}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
@@ -218,12 +223,12 @@ export function SolverConfigDrawer({
         </SheetHeader>
 
         <ScrollArea className="flex-1">
-          <div className="px-6 py-4 space-y-6">
-            <div className="space-y-3">
+          <div className="flex flex-col gap-6 px-6 py-4">
+            <div className="flex flex-col gap-3">
               <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Periodo
               </p>
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="solver-periodo-preset">Quantidade de meses</Label>
                 <Select
                   value={localPeriodoPreset}
@@ -233,9 +238,11 @@ export function SolverConfigDrawer({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="3_MESES">3 meses</SelectItem>
-                    <SelectItem value="6_MESES">6 meses</SelectItem>
-                    <SelectItem value="1_ANO">1 ano</SelectItem>
+                    <SelectGroup>
+                      <SelectItem value="3_MESES">3 meses</SelectItem>
+                      <SelectItem value="6_MESES">6 meses</SelectItem>
+                      <SelectItem value="1_ANO">1 ano</SelectItem>
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
@@ -264,7 +271,7 @@ export function SolverConfigDrawer({
             <Separator />
 
             {/* Reset */}
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Reset
               </p>
@@ -275,7 +282,7 @@ export function SolverConfigDrawer({
                   className="flex-1"
                   onClick={handleRestaurarEmpresa}
                 >
-                  <RotateCcw className="mr-1 size-3.5" />
+                  <RotateCcw />
                   Empresa
                 </Button>
                 <Button
@@ -284,7 +291,7 @@ export function SolverConfigDrawer({
                   className="flex-1"
                   onClick={handleRestaurarSistema}
                 >
-                  <RotateCcw className="mr-1 size-3.5" />
+                  <RotateCcw />
                   Sistema
                 </Button>
               </div>

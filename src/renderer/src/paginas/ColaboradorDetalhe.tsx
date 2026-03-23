@@ -37,6 +37,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -80,6 +81,7 @@ import { useApiData } from '@/hooks/useApiData'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type {
   Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana, Funcao,
   RegraHorarioColaborador, RegraHorarioColaboradorExcecaoData, PerfilHorarioContrato,
@@ -100,11 +102,11 @@ type TipoRestricao = 'nenhum' | 'entrada' | 'saida'
 function ExcecaoIcon({ tipo }: { tipo: string }) {
   switch (tipo) {
     case 'FERIAS':
-      return <Palmtree className={`size-4 ${CORES_EXCECAO.FERIAS}`} />
+      return <Palmtree className={cn("size-4", CORES_EXCECAO.FERIAS)} />
     case 'ATESTADO':
-      return <Stethoscope className={`size-4 ${CORES_EXCECAO.ATESTADO}`} />
+      return <Stethoscope className={cn("size-4", CORES_EXCECAO.ATESTADO)} />
     case 'BLOQUEIO':
-      return <Ban className={`size-4 ${CORES_EXCECAO.BLOQUEIO}`} />
+      return <Ban className={cn("size-4", CORES_EXCECAO.BLOQUEIO)} />
     default:
       return null
   }
@@ -158,7 +160,7 @@ function RestricaoRadio({
     { v: 'saida' as TipoRestricao, label: 'Saida maxima' },
   ]
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <RadioGroup value={value} onValueChange={(v) => onChange(v as TipoRestricao)} className="flex gap-4">
         {opcoes.map(opt => (
           <div key={opt.v} className="flex items-center gap-1.5">
@@ -779,20 +781,20 @@ export function ColaboradorDetalhe() {
               title={isPreviewMode ? 'Saia da visualizacao para editar' : undefined}
             >
               {salvandoTudo ? (
-                <Loader2 className="mr-1 size-3.5 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : isDirty ? (
-                <Save className="mr-1 size-3.5" />
+                <Save />
               ) : (
-                <Check className="mr-1 size-3.5" />
+                <Check />
               )}
               {salvandoTudo ? 'Salvando...' : isDirty ? 'Salvar' : 'Salvo'}
             </Button>
             {hasOficial && (
               <Button variant="outline" size="sm" onClick={handleOpenExport} disabled={exportLoading}>
                 {exportLoading ? (
-                  <Loader2 className="mr-1 size-3.5 animate-spin" />
+                  <Loader2 className="animate-spin" />
                 ) : (
-                  <Download className="mr-1 size-3.5" />
+                  <Download />
                 )}
                 Exportar Escala
               </Button>
@@ -800,7 +802,7 @@ export function ColaboradorDetalhe() {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/5" disabled={isPreviewMode}>
-                  <Archive className="mr-1 size-3.5" />
+                  <Archive />
                   Arquivar
                 </Button>
               </AlertDialogTrigger>
@@ -838,14 +840,14 @@ export function ColaboradorDetalhe() {
             </TabsList>
 
             {/* ===== Tab Geral: Dados do Colaborador (Cards A+B+C unificados) ===== */}
-            <TabsContent value="geral" className="space-y-6">
+            <TabsContent value="geral" className="flex flex-col gap-6">
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base font-semibold">
                     Dados do Colaborador
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={colabForm.control}
@@ -873,8 +875,10 @@ export function ColaboradorDetalhe() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="F">Feminino</SelectItem>
-                              <SelectItem value="M">Masculino</SelectItem>
+                              <SelectGroup>
+                                <SelectItem value="F">Feminino</SelectItem>
+                                <SelectItem value="M">Masculino</SelectItem>
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -898,11 +902,13 @@ export function ColaboradorDetalhe() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {setoresList.map((s) => (
-                                <SelectItem key={s.id} value={String(s.id)}>
-                                  {s.nome}
-                                </SelectItem>
-                              ))}
+                              <SelectGroup>
+                                {setoresList.map((s) => (
+                                  <SelectItem key={s.id} value={String(s.id)}>
+                                    {s.nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -924,12 +930,14 @@ export function ColaboradorDetalhe() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="none">Sem funcao definida</SelectItem>
-                              {funcoesList.map((f) => (
-                                <SelectItem key={f.id} value={String(f.id)}>
-                                  {f.apelido}
-                                </SelectItem>
-                              ))}
+                              <SelectGroup>
+                                <SelectItem value="none">Sem funcao definida</SelectItem>
+                                {funcoesList.map((f) => (
+                                  <SelectItem key={f.id} value={String(f.id)}>
+                                    {f.apelido}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -951,11 +959,13 @@ export function ColaboradorDetalhe() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {contratosList.map((tc) => (
-                                <SelectItem key={tc.id} value={String(tc.id)}>
-                                  {tc.nome}
-                                </SelectItem>
-                              ))}
+                              <SelectGroup>
+                                {contratosList.map((tc) => (
+                                  <SelectItem key={tc.id} value={String(tc.id)}>
+                                    {tc.nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -974,7 +984,7 @@ export function ColaboradorDetalhe() {
                   <Separator />
 
                   {/* Preferencias */}
-                  <div className="space-y-3">
+                  <div className="flex flex-col gap-3">
                     <p className="text-sm font-medium">
                       Preferencias{' '}
                       <span className="text-xs font-normal text-muted-foreground">
@@ -997,9 +1007,11 @@ export function ColaboradorDetalhe() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="none">Sem preferencia</SelectItem>
-                                <SelectItem value="MANHA">Manha</SelectItem>
-                                <SelectItem value="TARDE">Tarde</SelectItem>
+                                <SelectGroup>
+                                  <SelectItem value="none">Sem preferencia</SelectItem>
+                                  <SelectItem value="MANHA">Manha</SelectItem>
+                                  <SelectItem value="TARDE">Tarde</SelectItem>
+                                </SelectGroup>
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -1021,12 +1033,14 @@ export function ColaboradorDetalhe() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="none">Sem preferencia</SelectItem>
-                                {DIAS_SEMANA_OPTIONS.map((d) => (
-                                  <SelectItem key={d.value} value={d.value}>
-                                    {d.label}
-                                  </SelectItem>
-                                ))}
+                                <SelectGroup>
+                                  <SelectItem value="none">Sem preferencia</SelectItem>
+                                  {DIAS_SEMANA_OPTIONS.map((d) => (
+                                    <SelectItem key={d.value} value={d.value}>
+                                      {d.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -1044,7 +1058,7 @@ export function ColaboradorDetalhe() {
             </TabsContent>
 
             {/* ===== Tab Horarios: Cards E + F ===== */}
-            <TabsContent value="horarios" className="space-y-6">
+            <TabsContent value="horarios" className="flex flex-col gap-6">
               {/* Regras de Horario / Dias Disponíveis */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -1062,13 +1076,13 @@ export function ColaboradorDetalhe() {
                   </div>
                   {/* Save integrado ao botao principal */}
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="flex flex-col gap-4">
                   {/* === Seções CLT (escondidas para intermitente) === */}
                   {!isIntermitente && (
                     <>
                       {/* Perfil de horario */}
                       {perfisHorario.length > 0 && (
-                        <div className="space-y-2">
+                        <div className="flex flex-col gap-2">
                           <Label>Perfil de horario (do contrato)</Label>
                           <Select
                             value={regraForm.perfil_horario_id}
@@ -1078,12 +1092,14 @@ export function ColaboradorDetalhe() {
                               <SelectValue placeholder="Sem perfil" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">Sem perfil (manual)</SelectItem>
-                              {perfisHorario.filter(p => p.ativo).map(p => (
-                                <SelectItem key={p.id} value={String(p.id)}>
-                                  {p.nome} ({p.inicio}-{p.fim})
-                                </SelectItem>
-                              ))}
+                              <SelectGroup>
+                                <SelectItem value="none">Sem perfil (manual)</SelectItem>
+                                {perfisHorario.filter(p => p.ativo).map(p => (
+                                  <SelectItem key={p.id} value={String(p.id)}>
+                                    {p.nome} ({p.inicio}-{p.fim})
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                           <p className="text-[0.75rem] text-muted-foreground">
@@ -1110,7 +1126,7 @@ export function ColaboradorDetalhe() {
 
                       {/* Folga fixa + Folga variavel + Turno */}
                       <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2">
+                        <div className="flex flex-col gap-2">
                           <Label className="text-xs">Folga fixa (5x2)</Label>
                           <Select
                             value={regraForm.folga_fixa_dia_semana}
@@ -1122,16 +1138,18 @@ export function ColaboradorDetalhe() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">Sem folga fixa</SelectItem>
-                              {DIAS_SEMANA_OPTIONS.map(d => (
-                                <SelectItem key={d.value} value={d.value}>
-                                  {d.label}
-                                </SelectItem>
-                              ))}
+                              <SelectGroup>
+                                <SelectItem value="none">Sem folga fixa</SelectItem>
+                                {DIAS_SEMANA_OPTIONS.map(d => (
+                                  <SelectItem key={d.value} value={d.value}>
+                                    {d.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="space-y-2">
+                        <div className="flex flex-col gap-2">
                           <Label className="text-xs">Folga variavel (cond.)</Label>
                           <Select
                             value={regraForm.folga_variavel_dia_semana}
@@ -1143,19 +1161,21 @@ export function ColaboradorDetalhe() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">Sem folga var.</SelectItem>
-                              {DIAS_SEMANA_OPTIONS.filter(d => d.value !== 'DOM').map(d => (
-                                <SelectItem key={d.value} value={d.value}>
-                                  {d.label}
-                                </SelectItem>
-                              ))}
+                              <SelectGroup>
+                                <SelectItem value="none">Sem folga var.</SelectItem>
+                                {DIAS_SEMANA_OPTIONS.filter(d => d.value !== 'DOM').map(d => (
+                                  <SelectItem key={d.value} value={d.value}>
+                                    {d.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                           <p className="text-[0.7rem] text-muted-foreground">
                             Se trabalhou DOM, folga neste dia
                           </p>
                         </div>
-                        <div className="space-y-2">
+                        <div className="flex flex-col gap-2">
                           <Label className="text-xs">Pref. turno (regra)</Label>
                           <Select
                             value={regraForm.preferencia_turno_soft}
@@ -1167,9 +1187,11 @@ export function ColaboradorDetalhe() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">Sem preferencia</SelectItem>
-                              <SelectItem value="MANHA">Manha</SelectItem>
-                              <SelectItem value="TARDE">Tarde</SelectItem>
+                              <SelectGroup>
+                                <SelectItem value="none">Sem preferencia</SelectItem>
+                                <SelectItem value="MANHA">Manha</SelectItem>
+                                <SelectItem value="TARDE">Tarde</SelectItem>
+                              </SelectGroup>
                             </SelectContent>
                           </Select>
                         </div>
@@ -1189,7 +1211,7 @@ export function ColaboradorDetalhe() {
                           : 'Ative um dia para definir restricao de horario especifica naquele dia.'}
                       </p>
                     </div>
-                    <div className="space-y-3">
+                    <div className="flex flex-col gap-3">
                       {DIAS_SEMANA_OPTIONS.map(dia => {
                         const diaForm = regrasDiaForm[dia.value]
                         return (
@@ -1214,7 +1236,7 @@ export function ColaboradorDetalhe() {
                               isIntermitente ? (
                                 /* Intermitente: entrada + saída (dois campos, sem radio) */
                                 <div className="flex items-center gap-2">
-                                  <div className="space-y-1">
+                                  <div className="flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground">Entrada</span>
                                     <Input
                                       type="time"
@@ -1228,7 +1250,7 @@ export function ColaboradorDetalhe() {
                                     />
                                   </div>
                                   <span className="mt-5 text-xs text-muted-foreground">ate</span>
-                                  <div className="space-y-1">
+                                  <div className="flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground">Saida</span>
                                     <Input
                                       type="time"
@@ -1299,7 +1321,7 @@ export function ColaboradorDetalhe() {
                     setExcDataForm({ data: '', tipo_restricao: 'nenhum', horario: '', preferencia_turno_soft: 'none', domingo_forcar_folga: false })
                     setShowExcDataDialog(true)
                   }} disabled={isPreviewMode}>
-                    <Plus className="mr-1 size-3.5" /> Nova Excecao
+                    <Plus /> Nova Excecao
                   </Button>
                 </CardHeader>
                 <CardContent>
@@ -1310,7 +1332,7 @@ export function ColaboradorDetalhe() {
                       description="Sobrescreva horario ou force folga em datas especificas"
                     />
                   ) : (
-                    <div className="space-y-2">
+                    <div className="flex flex-col gap-2">
                       {excecoesPorData.map(exc => (
                         <div key={exc.id} className="flex items-center justify-between rounded-lg border p-3">
                           <div>
@@ -1327,7 +1349,7 @@ export function ColaboradorDetalhe() {
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                                <Trash2 className="size-3.5" />
+                                <Trash2 />
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
@@ -1352,14 +1374,14 @@ export function ColaboradorDetalhe() {
             </TabsContent>
 
             {/* ===== Tab Ausencias: Card D ===== */}
-            <TabsContent value="ausencias" className="space-y-6">
+            <TabsContent value="ausencias" className="flex flex-col gap-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <CardTitle className="text-base font-semibold">
                     Excecoes
                   </CardTitle>
                   <Button variant="outline" size="sm" onClick={() => setShowExcecaoDialog(true)} disabled={isPreviewMode}>
-                    <Plus className="mr-1 size-3.5" /> Nova Excecao
+                    <Plus /> Nova Excecao
                   </Button>
                 </CardHeader>
                 <CardContent>
@@ -1370,7 +1392,7 @@ export function ColaboradorDetalhe() {
                       description="Ferias, atestados e bloqueios aparecem aqui"
                     />
                   ) : (
-                    <div className="space-y-2">
+                    <div className="flex flex-col gap-2">
                       {excecoesList.map((exc) => (
                         <div
                           key={exc.id}
@@ -1396,7 +1418,7 @@ export function ColaboradorDetalhe() {
                                   size="icon"
                                   className="h-7 w-7 text-destructive"
                                 >
-                                  <Trash2 className="size-3.5" />
+                                  <Trash2 />
                                 </Button>
                               </AlertDialogTrigger>
                               <AlertDialogContent>
@@ -1435,8 +1457,8 @@ export function ColaboradorDetalhe() {
               Sobrescreva horario ou force folga em uma data especifica.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-2">
               <Label>Data</Label>
               <Input
                 type="date"
@@ -1453,7 +1475,7 @@ export function ColaboradorDetalhe() {
             </div>
             {!excDataForm.domingo_forcar_folga && (
               <>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Label className="text-xs">Restricao de horario</Label>
                   <RestricaoRadio
                     value={excDataForm.tipo_restricao}
@@ -1462,7 +1484,7 @@ export function ColaboradorDetalhe() {
                     onHorarioChange={v => setExcDataForm(f => ({ ...f, horario: v }))}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Label className="text-xs">Turno preferido</Label>
                   <Select
                     value={excDataForm.preferencia_turno_soft}
@@ -1472,9 +1494,11 @@ export function ColaboradorDetalhe() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Sem preferencia</SelectItem>
-                      <SelectItem value="MANHA">Manha</SelectItem>
-                      <SelectItem value="TARDE">Tarde</SelectItem>
+                      <SelectGroup>
+                        <SelectItem value="none">Sem preferencia</SelectItem>
+                        <SelectItem value="MANHA">Manha</SelectItem>
+                        <SelectItem value="TARDE">Tarde</SelectItem>
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1499,22 +1523,24 @@ export function ColaboradorDetalhe() {
               Registre uma excecao (ferias, atestado ou bloqueio).
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-2">
               <Label>Tipo</Label>
               <Select value={novaExcecaoTipo} onValueChange={setNovaExcecaoTipo}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="FERIAS">Ferias</SelectItem>
-                  <SelectItem value="ATESTADO">Atestado</SelectItem>
-                  <SelectItem value="BLOQUEIO">Bloqueio</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value="FERIAS">Ferias</SelectItem>
+                    <SelectItem value="ATESTADO">Atestado</SelectItem>
+                    <SelectItem value="BLOQUEIO">Bloqueio</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Data inicio</Label>
                 <Input
                   type="date"
@@ -1522,7 +1548,7 @@ export function ColaboradorDetalhe() {
                   onChange={(e) => setNovaExcecaoInicio(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Data fim</Label>
                 <Input
                   type="date"
@@ -1531,7 +1557,7 @@ export function ColaboradorDetalhe() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label>Observacao (opcional)</Label>
               <Input
                 placeholder="Ex: ferias coletivas"

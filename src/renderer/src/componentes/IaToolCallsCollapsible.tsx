@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useState } from 'react'
+import { cn } from '@/lib/utils'
 import type { ToolCall } from '@shared/index'
 
 const TOOL_ICONS: Record<string, string> = {
@@ -79,7 +80,7 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
             </span>
           </div>
           <ChevronDown
-            className={`size-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            className={cn("size-4 text-muted-foreground transition-transform", isOpen && "rotate-180")}
           />
         </CollapsibleTrigger>
 
@@ -113,7 +114,7 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
                   key={call.id}
                   data-testid="ia-tool-call"
                   data-tool-name={call.name}
-                  className="w-full min-w-0 max-w-full border-b border-muted last:border-0 p-3 text-xs space-y-2"
+                  className="flex w-full min-w-0 max-w-full flex-col gap-2 border-b border-muted last:border-0 p-3 text-xs"
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="text-base shrink-0">{icon}</span>
@@ -164,9 +165,7 @@ export function IaToolCallsCollapsible({ toolCalls }: Props) {
 
                       {outputExpanded && (
                         <pre
-                          className={`mt-2 w-full min-w-0 max-w-full whitespace-pre p-2 rounded text-xs overflow-x-auto max-h-[400px] overflow-y-auto ${
-                            hasError ? 'bg-destructive/10 text-destructive' : 'bg-muted/50'
-                          }`}
+                          className={cn("mt-2 w-full min-w-0 max-w-full whitespace-pre p-2 rounded text-xs overflow-x-auto max-h-[400px] overflow-y-auto", hasError ? "bg-destructive/10 text-destructive" : "bg-muted/50")}
                         >
                           {formatJson(resultValue)}
                         </pre>
