@@ -1,6 +1,6 @@
 # MOTOR v3 — Especificacao Completa
 
-> **Status:** RASCUNHO — Marco revisando
+> **Status:** RASCUNHO — em revisao
 > **Principio:** O SISTEMA propoe. O RH aprova. Ninguem monta na mao.
 > **Filosofia:** Ou compila limpo, ou diz POR QUE nao compila. Nunca gera lixo silencioso.
 > **Base legal:** CLT + CCT FecomercioSP x FECOMERCIARIOS (interior/base inorganizada) 2025/2026
@@ -581,7 +581,7 @@ Justificativa operacional:
 - Abaixo de 4h nao tem intervalo nenhum (Art. 71 ss1)
 - O motor ganha margem melhor com dias de 4h+ pra fechar a meta semanal
 
-> Marco: Confirmar se 4h e o minimo ou quer outro valor.
+> TODO: Confirmar se 4h e o minimo ou quer outro valor.
 
 ---
 

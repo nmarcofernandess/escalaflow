@@ -1401,9 +1401,9 @@ Documentados em detalhe na secao 4.1 (Fase 3).
 
 ### 5.4 O que a IA pode vs nao pode acessar
 
-A IA tem **30 tools** que cobrem a maioria das operacoes do sistema. Mapeamento:
+A IA tem **30 tools internas** que cobrem a maioria das operacoes do sistema. O LLM ve apenas **3 tools publicas** (familias: `consultar_contexto`, `editar_ficha`, `executar_acao`) que roteiam para as 30 internas via `tool-families.ts`. Mapeamento:
 
-**A IA EXECUTA DIRETAMENTE (via 35 tools):**
+**A IA EXECUTA DIRETAMENTE (via 30 tools internas, 3 familias publicas):**
 
 | Capacidade | Tool(s) | IPC equivalente |
 |-----------|---------|-----------------|

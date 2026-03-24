@@ -1159,9 +1159,9 @@ Setor grande (30 colabs, 1 semana): < 30s (pode precisar otimizacao)
 
 | # | Pendencia | Impacto | Acao |
 |---|-----------|---------|------|
-| P1 | SINCOVARP: confirmar CCT base inorganizada | Valores de almoco, pisos | Marco liga. Default = CLT padrao |
+| P1 | SINCOVARP: confirmar CCT base inorganizada | Valores de almoco, pisos | Ligar SINCOVARP. Default = CLT padrao |
 | P2 | PDF MR066541/2025: pisos salariais interior | Nao impacta motor | Informativo |
-| P3 | Camara Municipal: lei de horario comercio | Pode ter feriado municipal | Marco verifica. Motor tem campo `tipo: MUNICIPAL` |
+| P3 | Camara Municipal: lei de horario comercio | Pode ter feriado municipal | Verificar. Motor tem campo `tipo: MUNICIPAL` |
 | P4 | Minimo 4h por dia | Decisao de produto, nao CLT | **TRAVADO: 4h no v3.1.** Reavaliar apenas em v3.2+ |
 
 **Nenhuma pendencia bloqueia a implementacao.** Todas tem defaults seguros.
@@ -1499,7 +1499,7 @@ ANTES DE COMECAR A CODAR:
 [x] Mapa de arquivos (caminhos reais)
 [x] Roadmap: v3.1 pragmatico vs v4+ opcional
 [x] Calendario/ciclo/solicitacoes referenciado
-[ ] Marco liga SINCOVARP (nao bloqueia, usa default CLT)
+[ ] Ligar SINCOVARP (nao bloqueia, usa default CLT)
 ```
 
 ---

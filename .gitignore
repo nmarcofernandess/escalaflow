@@ -2,11 +2,18 @@
 .DS_Store
 Thumbs.db
 
-# Superpowers brainstorm mockups
+# Superpowers (plans, specs, brainstorm)
 .superpowers/
 
-# Docs archive (symlink to devkit)
+# Internal docs archive (implementation specs, plans, prompts)
 .docsescalaflow
+docs/superpowers/
+specs/
+
+# Agent internals
+.agent/
+.agents/
+.auto-claude-security.json
 
 # Node
 node_modules/

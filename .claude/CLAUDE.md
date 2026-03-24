@@ -708,7 +708,7 @@ O calculo `N/gcd(N,K)` existe em 6 locais independentes. Se mudar a logica de qu
 
 ### Pipeline de geracao — doc canonico
 
-Ver `specs/ANALYST_PIPELINE_SOLVER_COMPLETO.md` para mapeamento completo de:
+Ver `.docsescalaflow/specs/ANALYST_PIPELINE_SOLVER_COMPLETO.md` para mapeamento completo de:
 - Preview TS → Phase 1 CP-SAT → Passes 1/1b/2/3 → Validador
 - Onde pins sao fixados e estripados
 - Duplicacoes de logica
@@ -724,4 +724,4 @@ Ver `specs/ANALYST_PIPELINE_SOLVER_COMPLETO.md` para mapeamento completo de:
 - [ ] Componentes shadcn verificados antes de criar div soup
 - [ ] Layout chain intacto (ver "Layout Contract") — sem `overflow-y-auto` em páginas, sem `scrollIntoView`
 - [ ] Novas tools IA: schema Zod + handler + entry no IA_TOOLS + TOOL_SCHEMAS
-- [ ] TOOL_SCHEMAS sincronizado com IA_TOOLS_PUBLIC (5 entries)
+- [ ] TOOL_SCHEMAS sincronizado com IA_TOOLS_PUBLIC (3 entries)

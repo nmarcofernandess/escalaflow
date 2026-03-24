@@ -672,7 +672,7 @@ export type RuleConfig = Record<string, RuleStatus>
 export type PinOrigin = 'auto' | 'accepted' | 'manual' | 'saved'
 
 /**
- * Pesos calibrados com dados reais (Supermercado Fernandes, mar/2026).
+ * Pesos calibrados com dados reais de supermercado (mar/2026).
  * Hierarquia: auto < spread(1000) < DIAS_TRABALHO(4000) < manual < saved.
  * Auto pins sacrificados livremente por spread (correto — são sugestões).
  * Manual/saved sobrevivem pressão de spread (spread real é 0-2, max 91k).

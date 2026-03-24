@@ -1,6 +1,4 @@
-# Tool Calling — De 30 Tools para 5
-
-> **Visualizacao interativa:** abra `docs/tool-calling-playground.html` no browser.
+# Tool Calling — De 30 Tools para 3 Familias
 
 ---
 
@@ -50,15 +48,13 @@ O discovery (`discovery.ts`) agora injeta no briefing:
 
 **Budget:** ~1500 tokens para contexto de setor. Cabe no prompt sem problemas.
 
-### 5 Familias
+### 3 Familias Publicas
 
 | Tool publica | O que faz | Absorve |
 |--------------|-----------|---------|
 | `consultar_contexto` | Leitura sob demanda | consultar, buscar_colaborador, preflight, diagnosticar_*, explicar_violacao, resumir_horas |
-| `editar_ficha` | CRUD schema-driven | criar, atualizar, deletar, salvar_posto, salvar_regra_horario, salvar_demanda_excecao, salvar_perfil, configurar_horario, editar_regra |
+| `editar_ficha` | CRUD schema-driven | criar, atualizar, deletar, salvar_posto, salvar_regra_horario, salvar_demanda_excecao, salvar_perfil, configurar_horario, editar_regra, salvar_memoria, listar_memorias, remover_memoria |
 | `executar_acao` | Comandos de dominio | gerar_escala, oficializar, ajustar_celula, ajustar_horario, backup, resetar_regras, cadastrar_lote |
-| `salvar_memoria` | Memoria curta RH | (passthrough) |
-| `remover_memoria` | Remove memoria | (passthrough) |
 
 ### Adapter transparente
 
@@ -82,11 +78,11 @@ Se der merda, reverter = trocar 1 import em `cliente.ts`.
 
 | Metrica | Antes | Depois |
 |---------|-------|--------|
-| Tools expostas ao LLM | 30 | 5 |
+| Tools expostas ao LLM | 30 | 3 |
 | Preview no contexto | Nao | Sim |
 | Round-trips para "tem deficit?" | 3+ tool calls | 0 (contexto basta) |
 | E2E tests passando | - | 7/7 |
-| Parity test (30→5) | - | 31/31 |
+| Parity test (30→3) | - | 31/31 |
 | Routing unit tests | - | 38/38 |
 
 ### Tools removidas da surface (por design)
@@ -105,7 +101,7 @@ Os handlers dessas tools continuam no codigo para uso interno.
 
 ```
                     ┌─────────────────────────┐
-                    │   System Prompt (5 tools) │
+                    │   System Prompt (3 tools) │
                     │   + Context Briefing      │
                     │   (preview, equipe, etc)  │
                     └────────────┬──────────────┘
@@ -140,17 +136,11 @@ Os handlers dessas tools continuam no codigo para uso interno.
 
 | Arquivo | Papel |
 |---------|-------|
-| `src/main/ia/tool-families.ts` | Schemas Zod + routing + execute das 5 familias |
+| `src/main/ia/tool-families.ts` | Schemas Zod + routing + execute das 3 familias |
 | `src/main/ia/tools.ts` | 30 handlers internos + `IA_TOOLS_PUBLIC` + `getVercelAiFamilyTools()` |
 | `src/main/ia/discovery.ts` | Context bundle com preview, equipe, demanda, alertas |
-| `src/main/ia/system-prompt.ts` | Prompt reescrito para 5 familias |
+| `src/main/ia/system-prompt.ts` | Prompt reescrito para 3 familias |
 | `src/main/ia/cliente.ts` | Usa `getVercelAiFamilyTools()` nos paths streaming e non-streaming |
 | `tests/ia/tool-families.test.ts` | 38 unit tests de routing |
-| `tests/ia/tool-families-parity.test.ts` | 31 tests provando cobertura 30→5 |
+| `tests/ia/tool-families-parity.test.ts` | 31 tests provando cobertura 30→3 |
 | `tests/e2e/ia-chat-tool-calls.spec.ts` | 7 E2E tests no Electron real |
-
-## Referencia
-
-- **Spec de design:** `docs/superpowers/specs/2026-03-21-context-tools-reduction-design.md`
-- **Plano de implementacao:** `docs/superpowers/plans/2026-03-22-5-tools-implementation-plan.md`
-- **Playground visual:** `docs/tool-calling-playground.html`

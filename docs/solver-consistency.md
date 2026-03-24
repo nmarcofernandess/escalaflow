@@ -12,7 +12,7 @@
 > - no modo `OFFICIAL`, o multi-pass e legal-first: `H10` nao e mais relaxada automaticamente; `H1/H6` so entram em relaxacao via override exploratorio
 > - a UI de geracao (`SolverConfigDrawer`) ja permite endurecer/afrouxar regras temporariamente por geracao
 >
-> Para a descricao canonica atual do motor e da IA, veja [docs/flowai/COMO_O_SISTEMA_FUNCIONA.md](/Users/marcofernandes/escalaflow/docs/flowai/COMO_O_SISTEMA_FUNCIONA.md).
+> Para a descricao canonica atual do motor e da IA, veja `docs/como-funciona.md`.
 
 ## Contexto
 

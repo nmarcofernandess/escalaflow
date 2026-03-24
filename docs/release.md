@@ -10,7 +10,7 @@
 ┌─────────────────────────────────────────────────────┐
 │                   FLUXO DE UPDATE                   │
 │                                                     │
-│  Marco faz release no GitHub                        │
+│  Dev faz release no GitHub                           │
 │        ↓                                            │
 │  GitHub hospeda os arquivos (.dmg, .exe, .yml)      │
 │        ↓                                            │
@@ -280,14 +280,3 @@ git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z
 gh run watch --repo nmarcofernandess/escalaflow
 ```
 
----
-
-## Pendências futuras
-
-### Assinatura Apple Developer
-
-Pagar USD 99/ano no Apple Developer Program e configurar `CSC_LINK` + `CSC_KEY_PASSWORD` no ambiente. Depois o macOS abre sem aviso nenhum. Não é urgente para uso familiar.
-
-### Code signing Windows
-
-Certificado EV para Windows remove o aviso do SmartScreen. Custo variável. Também não urgente.
