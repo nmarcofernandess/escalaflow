@@ -3551,9 +3551,9 @@
       "peso": 0.6
     },
     {
-      "from_nome": "Intermitente quinzenal",
-      "to_nome": "Recorrência de semanas",
-      "tipo_relacao": "depende_de",
+      "from_nome": "Recorrência de semanas",
+      "to_nome": "Intermitente quinzenal",
+      "tipo_relacao": "aplica_se_a",
       "peso": 0.5
     }
   ]

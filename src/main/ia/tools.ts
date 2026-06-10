@@ -2892,6 +2892,20 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 },
               )
             }
+            // Round-trip: rejeita datas que não existem (2026-02-30 rolaria pra março
+            // silenciosamente) — paridade com o handler tipc
+            const ancoraDt = new Date(`${nextRecAncora}T12:00:00`)
+            const ancoraRoundTrip = `${ancoraDt.getFullYear()}-${String(ancoraDt.getMonth() + 1).padStart(2, '0')}-${String(ancoraDt.getDate()).padStart(2, '0')}`
+            if (Number.isNaN(ancoraDt.getTime()) || ancoraRoundTrip !== nextRecAncora) {
+              return toolError(
+                'SALVAR_REGRA_HORARIO_COLABORADOR_ANCORA_INVALIDA',
+                `Data âncora inválida: ${nextRecAncora} não existe no calendário.`,
+                {
+                  correction: 'Envie recorrencia_ancora como uma data real (YYYY-MM-DD) dentro de uma semana em que a pessoa trabalha.',
+                  meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id },
+                },
+              )
+            }
           }
 
           if (existe) {

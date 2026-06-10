@@ -996,7 +996,9 @@ export function checkH19(
 
     const temFolgaCompensatoria = diasSeguintes.some(d => {
       const celD = mapa.get(d)
-      return celD?.status === 'FOLGA'
+      // INDISPONIVEL conta: pessoa em férias/exceção/semana OFF não trabalha —
+      // o descanso compensatório existe (sem isso o overlay criaria falso positivo)
+      return celD?.status === 'FOLGA' || celD?.status === 'INDISPONIVEL'
     })
 
     if (!temFolgaCompensatoria) {

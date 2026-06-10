@@ -8,6 +8,7 @@ import {
   aplicarExcecoesComoIndisponivel,
   celulaFolga,
   checkH10,
+  checkH19,
   type CelulaMotor,
   type ColabMotor,
 } from '../../src/main/motor/validacao-compartilhada'
@@ -74,6 +75,28 @@ describe('checkH10 + overlay (paridade com proração do solver)', () => {
       { colaborador_id: 1, data_inicio: '2026-03-09', data_fim: '2026-03-15' },
     ], SEMANA)
     const violacoes = checkH10(COLAB, SEMANA, resultado.get(1)!, 30, {} as Empresa, 'SOFT')
+    expect(violacoes).toEqual([])
+  })
+})
+
+describe('checkH19 + overlay (folga compensatória de domingo)', () => {
+  // DOM 2026-03-08 trabalhado; semana seguinte (09-15) inteira INDISPONIVEL
+  // (férias ou semana OFF de recorrência) — o descanso existe, H19 não dispara.
+  it('semana INDISPONIVEL após domingo trabalhado conta como compensatória', () => {
+    const dias = [
+      '2026-03-08', '2026-03-09', '2026-03-10', '2026-03-11',
+      '2026-03-12', '2026-03-13', '2026-03-14', '2026-03-15',
+    ]
+    const mapa = new Map<string, CelulaMotor>()
+    mapa.set('2026-03-08', { ...celulaFolga(), status: 'TRABALHO', minutos_trabalho: 480 })
+    for (const d of dias.slice(1)) mapa.set(d, celulaFolga())
+
+    const resultado = new Map([[1, mapa]])
+    aplicarExcecoesComoIndisponivel(resultado, [
+      { colaborador_id: 1, data_inicio: '2026-03-09', data_fim: '2026-03-15' },
+    ], dias)
+
+    const violacoes = checkH19(COLAB, dias, resultado.get(1)!)
     expect(violacoes).toEqual([])
   })
 })
