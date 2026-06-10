@@ -25,6 +25,16 @@ export interface SimulaCicloFase1Input {
     folga_variavel_dia: number | null
     /** Se true, pessoa tem folga fixa no domingo — todos domingos F, fora da rotacao */
     folga_fixa_dom?: boolean
+    /**
+     * Recorrência declarativa: pessoa fora do setor em blocos de semanas.
+     * offset_semanas = posição da semana 1 do preview dentro do ciclo
+     * (0 = preview começa num bloco de trabalho).
+     */
+    recorrencia?: {
+      semanas_trabalho: number
+      semanas_folga: number
+      offset_semanas: number
+    } | null
   }>
   /** Demanda por dia da semana [SEG, TER, QUA, QUI, SEX, SAB, DOM]. Se fornecido, folgas sao distribuidas nos dias com mais sobra de cobertura. */
   demanda_por_dia?: number[]
@@ -566,6 +576,20 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
         }
       }
       if (!moved) break
+    }
+  }
+
+  // --- Step 2c: Recorrência declarativa — semanas OFF viram F na semana inteira ---
+  // (antes do H1 repair: semana toda F quebra sequências, nunca cria)
+  for (let p = 0; p < N; p++) {
+    const rec = input.folgas_forcadas?.[p]?.recorrencia
+    if (!rec || rec.semanas_trabalho < 1 || rec.semanas_folga < 1) continue
+    const cicloRec = rec.semanas_trabalho + rec.semanas_folga
+    for (let w = 0; w < weeks; w++) {
+      const pos = (((w + rec.offset_semanas) % cicloRec) + cicloRec) % cicloRec
+      if (pos >= rec.semanas_trabalho) {
+        for (let d = 0; d < 7; d++) grid[p][w * 7 + d] = 'F'
+      }
     }
   }
 

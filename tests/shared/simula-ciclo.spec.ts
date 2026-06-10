@@ -288,3 +288,98 @@ describe('gerarCicloFase1 — regime 6X1', () => {
     }
   })
 })
+
+describe('gerarCicloFase1 — recorrência semanal', () => {
+  const semRecorrencia = { folga_fixa_dia: null, folga_variavel_dia: null }
+
+  it('1/1 com offset 0: semanas alternadas inteiras de folga', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 2,
+      num_meses: 1, // 4 semanas
+      folgas_forcadas: [
+        { ...semRecorrencia, recorrencia: { semanas_trabalho: 1, semanas_folga: 1, offset_semanas: 0 } },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    const pessoa = result.grid[0]
+    // offset 0 → semana 0 ON, semana 1 OFF, semana 2 ON, semana 3 OFF
+    for (let w = 0; w < pessoa.semanas.length; w++) {
+      const dias = pessoa.semanas[w].dias
+      if (w % 2 === 1) {
+        expect(dias.every((d) => d === 'F'), `semana ${w} deveria ser toda F`).toBe(true)
+      } else {
+        expect(dias.some((d) => d === 'T'), `semana ${w} deveria ter trabalho`).toBe(true)
+      }
+    }
+  })
+
+  it('offset desloca o ciclo (offset 1 → primeira semana já é OFF)', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 2,
+      num_meses: 1,
+      folgas_forcadas: [
+        { ...semRecorrencia, recorrencia: { semanas_trabalho: 1, semanas_folga: 1, offset_semanas: 1 } },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    expect(result.grid[0].semanas[0].dias.every((d) => d === 'F')).toBe(true)
+    expect(result.grid[0].semanas[1].dias.some((d) => d === 'T')).toBe(true)
+  })
+
+  it('2/1: duas semanas ON, uma OFF', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 2,
+      num_meses: 1,
+      folgas_forcadas: [
+        { ...semRecorrencia, recorrencia: { semanas_trabalho: 2, semanas_folga: 1, offset_semanas: 0 } },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    const semanas = result.grid[0].semanas
+    expect(semanas[0].dias.some((d) => d === 'T')).toBe(true)
+    expect(semanas[1].dias.some((d) => d === 'T')).toBe(true)
+    expect(semanas[2].dias.every((d) => d === 'F')).toBe(true)
+    expect(semanas[3].dias.some((d) => d === 'T')).toBe(true)
+  })
+
+  it('cobertura reflete a ausência nas semanas OFF', () => {
+    const com = gerarCicloFase1({
+      num_postos: 4, trabalham_domingo: 2, num_meses: 1,
+      folgas_forcadas: [
+        { ...semRecorrencia, recorrencia: { semanas_trabalho: 1, semanas_folga: 1, offset_semanas: 0 } },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+      ],
+    })
+    const sem = gerarCicloFase1({ num_postos: 4, trabalham_domingo: 2, num_meses: 1 })
+    expect(com.stats.cobertura_min).toBeLessThanOrEqual(sem.stats.cobertura_min)
+  })
+
+  it('recorrência funciona junto com regime 6X1', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4, trabalham_domingo: 2, num_meses: 1, regime: '6X1',
+      folgas_forcadas: [
+        { ...semRecorrencia, recorrencia: { semanas_trabalho: 1, semanas_folga: 1, offset_semanas: 0 } },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+        { ...semRecorrencia },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    expect(result.grid[0].semanas[1].dias.every((d) => d === 'F')).toBe(true)
+    expect(result.grid[0].semanas[0].dias.some((d) => d === 'T')).toBe(true)
+  })
+})
