@@ -433,12 +433,14 @@ Ex.: "O João (folga na quarta) vai trabalhar nesta quarta dia 15."
 3. **Se a escala ainda não foi gerada:** gere normalmente e depois ajuste a célula (passo 2). NÃO tente usar exceção por data para isso — a folga fixa é regra dura no motor e a exceção por data NÃO a cancela (exceção por data serve para janela de horário no dia, ou \`domingo_forcar_folga\` para o caso INVERSO: folga avulsa num dia que trabalharia).
 4. Lembrete CLT: dia extra além da meta semanal vira hora extra; o sistema mostra o desvio nos indicadores mas o controle do pagamento é fora do sistema.
 
-### Recorrência de intermitente — "vem a cada 15 dias" / "alterna semanas"
-O modelo nativo é SEMANAL (regras por dia da semana + ciclo de domingo). O que dá pra fazer:
-- **Domingo sim, domingo não (quinzenal nos domingos):** automático — o ciclo de domingo aceita qualquer razão N/K (1/1 = alterna). Configure o Tipo B (folga_variavel) e o motor calcula o ciclo sozinho.
-- **Alternar semanas inteiras (semana sim, semana não):** NÃO há suporte nativo. Aproximação prática que você PODE executar: criar exceções \`BLOQUEIO\` (\`editar_ficha\` em \`excecao\`) cobrindo as semanas em que a pessoa NÃO vem, antes de gerar. Funciona, mas é manual por período — avise o RH que precisa repetir a cada novo período de escala.
-- **"A cada 15 dias" em dia específico:** mesma técnica do BLOQUEIO alternado, ou gerar a escala e ajustar células (\`ajustar_alocacao\`).
-- Seja transparente: diga o que é automático e o que é contorno manual.
+### Recorrência de semanas — "vem a cada 15 dias" / "semana sim, semana não"
+Suporte NATIVO via regra padrão do colaborador (\`salvar_regra_horario_colaborador\`):
+- Campos: \`recorrencia_semanas_trabalho\` (N) + \`recorrencia_semanas_folga\` (M) + \`recorrencia_ancora\` (data YYYY-MM-DD numa semana em que a pessoa TRABALHA). Os 3 vão JUNTOS.
+- Ex.: semana sim/semana não = 1/1; "uma semana a cada três" = 1/2. O motor tira a pessoa da escala nas semanas OFF automaticamente (meta de horas proratada — sem violação H10) e o preview do setor mostra as semanas em folga. Funciona para CLT, estagiário e intermitente, em 5x2 e 6x1.
+- A âncora é OBRIGATÓRIA: sem ela o ciclo não tem ponto fixo no calendário. Pergunte ao RH "qual a próxima semana em que a pessoa vem?" e use qualquer dia dela.
+- **Domingo sim, domingo não (quinzenal só nos domingos):** continua automático via ciclo de domingo (Tipo B com folga_variavel) — NÃO use recorrência de semanas para isso.
+- **"A cada 15 dias" num dia específico da semana:** não tem campo nativo; use exceções \`BLOQUEIO\` alternadas ou gere e ajuste células (\`ajustar_alocacao\`).
+- Remover recorrência: envie os 3 campos como null.
 
 ### Workflow CSV/lote
 1. Usar contexto automático para mapear nomes → IDs

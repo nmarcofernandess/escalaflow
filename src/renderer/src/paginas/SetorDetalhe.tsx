@@ -104,6 +104,7 @@ import { PreflightChecklist } from '@/componentes/PreflightChecklist'
 import { AvisosSection, type Aviso } from '@/componentes/AvisosSection'
 import { SugestaoSheet } from '@/componentes/SugestaoSheet'
 import { converterPreviewParaPinned, converterPreviewParaPinnedWithOrigin, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
+import { indiceSemanaRecorrencia } from '@shared/recorrencia'
 import { runPreviewMultiPass, type MultiPassResult } from '@shared/preview-multi-pass'
 import type { EscalaAdvisoryOutputV2 } from '@shared/index'
 import { textoResumoRelaxacoes } from '@shared/resumo-user'
@@ -1244,6 +1245,22 @@ export function SetorDetalhe() {
           : (regra?.folga_variavel_dia_semana ?? null)
         const fixaAtual = isTipoB ? null : resolveOverrideField(overrideLocal, 'fixa', baseFixa)
         const variavelAtual = isTipoB ? baseVariavel : resolveOverrideField(overrideLocal, 'variavel', baseVariavel)
+
+        // Recorrência declarativa: offset = posição da semana atual dentro do ciclo
+        let recorrenciaPreview: { semanas_trabalho: number; semanas_folga: number; offset_semanas: number } | null = null
+        if (regra?.recorrencia_semanas_trabalho && regra?.recorrencia_semanas_folga && regra?.recorrencia_ancora) {
+          const corte = empresa?.corte_semanal ?? 'SEG_DOM'
+          const hoje = new Date()
+          const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
+          const cicloRec = regra.recorrencia_semanas_trabalho + regra.recorrencia_semanas_folga
+          const idx = indiceSemanaRecorrencia(hojeISO, regra.recorrencia_ancora, corte)
+          recorrenciaPreview = {
+            semanas_trabalho: regra.recorrencia_semanas_trabalho,
+            semanas_folga: regra.recorrencia_semanas_folga,
+            offset_semanas: ((idx % cicloRec) + cicloRec) % cicloRec,
+          }
+        }
+
         return {
           funcao,
           titular: colaborador,
@@ -1258,11 +1275,12 @@ export function SetorDetalhe() {
             folga_fixa_dia: diaSemanaParaIdxPreview(fixaAtual),
             folga_variavel_dia: diaSemanaParaIdxPreview(variavelAtual),
             folga_fixa_dom: fixaAtual === 'DOM',
+            recorrencia: recorrenciaPreview,
           },
           isTipoB,
         }
       })
-  }, [overridesLocaisSetor, participantesEscalaAtivos, previewSetorIntermitentesRegras, regrasMap, tipoBIds])
+  }, [empresa?.corte_semanal, overridesLocaisSetor, participantesEscalaAtivos, previewSetorIntermitentesRegras, regrasMap, tipoBIds])
 
   // Capacidade efetiva por dia SEG-SAB: CLT/Estagiário = 1 em todos, Intermitente = 1 só nos dias com regra
   const capacidadeEfetivaPorDia = useMemo(() => {
@@ -1349,7 +1367,7 @@ export function SetorDetalhe() {
               trabalham_domingo: effectiveK,
               num_meses: simulacaoPreviewMeses,
               regime: regimeEfetivo === '6X1' ? '6X1' : '5X2',
-              folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null || folga.folga_fixa_dom)
+              folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null || folga.folga_fixa_dom || ('recorrencia' in folga && folga.recorrencia != null))
                 ? folgasForcadas
                 : undefined,
               demanda_por_dia: demandaPorDiaPreviewCiclo,

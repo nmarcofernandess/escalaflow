@@ -176,7 +176,11 @@ CREATE TABLE IF NOT EXISTS colaborador_regra_horario (
     preferencia_turno_soft TEXT CHECK (preferencia_turno_soft IN ('MANHA','TARDE') OR preferencia_turno_soft IS NULL),
     domingo_ciclo_trabalho INTEGER NOT NULL DEFAULT 2,
     domingo_ciclo_folga INTEGER NOT NULL DEFAULT 1,
-    folga_fixa_dia_semana TEXT CHECK (folga_fixa_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR folga_fixa_dia_semana IS NULL)
+    folga_fixa_dia_semana TEXT CHECK (folga_fixa_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB','DOM') OR folga_fixa_dia_semana IS NULL),
+    folga_variavel_dia_semana TEXT CHECK (folga_variavel_dia_semana IN ('SEG','TER','QUA','QUI','SEX','SAB') OR folga_variavel_dia_semana IS NULL),
+    recorrencia_semanas_trabalho INTEGER,
+    recorrencia_semanas_folga INTEGER,
+    recorrencia_ancora TEXT
 );
 
 CREATE TABLE IF NOT EXISTS colaborador_regra_horario_excecao_data (
@@ -903,6 +907,11 @@ async function migrateSchema(): Promise<void> {
   } catch {
     // safe to ignore
   }
+
+  // vNEXT: recorrência semanal declarativa (semana sim/semana não) — só na regra padrão
+  await addColumnIfMissing('colaborador_regra_horario', 'recorrencia_semanas_trabalho', 'INTEGER')
+  await addColumnIfMissing('colaborador_regra_horario', 'recorrencia_semanas_folga', 'INTEGER')
+  await addColumnIfMissing('colaborador_regra_horario', 'recorrencia_ancora', 'TEXT')
 }
 
 // ============================================================================

@@ -282,6 +282,31 @@ export function celulaIndisponivel(): CelulaMotor {
   return { ...celulaFolga(), status: 'INDISPONIVEL' }
 }
 
+/**
+ * Overlay de paridade com o solver: dentro de uma exceção (férias, atestado,
+ * bloqueio ou recorrência expandida), célula que NÃO é TRABALHO vira
+ * INDISPONIVEL. O solver prorata DIAS_TRABALHO e H10 por dias bloqueados;
+ * sem este overlay o checkH10 contaria a semana como disponível e acusaria
+ * falso positivo. Células TRABALHO ficam intactas — é o checkH5 que acusa.
+ */
+export function aplicarExcecoesComoIndisponivel(
+  resultado: Map<number, Map<string, CelulaMotor>>,
+  excecoes: Array<{ colaborador_id: number; data_inicio: string; data_fim: string }>,
+  dias: string[],
+): void {
+  for (const exc of excecoes) {
+    const mapaColab = resultado.get(exc.colaborador_id)
+    if (!mapaColab) continue
+    for (const data of dias) {
+      if (data < exc.data_inicio || data > exc.data_fim) continue
+      const cel = mapaColab.get(data)
+      if (cel && cel.status !== 'TRABALHO') {
+        mapaColab.set(data, celulaIndisponivel())
+      }
+    }
+  }
+}
+
 // ─── Checkers HARD H1-H10 (regras CLT base) ──────────────────────────────────
 
 /**
@@ -971,7 +996,9 @@ export function checkH19(
 
     const temFolgaCompensatoria = diasSeguintes.some(d => {
       const celD = mapa.get(d)
-      return celD?.status === 'FOLGA'
+      // INDISPONIVEL conta: pessoa em férias/exceção/semana OFF não trabalha —
+      // o descanso compensatório existe (sem isso o overlay criaria falso positivo)
+      return celD?.status === 'FOLGA' || celD?.status === 'INDISPONIVEL'
     })
 
     if (!temFolgaCompensatoria) {

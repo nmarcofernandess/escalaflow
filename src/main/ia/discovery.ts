@@ -589,7 +589,9 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
         dia_semana_regra: string | null; inicio: string | null; fim: string | null;
         folga_fixa_dia_semana: string | null;
         domingo_ciclo_trabalho: number; domingo_ciclo_folga: number;
-    }>('SELECT dia_semana_regra, inicio, fim, folga_fixa_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga FROM colaborador_regra_horario WHERE colaborador_id = ? AND ativo = true ORDER BY dia_semana_regra NULLS FIRST', colaborador_id)
+        recorrencia_semanas_trabalho: number | null; recorrencia_semanas_folga: number | null;
+        recorrencia_ancora: string | null;
+    }>('SELECT dia_semana_regra, inicio, fim, folga_fixa_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga, recorrencia_semanas_trabalho, recorrencia_semanas_folga, recorrencia_ancora FROM colaborador_regra_horario WHERE colaborador_id = ? AND ativo = true ORDER BY dia_semana_regra NULLS FIRST', colaborador_id)
 
     if (regrasHorario.length > 0) {
         lines.push(`\n#### Regras de horário:`)
@@ -603,6 +605,9 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
             if (!r.dia_semana_regra) {
                 if (r.folga_fixa_dia_semana) extras.push(`folga fixa ${r.folga_fixa_dia_semana}`)
                 extras.push(`ciclo dom ${r.domingo_ciclo_trabalho}/${r.domingo_ciclo_folga}`)
+                if (r.recorrencia_semanas_trabalho && r.recorrencia_semanas_folga && r.recorrencia_ancora) {
+                    extras.push(`recorrência ${r.recorrencia_semanas_trabalho} semana(s) ON / ${r.recorrencia_semanas_folga} OFF (âncora ${r.recorrencia_ancora})`)
+                }
             }
             lines.push(`- ${label}: ${janela}${extras.length > 0 ? ` (${extras.join(', ')})` : ''}`)
         }

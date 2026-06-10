@@ -3,6 +3,7 @@ import { parseEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 import { buildEffectiveRulePolicy } from './rule-policy'
 import { listEscalaParticipantes } from '../../shared'
 import { calcularCicloDomingo } from './solver-bridge'
+import { expandirSemanasOff } from '../../shared/recorrencia'
 import type {
   EscalaCompletaV3, Alocacao, Escala, Setor, Demanda, Feriado,
   SetorHorarioSemana, Empresa, AntipatternViolacao, DecisaoMotor, Colaborador, Funcao,
@@ -46,6 +47,7 @@ import {
   calcularScoreV3,
   calcularIndicadoresV3,
   gerarSlotComparacao,
+  aplicarExcecoesComoIndisponivel,
 } from './validacao-compartilhada'
 
 // ─── Tipo interno: colaborador com dados do contrato (query JOIN) ──────────────
@@ -74,6 +76,9 @@ interface RegraHorarioColab {
   perfil_horario_id: number | null
   inicio: string | null
   fim: string | null
+  recorrencia_semanas_trabalho: number | null
+  recorrencia_semanas_folga: number | null
+  recorrencia_ancora: string | null
 }
 
 // ─── VALIDADOR V3 ─────────────────────────────────────────────────────────────
@@ -138,7 +143,8 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
   )
   const regrasHorarioColab = await queryAll<RegraHorarioColab>(
     `SELECT colaborador_id, dia_semana_regra, folga_fixa_dia_semana, folga_variavel_dia_semana, domingo_ciclo_trabalho, domingo_ciclo_folga,
-            perfil_horario_id, inicio, fim
+            perfil_horario_id, inicio, fim,
+            recorrencia_semanas_trabalho, recorrencia_semanas_folga, recorrencia_ancora
      FROM colaborador_regra_horario
      WHERE ativo = TRUE
        AND colaborador_id IN (SELECT id FROM colaboradores WHERE setor_id = ? AND ativo = TRUE)`,
@@ -183,6 +189,33 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
        AND data_fim >= ? AND data_inicio <= ?`,
     escala.setor_id, escala.data_inicio, escala.data_fim
   )
+
+  // Recorrência declarativa: expande semanas OFF como exceções em memória
+  // (mesma expansão da solver-bridge — paridade total; nada persiste no banco)
+  const corteSemanalRec = empresa.corte_semanal ?? 'SEG_DOM'
+  for (const [recColabId, regraPadrao] of regraPadraoMap) {
+    if (!regraPadrao.recorrencia_semanas_trabalho || !regraPadrao.recorrencia_semanas_folga || !regraPadrao.recorrencia_ancora) continue
+    const rangesOff = expandirSemanasOff({
+      data_inicio: escala.data_inicio,
+      data_fim: escala.data_fim,
+      corte_semanal: corteSemanalRec,
+      recorrencia: {
+        semanas_trabalho: regraPadrao.recorrencia_semanas_trabalho,
+        semanas_folga: regraPadrao.recorrencia_semanas_folga,
+        ancora: regraPadrao.recorrencia_ancora,
+      },
+    })
+    for (const r of rangesOff) {
+      excecoes.push({
+        id: -1,
+        colaborador_id: recColabId,
+        data_inicio: r.data_inicio,
+        data_fim: r.data_fim,
+        tipo: 'BLOQUEIO',
+        observacao: 'recorrencia',
+      })
+    }
+  }
 
   const feriados = await queryAll<Feriado>('SELECT * FROM feriados WHERE data BETWEEN ? AND ?', escala.data_inicio, escala.data_fim)
 
@@ -348,6 +381,10 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
 
     mapaColab.set(aloc.data, cel)
   }
+
+  // Paridade com o solver: exceções (reais + recorrência) viram INDISPONIVEL
+  // nas células não-TRABALHO → checkH10 prorata em vez de acusar falso positivo
+  aplicarExcecoesComoIndisponivel(resultado, excecoes, dias)
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 7. Montar grid de slots (necessário para APs Tier 1 + SlotComparacao)

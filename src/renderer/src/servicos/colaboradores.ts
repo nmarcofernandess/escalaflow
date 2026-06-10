@@ -57,6 +57,9 @@ export const colaboradoresService = {
     preferencia_turno_soft?: string | null
     folga_fixa_dia_semana?: string | null
     folga_variavel_dia_semana?: string | null
+    recorrencia_semanas_trabalho?: number | null
+    recorrencia_semanas_folga?: number | null
+    recorrencia_ancora?: string | null
   }) =>
     client['colaboradores.salvarRegraHorario'](data as any) as Promise<RegraHorarioColaborador>,
 

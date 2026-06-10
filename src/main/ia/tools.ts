@@ -199,6 +199,12 @@ const SalvarRegraHorarioColaboradorSchema = z.object({
   folga_fixa_dia_semana: DiaSemanaSchema.nullable().optional().describe('Folga fixa semanal (SEG..DOM) ou null para remover (só na regra padrão).'),
   folga_variavel_dia_semana: z.enum(['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB']).nullable().optional()
     .describe('Dia da folga variavel (SEG..SAB, nunca DOM). XOR com domingo: se trabalhou DOM, folga neste dia; se nao, trabalha. Para CLT: 2a folga semanal. Para INTERMITENTE tipo B: ativa participacao no ciclo de domingo (dia deve ter regra de horario ativa). NULL = sem folga variavel (intermitente tipo A). So na regra padrao.'),
+  recorrencia_semanas_trabalho: z.number().int().min(1).max(8).nullable().optional()
+    .describe('Recorrência declarativa: quantas semanas TRABALHA por ciclo (ex.: 1 com folga=1 → semana sim/semana não). NULL = sem recorrência. Só na regra padrão. Exige recorrencia_semanas_folga e recorrencia_ancora juntos.'),
+  recorrencia_semanas_folga: z.number().int().min(1).max(8).nullable().optional()
+    .describe('Recorrência declarativa: quantas semanas FOLGA por ciclo. NULL = sem recorrência.'),
+  recorrencia_ancora: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+    .describe('Data (YYYY-MM-DD) dentro de uma semana em que a pessoa TRABALHA — fixa o ciclo no calendário. Obrigatória quando a recorrência está ativa. Para remover a recorrência, envie os três campos como null.'),
 })
 
 // criar colaborador — validação específica para colaboradores
@@ -2766,6 +2772,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
           preferencia_turno_soft,
           folga_fixa_dia_semana,
           folga_variavel_dia_semana,
+          recorrencia_semanas_trabalho,
+          recorrencia_semanas_folga,
+          recorrencia_ancora,
         } = args
 
         const diaSemana = dia_semana_regra ?? null
@@ -2810,6 +2819,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               preferencia_turno_soft: string | null
               folga_fixa_dia_semana: string | null
               folga_variavel_dia_semana: string | null
+              recorrencia_semanas_trabalho: number | null
+              recorrencia_semanas_folga: number | null
+              recorrencia_ancora: string | null
             }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', colaborador_id)
             : await queryOne<{
               id: number
@@ -2820,6 +2832,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               preferencia_turno_soft: string | null
               folga_fixa_dia_semana: string | null
               folga_variavel_dia_semana: string | null
+              recorrencia_semanas_trabalho: number | null
+              recorrencia_semanas_folga: number | null
+              recorrencia_ancora: string | null
             }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', colaborador_id, diaSemana)
 
           const nextAtivo = ativo !== undefined
@@ -2849,6 +2864,50 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 ? (folga_variavel_dia_semana ?? null)
                 : (existe?.folga_variavel_dia_semana ?? null))
 
+          // Recorrência declarativa (semana sim/semana não) — só na regra padrão
+          const nextRecTrabalho = isDiaEspecifico
+            ? null
+            : (hasOwnField(args, 'recorrencia_semanas_trabalho')
+                ? (recorrencia_semanas_trabalho ?? null)
+                : (existe?.recorrencia_semanas_trabalho ?? null))
+          const nextRecFolga = isDiaEspecifico
+            ? null
+            : (hasOwnField(args, 'recorrencia_semanas_folga')
+                ? (recorrencia_semanas_folga ?? null)
+                : (existe?.recorrencia_semanas_folga ?? null))
+          const nextRecAncora = isDiaEspecifico
+            ? null
+            : (hasOwnField(args, 'recorrencia_ancora')
+                ? (recorrencia_ancora ?? null)
+                : (existe?.recorrencia_ancora ?? null))
+
+          if (nextRecTrabalho != null || nextRecFolga != null || nextRecAncora != null) {
+            if (!nextRecTrabalho || !nextRecFolga || !nextRecAncora) {
+              return toolError(
+                'SALVAR_REGRA_HORARIO_COLABORADOR_RECORRENCIA_INCOMPLETA',
+                'Recorrência exige os 3 campos juntos: recorrencia_semanas_trabalho, recorrencia_semanas_folga e recorrencia_ancora.',
+                {
+                  correction: 'Envie os 3 campos (ex.: 1, 1 e uma data YYYY-MM-DD numa semana de trabalho) — ou todos null para remover a recorrência.',
+                  meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id },
+                },
+              )
+            }
+            // Round-trip: rejeita datas que não existem (2026-02-30 rolaria pra março
+            // silenciosamente) — paridade com o handler tipc
+            const ancoraDt = new Date(`${nextRecAncora}T12:00:00`)
+            const ancoraRoundTrip = `${ancoraDt.getFullYear()}-${String(ancoraDt.getMonth() + 1).padStart(2, '0')}-${String(ancoraDt.getDate()).padStart(2, '0')}`
+            if (Number.isNaN(ancoraDt.getTime()) || ancoraRoundTrip !== nextRecAncora) {
+              return toolError(
+                'SALVAR_REGRA_HORARIO_COLABORADOR_ANCORA_INVALIDA',
+                `Data âncora inválida: ${nextRecAncora} não existe no calendário.`,
+                {
+                  correction: 'Envie recorrencia_ancora como uma data real (YYYY-MM-DD) dentro de uma semana em que a pessoa trabalha.',
+                  meta: { tool_kind: 'action', action: 'save-collaborator-rule', colaborador_id },
+                },
+              )
+            }
+          }
+
           if (existe) {
             await execute(`
               UPDATE colaborador_regra_horario SET
@@ -2857,7 +2916,10 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 inicio = ?, fim = ?,
                 preferencia_turno_soft = ?,
                 folga_fixa_dia_semana = ?,
-                folga_variavel_dia_semana = ?
+                folga_variavel_dia_semana = ?,
+                recorrencia_semanas_trabalho = ?,
+                recorrencia_semanas_folga = ?,
+                recorrencia_ancora = ?
               WHERE id = ?
             `,
               nextAtivo,
@@ -2867,13 +2929,17 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               nextPreferenciaTurnoSoft,
               folgaFixa,
               folgaVariavel,
+              nextRecTrabalho,
+              nextRecFolga,
+              nextRecAncora,
               existe.id,
             )
           } else {
             await execute(`
               INSERT INTO colaborador_regra_horario
-                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana,
+                 recorrencia_semanas_trabalho, recorrencia_semanas_folga, recorrencia_ancora)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
               colaborador_id,
               diaSemana,
@@ -2884,6 +2950,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               nextPreferenciaTurnoSoft,
               folgaFixa,
               folgaVariavel,
+              nextRecTrabalho,
+              nextRecFolga,
+              nextRecAncora,
             )
           }
 

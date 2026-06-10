@@ -2417,6 +2417,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
     preferencia_turno_soft?: string | null
     folga_fixa_dia_semana?: string | null
     folga_variavel_dia_semana?: string | null
+    recorrencia_semanas_trabalho?: number | null
+    recorrencia_semanas_folga?: number | null
+    recorrencia_ancora?: string | null
   }>()
   .action(async ({ input }) => {
     const diaSemana = input.dia_semana_regra ?? null
@@ -2437,6 +2440,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
         preferencia_turno_soft: string | null
         folga_fixa_dia_semana: string | null
         folga_variavel_dia_semana: string | null
+        recorrencia_semanas_trabalho: number | null
+        recorrencia_semanas_folga: number | null
+        recorrencia_ancora: string | null
       }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra IS NULL', input.colaborador_id)
       : await queryOne<{
         id: number
@@ -2447,6 +2453,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
         preferencia_turno_soft: string | null
         folga_fixa_dia_semana: string | null
         folga_variavel_dia_semana: string | null
+        recorrencia_semanas_trabalho: number | null
+        recorrencia_semanas_folga: number | null
+        recorrencia_ancora: string | null
       }>('SELECT * FROM colaborador_regra_horario WHERE colaborador_id = ? AND dia_semana_regra = ?', input.colaborador_id, diaSemana)
 
     const ativo = input.ativo !== undefined
@@ -2478,6 +2487,45 @@ const colaboradoresSalvarRegraHorario = t.procedure
           ? (input.folga_variavel_dia_semana ?? null)
           : (existe?.folga_variavel_dia_semana ?? null))
 
+    // Recorrência declarativa (semana sim/semana não) — só na regra padrão
+    const recSemanasTrabalho = isDiaEspecifico
+      ? null
+      : (hasOwnField(input, 'recorrencia_semanas_trabalho')
+          ? (input.recorrencia_semanas_trabalho ?? null)
+          : (existe?.recorrencia_semanas_trabalho ?? null))
+    const recSemanasFolga = isDiaEspecifico
+      ? null
+      : (hasOwnField(input, 'recorrencia_semanas_folga')
+          ? (input.recorrencia_semanas_folga ?? null)
+          : (existe?.recorrencia_semanas_folga ?? null))
+    const recAncora = isDiaEspecifico
+      ? null
+      : (hasOwnField(input, 'recorrencia_ancora')
+          ? (input.recorrencia_ancora ?? null)
+          : (existe?.recorrencia_ancora ?? null))
+
+    if (recSemanasTrabalho != null || recSemanasFolga != null || recAncora != null) {
+      if (
+        !recSemanasTrabalho || !Number.isInteger(recSemanasTrabalho) || recSemanasTrabalho < 1 ||
+        !recSemanasFolga || !Number.isInteger(recSemanasFolga) || recSemanasFolga < 1
+      ) {
+        throw new Error(
+          'Recorrência inválida: semanas de trabalho e de folga devem ser >= 1 (ex.: 1/1 = semana sim, semana não). Para remover a recorrência, envie os três campos como null.',
+        )
+      }
+      if (!recAncora || !/^\d{4}-\d{2}-\d{2}$/.test(recAncora)) {
+        throw new Error(
+          'Recorrência precisa de data âncora (YYYY-MM-DD) numa semana de TRABALHO — ela fixa o ciclo no calendário.',
+        )
+      }
+      // Round-trip: rejeita datas que não existem (2026-02-30 rolaria pra março silenciosamente)
+      const ancoraDt = new Date(`${recAncora}T12:00:00`)
+      const ancoraRoundTrip = `${ancoraDt.getFullYear()}-${String(ancoraDt.getMonth() + 1).padStart(2, '0')}-${String(ancoraDt.getDate()).padStart(2, '0')}`
+      if (Number.isNaN(ancoraDt.getTime()) || ancoraRoundTrip !== recAncora) {
+        throw new Error(`Data âncora inválida: ${recAncora} não existe no calendário.`)
+      }
+    }
+
     // Guard T5: intermitente com folga_variavel precisa ter regra ativa nesse dia
     if (isIntermitente && folgaVariavel != null && !isDiaEspecifico) {
       const regraExiste = await queryOne<{ id: number }>(
@@ -2507,7 +2555,10 @@ const colaboradoresSalvarRegraHorario = t.procedure
           inicio = ?, fim = ?,
           preferencia_turno_soft = ?,
           folga_fixa_dia_semana = ?,
-          folga_variavel_dia_semana = ?
+          folga_variavel_dia_semana = ?,
+          recorrencia_semanas_trabalho = ?,
+          recorrencia_semanas_folga = ?,
+          recorrencia_ancora = ?
         WHERE id = ?
       `,
         ativo,
@@ -2516,6 +2567,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
         preferenciaTurnoSoft,
         folgaFixa,
         folgaVariavel,
+        recSemanasTrabalho,
+        recSemanasFolga,
+        recAncora,
         existe.id
       )
       const result = await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', existe.id)
@@ -2524,8 +2578,8 @@ const colaboradoresSalvarRegraHorario = t.procedure
     } else {
       const id = await insertReturningId(`
         INSERT INTO colaborador_regra_horario
-          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (colaborador_id, dia_semana_regra, ativo, perfil_horario_id, inicio, fim, preferencia_turno_soft, folga_fixa_dia_semana, folga_variavel_dia_semana, recorrencia_semanas_trabalho, recorrencia_semanas_folga, recorrencia_ancora)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         input.colaborador_id,
         diaSemana,
@@ -2535,6 +2589,9 @@ const colaboradoresSalvarRegraHorario = t.procedure
         preferenciaTurnoSoft,
         folgaFixa,
         folgaVariavel,
+        recSemanasTrabalho,
+        recSemanasFolga,
+        recAncora,
       )
       const result = await queryOne('SELECT * FROM colaborador_regra_horario WHERE id = ?', id)
       broadcastInvalidation(['regras_padrao', 'regras_horario'])

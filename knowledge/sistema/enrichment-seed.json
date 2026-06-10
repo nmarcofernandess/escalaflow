@@ -2907,58 +2907,71 @@
       "chunks": [
         {
           "chunk_index": 0,
-          "resumo": "Define os regimes 5x2 (folga fixa + folga variavel em XOR com domingo) e 6x1 (folga unica em XOR puro: DOM quando folga domingo, dia variavel quando trabalha), e a cascata de resolucao do regime: colaborador, setor, contrato.",
+          "resumo": "Define os regimes 5x2 (folga fixa + folga variavel em XOR com domingo) e 6x1 (folga unica em XOR puro, padrao do varejo) e a cascata de resolucao: override do colaborador, regime do setor, regime do contrato.",
           "tags": [
             "regime de escala",
             "5x2",
             "6x1",
             "folga fixa",
             "folga variavel",
+            "folga unica",
+            "cascata",
             "xor domingo",
-            "cascata de regime",
-            "regime do setor",
-            "folga unica"
+            "varejo"
           ]
         },
         {
           "chunk_index": 1,
-          "resumo": "Como o motor converte regime em dias_trabalho com meta semanal e tolerancia; a folga extra de transicao de domingo no 6x1 (evita 7+ dias corridos, CLT Art. 67) e a confirmacao de que preview de ciclo e advisory funcionam nos dois regimes.",
+          "resumo": "Como montar setor 6x1 com contratos de fabrica (CLT 44h 6x1, CLT 36h 6x1) e como o motor trata o regime: dias_trabalho 5 ou 6, meta de horas semanal com tolerancia, jornadas desiguais no grid de 15min; transicao de domingo no 6x1 pode injetar folga extra.",
           "tags": [
-            "transicao de domingo",
-            "folga extra",
-            "6 dias consecutivos",
-            "preview nivel 1",
-            "advisory",
+            "6x1",
+            "contratos 6x1",
             "dias_trabalho",
             "meta semanal",
-            "art 67"
+            "transicao de domingo",
+            "folga extra",
+            "motor",
+            "jornadas desiguais"
           ]
         },
         {
           "chunk_index": 2,
-          "resumo": "Dia avulso: pessoa que trabalha num dia que seria folga — o caminho certo e ajustar a celula da escala (ajustar_alocacao); excecao por data nao cancela folga fixa. Folga avulsa: usar domingo_forcar_folga ou ajustar celula.",
+          "resumo": "Dia avulso: pessoa que trabalha num dia que seria folga — o caminho certo e ajustar a celula da escala (ajustar_alocacao); a excecao por data nao cancela folga fixa, serve para janela de horario ou folga avulsa via domingo_forcar_folga.",
           "tags": [
             "dia avulso",
             "trabalhar na folga",
-            "ajustar alocacao",
+            "ajustar_alocacao",
             "folga avulsa",
+            "domingo_forcar_folga",
             "excecao por data",
-            "hora extra",
-            "domingo_forcar_folga"
+            "folga fixa"
           ]
         },
         {
           "chunk_index": 3,
-          "resumo": "Recorrencia de intermitente: domingo sim/domingo nao e automatico via ciclo 1/1 (Tipo B); semana sim/semana nao exige contorno com excecoes BLOQUEIO por periodo; e o que considerar ao mudar o regime de um setor existente.",
+          "resumo": "Recorrencia de semanas NATIVA (semana sim/semana nao): semanas de trabalho N, semanas de folga M e data ancora numa semana de trabalho, configuravel na ficha do colaborador ou pela IA; motor tira a pessoa das semanas OFF com meta proporcional, preview e validador respeitam o ciclo.",
           "tags": [
-            "intermitente",
+            "recorrencia de semanas",
+            "semana sim semana nao",
+            "ancora",
             "quinzenal",
-            "a cada 15 dias",
-            "alternar semanas",
-            "bloqueio",
-            "mudar regime do setor",
-            "ciclo domingo 1/1",
-            "tipo b"
+            "meta proporcional",
+            "ficha do colaborador",
+            "1/1",
+            "1/2"
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Limites da recorrencia (a cada 15 dias num dia especifico usa BLOQUEIO alternado), abrangencia (CLT, estagiario, intermitente, 5x2 e 6x1, remover limpando os tres campos) e mudanca de regime de setor existente: vale para proximas geracoes, conferir contratos.",
+          "tags": [
+            "recorrencia",
+            "bloqueio alternado",
+            "remover recorrencia",
+            "mudar regime",
+            "setor existente",
+            "contratos",
+            "proximas geracoes"
           ]
         }
       ]

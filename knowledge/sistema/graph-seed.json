@@ -1247,6 +1247,14 @@
     {
       "nome": "Intermitente quinzenal",
       "tipo": "conceito"
+    },
+    {
+      "nome": "Recorrência de semanas",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Âncora de recorrência",
+      "tipo": "conceito"
     }
   ],
   "relations": [
@@ -3511,6 +3519,42 @@
       "to_nome": "Ciclo de domingo",
       "tipo_relacao": "depende_de",
       "peso": 0.8
+    },
+    {
+      "from_nome": "Recorrência de semanas",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.7
+    },
+    {
+      "from_nome": "Recorrência de semanas",
+      "to_nome": "Regime 6X1",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.7
+    },
+    {
+      "from_nome": "Recorrência de semanas",
+      "to_nome": "Colaborador",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.8
+    },
+    {
+      "from_nome": "Recorrência de semanas",
+      "to_nome": "Âncora de recorrência",
+      "tipo_relacao": "exige",
+      "peso": 0.9
+    },
+    {
+      "from_nome": "Recorrência de semanas",
+      "to_nome": "Meta semanal",
+      "tipo_relacao": "depende_de",
+      "peso": 0.6
+    },
+    {
+      "from_nome": "Recorrência de semanas",
+      "to_nome": "Intermitente quinzenal",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.5
     }
   ]
 }

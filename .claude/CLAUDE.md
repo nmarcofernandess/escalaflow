@@ -238,6 +238,18 @@ Seed de fábrica inclui CLT 44h/36h em **ambos** os regimes (`CLT 44h 6x1`, `CLT
 
 **RAG auto-upgrade:** `seedKnowledgeBase` re-seeda docs por hash sha256 (`metadata->>'hash'`) — doc editado → DELETE source antigo (CASCADE) + re-ingest + enrichment; `importGraphSeed` re-importa quando o seed cresce (origem `usuario` intocada). Banco existente atualiza sozinho no próximo boot.
 
+**Recorrência de semanas (semana sim/semana não):** declarativa na regra padrão
+(`recorrencia_semanas_trabalho`/`_folga`/`_ancora` em `colaborador_regra_horario`;
+âncora = data numa semana ON, obrigatória). A bridge expande em exceções sintéticas
+no input do solver via `src/shared/recorrencia.ts` — o Python não muda (H5 +
+proração H10 + skip DIAS_TRABALHO já tratam semana bloqueada; `_compute_blocked_days`
+não filtra tipo). O validador expande igual + `aplicarExcecoesComoIndisponivel`
+(overlay: célula não-TRABALHO em exceção → INDISPONIVEL) para paridade do H10 —
+isso também corrigiu o falso positivo SOFT H10 que férias geravam. Preview:
+`folgas_forcadas[].recorrencia` com `offset_semanas`. Specs:
+`tests/shared/recorrencia.spec.ts`, `tests/main/solver-recorrencia.spec.ts`,
+`tests/main/validacao-overlay.spec.ts`.
+
 ### Outros testes do motor
 
 ```bash
