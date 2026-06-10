@@ -2505,15 +2505,24 @@ const colaboradoresSalvarRegraHorario = t.procedure
           : (existe?.recorrencia_ancora ?? null))
 
     if (recSemanasTrabalho != null || recSemanasFolga != null || recAncora != null) {
-      if (!recSemanasTrabalho || recSemanasTrabalho < 1 || !recSemanasFolga || recSemanasFolga < 1) {
+      if (
+        !recSemanasTrabalho || !Number.isInteger(recSemanasTrabalho) || recSemanasTrabalho < 1 ||
+        !recSemanasFolga || !Number.isInteger(recSemanasFolga) || recSemanasFolga < 1
+      ) {
         throw new Error(
-          'Recorrência inválida: semanas de trabalho e de folga devem ser >= 1 (ex.: 1/1 = semana sim, semana não).',
+          'Recorrência inválida: semanas de trabalho e de folga devem ser >= 1 (ex.: 1/1 = semana sim, semana não). Para remover a recorrência, envie os três campos como null.',
         )
       }
       if (!recAncora || !/^\d{4}-\d{2}-\d{2}$/.test(recAncora)) {
         throw new Error(
           'Recorrência precisa de data âncora (YYYY-MM-DD) numa semana de TRABALHO — ela fixa o ciclo no calendário.',
         )
+      }
+      // Round-trip: rejeita datas que não existem (2026-02-30 rolaria pra março silenciosamente)
+      const ancoraDt = new Date(`${recAncora}T12:00:00`)
+      const ancoraRoundTrip = `${ancoraDt.getFullYear()}-${String(ancoraDt.getMonth() + 1).padStart(2, '0')}-${String(ancoraDt.getDate()).padStart(2, '0')}`
+      if (Number.isNaN(ancoraDt.getTime()) || ancoraRoundTrip !== recAncora) {
+        throw new Error(`Data âncora inválida: ${recAncora} não existe no calendário.`)
       }
     }
 
