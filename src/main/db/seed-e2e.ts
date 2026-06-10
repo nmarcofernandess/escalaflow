@@ -5,9 +5,11 @@
 import { queryOne, queryAll, execute, insertReturningId, transaction } from './query'
 
 export const E2E_SETOR_PADARIA_NOME = 'Padaria'
+export const E2E_SETOR_6X1_NOME = 'Mercearia 6x1'
 
 const COLAB_E2E_1 = 'E2E Colaborador Alpha'
 const COLAB_E2E_2 = 'E2E Colaborador Beta'
+const COLAB_E2E_6X1 = 'E2E Colaborador Gamma 6x1'
 
 export async function seedE2eData(): Promise<void> {
   if (process.env.ESCALAFLOW_E2E !== '1') return
@@ -168,9 +170,46 @@ export async function seedE2eData(): Promise<void> {
     }
   })
 
+  // Setor 6x1 — exercita regime de varejo no E2E (lista, regime, contrato de fábrica)
+  await transaction(async () => {
+    const clt44_6x1 = await queryOne<{ id: number }>(
+      `SELECT id FROM tipos_contrato WHERE nome = 'CLT 44h 6x1'`,
+    )
+    if (!clt44_6x1) return
+
+    let setor6x1 = await queryOne<{ id: number }>('SELECT id FROM setores WHERE nome = ?', E2E_SETOR_6X1_NOME)
+    if (!setor6x1) {
+      const sid = await insertReturningId(
+        `INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, regime_escala, ativo)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        E2E_SETOR_6X1_NOME, null, '08:00', '20:00', '6X1', true,
+      )
+      setor6x1 = { id: sid }
+      for (const d of ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']) {
+        await execute(
+          'INSERT INTO setor_horario_semana (setor_id, dia_semana, ativo, usa_padrao, hora_abertura, hora_fechamento) VALUES (?, ?, TRUE, TRUE, ?, ?)',
+          setor6x1.id, d, '08:00', '20:00',
+        )
+        await execute(
+          'INSERT INTO demandas (setor_id, dia_semana, hora_inicio, hora_fim, min_pessoas) VALUES (?, ?, ?, ?, ?)',
+          setor6x1.id, d, '10:00', '16:00', 1,
+        )
+      }
+      const funcao6x1 = await insertReturningId(
+        'INSERT INTO funcoes (setor_id, apelido, tipo_contrato_id, ordem) VALUES (?, ?, ?, ?)',
+        setor6x1.id, 'Reposicao', clt44_6x1.id, 1,
+      )
+      await insertReturningId(
+        `INSERT INTO colaboradores (setor_id, tipo_contrato_id, nome, sexo, horas_semanais, rank, tipo_trabalhador, funcao_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        setor6x1.id, clt44_6x1.id, COLAB_E2E_6X1, 'M', 44, 1, 'CLT', funcao6x1,
+      )
+    }
+  })
+
   await applyE2eIaConfigFromEnv()
 
-  console.log('[SEED-E2E] Dataset Padaria + colaboradores E2E pronto.')
+  console.log('[SEED-E2E] Dataset Padaria + Mercearia 6x1 + colaboradores E2E pronto.')
 }
 
 /** Injeta chaves de API do ambiente no DB para o chat IA funcionar nos testes E2E. */
