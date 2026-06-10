@@ -154,5 +154,16 @@ describe.sequential('recorrência semanal declarativa (solver)', () => {
       ).length
       expect(diasTrabalho, `semana ON ${ini} deve ter 5 dias de trabalho`).toBe(5)
     }
+
+    // Validador: persiste e revalida — semana OFF não pode acusar H10 (paridade
+    // via aplicarExcecoesComoIndisponivel + expansão da recorrência no validador)
+    const { persistirSolverResult } = await import('../../src/main/motor/solver-bridge')
+    const { validarEscalaV3 } = await import('../../src/main/motor/validador')
+    const escalaId = await persistirSolverResult(setorId, '2026-03-02', '2026-03-29', out as never)
+    const validacao = await validarEscalaV3(escalaId)
+    const h10DoColab = validacao.violacoes.filter(
+      (v) => v.regra === 'H10_META_SEMANAL' && v.colaborador_id === colabRecId,
+    )
+    expect(h10DoColab, 'semana OFF não pode acusar H10').toEqual([])
   }, 120_000)
 })
