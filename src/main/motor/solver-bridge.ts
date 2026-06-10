@@ -141,9 +141,15 @@ function resolvePythonCmd(): string {
     return explicit
   }
 
-  // 2. Probe candidates — prefer well-known system paths over bare `python3`
+  // 2. Probe candidates — a venv do projeto (.venv, criada por `npm run setup`)
+  //    tem prioridade: é o caminho oficial em dev e não depende de env var no
+  //    shell. Depois caem os pythons de sistema bem-conhecidos.
   //    (bare `python3` might resolve to a virtualenv without ortools)
+  const venvPython = process.platform === 'win32'
+    ? path.join(process.cwd(), '.venv', 'Scripts', 'python.exe')
+    : path.join(process.cwd(), '.venv', 'bin', 'python')
   const candidates = [
+    venvPython,
     '/opt/homebrew/bin/python3',
     '/usr/local/bin/python3',
     '/usr/bin/python3',

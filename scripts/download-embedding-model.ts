@@ -29,7 +29,7 @@ async function main() {
 
   console.log('[model:download] Baixando e inicializando modelo...')
   const extractor = await pipeline('feature-extraction', 'Xenova/multilingual-e5-base', {
-    quantized: true,
+    dtype: 'q8' as any, // quantized int8 — bate com o dtype usado pelo app em embeddings.ts
   })
 
   // Teste rápido
@@ -38,16 +38,13 @@ async function main() {
   const dims = (output.data as Float32Array).length
   console.log(`[model:download] OK! Dimensões: ${dims}`)
   if (dims !== 768) {
-    console.error(`[model:download] ERRO: Esperava 768 dimensões, recebeu ${dims}!`)
-    process.exit(1)
+    throw new Error(`Esperava 768 dimensões, recebeu ${dims}`)
   }
 
   // Verificar tamanho
   const totalSize = getDirSize(MODEL_DIR)
   console.log(`[model:download] Tamanho total: ${(totalSize / 1024 / 1024).toFixed(1)}MB`)
   console.log('[model:download] Modelo pronto para uso offline.')
-
-  process.exit(0)
 }
 
 function getDirSize(dir: string): number {
@@ -68,5 +65,9 @@ function getDirSize(dir: string): number {
 
 main().catch((err) => {
   console.error('[model:download] ERRO:', err.message)
-  process.exit(1)
+  process.exitCode = 1
 })
+// NÃO chamar process.exit() aqui. O onnxruntime-node mantém um thread pool
+// nativo ativo; um process.exit() abrupto dispara SIGABRT ("mutex lock
+// failed") no teardown e gera o popup "Electron encerrou inesperadamente".
+// Deixar o event loop drenar naturalmente encerra limpo.

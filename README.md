@@ -50,10 +50,21 @@ App desktop offline para geração automática de escalas de trabalho em varejo,
 
 ## Setup
 
+**Requisitos:** Node 20+ e Python 3.9+ (recomendado 3.12). Nada além disso.
+
 ```bash
-npm install    # instala dependências
+npm install    # instala deps Node E configura o ambiente automaticamente
 npm run dev    # abre o app Electron com hot reload (sem reset de banco)
 ```
+
+O `npm install` dispara um bootstrap idempotente (`scripts/setup.mjs`) que deixa o projeto pronto pra rodar:
+
+- cria a venv Python (`.venv`) e instala o **OR-Tools** (motor de escalas);
+- baixa o **modelo de embeddings** ONNX (~280MB) usado pela busca semântica/IA offline.
+
+Re-rodar é barato (pula o que já está pronto). Para reconfigurar a qualquer momento — ou se a internet caiu no meio do download do modelo: **`npm run setup`**.
+
+> O motor Python é descoberto automaticamente pela `.venv` (o `solver-bridge` faz o probe) — **sem variável de ambiente no shell**. Em CI o bootstrap é pulado (`CI=1`); para pular manualmente, `ESCALAFLOW_SKIP_SETUP=1`.
 
 O banco PGlite (Postgres WASM) é criado automaticamente no primeiro run com seed de contratos CLT, feriados nacionais, perfis horário e 35 regras do motor.
 
@@ -109,6 +120,10 @@ npm run solver:cli -- 2 --json                       # output JSON raw (pipe)
 npm run solver:test      # smoke test E2E (bridge TS → Python)
 npm run solver:test:parity # teste de paridade CLI solver real ↔ validador TS
 npm run solver:build     # compila binario Python (PyInstaller)
+
+# Ambiente
+npm run setup            # (re)configura venv Python + OR-Tools + modelo de embeddings (idempotente)
+npm run model:download   # baixa só o modelo de embeddings ONNX (~280MB)
 
 # Banco
 npm run db:reset         # deleta e recria banco (usar só quando explicitamente pedido)
@@ -373,7 +388,9 @@ O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui 
 ## Troubleshooting
 
 - **App não abre:** `npm run build` primeiro, depois `npm run dev`
-- **Banco corrompido:** Delete `data/pglite/` e reinicie. Seed roda automaticamente
+- **Banco corrompido (`WASM Aborted` no boot):** `npm run db:reset` e reinicie. Costuma acontecer se o processo do Electron foi morto (SIGKILL/SIGTERM) no meio de uma escrita do PGlite.
+- **Motor diz "Nenhum Python com OR-Tools":** rode `npm run setup` (cria a `.venv` com OR-Tools). O `solver-bridge` procura `.venv/bin/python` automaticamente.
+- **Busca semântica/IA sem resultados (RAG):** o modelo de embeddings não baixou — rode `npm run setup` ou `npm run model:download`. O app funciona mesmo sem ele (cai pra full-text search).
 - **Typecheck falha:** `npm run typecheck` mostra erros separados por node e web
 - **Motor trava:** Timeout de 30s protege. Verifique dados do setor (demandas, colaboradores)
 - **Dark mode quebrado:** Cores usam tokens semânticos de `cores.ts`. Se adicionou cor nova, inclua `dark:` variant
