@@ -83,6 +83,12 @@ export function TimeMachineModal({ open, onOpenChange }: TimeMachineModalProps) 
       setSnapshots([])
       if ((err as Error).message === 'timeout') {
         toast.error('Listagem demorou demais', { description: 'Feche e abra a Maquina do Tempo de novo.' })
+      } else {
+        // Pasta de backup inacessível (drive removido, permissão) — lista
+        // vazia sem aviso faria o usuário achar que não tem backup nenhum.
+        toast.error('Nao foi possivel listar os backups', {
+          description: 'Verifique se a pasta de backup configurada ainda existe e esta acessivel.',
+        })
       }
     } finally {
       setHasLoadedOnce(true)

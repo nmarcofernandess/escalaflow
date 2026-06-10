@@ -1269,21 +1269,27 @@ const escalasOficializar = t.procedure
       await aplicarFolgasLocaisPosOficializacao(escala.setor_id, cfg.setor_overrides_locais)
     }
 
+    // Pós-passos não bloqueiam a oficialização (já consumada), mas falha aqui
+    // afeta a PRÓXIMA geração do setor — o usuário precisa ficar sabendo.
+    const avisos: string[] = []
+
     try {
       await autoDefinirFolgasPendentesPosOficializacao(input.id, escala.setor_id)
     } catch (err) {
       console.warn('[escalas.oficializar] Falha ao auto-definir folgas fixa/variavel:', err)
+      avisos.push('Nao foi possivel salvar as folgas fixa/variavel desta escala como regra dos colaboradores. Confira as regras individuais antes da proxima geracao.')
     }
 
     try {
       await limparOverridesLocaisSetor(escala.setor_id)
     } catch (err) {
       console.warn('[escalas.oficializar] Falha ao limpar overrides locais do setor:', err)
+      avisos.push('Ajustes temporarios da simulacao podem nao ter sido limpos e podem vazar para a proxima geracao deste setor.')
     }
 
     const result = await queryOne('SELECT * FROM escalas WHERE id = ?', input.id)
     broadcastInvalidation(['escalas', 'regras_padrao', 'setores'], escala.setor_id)
-    return result
+    return { ...(result as Record<string, unknown>), _avisos_pos_oficializacao: avisos }
   })
 
 const escalasAjustar = t.procedure
@@ -3974,15 +3980,12 @@ const backupConfigSalvar = t.procedure
   })
 
 const backupSnapshotsListar = t.procedure.action(async () => {
-  try {
-    const { listSnapshots } = await import('./backup')
-    const result = await listSnapshots(app.getPath('userData'))
-    console.log('[BACKUP-IPC] listar:', result.length, 'snapshots')
-    return result
-  } catch (err) {
-    console.error('[BACKUP-IPC] listar error:', err)
-    return []
-  }
+  // Sem catch→[]: pasta de backup inacessível tem que virar erro visível na
+  // UI — "0 backups" falso é perigoso (usuário pode agir achando que não tem).
+  const { listSnapshots } = await import('./backup')
+  const result = await listSnapshots(app.getPath('userData'))
+  console.log('[BACKUP-IPC] listar:', result.length, 'snapshots')
+  return result
 })
 
 const backupSnapshotsCriar = t.procedure

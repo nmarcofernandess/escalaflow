@@ -14,7 +14,7 @@
  *   npm run preview:cli -- 2 --context # markdown injetado na IA
  *   npm run preview:cli -- list        # lista setores disponíveis
  *
- * Requer: app já ter sido rodado ao menos 1x (banco populado em out/data/escalaflow-pg)
+ * Requer: app já ter sido rodado ao menos 1x (banco populado em data/escalaflow-pg)
  */
 
 import path from 'node:path'
@@ -28,8 +28,9 @@ import type { IaContexto } from '../src/shared/types'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
 
+// Mesmo diretório que o app usa em dev (ver pglite.ts)
 process.env.ESCALAFLOW_DB_PATH =
-  process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'out', 'data', 'escalaflow-pg')
+  process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'data', 'escalaflow-pg')
 
 // ---------------------------------------------------------------------------
 // ANSI colors

@@ -57,7 +57,7 @@ export const escalasService = {
     client['escalas.listarPorSetor']({ setor_id: setorId, status: params?.status }) as Promise<Escala[]>,
 
   oficializar: (id: number) =>
-    client['escalas.oficializar']({ id }) as Promise<Escala>,
+    client['escalas.oficializar']({ id }) as Promise<Escala & { _avisos_pos_oficializacao?: string[] }>,
 
   ajustar: (id: number, data: AjustarAlocacaoRequest) =>
     client['escalas.ajustar']({ id, alocacoes: data.alocacoes }) as Promise<EscalaCompletaV3>,

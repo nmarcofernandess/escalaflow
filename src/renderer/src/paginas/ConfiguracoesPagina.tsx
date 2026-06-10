@@ -278,7 +278,12 @@ export function ConfiguracoesPagina() {
   useEffect(() => {
     window.electron.ipcRenderer.invoke('backup.config.obter').then((config: any) => {
       setBackupConfig(config)
-    }).catch(console.error)
+    }).catch((err) => {
+      console.error(err)
+      toast.error('Nao foi possivel carregar a configuracao de backup', {
+        description: 'Os controles de backup podem nao refletir o estado real. Reabra a pagina.',
+      })
+    })
   }, [])
 
   async function handleToggleBackup(ativo: boolean) {

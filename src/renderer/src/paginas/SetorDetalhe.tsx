@@ -2198,11 +2198,16 @@ export function SetorDetalhe() {
     if (!rascunhoSelecionado) return
     setOficializando(true)
     try {
-      await escalasService.oficializar(rascunhoSelecionado.escala.id)
+      const oficializada = await escalasService.oficializar(rascunhoSelecionado.escala.id)
       const detalheOficial = await escalasService.buscar(rascunhoSelecionado.escala.id)
       setOficialCompleta(detalheOficial)
       setEscalaSelecionada('oficial')
       toast.success('Escala oficializada')
+      // Pós-passos (salvar folgas como regra, limpar overrides) podem falhar
+      // sem desfazer a oficialização — avisar em vez de engolir.
+      for (const aviso of oficializada._avisos_pos_oficializacao ?? []) {
+        toast.warning('Oficializada com ressalva', { description: aviso, duration: 10000 })
+      }
       setHistoricoCompleta(null)
     } catch (err) {
       const msg = mapError(err) || 'Erro ao oficializar'

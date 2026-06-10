@@ -89,8 +89,6 @@ O banco PGlite (Postgres WASM) é criado automaticamente no primeiro run com see
 ```bash
 # Desenvolvimento
 npm run dev              # dev com hot reload (usa o banco atual, sem reset)
-npm run dev:seed1        # dev usando dataset seed1 (SEED_DATASET=seed1)
-npm run dev:seed2        # dev usando dataset seed2 (SEED_DATASET=seed2)
 npm run build            # build de produção
 npm run clean            # rm -rf out tmp .vite
 npm run clean:dev        # clean + dev
@@ -139,7 +137,7 @@ npm run dist:linux       # gera .AppImage (Linux)
 
 ## Solver CLI — Ferramenta de Dev
 
-O `solver:cli` roda o motor OR-Tools direto do terminal, sem precisar abrir o app Electron. Usa o banco real em `out/data/escalaflow-pg` (criado na primeira execucao do app).
+O `solver:cli` roda o motor OR-Tools direto do terminal, sem precisar abrir o app Electron. Usa o banco real em `data/escalaflow-pg` (criado na primeira execucao do app).
 
 **Pra que serve:**
 - Testar escalas rapidamente durante desenvolvimento

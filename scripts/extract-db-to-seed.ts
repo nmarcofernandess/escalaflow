@@ -3,7 +3,7 @@
  * extract-db-to-seed.ts — Extrai o BD real e gera src/main/db/seed-local.ts
  *
  * Uso:
- *   npm run db:extract-seed              # extrai do BD real (out/data/escalaflow-pg)
+ *   npm run db:extract-seed              # extrai do BD real (data/escalaflow-pg)
  *   npm run db:extract-seed -- --dry     # mostra o que geraria sem escrever
  *
  * IMPORTANTE: Feche o app antes de rodar (PGlite não permite acesso concorrente).
@@ -34,7 +34,8 @@ const rootDir = path.resolve(__dirname, '..')
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry')
 
-const dbPath = process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'out', 'data', 'escalaflow-pg')
+// Mesmo diretório que o app usa em dev (ver pglite.ts)
+const dbPath = process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'data', 'escalaflow-pg')
 process.env.ESCALAFLOW_DB_PATH = dbPath
 
 const OUTPUT_PATH = path.join(rootDir, 'src', 'main', 'db', 'seed-local.ts')

@@ -192,7 +192,7 @@ npm run solver:cli -- 2 --json                       # JSON sem comparacao_deman
 npm run solver:cli -- 2 --json-full                  # JSON completo com comparacao_demanda (~800KB)
 ```
 
-**Requer:** app ter rodado ao menos 1x (banco em `out/data/escalaflow-pg`).
+**Requer:** app ter rodado ao menos 1x (banco em `data/escalaflow-pg`).
 
 **Output modes:**
 - **Default (sem flag):** Rich output com ANSI colors — tabela de alocações, indicadores, horas/semana

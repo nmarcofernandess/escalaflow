@@ -26,17 +26,18 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      # Majors em Node 24 — GitHub remove o runtime Node 20 dos runners em 2026
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -89,7 +90,7 @@ jobs:
 
       - name: Upload Mac DMG + ZIP
         if: matrix.platform == 'mac'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           files: |
@@ -100,7 +101,7 @@ jobs:
 
       - name: Upload Windows installer
         if: matrix.platform == 'win'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           files: |

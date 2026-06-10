@@ -14,7 +14,7 @@
  *   npm run solver:cli -- 2 --summary                # JSON compacto: indicadores + horas (~1KB)
  *   npm run solver:cli -- 2 --dump                   # Salva input JSON em tmp/
  *
- * Requer: app já ter sido rodado ao menos 1x (banco populado em out/data/escalaflow-pg)
+ * Requer: app já ter sido rodado ao menos 1x (banco populado em data/escalaflow-pg)
  */
 
 import fs from 'node:fs'
@@ -29,7 +29,9 @@ import type { SolverOutput, SolverOutputAlocacao } from '../src/shared/types'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
 
-process.env.ESCALAFLOW_DB_PATH = process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'out', 'data', 'escalaflow-pg')
+// Mesmo diretório que o app usa em dev (pglite.ts: out/main/../../data) —
+// `out/data` era um path antigo que nunca bate com o banco real.
+process.env.ESCALAFLOW_DB_PATH = process.env.ESCALAFLOW_DB_PATH || path.join(rootDir, 'data', 'escalaflow-pg')
 
 // ---------------------------------------------------------------------------
 // ANSI colors
