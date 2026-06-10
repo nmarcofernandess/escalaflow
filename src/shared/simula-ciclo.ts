@@ -752,6 +752,9 @@ export function converterNivel1ParaEscala(
       folga_variavel_dia_semana: row.folga_variavel_dia != null
         ? DIAS_IDX_TO_DIASEMANA[row.folga_variavel_dia] ?? null
         : null,
+      recorrencia_semanas_trabalho: null,
+      recorrencia_semanas_folga: null,
+      recorrencia_ancora: null,
     })
   }
 

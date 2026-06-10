@@ -240,6 +240,12 @@ export interface RegraHorarioColaborador {
   preferencia_turno_soft: Turno | null
   folga_fixa_dia_semana: DiaSemana | null  // só na regra padrão
   folga_variavel_dia_semana: DiaSemana | null  // só na regra padrão (SEG-SAB, condicional ao domingo)
+  /** Recorrência declarativa: trabalha N semanas. NULL = sem recorrência. Só na regra padrão. */
+  recorrencia_semanas_trabalho: number | null
+  /** Recorrência declarativa: folga M semanas. NULL = sem recorrência. */
+  recorrencia_semanas_folga: number | null
+  /** Data (YYYY-MM-DD) dentro de uma semana de TRABALHO — ancora o ciclo no calendário. */
+  recorrencia_ancora: string | null
 }
 
 export interface RegraHorarioColaboradorExcecaoData {
