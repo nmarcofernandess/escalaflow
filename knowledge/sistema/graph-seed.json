@@ -1211,6 +1211,42 @@
     {
       "nome": "Supermercado",
       "tipo": "setor"
+    },
+    {
+      "nome": "CLT 44h 6x1",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "CLT 36h 6x1",
+      "tipo": "contrato"
+    },
+    {
+      "nome": "Regime 6X1",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Folga única",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Transição de domingo",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Dia avulso",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Folga avulsa",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Cascata de regime",
+      "tipo": "conceito"
+    },
+    {
+      "nome": "Intermitente quinzenal",
+      "tipo": "conceito"
     }
   ],
   "relations": [
@@ -3421,6 +3457,60 @@
       "to_nome": "CCT FecomercioSP",
       "tipo_relacao": "depende_de",
       "peso": 1
+    },
+    {
+      "from_nome": "CLT 44h 6x1",
+      "to_nome": "Regime 6X1",
+      "tipo_relacao": "regido_por",
+      "peso": 1.0
+    },
+    {
+      "from_nome": "CLT 36h 6x1",
+      "to_nome": "Regime 6X1",
+      "tipo_relacao": "regido_por",
+      "peso": 1.0
+    },
+    {
+      "from_nome": "Regime 6X1",
+      "to_nome": "Folga única",
+      "tipo_relacao": "exige",
+      "peso": 1.0
+    },
+    {
+      "from_nome": "Folga única",
+      "to_nome": "Ciclo de domingo",
+      "tipo_relacao": "depende_de",
+      "peso": 0.9
+    },
+    {
+      "from_nome": "Regime 6X1",
+      "to_nome": "Transição de domingo",
+      "tipo_relacao": "exige",
+      "peso": 0.9
+    },
+    {
+      "from_nome": "Transição de domingo",
+      "to_nome": "Máximo 6 dias consecutivos",
+      "tipo_relacao": "regido_por",
+      "peso": 1.0
+    },
+    {
+      "from_nome": "Cascata de regime",
+      "to_nome": "Regime 6X1",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.8
+    },
+    {
+      "from_nome": "Cascata de regime",
+      "to_nome": "Regime 5X2",
+      "tipo_relacao": "aplica_se_a",
+      "peso": 0.8
+    },
+    {
+      "from_nome": "Intermitente quinzenal",
+      "to_nome": "Ciclo de domingo",
+      "tipo_relacao": "depende_de",
+      "peso": 0.8
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generated_by": "claude-opus",
-  "generated_at": "2026-03-18",
+  "generated_at": "2026-06-10",
   "sources": [
     {
       "relative_path": "sistema/visao-geral.md",
@@ -29,15 +29,42 @@
             "escalonamento"
           ],
           "entidades": [
-            { "nome": "EscalaFlow", "tipo": "conceito" },
-            { "nome": "Motor OR-Tools", "tipo": "conceito" },
-            { "nome": "Escala", "tipo": "conceito" },
-            { "nome": "RH", "tipo": "conceito" }
+            {
+              "nome": "EscalaFlow",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Motor OR-Tools",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Escala",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "RH",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "EscalaFlow", "to": "Motor OR-Tools", "tipo_relacao": "depende_de", "peso": 1.0 },
-            { "from": "EscalaFlow", "to": "Escala", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "RH", "to": "EscalaFlow", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "EscalaFlow",
+              "to": "Motor OR-Tools",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            },
+            {
+              "from": "EscalaFlow",
+              "to": "Escala",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "RH",
+              "to": "EscalaFlow",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -65,14 +92,36 @@
             "atualizacao"
           ],
           "entidades": [
-            { "nome": "EscalaFlow", "tipo": "conceito" },
-            { "nome": "PGlite", "tipo": "conceito" },
-            { "nome": "Motor OR-Tools", "tipo": "conceito" },
-            { "nome": "IA Assistente", "tipo": "conceito" }
+            {
+              "nome": "EscalaFlow",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "PGlite",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Motor OR-Tools",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "IA Assistente",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "EscalaFlow", "to": "PGlite", "tipo_relacao": "depende_de", "peso": 1.0 },
-            { "from": "EscalaFlow", "to": "IA Assistente", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "EscalaFlow",
+              "to": "PGlite",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            },
+            {
+              "from": "EscalaFlow",
+              "to": "IA Assistente",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -99,18 +148,81 @@
             "travar escala"
           ],
           "entidades": [
-            { "nome": "Grid 15min", "tipo": "conceito" },
-            { "nome": "Escala", "tipo": "conceito" },
-            { "nome": "RASCUNHO", "tipo": "conceito" },
-            { "nome": "OFICIAL", "tipo": "conceito" },
-            { "nome": "ARQUIVADA", "tipo": "conceito" },
-            { "nome": "Explicabilidade", "tipo": "conceito" }
+            {
+              "nome": "Grid 15min",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Escala",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "RASCUNHO",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "OFICIAL",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "ARQUIVADA",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Explicabilidade",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Escala", "to": "RASCUNHO", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Escala", "to": "OFICIAL", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Escala", "to": "ARQUIVADA", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "EscalaFlow", "to": "Grid 15min", "tipo_relacao": "exige", "peso": 1.0 }
+            {
+              "from": "Escala",
+              "to": "RASCUNHO",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Escala",
+              "to": "OFICIAL",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Escala",
+              "to": "ARQUIVADA",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "EscalaFlow",
+              "to": "Grid 15min",
+              "tipo_relacao": "exige",
+              "peso": 1.0
+            }
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Grid de 15 minutos (todos os horarios quantizados), ciclo de vida da escala (RASCUNHO, OFICIAL, ARQUIVADA) e inicio da tabela de tipos de trabalhador com os regimes 5x2 e 6x1.",
+          "tags": [
+            "grid 15 minutos",
+            "ciclo de vida",
+            "rascunho oficial arquivada",
+            "tipos de trabalhador",
+            "regime 5x2",
+            "regime 6x1"
+          ]
+        },
+        {
+          "chunk_index": 4,
+          "resumo": "Tipos intermitentes (A fixo, B rotativo com XOR de domingo) e diferenciais do EscalaFlow: 35 regras automaticas, 3 engines, explicabilidade, multi-pass com degradacao graciosa e IA assistente.",
+          "tags": [
+            "intermitente tipo a",
+            "intermitente tipo b",
+            "xor domingo",
+            "diferenciais",
+            "multi-pass",
+            "explicabilidade",
+            "ia assistente"
           ]
         }
       ]
@@ -139,16 +251,46 @@
             "entrada saida"
           ],
           "entidades": [
-            { "nome": "Regra Individual", "tipo": "regra" },
-            { "nome": "Hierarquia de Precedencia", "tipo": "conceito" },
-            { "nome": "Excecao por Data", "tipo": "regra" },
-            { "nome": "Perfil de Horario", "tipo": "conceito" },
-            { "nome": "Colaborador", "tipo": "conceito" }
+            {
+              "nome": "Regra Individual",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Hierarquia de Precedencia",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Excecao por Data",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Perfil de Horario",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Colaborador",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Excecao por Data", "to": "Regra Individual", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Regra Individual", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Excecao por Data", "to": "Perfil de Horario", "tipo_relacao": "compoe", "peso": 0.5 }
+            {
+              "from": "Excecao por Data",
+              "to": "Regra Individual",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Regra Individual",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Excecao por Data",
+              "to": "Perfil de Horario",
+              "tipo_relacao": "compoe",
+              "peso": 0.5
+            }
           ]
         },
         {
@@ -172,15 +314,42 @@
             "folga semanal"
           ],
           "entidades": [
-            { "nome": "salvar_regra_horario_colaborador", "tipo": "conceito" },
-            { "nome": "Folga Fixa", "tipo": "regra" },
-            { "nome": "Preferencia de Turno", "tipo": "conceito" },
-            { "nome": "Ciclo de Domingos", "tipo": "regra" }
+            {
+              "nome": "salvar_regra_horario_colaborador",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Folga Fixa",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Preferencia de Turno",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Ciclo de Domingos",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "salvar_regra_horario_colaborador", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "salvar_regra_horario_colaborador", "to": "Folga Fixa", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "salvar_regra_horario_colaborador", "to": "Ciclo de Domingos", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "salvar_regra_horario_colaborador",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "salvar_regra_horario_colaborador",
+              "to": "Folga Fixa",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "salvar_regra_horario_colaborador",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -201,13 +370,32 @@
             "excecao temporaria"
           ],
           "entidades": [
-            { "nome": "upsert_regra_excecao_data", "tipo": "conceito" },
-            { "nome": "Excecao por Data", "tipo": "regra" },
-            { "nome": "Colaborador", "tipo": "conceito" }
+            {
+              "nome": "upsert_regra_excecao_data",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Excecao por Data",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Colaborador",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "upsert_regra_excecao_data", "to": "Excecao por Data", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Excecao por Data", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "upsert_regra_excecao_data",
+              "to": "Excecao por Data",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Excecao por Data",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -232,13 +420,32 @@
             "dias disponiveis"
           ],
           "entidades": [
-            { "nome": "Ciclo de Domingos", "tipo": "regra" },
-            { "nome": "Folga Fixa", "tipo": "regra" },
-            { "nome": "CCT FecomercioSP", "tipo": "legislacao" }
+            {
+              "nome": "Ciclo de Domingos",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Folga Fixa",
+              "tipo": "regra"
+            },
+            {
+              "nome": "CCT FecomercioSP",
+              "tipo": "legislacao"
+            }
           ],
           "relacoes": [
-            { "from": "Ciclo de Domingos", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Folga Fixa", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Ciclo de Domingos",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "Folga Fixa",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -259,13 +466,32 @@
             "configurar"
           ],
           "entidades": [
-            { "nome": "salvar_regra_horario_colaborador", "tipo": "conceito" },
-            { "nome": "upsert_regra_excecao_data", "tipo": "conceito" },
-            { "nome": "Excecao", "tipo": "conceito" }
+            {
+              "nome": "salvar_regra_horario_colaborador",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "upsert_regra_excecao_data",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Excecao",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "salvar_regra_horario_colaborador", "to": "Regra Individual", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "upsert_regra_excecao_data", "to": "Excecao por Data", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "salvar_regra_horario_colaborador",
+              "to": "Regra Individual",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "upsert_regra_excecao_data",
+              "to": "Excecao por Data",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
           ]
         }
       ]
@@ -298,13 +524,32 @@
             "SOFT constraint"
           ],
           "entidades": [
-            { "nome": "Cobertura de Demanda", "tipo": "conceito" },
-            { "nome": "INFEASIBLE", "tipo": "conceito" },
-            { "nome": "SOFT Constraint", "tipo": "conceito" }
+            {
+              "nome": "Cobertura de Demanda",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "INFEASIBLE",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "SOFT Constraint",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Cobertura de Demanda", "to": "SOFT Constraint", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "INFEASIBLE", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Cobertura de Demanda",
+              "to": "SOFT Constraint",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "INFEASIBLE",
+              "to": "Motor OR-Tools",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -328,14 +573,36 @@
             "impedimento"
           ],
           "entidades": [
-            { "nome": "Modo Rapido", "tipo": "conceito" },
-            { "nome": "Modo Otimizado", "tipo": "conceito" },
-            { "nome": "Violacao HARD", "tipo": "conceito" },
-            { "nome": "Violacao SOFT", "tipo": "conceito" }
+            {
+              "nome": "Modo Rapido",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Modo Otimizado",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Violacao HARD",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Violacao SOFT",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Violacao HARD", "to": "CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Modo Otimizado", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Violacao HARD",
+              "to": "CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "Modo Otimizado",
+              "to": "Motor OR-Tools",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -359,14 +626,36 @@
             "horarios faltando"
           ],
           "entidades": [
-            { "nome": "Rules Override", "tipo": "conceito" },
-            { "nome": "Motor OR-Tools", "tipo": "conceito" },
-            { "nome": "Ciclo", "tipo": "conceito" },
-            { "nome": "H1", "tipo": "regra" }
+            {
+              "nome": "Rules Override",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Motor OR-Tools",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Ciclo",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "H1",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "Rules Override", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Rules Override", "to": "H1", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Rules Override",
+              "to": "Motor OR-Tools",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Rules Override",
+              "to": "H1",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -395,16 +684,46 @@
             "noturno"
           ],
           "entidades": [
-            { "nome": "CLT 44h", "tipo": "contrato" },
-            { "nome": "Estagiario", "tipo": "contrato" },
-            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
-            { "nome": "Compensacao 9h45", "tipo": "regra" },
-            { "nome": "Ciclo de Domingos", "tipo": "regra" }
+            {
+              "nome": "CLT 44h",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "Estagiario",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "Jovem Aprendiz",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "Compensacao 9h45",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Ciclo de Domingos",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "Compensacao 9h45", "to": "CLT 44h", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Estagiario", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 },
-            { "from": "Jovem Aprendiz", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 }
+            {
+              "from": "Compensacao 9h45",
+              "to": "CLT 44h",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Estagiario",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            },
+            {
+              "from": "Jovem Aprendiz",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -432,15 +751,42 @@
             "flexivel"
           ],
           "entidades": [
-            { "nome": "Rank", "tipo": "conceito" },
-            { "nome": "Clopening", "tipo": "regra" },
-            { "nome": "Perfil de Horario", "tipo": "conceito" },
-            { "nome": "Antipattern", "tipo": "conceito" }
+            {
+              "nome": "Rank",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Clopening",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Perfil de Horario",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Antipattern",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Rank", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Clopening", "to": "Antipattern", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Perfil de Horario", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Rank",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Clopening",
+              "to": "Antipattern",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Perfil de Horario",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -462,12 +808,28 @@
             "mudar status"
           ],
           "entidades": [
-            { "nome": "Regra Editavel", "tipo": "conceito" },
-            { "nome": "Regra Fixa", "tipo": "conceito" }
+            {
+              "nome": "Regra Editavel",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Regra Fixa",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Regra Fixa", "to": "CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Regra Editavel", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Regra Fixa",
+              "to": "CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "Regra Editavel",
+              "to": "Motor OR-Tools",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -494,13 +856,32 @@
             "explicar"
           ],
           "entidades": [
-            { "nome": "PGlite", "tipo": "conceito" },
-            { "nome": "Backup", "tipo": "conceito" },
-            { "nome": "IA Assistente", "tipo": "conceito" }
+            {
+              "nome": "PGlite",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Backup",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "IA Assistente",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "EscalaFlow", "to": "PGlite", "tipo_relacao": "depende_de", "peso": 1.0 },
-            { "from": "IA Assistente", "to": "EscalaFlow", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "EscalaFlow",
+              "to": "PGlite",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            },
+            {
+              "from": "IA Assistente",
+              "to": "EscalaFlow",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -525,12 +906,40 @@
             "dados preservados"
           ],
           "entidades": [
-            { "nome": "IA Assistente", "tipo": "conceito" },
-            { "nome": "Auto-Update", "tipo": "conceito" }
+            {
+              "nome": "IA Assistente",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Auto-Update",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "IA Assistente", "to": "EscalaFlow", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Auto-Update", "to": "EscalaFlow", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "IA Assistente",
+              "to": "EscalaFlow",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Auto-Update",
+              "to": "EscalaFlow",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
+          ]
+        },
+        {
+          "chunk_index": 8,
+          "resumo": "FAQ sobre limites de conhecimento da IA em legislacao e sobre atualizacoes do app: verificacao automatica via GitHub Releases e migracao de schema sem perda de dados.",
+          "tags": [
+            "atualizacao do app",
+            "auto-update",
+            "github releases",
+            "migracao de dados",
+            "faq",
+            "limites da ia"
           ]
         }
       ]
@@ -564,15 +973,40 @@
             "violacao"
           ],
           "entidades": [
-            { "nome": "Preflight", "tipo": "conceito" },
-            { "nome": "Escala", "tipo": "conceito" },
-            { "nome": "Motor OR-Tools", "tipo": "conceito" },
-            { "nome": "Modo Rapido", "tipo": "conceito" },
-            { "nome": "Modo Otimizado", "tipo": "conceito" }
+            {
+              "nome": "Preflight",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Escala",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Motor OR-Tools",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Modo Rapido",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Modo Otimizado",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Preflight", "to": "Escala", "tipo_relacao": "depende_de", "peso": 1.0 },
-            { "from": "Escala", "to": "Motor OR-Tools", "tipo_relacao": "depende_de", "peso": 1.0 }
+            {
+              "from": "Preflight",
+              "to": "Escala",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            },
+            {
+              "from": "Escala",
+              "to": "Motor OR-Tools",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -598,13 +1032,32 @@
             "violacao criada"
           ],
           "entidades": [
-            { "nome": "Rules Override", "tipo": "conceito" },
-            { "nome": "Ajuste de Escala", "tipo": "conceito" },
-            { "nome": "Alocacao", "tipo": "conceito" }
+            {
+              "nome": "Rules Override",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Ajuste de Escala",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Alocacao",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Ajuste de Escala", "to": "Escala", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Ajuste de Escala", "to": "Alocacao", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Ajuste de Escala",
+              "to": "Escala",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Ajuste de Escala",
+              "to": "Alocacao",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -631,14 +1084,36 @@
             "reduzir demanda"
           ],
           "entidades": [
-            { "nome": "Excecao", "tipo": "conceito" },
-            { "nome": "Ferias", "tipo": "conceito" },
-            { "nome": "INFEASIBLE", "tipo": "conceito" },
-            { "nome": "Diagnostico", "tipo": "conceito" }
+            {
+              "nome": "Excecao",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Ferias",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "INFEASIBLE",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Diagnostico",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Ferias", "to": "Excecao", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "INFEASIBLE", "to": "Diagnostico", "tipo_relacao": "depende_de", "peso": 1.0 }
+            {
+              "from": "Ferias",
+              "to": "Excecao",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "INFEASIBLE",
+              "to": "Diagnostico",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -660,13 +1135,32 @@
             "configurar colaborador"
           ],
           "entidades": [
-            { "nome": "Cadastro em Lote", "tipo": "conceito" },
-            { "nome": "Regra Individual", "tipo": "regra" },
-            { "nome": "Hierarquia de Precedencia", "tipo": "conceito" }
+            {
+              "nome": "Cadastro em Lote",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Regra Individual",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Hierarquia de Precedencia",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Cadastro em Lote", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Regra Individual", "to": "Hierarquia de Precedencia", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "Cadastro em Lote",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Regra Individual",
+              "to": "Hierarquia de Precedencia",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -693,14 +1187,38 @@
             "override setor"
           ],
           "entidades": [
-            { "nome": "Demanda Excepcional", "tipo": "conceito" },
-            { "nome": "Oficializacao", "tipo": "conceito" },
-            { "nome": "Horario de Funcionamento", "tipo": "conceito" }
+            {
+              "nome": "Demanda Excepcional",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Oficializacao",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Horario de Funcionamento",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Demanda Excepcional", "to": "Escala", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Oficializacao", "to": "Violacao HARD", "tipo_relacao": "exige", "peso": 1.0 },
-            { "from": "Horario de Funcionamento", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Demanda Excepcional",
+              "to": "Escala",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Oficializacao",
+              "to": "Violacao HARD",
+              "tipo_relacao": "exige",
+              "peso": 1.0
+            },
+            {
+              "from": "Horario de Funcionamento",
+              "to": "Setor",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         }
       ]
@@ -731,15 +1249,42 @@
             "override dia semana"
           ],
           "entidades": [
-            { "nome": "Empresa", "tipo": "conceito" },
-            { "nome": "Setor", "tipo": "conceito" },
-            { "nome": "Corte Semanal", "tipo": "conceito" },
-            { "nome": "Grid 15min", "tipo": "conceito" }
+            {
+              "nome": "Empresa",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Setor",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Corte Semanal",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Grid 15min",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Empresa", "to": "Setor", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Empresa", "to": "Grid 15min", "tipo_relacao": "exige", "peso": 1.0 },
-            { "from": "Setor", "to": "Empresa", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "Empresa",
+              "to": "Setor",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Empresa",
+              "to": "Grid 15min",
+              "tipo_relacao": "exige",
+              "peso": 1.0
+            },
+            {
+              "from": "Setor",
+              "to": "Empresa",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -771,15 +1316,42 @@
             "turno preferido"
           ],
           "entidades": [
-            { "nome": "Colaborador", "tipo": "conceito" },
-            { "nome": "Regra Individual", "tipo": "regra" },
-            { "nome": "Rank", "tipo": "conceito" },
-            { "nome": "Funcao", "tipo": "conceito" }
+            {
+              "nome": "Colaborador",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Regra Individual",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Rank",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Funcao",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Colaborador", "to": "Setor", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Colaborador", "to": "Regra Individual", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Colaborador", "to": "Funcao", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Colaborador",
+              "to": "Setor",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Colaborador",
+              "to": "Regra Individual",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Colaborador",
+              "to": "Funcao",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -805,16 +1377,46 @@
             "compensacao"
           ],
           "entidades": [
-            { "nome": "CLT 44h", "tipo": "contrato" },
-            { "nome": "CLT 36h", "tipo": "contrato" },
-            { "nome": "Estagiario 20h", "tipo": "contrato" },
-            { "nome": "Estagiario 30h", "tipo": "contrato" },
-            { "nome": "Jovem Aprendiz", "tipo": "contrato" }
+            {
+              "nome": "CLT 44h",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "CLT 36h",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "Estagiario 20h",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "Estagiario 30h",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "Jovem Aprendiz",
+              "tipo": "contrato"
+            }
           ],
           "relacoes": [
-            { "from": "CLT 44h", "to": "Compensacao 9h45", "tipo_relacao": "permite", "peso": 1.0 },
-            { "from": "Estagiario 20h", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 },
-            { "from": "Jovem Aprendiz", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 }
+            {
+              "from": "CLT 44h",
+              "to": "Compensacao 9h45",
+              "tipo_relacao": "permite",
+              "peso": 1.0
+            },
+            {
+              "from": "Estagiario 20h",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            },
+            {
+              "from": "Jovem Aprendiz",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -839,16 +1441,46 @@
             "periodo indisponivel"
           ],
           "entidades": [
-            { "nome": "Demanda", "tipo": "conceito" },
-            { "nome": "Demanda Excepcional", "tipo": "conceito" },
-            { "nome": "Excecao", "tipo": "conceito" },
-            { "nome": "Ferias", "tipo": "conceito" },
-            { "nome": "Atestado", "tipo": "conceito" }
+            {
+              "nome": "Demanda",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Demanda Excepcional",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Excecao",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Ferias",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Atestado",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Demanda", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Excecao", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Ferias", "to": "Excecao", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "Demanda",
+              "to": "Setor",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Excecao",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Ferias",
+              "to": "Excecao",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -876,15 +1508,42 @@
             "input hash"
           ],
           "entidades": [
-            { "nome": "Funcao", "tipo": "funcao" },
-            { "nome": "Escala", "tipo": "conceito" },
-            { "nome": "Pontuacao", "tipo": "conceito" },
-            { "nome": "Cobertura de Demanda", "tipo": "conceito" }
+            {
+              "nome": "Funcao",
+              "tipo": "funcao"
+            },
+            {
+              "nome": "Escala",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Pontuacao",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Cobertura de Demanda",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Funcao", "to": "Setor", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Escala", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Escala", "to": "Cobertura de Demanda", "tipo_relacao": "compoe", "peso": 1.0 }
+            {
+              "from": "Funcao",
+              "to": "Setor",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Escala",
+              "to": "Setor",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Escala",
+              "to": "Cobertura de Demanda",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -916,14 +1575,64 @@
             "HARD SOFT OFF"
           ],
           "entidades": [
-            { "nome": "Alocacao", "tipo": "conceito" },
-            { "nome": "Feriado", "tipo": "feriado" },
-            { "nome": "Regras do Motor", "tipo": "conceito" }
+            {
+              "nome": "Alocacao",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Feriado",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Regras do Motor",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Alocacao", "to": "Escala", "tipo_relacao": "compoe", "peso": 1.0 },
-            { "from": "Alocacao", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Feriado", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "Alocacao",
+              "to": "Escala",
+              "tipo_relacao": "compoe",
+              "peso": 1.0
+            },
+            {
+              "from": "Alocacao",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Feriado",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
+          ]
+        },
+        {
+          "chunk_index": 6,
+          "resumo": "Campos da entidade Alocacao (1 dia de 1 pessoa em 1 escala: status TRABALHO/FOLGA/INDISPONIVEL, horarios, minutos, almoco, funcao) e inicio da entidade Feriado (data, nome, tipo).",
+          "tags": [
+            "alocacao",
+            "status trabalho folga",
+            "minutos_trabalho",
+            "almoco",
+            "funcao_id",
+            "feriado",
+            "input_hash"
+          ]
+        },
+        {
+          "chunk_index": 7,
+          "resumo": "Feriados proibidos pela CCT (25/12 e 01/01) e catalogo das 35 regras do motor: 16 CLT obrigatorias, 7 SOFT de otimizacao e 12 ANTIPATTERN de boas praticas, com niveis HARD/SOFT/OFF.",
+          "tags": [
+            "regras do motor",
+            "35 regras",
+            "regras clt",
+            "regras soft",
+            "antipattern",
+            "hard soft off",
+            "cct feriados proibidos"
           ]
         }
       ]
@@ -958,17 +1667,50 @@
             "nao editavel"
           ],
           "entidades": [
-            { "nome": "Interjornada", "tipo": "regra" },
-            { "nome": "H2", "tipo": "regra" },
-            { "nome": "H4", "tipo": "regra" },
-            { "nome": "H5", "tipo": "regra" },
-            { "nome": "Art. 66 CLT", "tipo": "legislacao" },
-            { "nome": "Art. 59 CLT", "tipo": "legislacao" }
+            {
+              "nome": "Interjornada",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H2",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H4",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H5",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Art. 66 CLT",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Art. 59 CLT",
+              "tipo": "legislacao"
+            }
           ],
           "relacoes": [
-            { "from": "H2", "to": "Art. 66 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "H4", "to": "Art. 59 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "H2", "to": "Interjornada", "tipo_relacao": "exige", "peso": 1.0 }
+            {
+              "from": "H2",
+              "to": "Art. 66 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "H4",
+              "to": "Art. 59 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "H2",
+              "to": "Interjornada",
+              "tipo_relacao": "exige",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1003,23 +1745,80 @@
             "H17"
           ],
           "entidades": [
-            { "nome": "H11", "tipo": "regra" },
-            { "nome": "H12", "tipo": "regra" },
-            { "nome": "H13", "tipo": "regra" },
-            { "nome": "H14", "tipo": "regra" },
-            { "nome": "H15", "tipo": "regra" },
-            { "nome": "H16", "tipo": "regra" },
-            { "nome": "H17", "tipo": "regra" },
-            { "nome": "Lei 11.788", "tipo": "legislacao" },
-            { "nome": "Art. 404 CLT", "tipo": "legislacao" }
+            {
+              "nome": "H11",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H12",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H13",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H14",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H15",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H16",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H17",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Lei 11.788",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Art. 404 CLT",
+              "tipo": "legislacao"
+            }
           ],
           "relacoes": [
-            { "from": "H11", "to": "Estagiario", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "H13", "to": "Estagiario", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "H15", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "H16", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "H17", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "H11", "to": "Lei 11.788", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "H11",
+              "to": "Estagiario",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "H13",
+              "to": "Estagiario",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "H15",
+              "to": "Jovem Aprendiz",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "H16",
+              "to": "Jovem Aprendiz",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "H17",
+              "to": "Jovem Aprendiz",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "H11",
+              "to": "Lei 11.788",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1052,17 +1851,50 @@
             "configuravel"
           ],
           "entidades": [
-            { "nome": "H18", "tipo": "regra" },
-            { "nome": "H1", "tipo": "regra" },
-            { "nome": "H6", "tipo": "regra" },
-            { "nome": "Art. 67 CLT", "tipo": "legislacao" },
-            { "nome": "Art. 71 CLT", "tipo": "legislacao" },
-            { "nome": "CCT FecomercioSP", "tipo": "legislacao" }
+            {
+              "nome": "H18",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H1",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H6",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Art. 67 CLT",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Art. 71 CLT",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "CCT FecomercioSP",
+              "tipo": "legislacao"
+            }
           ],
           "relacoes": [
-            { "from": "H18", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "H1", "to": "Art. 67 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "H6", "to": "Art. 71 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "H18",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "H1",
+              "to": "Art. 67 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "H6",
+              "to": "Art. 71 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1090,17 +1922,50 @@
             "configuravel"
           ],
           "entidades": [
-            { "nome": "H10", "tipo": "regra" },
-            { "nome": "DIAS_TRABALHO", "tipo": "regra" },
-            { "nome": "MIN_DIARIO", "tipo": "regra" },
-            { "nome": "S_DEFICIT", "tipo": "regra" },
-            { "nome": "S_SURPLUS", "tipo": "regra" },
-            { "nome": "S_DOMINGO_CICLO", "tipo": "regra" }
+            {
+              "nome": "H10",
+              "tipo": "regra"
+            },
+            {
+              "nome": "DIAS_TRABALHO",
+              "tipo": "regra"
+            },
+            {
+              "nome": "MIN_DIARIO",
+              "tipo": "regra"
+            },
+            {
+              "nome": "S_DEFICIT",
+              "tipo": "regra"
+            },
+            {
+              "nome": "S_SURPLUS",
+              "tipo": "regra"
+            },
+            {
+              "nome": "S_DOMINGO_CICLO",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "H10", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "S_DEFICIT", "to": "Cobertura de Demanda", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "S_DOMINGO_CICLO", "to": "Ciclo de Domingos", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "H10",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "S_DEFICIT",
+              "to": "Cobertura de Demanda",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "S_DOMINGO_CICLO",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1131,17 +1996,50 @@
             "AP5"
           ],
           "entidades": [
-            { "nome": "S_TURNO_PREF", "tipo": "regra" },
-            { "nome": "S_CONSISTENCIA", "tipo": "regra" },
-            { "nome": "S_SPREAD", "tipo": "regra" },
-            { "nome": "Clopening", "tipo": "regra" },
-            { "nome": "AP2", "tipo": "regra" },
-            { "nome": "AP3", "tipo": "regra" }
+            {
+              "nome": "S_TURNO_PREF",
+              "tipo": "regra"
+            },
+            {
+              "nome": "S_CONSISTENCIA",
+              "tipo": "regra"
+            },
+            {
+              "nome": "S_SPREAD",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Clopening",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP2",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP3",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "S_TURNO_PREF", "to": "Colaborador", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "S_SPREAD", "to": "Setor", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Clopening", "to": "Interjornada", "tipo_relacao": "depende_de", "peso": 0.5 }
+            {
+              "from": "S_TURNO_PREF",
+              "to": "Colaborador",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "S_SPREAD",
+              "to": "Setor",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Clopening",
+              "to": "Interjornada",
+              "tipo_relacao": "depende_de",
+              "peso": 0.5
+            }
           ]
         },
         {
@@ -1174,17 +2072,48 @@
             "ANTIPATTERN"
           ],
           "entidades": [
-            { "nome": "AP6", "tipo": "regra" },
-            { "nome": "AP7", "tipo": "regra" },
-            { "nome": "AP9", "tipo": "regra" },
-            { "nome": "AP10", "tipo": "regra" },
-            { "nome": "AP15", "tipo": "regra" },
-            { "nome": "AP16", "tipo": "regra" },
-            { "nome": "Hierarquia de Regras", "tipo": "conceito" }
+            {
+              "nome": "AP6",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP7",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP9",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP10",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP15",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP16",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Hierarquia de Regras",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "AP6", "to": "Rank", "tipo_relacao": "depende_de", "peso": 1.0 },
-            { "from": "Hierarquia de Regras", "to": "Motor OR-Tools", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "AP6",
+              "to": "Rank",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            },
+            {
+              "from": "Hierarquia de Regras",
+              "to": "Motor OR-Tools",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         }
       ]
@@ -1217,14 +2146,36 @@
             "jornada continua"
           ],
           "entidades": [
-            { "nome": "Almoco", "tipo": "regra" },
-            { "nome": "Art. 71 CLT", "tipo": "legislacao" },
-            { "nome": "CCT FecomercioSP", "tipo": "legislacao" },
-            { "nome": "Intrajornada", "tipo": "conceito" }
+            {
+              "nome": "Almoco",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Art. 71 CLT",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "CCT FecomercioSP",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Intrajornada",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Almoco", "to": "Art. 71 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Almoco", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 0.5 }
+            {
+              "from": "Almoco",
+              "to": "Art. 71 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "Almoco",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 0.5
+            }
           ]
         },
         {
@@ -1250,14 +2201,36 @@
             "coffee break"
           ],
           "entidades": [
-            { "nome": "Almoco", "tipo": "regra" },
-            { "nome": "AP2", "tipo": "regra" },
-            { "nome": "Intervalo 15min", "tipo": "regra" },
-            { "nome": "Estagiario", "tipo": "contrato" }
+            {
+              "nome": "Almoco",
+              "tipo": "regra"
+            },
+            {
+              "nome": "AP2",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Intervalo 15min",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Estagiario",
+              "tipo": "contrato"
+            }
           ],
           "relacoes": [
-            { "from": "Intervalo 15min", "to": "Estagiario", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "AP2", "to": "Almoco", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Intervalo 15min",
+              "to": "Estagiario",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "AP2",
+              "to": "Almoco",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1284,15 +2257,42 @@
             "flexibilidade reduzida"
           ],
           "entidades": [
-            { "nome": "Interjornada", "tipo": "regra" },
-            { "nome": "Art. 66 CLT", "tipo": "legislacao" },
-            { "nome": "Clopening", "tipo": "regra" },
-            { "nome": "H2", "tipo": "regra" }
+            {
+              "nome": "Interjornada",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Art. 66 CLT",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Clopening",
+              "tipo": "regra"
+            },
+            {
+              "nome": "H2",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "Interjornada", "to": "Art. 66 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Clopening", "to": "Interjornada", "tipo_relacao": "depende_de", "peso": 1.0 },
-            { "from": "H2", "to": "Interjornada", "tipo_relacao": "exige", "peso": 1.0 }
+            {
+              "from": "Interjornada",
+              "to": "Art. 66 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "Clopening",
+              "to": "Interjornada",
+              "tipo_relacao": "depende_de",
+              "peso": 1.0
+            },
+            {
+              "from": "H2",
+              "to": "Interjornada",
+              "tipo_relacao": "exige",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1318,16 +2318,46 @@
             "folga obrigatoria"
           ],
           "entidades": [
-            { "nome": "DSR", "tipo": "regra" },
-            { "nome": "Art. 67 CLT", "tipo": "legislacao" },
-            { "nome": "Lei 605/1949", "tipo": "legislacao" },
-            { "nome": "Sumula 110 TST", "tipo": "legislacao" },
-            { "nome": "H1", "tipo": "regra" }
+            {
+              "nome": "DSR",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Art. 67 CLT",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Lei 605/1949",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Sumula 110 TST",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "H1",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "DSR", "to": "Art. 67 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "DSR", "to": "Lei 605/1949", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "H1", "to": "DSR", "tipo_relacao": "exige", "peso": 1.0 }
+            {
+              "from": "DSR",
+              "to": "Art. 67 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "DSR",
+              "to": "Lei 605/1949",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "H1",
+              "to": "DSR",
+              "tipo_relacao": "exige",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1352,14 +2382,38 @@
             "comercio"
           ],
           "entidades": [
-            { "nome": "Ciclo de Domingos", "tipo": "regra" },
-            { "nome": "Art. 386 CLT", "tipo": "legislacao" },
-            { "nome": "S_DOMINGO_CICLO", "tipo": "regra" }
+            {
+              "nome": "Ciclo de Domingos",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Art. 386 CLT",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "S_DOMINGO_CICLO",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "Ciclo de Domingos", "to": "Art. 386 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "S_DOMINGO_CICLO", "to": "Ciclo de Domingos", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Estagiario", "to": "Ciclo de Domingos", "tipo_relacao": "proibe", "peso": 1.0 }
+            {
+              "from": "Ciclo de Domingos",
+              "to": "Art. 386 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "S_DOMINGO_CICLO",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            },
+            {
+              "from": "Estagiario",
+              "to": "Ciclo de Domingos",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1384,13 +2438,32 @@
             "custo beneficio"
           ],
           "entidades": [
-            { "nome": "Jornada Maxima", "tipo": "regra" },
-            { "nome": "Compensacao 9h45", "tipo": "regra" },
-            { "nome": "Jornada Minima", "tipo": "regra" }
+            {
+              "nome": "Jornada Maxima",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Compensacao 9h45",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Jornada Minima",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "Jornada Maxima", "to": "Art. 59 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Compensacao 9h45", "to": "CLT 44h", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Jornada Maxima",
+              "to": "Art. 59 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "Compensacao 9h45",
+              "to": "CLT 44h",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1419,15 +2492,40 @@
             "Sumula 110"
           ],
           "entidades": [
-            { "nome": "Interjornada", "tipo": "regra" },
-            { "nome": "DSR", "tipo": "regra" },
-            { "nome": "Almoco", "tipo": "regra" },
-            { "nome": "Jornada Maxima", "tipo": "regra" },
-            { "nome": "Clopening", "tipo": "regra" }
+            {
+              "nome": "Interjornada",
+              "tipo": "regra"
+            },
+            {
+              "nome": "DSR",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Almoco",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Jornada Maxima",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Clopening",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "Interjornada", "to": "Art. 66 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "DSR", "to": "Art. 67 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "Interjornada",
+              "to": "Art. 66 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "DSR",
+              "to": "Art. 67 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
           ]
         }
       ]
@@ -1458,15 +2556,42 @@
             "legislacao trabalhista"
           ],
           "entidades": [
-            { "nome": "CCT FecomercioSP", "tipo": "legislacao" },
-            { "nome": "Natal", "tipo": "feriado" },
-            { "nome": "Ano Novo", "tipo": "feriado" },
-            { "nome": "H18", "tipo": "regra" }
+            {
+              "nome": "CCT FecomercioSP",
+              "tipo": "legislacao"
+            },
+            {
+              "nome": "Natal",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Ano Novo",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "H18",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "H18", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "H18", "to": "Natal", "tipo_relacao": "proibe", "peso": 1.0 },
-            { "from": "H18", "to": "Ano Novo", "tipo_relacao": "proibe", "peso": 1.0 }
+            {
+              "from": "H18",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "H18",
+              "to": "Natal",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            },
+            {
+              "from": "H18",
+              "to": "Ano Novo",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1495,14 +2620,34 @@
             "dia normal"
           ],
           "entidades": [
-            { "nome": "Feriado Nacional", "tipo": "feriado" },
-            { "nome": "Carnaval", "tipo": "feriado" },
-            { "nome": "Tiradentes", "tipo": "feriado" },
-            { "nome": "Dia do Trabalho", "tipo": "feriado" },
-            { "nome": "Corpus Christi", "tipo": "feriado" }
+            {
+              "nome": "Feriado Nacional",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Carnaval",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Tiradentes",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Dia do Trabalho",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Corpus Christi",
+              "tipo": "feriado"
+            }
           ],
           "relacoes": [
-            { "from": "Feriado Nacional", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "Feriado Nacional",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1527,13 +2672,32 @@
             "nenhum feriado"
           ],
           "entidades": [
-            { "nome": "Almoco Reduzido CCT", "tipo": "regra" },
-            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
-            { "nome": "H16", "tipo": "regra" }
+            {
+              "nome": "Almoco Reduzido CCT",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Jovem Aprendiz",
+              "tipo": "contrato"
+            },
+            {
+              "nome": "H16",
+              "tipo": "regra"
+            }
           ],
           "relacoes": [
-            { "from": "Almoco Reduzido CCT", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "H16", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            {
+              "from": "Almoco Reduzido CCT",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            },
+            {
+              "from": "H16",
+              "to": "Jovem Aprendiz",
+              "tipo_relacao": "aplica_se_a",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1558,13 +2722,32 @@
             "Art 386"
           ],
           "entidades": [
-            { "nome": "Folha de Pagamento", "tipo": "conceito" },
-            { "nome": "Ciclo de Domingos", "tipo": "regra" },
-            { "nome": "Art. 386 CLT", "tipo": "legislacao" }
+            {
+              "nome": "Folha de Pagamento",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Ciclo de Domingos",
+              "tipo": "regra"
+            },
+            {
+              "nome": "Art. 386 CLT",
+              "tipo": "legislacao"
+            }
           ],
           "relacoes": [
-            { "from": "EscalaFlow", "to": "Folha de Pagamento", "tipo_relacao": "proibe", "peso": 1.0 },
-            { "from": "Ciclo de Domingos", "to": "Art. 386 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "EscalaFlow",
+              "to": "Folha de Pagamento",
+              "tipo_relacao": "proibe",
+              "peso": 1.0
+            },
+            {
+              "from": "Ciclo de Domingos",
+              "to": "Art. 386 CLT",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
           ]
         },
         {
@@ -1589,14 +2772,36 @@
             "escala complexa"
           ],
           "entidades": [
-            { "nome": "Black Friday", "tipo": "conceito" },
-            { "nome": "Carnaval", "tipo": "feriado" },
-            { "nome": "Semana Santa", "tipo": "feriado" },
-            { "nome": "Demanda Excepcional", "tipo": "conceito" }
+            {
+              "nome": "Black Friday",
+              "tipo": "conceito"
+            },
+            {
+              "nome": "Carnaval",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Semana Santa",
+              "tipo": "feriado"
+            },
+            {
+              "nome": "Demanda Excepcional",
+              "tipo": "conceito"
+            }
           ],
           "relacoes": [
-            { "from": "Black Friday", "to": "Demanda Excepcional", "tipo_relacao": "exige", "peso": 1.0 },
-            { "from": "Natal", "to": "CCT FecomercioSP", "tipo_relacao": "regido_por", "peso": 1.0 }
+            {
+              "from": "Black Friday",
+              "to": "Demanda Excepcional",
+              "tipo_relacao": "exige",
+              "peso": 1.0
+            },
+            {
+              "from": "Natal",
+              "to": "CCT FecomercioSP",
+              "tipo_relacao": "regido_por",
+              "peso": 1.0
+            }
           ]
         }
       ]
@@ -1607,169 +2812,153 @@
       "chunks": [
         {
           "chunk_index": 0,
-          "resumo": "Visao geral dos 4 tipos de contrato padrao do EscalaFlow e detalhamento do CLT 44h: regime 5X2, 44h semanais, max 9h45/dia com compensacao, trabalha domingo, hora extra ate 10h.",
+          "resumo": "Visao geral dos contratos de fabrica nos dois regimes (5x2 e 6x1) — CLT 44h e 36h existem nas duas versoes — e especificacao do CLT 44h padrao (5x2, 44h semanais, max 9h45/dia, compensacao).",
           "tags": [
-            "tipos contrato",
-            "4 contratos",
-            "CLT 44h",
-            "44 horas",
-            "regime 5X2",
-            "5 dias trabalho",
-            "2 folgas",
-            "9h45",
-            "compensacao",
-            "hora extra",
-            "10h dia",
-            "trabalha domingo",
-            "funcionario regular",
-            "supermercado",
-            "mais comum",
-            "8h48 por dia"
-          ],
-          "entidades": [
-            { "nome": "CLT 44h", "tipo": "contrato" },
-            { "nome": "Compensacao 9h45", "tipo": "regra" },
-            { "nome": "Regime 5X2", "tipo": "conceito" }
-          ],
-          "relacoes": [
-            { "from": "CLT 44h", "to": "Regime 5X2", "tipo_relacao": "exige", "peso": 1.0 },
-            { "from": "CLT 44h", "to": "Compensacao 9h45", "tipo_relacao": "permite", "peso": 1.0 }
+            "tipos de contrato",
+            "contratos de fabrica",
+            "clt 44h",
+            "regime 5x2",
+            "regime 6x1",
+            "horas semanais",
+            "jornada maxima",
+            "compensacao 9h45"
           ]
         },
         {
           "chunk_index": 1,
-          "resumo": "Restricoes do CLT 44h (max 6 dias, interjornada 11h, almoco) e detalhamento do CLT 36h: mesmas restricoes legais mas meta semanal de 36h (7h12/dia em media).",
+          "resumo": "Exemplos praticos de jornada do CLT 44h, restricoes legais (max 6 dias consecutivos, interjornada 11h, almoco obrigatorio, intervalo 15min) e inicio da especificacao do CLT 36h (5x2).",
           "tags": [
-            "CLT 44h restricoes",
-            "6 dias consecutivos",
+            "clt 44h",
+            "exemplos praticos",
+            "restricoes clt",
             "interjornada 11h",
             "almoco obrigatorio",
-            "30min CCT",
-            "1h CLT",
-            "intervalo 15min",
-            "CLT 36h",
-            "36 horas",
-            "carga reduzida",
-            "7h12 dia",
-            "mesmas restricoes",
-            "meta menor",
-            "contrato parcial"
-          ],
-          "entidades": [
-            { "nome": "CLT 44h", "tipo": "contrato" },
-            { "nome": "CLT 36h", "tipo": "contrato" },
-            { "nome": "Interjornada", "tipo": "regra" },
-            { "nome": "Almoco", "tipo": "regra" }
-          ],
-          "relacoes": [
-            { "from": "CLT 36h", "to": "Regime 5X2", "tipo_relacao": "exige", "peso": 1.0 },
-            { "from": "CLT 36h", "to": "Interjornada", "tipo_relacao": "exige", "peso": 1.0 }
+            "clt 36h",
+            "6 dias consecutivos"
           ]
         },
         {
           "chunk_index": 2,
-          "resumo": "Estagiario Manha (20h): max 4h/dia, nunca domingo, nunca hora extra, intervalo 15min obrigatorio, protegido pela Lei 11.788. Estagiario Tarde/Noite (30h): max 6h/dia, mesmas restricoes.",
+          "resumo": "Especificacao dos contratos CLT 44h 6x1 e CLT 36h 6x1 (regime de varejo): 6 dias de trabalho e 1 folga por semana, meta SEMANAL com tolerancia, jornadas desiguais que fecham a meta, e o funcionamento da folga unica em XOR com o domingo.",
           "tags": [
-            "estagiario manha",
-            "20 horas",
-            "4 horas dia",
-            "estagiario tarde",
-            "estagiario noite",
-            "30 horas",
-            "6 horas dia",
-            "nunca domingo",
-            "nunca hora extra",
-            "proibido lei",
-            "Lei 11788",
-            "Lei do Estagio",
-            "intervalo 15min",
-            "sem almoco",
-            "protecao legal",
-            "estagio",
-            "universitario"
-          ],
-          "entidades": [
-            { "nome": "Estagiario 20h", "tipo": "contrato" },
-            { "nome": "Estagiario 30h", "tipo": "contrato" },
-            { "nome": "Lei 11.788", "tipo": "legislacao" },
-            { "nome": "Intervalo 15min", "tipo": "regra" }
-          ],
-          "relacoes": [
-            { "from": "Estagiario 20h", "to": "Lei 11.788", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Estagiario 30h", "to": "Lei 11.788", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Estagiario 20h", "to": "Intervalo 15min", "tipo_relacao": "exige", "peso": 1.0 }
+            "clt 44h 6x1",
+            "clt 36h 6x1",
+            "regime 6x1",
+            "folga unica",
+            "meta semanal",
+            "varejo",
+            "rodizio de domingo",
+            "jornadas desiguais",
+            "xor domingo"
           ]
         },
         {
           "chunk_index": 3,
-          "resumo": "Jovem Aprendiz: restricoes mais severas do sistema — nunca domingo, nunca feriado, nunca noturno (22h-05h), nunca hora extra, max 6h/dia. Protegido pela CLT Arts 404, 405, 432.",
+          "resumo": "Exemplo pratico de colaborador 6x1 no acougue (folga DOM numa semana, folga QUA na outra) e especificacao do Estagiario Manha 20h (Lei 11.788): max 4h/dia, nunca domingo, nunca hora extra.",
           "tags": [
-            "jovem aprendiz",
-            "aprendiz",
-            "menor aprendiz",
-            "restricoes severas",
+            "exemplo 6x1",
+            "acougue",
+            "estagiario 20h",
+            "lei 11788",
+            "jornada 4h",
             "nunca domingo",
-            "nunca feriado",
-            "nunca noturno",
-            "22h 05h",
-            "noite proibido",
-            "nunca hora extra",
-            "6 horas dia",
-            "Art 404",
-            "Art 405",
-            "Art 432",
-            "CLT protecao",
-            "programa aprendizagem",
-            "menor idade"
-          ],
-          "entidades": [
-            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
-            { "nome": "Art. 404 CLT", "tipo": "legislacao" },
-            { "nome": "Art. 405 CLT", "tipo": "legislacao" },
-            { "nome": "Art. 432 CLT", "tipo": "legislacao" }
-          ],
-          "relacoes": [
-            { "from": "Jovem Aprendiz", "to": "Art. 404 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Jovem Aprendiz", "to": "Art. 405 CLT", "tipo_relacao": "regido_por", "peso": 1.0 },
-            { "from": "Jovem Aprendiz", "to": "Art. 432 CLT", "tipo_relacao": "regido_por", "peso": 1.0 }
+            "nunca hora extra"
           ]
         },
         {
           "chunk_index": 4,
-          "resumo": "Tabela comparativa dos 5 contratos (horas/semana, max/dia, domingo, feriado, hora extra, noturno, compensacao) e perfis de horario como templates de janela de entrada/saida por contrato.",
+          "resumo": "Especificacao do Estagiario Tarde/Noite 30h: max 6h/dia, nunca domingo, nunca hora extra, intervalo de 15 minutos para jornada entre 4h e 6h.",
           "tags": [
-            "tabela comparativa",
-            "comparacao contratos",
-            "todos contratos",
-            "CLT 44h",
-            "CLT 36h",
-            "estagiario 20h",
             "estagiario 30h",
-            "aprendiz",
-            "horas semana",
-            "max dia",
-            "domingo permitido",
-            "feriado permitido",
-            "hora extra permitida",
-            "noturno permitido",
-            "compensacao permitida",
-            "perfil horario",
-            "template janela",
-            "entrada saida",
-            "manha tarde"
-          ],
-          "entidades": [
-            { "nome": "CLT 44h", "tipo": "contrato" },
-            { "nome": "CLT 36h", "tipo": "contrato" },
-            { "nome": "Estagiario 20h", "tipo": "contrato" },
-            { "nome": "Estagiario 30h", "tipo": "contrato" },
-            { "nome": "Jovem Aprendiz", "tipo": "contrato" },
-            { "nome": "Perfil de Horario", "tipo": "conceito" }
-          ],
-          "relacoes": [
-            { "from": "Perfil de Horario", "to": "CLT 44h", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Perfil de Horario", "to": "Estagiario 20h", "tipo_relacao": "aplica_se_a", "peso": 1.0 },
-            { "from": "Perfil de Horario", "to": "Jovem Aprendiz", "tipo_relacao": "aplica_se_a", "peso": 1.0 }
+            "jornada 6h",
+            "intervalo 15min",
+            "nunca hora extra",
+            "lei do estagio"
+          ]
+        },
+        {
+          "chunk_index": 5,
+          "resumo": "Restricoes do Jovem Aprendiz (nunca domingo, feriado, noturno ou hora extra) e tabela comparativa de todos os contratos incluindo regimes (5x2 vs 6x1) e folgas por semana.",
+          "tags": [
+            "jovem aprendiz",
+            "nunca noturno",
+            "tabela comparativa",
+            "regimes",
+            "folgas por semana",
+            "restricoes severas"
+          ]
+        },
+        {
+          "chunk_index": 6,
+          "resumo": "Feriados proibidos pela CCT (25/12 e 01/01) e perfis de horario por contrato: janelas de entrada e saida que servem como template padrao para colaboradores.",
+          "tags": [
+            "perfis de horario",
+            "janela entrada saida",
+            "template horario",
+            "cct fecomercio",
+            "feriados proibidos"
+          ]
+        }
+      ]
+    },
+    {
+      "relative_path": "sistema/regimes-escala.md",
+      "titulo": "sistema — regimes-escala",
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "resumo": "Define os regimes 5x2 (folga fixa + folga variavel em XOR com domingo) e 6x1 (folga unica em XOR puro: DOM quando folga domingo, dia variavel quando trabalha), e a cascata de resolucao do regime: colaborador, setor, contrato.",
+          "tags": [
+            "regime de escala",
+            "5x2",
+            "6x1",
+            "folga fixa",
+            "folga variavel",
+            "xor domingo",
+            "cascata de regime",
+            "regime do setor",
+            "folga unica"
+          ]
+        },
+        {
+          "chunk_index": 1,
+          "resumo": "Como o motor converte regime em dias_trabalho com meta semanal e tolerancia; a folga extra de transicao de domingo no 6x1 (evita 7+ dias corridos, CLT Art. 67) e a confirmacao de que preview de ciclo e advisory funcionam nos dois regimes.",
+          "tags": [
+            "transicao de domingo",
+            "folga extra",
+            "6 dias consecutivos",
+            "preview nivel 1",
+            "advisory",
+            "dias_trabalho",
+            "meta semanal",
+            "art 67"
+          ]
+        },
+        {
+          "chunk_index": 2,
+          "resumo": "Dia avulso: pessoa que trabalha num dia que seria folga — o caminho certo e ajustar a celula da escala (ajustar_alocacao); excecao por data nao cancela folga fixa. Folga avulsa: usar domingo_forcar_folga ou ajustar celula.",
+          "tags": [
+            "dia avulso",
+            "trabalhar na folga",
+            "ajustar alocacao",
+            "folga avulsa",
+            "excecao por data",
+            "hora extra",
+            "domingo_forcar_folga"
+          ]
+        },
+        {
+          "chunk_index": 3,
+          "resumo": "Recorrencia de intermitente: domingo sim/domingo nao e automatico via ciclo 1/1 (Tipo B); semana sim/semana nao exige contorno com excecoes BLOQUEIO por periodo; e o que considerar ao mudar o regime de um setor existente.",
+          "tags": [
+            "intermitente",
+            "quinzenal",
+            "a cada 15 dias",
+            "alternar semanas",
+            "bloqueio",
+            "mudar regime do setor",
+            "ciclo domingo 1/1",
+            "tipo b"
           ]
         }
       ]

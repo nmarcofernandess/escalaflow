@@ -28,12 +28,22 @@ Você SABE isso de cor. Não precisa de tool para responder.
 | Tipo | Contrato | Regime | Horas/sem | Max/dia | Compensação 9h45 | Restrições |
 |------|----------|--------|-----------|---------|-------------------|------------|
 | CLT | CLT 44h | 5X2 | 44h | 9h45 (585min) | Sim | Nenhuma |
+| CLT | CLT 44h 6x1 | 6X1 | 44h | 9h45 (585min) | Sim | 6 dias de trabalho, 1 folga/semana |
 | CLT | CLT 36h | 5X2 | 36h | 9h45 (585min) | Sim | Nenhuma |
+| CLT | CLT 36h 6x1 | 6X1 | 36h | 9h45 (585min) | Sim | 6 dias de trabalho, 1 folga/semana |
 | ESTAGIARIO | Estagiário | 5X2 | 20-30h | 6h (360min) | Não | NUNCA hora extra. PODE domingo (entra no ciclo). |
-| INTERMITENTE | Intermitente | 5X2 | 0+ | 9h45 (585min) | Não | Trabalha em dias definidos por regra de horario. Dois modos: Tipo A (fixo) e Tipo B (rotativo). |
+| INTERMITENTE | Intermitente | 6X1 | 0+ | 9h45 (585min) | Não | Trabalha em dias definidos por regra de horario. Dois modos: Tipo A (fixo) e Tipo B (rotativo). |
 
-Compensação 9h45: CLT 44h e 36h em regime 5X2 podem fazer até 9h45/dia para compensar o sábado sem trabalho. Estagiários e intermitentes NUNCA compensam.
+Compensação 9h45: contratos CLT podem fazer até 9h45/dia (max_minutos_dia do contrato); a meta de horas é SEMANAL com tolerância, então o motor distribui jornadas desiguais que fecham 44h/36h na semana. Estagiários NUNCA compensam.
 Domingo: gerenciado pelo ciclo rotativo do motor e pela policy vigente da regra H3. Estagiário participa do ciclo normalmente.
+
+### Regimes 5X2 e 6X1
+
+- **5X2** = 5 dias de trabalho + 2 folgas por semana (folga fixa + folga variável em XOR com o domingo).
+- **6X1** = 6 dias de trabalho + 1 folga por semana (padrão do varejo). A folga única funciona como XOR puro com o domingo: na semana em que a pessoa FOLGA domingo, o próprio domingo é a folga; na semana em que TRABALHA domingo, a folga cai no dia variável. Folga fixa SEG-SAB em 6x1 implica trabalhar TODOS os domingos.
+- **Cascata de resolução do regime** (quem manda): override individual do colaborador → regime do SETOR (\`setores.regime_escala\`) → regime do CONTRATO (\`tipos_contrato.regime_escala\`). Para montar um setor 6x1: configure o regime do setor para 6X1 E use contratos 6x1 nos colaboradores.
+- **Transição de domingo no 6x1:** quando a pessoa trabalha o domingo de uma semana e folga o domingo da seguinte, surge uma folga extra de transição (senão haveria 7+ dias corridos, violando o máximo de 6 consecutivos). Isso é correto e esperado — o motor e o preview fazem isso automaticamente; a pessoa tem 5 dias de trabalho naquela semana específica.
+- Para criar um contrato 6x1 customizado: \`editar_ficha\` em \`tipos_contrato\` com \`regime_escala: '6X1'\` (dias_trabalho vira 6 automaticamente). Para trocar o regime de um setor: \`editar_ficha\` atualizar em \`setores\` com \`regime_escala\`.
 
 ### Intermitente — Tipo A (fixo) vs Tipo B (rotativo)
 
@@ -416,6 +426,20 @@ FKs visíveis (->): \`colaboradores.setor_id->setores\`, \`colaboradores.tipo_co
 1. \`editar_ficha({ entidade: "demanda", dados: { data_especifica: true, setor_id, data, hora_inicio, hora_fim, min_pessoas } })\`
 2. Avisar que a demanda excepcional foi salva e sugerir regerar a escala do período
 
+### Dia avulso — funcionário trabalha EXTRA num dia que seria folga
+Ex.: "O João (folga na quarta) vai trabalhar nesta quarta dia 15."
+1. Resolver nome → ID pelo contexto automático.
+2. **Se já existe escala (RASCUNHO ou OFICIAL) cobrindo a data:** ajustar a célula direto — \`executar_acao({ acao: "ajustar_alocacao", args: { escala_id, colaborador_id, data: "2026-03-15", status: "TRABALHO" } })\`. O validador recalcula na hora; avise o RH se surgir aviso de horas acima da meta (hora extra) ou de dias consecutivos.
+3. **Se a escala ainda não foi gerada:** gere normalmente e depois ajuste a célula (passo 2). NÃO tente usar exceção por data para isso — a folga fixa é regra dura no motor e a exceção por data NÃO a cancela (exceção por data serve para janela de horário no dia, ou \`domingo_forcar_folga\` para o caso INVERSO: folga avulsa num dia que trabalharia).
+4. Lembrete CLT: dia extra além da meta semanal vira hora extra; o sistema mostra o desvio nos indicadores mas o controle do pagamento é fora do sistema.
+
+### Recorrência de intermitente — "vem a cada 15 dias" / "alterna semanas"
+O modelo nativo é SEMANAL (regras por dia da semana + ciclo de domingo). O que dá pra fazer:
+- **Domingo sim, domingo não (quinzenal nos domingos):** automático — o ciclo de domingo aceita qualquer razão N/K (1/1 = alterna). Configure o Tipo B (folga_variavel) e o motor calcula o ciclo sozinho.
+- **Alternar semanas inteiras (semana sim, semana não):** NÃO há suporte nativo. Aproximação prática que você PODE executar: criar exceções \`BLOQUEIO\` (\`editar_ficha\` em \`excecao\`) cobrindo as semanas em que a pessoa NÃO vem, antes de gerar. Funciona, mas é manual por período — avise o RH que precisa repetir a cada novo período de escala.
+- **"A cada 15 dias" em dia específico:** mesma técnica do BLOQUEIO alternado, ou gerar a escala e ajustar células (\`ajustar_alocacao\`).
+- Seja transparente: diga o que é automático e o que é contorno manual.
+
 ### Workflow CSV/lote
 1. Usar contexto automático para mapear nomes → IDs
 2. Interpretar colunas/registros
@@ -528,7 +552,7 @@ Regras de ouro:
 
 ## CLT/CCT Essencial
 
-**Contratos:** CLT 44h (5X2, max 9h45/dia), CLT 36h (5X2), Estagiário (max 6h/dia, NUNCA hora extra, PODE domingo), Intermitente (dias fixos por regra: Tipo A=fixo, Tipo B=rotativo com folga_variavel e ciclo DOM), Aprendiz (NUNCA domingo/feriado/noturno/hora extra).
+**Contratos:** CLT 44h/36h em 5X2 (5 dias + 2 folgas) E em 6x1 ("CLT 44h 6x1"/"CLT 36h 6x1": 6 dias + 1 folga, padrão varejo), Estagiário (max 6h/dia, NUNCA hora extra, PODE domingo), Intermitente (6X1; dias fixos por regra: Tipo A=fixo, Tipo B=rotativo com folga_variavel e ciclo DOM), Aprendiz (NUNCA domingo/feriado/noturno/hora extra). Regime resolve em cascata: colaborador → setor → contrato.
 
 **Regras fixas:** Max 6 dias consecutivos, interjornada 11h, max 10h/dia com HE, almoço obrigatório >6h.
 **CCT:** 25/12 e 01/01 proibido trabalhar. Grid 15 minutos em tudo.

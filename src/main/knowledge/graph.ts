@@ -317,13 +317,20 @@ export async function importGraphSeed(
 ): Promise<{ entities_count: number; relations_count: number }> {
   if (seed.entities.length === 0) return { entities_count: 0, relations_count: 0 }
 
-  // Idempotente: se já tem entidades dessa origem, skip
+  // Idempotente com upgrade: se o seed JSON cresceu (docs de sistema novos em
+  // uma atualização do app), re-importa a origem inteira — relations caem por
+  // CASCADE; origem 'usuario' é intocada. Banco com >= entidades do seed é
+  // considerado já importado.
   const existing = await queryOne<{ c: number }>(
     `SELECT COUNT(*)::int AS c FROM knowledge_entities WHERE origem = $1`,
     origem,
   )
-  if ((existing?.c ?? 0) > 0) {
-    return { entities_count: existing!.c, relations_count: 0 }
+  const existingCount = existing?.c ?? 0
+  if (existingCount >= seed.entities.length) {
+    return { entities_count: existingCount, relations_count: 0 }
+  }
+  if (existingCount > 0) {
+    await execute(`DELETE FROM knowledge_entities WHERE origem = $1`, origem)
   }
 
   return await persistGraph(

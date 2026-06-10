@@ -1,3 +1,5 @@
+import path from 'node:path'
+import fs from 'node:fs'
 import { queryOne, queryAll, execute, transaction } from './query'
 
 // ============================================================================
@@ -156,13 +158,15 @@ export async function seedData(): Promise<void> {
 // ============================================================================
 
 async function seedKnowledgeBase(): Promise<void> {
-  const kbCount = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM knowledge_sources')
-  if ((kbCount?.count ?? 0) > 0) return // Já tem conteúdo
-
+  // Re-seed por HASH: docs de sistema novos ou alterados entram em QUALQUER
+  // banco (não só no primeiro boot). Docs do usuário (tipo != 'sistema') são
+  // intocados. Sources antigos sem hash no metadata são re-ingeridos uma vez
+  // (re-embed local, sem API) e passam a carregar o hash.
   try {
     const { ingestKnowledge } = await import('../knowledge/ingest')
     const path = await import('node:path')
     const fs = await import('node:fs')
+    const crypto = await import('node:crypto')
 
     const knowledgeDir = resolveKnowledgeDir()
     if (!fs.existsSync(knowledgeDir)) {
@@ -176,39 +180,61 @@ async function seedKnowledgeBase(): Promise<void> {
       return
     }
 
-    console.log(`[SEED] Ingestando ${mdFiles.length} docs de conhecimento...`)
+    let novos = 0
+    let atualizados = 0
     let totalChunks = 0
 
     for (const file of mdFiles) {
       const content = fs.readFileSync(file.fullPath, 'utf-8')
+      const hash = crypto.createHash('sha256').update(content, 'utf-8').digest('hex')
+      const existing = await queryOne<{ id: number; hash: string | null }>(
+        `SELECT id, metadata->>'hash' AS hash FROM knowledge_sources
+         WHERE tipo = 'sistema' AND metadata->>'arquivo' = $1`,
+        file.relativePath,
+      )
+      if (existing && existing.hash === hash) continue
+
+      if (existing) {
+        // Doc alterado: remove source antigo (chunks caem por CASCADE) e re-ingere
+        await execute('DELETE FROM knowledge_sources WHERE id = $1', existing.id)
+        atualizados++
+      } else {
+        novos++
+      }
+
       const titulo = file.relativePath.replace(/\.md$/, '').replace(/\//g, ' — ')
       const result = await ingestKnowledge(titulo, content, 'high', {
         tipo: 'sistema',
         arquivo: file.relativePath,
+        hash,
       })
       totalChunks += result.chunks_count
     }
 
-    console.log(`[SEED] Knowledge base: ${mdFiles.length} doc(s), ${totalChunks} chunk(s) criados`)
+    if (novos + atualizados > 0) {
+      console.log(`[SEED] Knowledge base: ${novos} doc(s) novo(s), ${atualizados} atualizado(s), ${totalChunks} chunk(s) criados`)
+    }
   } catch (err) {
     console.warn('[SEED] Erro no seed KB (não-crítico):', (err as Error).message)
   }
 }
 
 function resolveKnowledgeDir(): string {
-  const path = require('node:path') as typeof import('node:path')
-  try {
-    const electron = require('electron') as { app?: { isPackaged?: boolean } }
-    if (electron.app?.isPackaged) {
-      return path.join(process.resourcesPath, 'knowledge')
-    }
-  } catch { /* fallback */ }
-  return path.join(__dirname, '../../knowledge')
+  // App empacotado: knowledge/ vai junto nos resources
+  if (process.resourcesPath) {
+    const fromResources = path.join(process.resourcesPath, 'knowledge')
+    if (fs.existsSync(fromResources)) return fromResources
+  }
+  // App dev (electron-vite injeta __dirname = out/main → ../../ = raiz)
+  if (typeof __dirname !== 'undefined') {
+    const fromBundle = path.join(__dirname, '../../knowledge')
+    if (fs.existsSync(fromBundle)) return fromBundle
+  }
+  // tsx/ESM puro (scripts) — cwd do projeto
+  return path.join(process.cwd(), 'knowledge')
 }
 
 function findMdFiles(dir: string, prefix = ''): { relativePath: string; fullPath: string }[] {
-  const path = require('node:path') as typeof import('node:path')
-  const fs = require('node:fs') as typeof import('node:fs')
   const files: { relativePath: string; fullPath: string }[] = []
 
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
