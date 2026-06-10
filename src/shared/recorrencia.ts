@@ -19,7 +19,7 @@ const DIA_TO_JSDAY: Record<string, number> = {
 
 const MS_SEMANA = 7 * 86_400_000
 
-// Formata sem toISOString (que converte pra UTC e erra o dia em fusos positivos)
+// Formata com acessores locais — toISOString/parsing date-only (UTC) deslocam o dia em fusos como o do Brasil
 function fmtDate(dt: Date): string {
   const y = dt.getFullYear()
   const m = String(dt.getMonth() + 1).padStart(2, '0')
@@ -51,7 +51,9 @@ export function indiceSemanaRecorrencia(dateISO: string, ancoraISO: string, cort
 /** true se a semana que contém dateISO é uma semana de FOLGA do ciclo. */
 export function semanaEhOff(dateISO: string, rec: RecorrenciaSemanal, corteSemanal: string): boolean {
   const ciclo = rec.semanas_trabalho + rec.semanas_folga
+  if (ciclo <= 0) return false // recorrência inválida = sem efeito (callers validam; guard evita NaN silencioso)
   const idx = indiceSemanaRecorrencia(dateISO, rec.ancora, corteSemanal)
+  if (Number.isNaN(idx)) return false
   const pos = ((idx % ciclo) + ciclo) % ciclo // módulo sempre positivo (índices negativos)
   return pos >= rec.semanas_trabalho
 }

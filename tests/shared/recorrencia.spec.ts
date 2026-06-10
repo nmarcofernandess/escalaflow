@@ -56,6 +56,12 @@ describe('semanaEhOff', () => {
     expect(semanaEhOff('2026-03-16', rec21, 'SEG_DOM')).toBe(true)  // 2 → OFF
     expect(semanaEhOff('2026-03-23', rec21, 'SEG_DOM')).toBe(false) // 3 → ON
   })
+
+  it('âncora no meio da semana (QUA) equivale à âncora na SEG da mesma semana', () => {
+    const recQua = { semanas_trabalho: 1, semanas_folga: 1, ancora: '2026-03-04' } // QUA
+    expect(semanaEhOff('2026-03-02', recQua, 'SEG_DOM')).toBe(false) // mesma semana da âncora → ON
+    expect(semanaEhOff('2026-03-09', recQua, 'SEG_DOM')).toBe(true)  // semana 1 → OFF
+  })
 })
 
 describe('expandirSemanasOff', () => {
@@ -90,5 +96,28 @@ describe('expandirSemanasOff', () => {
       recorrencia: { semanas_trabalho: 1, semanas_folga: 1, ancora: '2026-03-02' },
     })
     expect(ranges).toEqual([])
+  })
+
+  it('1/2: semanas OFF consecutivas coalescem num range único', () => {
+    const ranges = expandirSemanasOff({
+      data_inicio: '2026-03-02',
+      data_fim: '2026-03-29',
+      corte_semanal: 'SEG_DOM',
+      recorrencia: { semanas_trabalho: 1, semanas_folga: 2, ancora: '2026-03-02' },
+    })
+    expect(ranges).toEqual([{ data_inicio: '2026-03-09', data_fim: '2026-03-22' }])
+  })
+
+  it('corte DOM_SAB: 1/1 ancorado no domingo gera ranges DOM→SAB', () => {
+    const ranges = expandirSemanasOff({
+      data_inicio: '2026-03-01',
+      data_fim: '2026-03-28',
+      corte_semanal: 'DOM_SAB',
+      recorrencia: { semanas_trabalho: 1, semanas_folga: 1, ancora: '2026-03-01' },
+    })
+    expect(ranges).toEqual([
+      { data_inicio: '2026-03-08', data_fim: '2026-03-14' },
+      { data_inicio: '2026-03-22', data_fim: '2026-03-28' },
+    ])
   })
 })
