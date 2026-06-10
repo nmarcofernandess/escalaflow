@@ -2825,6 +2825,11 @@ export function SetorDetalhe() {
                           </SelectGroup>
                         </SelectContent>
                       </Select>
+                      {field.value === '6X1' && (
+                        <p className="text-[0.75rem] text-muted-foreground">
+                          6 dias + 1 folga semanal em rodízio com o domingo. Folga fixa em SEG-SAB = a pessoa trabalha todos os domingos.
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

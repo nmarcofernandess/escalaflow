@@ -370,6 +370,11 @@ export function ColaboradorDetalhe() {
   const selectedContrato = contratosList.find((tc) => tc.id === parseInt(watchedContratoId))
   const isIntermitente = derivarTipoTrabalhadorPorContrato(selectedContrato?.nome) === 'INTERMITENTE'
 
+  // Regime efetivo (cascata: setor → contrato) — muda labels/hints de folga
+  const regimeEfetivo = setoresList.find(s => s.id === setorIdNum)?.regime_escala
+    ?? selectedContrato?.regime_escala
+    ?? '5X2'
+
   // Sync form state from colaborador data
   useEffect(() => {
     if (colab) {
@@ -1142,7 +1147,7 @@ export function ColaboradorDetalhe() {
                       {/* Folga fixa + Folga variavel + Turno */}
                       <div className="grid grid-cols-3 gap-4">
                         <div className="flex flex-col gap-2">
-                          <Label className="text-xs">Folga fixa (5x2)</Label>
+                          <Label className="text-xs">Folga fixa</Label>
                           <Select
                             value={regraForm.folga_fixa_dia_semana}
                             onValueChange={v => {
@@ -1163,6 +1168,11 @@ export function ColaboradorDetalhe() {
                               </SelectGroup>
                             </SelectContent>
                           </Select>
+                          <p className="text-[0.7rem] text-muted-foreground">
+                            {regimeEfetivo === '6X1'
+                              ? 'Em 6x1: folga sempre neste dia e trabalha TODOS os domingos (sai do rodízio)'
+                              : 'Sempre folga neste dia'}
+                          </p>
                         </div>
                         <div className="flex flex-col gap-2">
                           <Label className="text-xs">Folga variavel (cond.)</Label>
