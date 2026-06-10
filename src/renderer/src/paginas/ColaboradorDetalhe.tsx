@@ -213,6 +213,10 @@ function getDefaultRegraForm() {
     preferencia_turno_soft: 'none',
     folga_fixa_dia_semana: 'none',
     folga_variavel_dia_semana: 'none',
+    recorrencia_ativa: false,
+    recorrencia_semanas_trabalho: '1',
+    recorrencia_semanas_folga: '1',
+    recorrencia_ancora: '',
   }
 }
 
@@ -240,6 +244,10 @@ function buildRegraFormFromRegras(regras: RegraHorarioColaborador[]) {
     preferencia_turno_soft: padrao.preferencia_turno_soft ?? 'none',
     folga_fixa_dia_semana: padrao.folga_fixa_dia_semana ?? 'none',
     folga_variavel_dia_semana: padrao.folga_variavel_dia_semana ?? 'none',
+    recorrencia_ativa: padrao.recorrencia_semanas_trabalho != null,
+    recorrencia_semanas_trabalho: String(padrao.recorrencia_semanas_trabalho ?? 1),
+    recorrencia_semanas_folga: String(padrao.recorrencia_semanas_folga ?? 1),
+    recorrencia_ancora: padrao.recorrencia_ancora ?? '',
   }
 }
 
@@ -505,6 +513,9 @@ export function ColaboradorDetalhe() {
       preferencia_turno_soft: current.preferencia_turno_soft === 'none' ? null : current.preferencia_turno_soft,
       folga_fixa_dia_semana: current.folga_fixa_dia_semana === 'none' ? null : current.folga_fixa_dia_semana,
       folga_variavel_dia_semana: current.folga_variavel_dia_semana === 'none' ? null : current.folga_variavel_dia_semana,
+      recorrencia_semanas_trabalho: current.recorrencia_ativa ? (parseInt(current.recorrencia_semanas_trabalho) || 1) : null,
+      recorrencia_semanas_folga: current.recorrencia_ativa ? (parseInt(current.recorrencia_semanas_folga) || 1) : null,
+      recorrencia_ancora: current.recorrencia_ativa ? (current.recorrencia_ancora || null) : null,
     } as any)
     // Sem reloadRegras — state local é a verdade, reload causava flicker
   }, [colabId])
@@ -548,6 +559,10 @@ export function ColaboradorDetalhe() {
     const nome = formData.nome.trim()
     if (nome.length < 2) {
       toast.error('Nome deve ter ao menos 2 caracteres')
+      return
+    }
+    if (regraFormRef.current.recorrencia_ativa && !regraFormRef.current.recorrencia_ancora) {
+      toast.error('Recorrência precisa da data âncora (uma semana em que a pessoa trabalha).')
       return
     }
     setSalvandoTudo(true)
@@ -1198,6 +1213,62 @@ export function ColaboradorDetalhe() {
                       </div>
                     </>
                   )}
+
+                  {/* Recorrencia de semanas (semana sim/semana nao) — vale para CLT e intermitente */}
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <Label className="text-sm font-medium">Recorrencia de semanas</Label>
+                        <p className="text-[0.75rem] text-muted-foreground">
+                          Trabalha algumas semanas e folga outras (ex.: semana sim, semana nao).
+                        </p>
+                      </div>
+                      <Switch
+                        checked={regraForm.recorrencia_ativa}
+                        onCheckedChange={checked =>
+                          setRegraForm(f => ({ ...f, recorrencia_ativa: checked }))
+                        }
+                      />
+                    </div>
+                    {regraForm.recorrencia_ativa && (
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="flex flex-col gap-2">
+                          <Label className="text-xs" htmlFor="rec-on">Semanas trabalhando</Label>
+                          <Input
+                            id="rec-on"
+                            type="number"
+                            min={1}
+                            max={8}
+                            value={regraForm.recorrencia_semanas_trabalho}
+                            onChange={e => setRegraForm(f => ({ ...f, recorrencia_semanas_trabalho: e.target.value }))}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label className="text-xs" htmlFor="rec-off">Semanas de folga</Label>
+                          <Input
+                            id="rec-off"
+                            type="number"
+                            min={1}
+                            max={8}
+                            value={regraForm.recorrencia_semanas_folga}
+                            onChange={e => setRegraForm(f => ({ ...f, recorrencia_semanas_folga: e.target.value }))}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label className="text-xs" htmlFor="rec-ancora">Semana de trabalho (ancora)</Label>
+                          <Input
+                            id="rec-ancora"
+                            type="date"
+                            value={regraForm.recorrencia_ancora}
+                            onChange={e => setRegraForm(f => ({ ...f, recorrencia_ancora: e.target.value }))}
+                          />
+                          <p className="text-[0.7rem] text-muted-foreground">
+                            Qualquer dia de uma semana em que a pessoa TRABALHA
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Seccao B - Dias da Semana (CLT: horários por dia / Intermitente: dias disponíveis) */}
                   <div className={!isIntermitente ? 'border-t pt-4' : ''}>
