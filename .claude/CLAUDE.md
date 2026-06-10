@@ -224,6 +224,16 @@ O campo `solve_mode` no JSON é mantido por backward-compatibility mas é **igno
 
 **INFEASIBLE é instantâneo (<1s).** O patience só roda no pass que encontra solução. Passes que falham não desperdiçam tempo.
 
+**Watchdog do platô:** o CP-SAT só invoca o solution callback quando acha solução nova — num platô (ex.: prova de otimalidade) o check de patience do callback nunca rodaria e a busca varreria até o cap absoluto (`HARD_TIME_CAP_SECONDS` = 1h). Uma thread watchdog (`start_patience_watchdog`) observa o mesmo timestamp e chama `solver.stop_search()` de fora quando o patience estoura. `diagnostico.stabilization.stopped_by` informa quem parou: `callback`, `watchdog` ou `null` (solver terminou sozinho).
+
+`config.patience_s` no input JSON é **uso interno de teste** (specs reduzem para encurtar o solve) — produto não expõe.
+
+### Regimes 5x2 e 6x1
+
+Suportados ponta a ponta. Cascata de resolução (`solver-bridge.ts`): override individual do colaborador → `setores.regime_escala` → `tipos_contrato.regime_escala` → inferência por `dias_trabalho`. O regime vira `dias_trabalho` (5 ou 6) e o Python aplica `sum(works_day) == dias_trabalho` por semana — as folgas emergem (5x2 → 2, 6x1 → 1). A meta de horas (H10) é **semanal** com tolerância (`empresa.tolerancia_semanal_min`), então 44h em 6 dias fecha no grid de 15min com jornadas desiguais (ex.: 4×7h30 + 2×7h).
+
+Seed de fábrica inclui CLT 44h/36h em **ambos** os regimes (`CLT 44h 6x1`, `CLT 36h 6x1`); em bancos existentes os contratos 6x1 são adicionados no próximo boot (gate idempotente por regime+horas+protegido — imune a rename). Regressão: `tests/main/solver-6x1.spec.ts`.
+
 ### Outros testes do motor
 
 ```bash
@@ -337,7 +347,7 @@ Provider `'local'` roda inferência in-process via `node-llama-cpp` — sem inte
 | Entidade | Tabela | Notas |
 |----------|--------|-------|
 | Empresa | `empresa` | Singleton (1 registro) |
-| TipoContrato | `tipos_contrato` | Templates CLT 44h, 36h, 30h, Estagiário 20h |
+| TipoContrato | `tipos_contrato` | Templates CLT 44h/36h (5x2 **e** 6x1), Estagiário 20h, Intermitente |
 | Setor | `setores` | Departamentos da empresa |
 | Demanda | `demandas` | Cobertura mínima por faixa horária/dia |
 | Colaborador | `colaboradores` | Funcionários (setor + contrato) |

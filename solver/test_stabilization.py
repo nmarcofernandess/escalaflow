@@ -95,3 +95,68 @@ def test_solve_hard_cap_unchanged():
     """HARD_TIME_CAP_SECONDS is still 3600."""
     from solver_ortools import HARD_TIME_CAP_SECONDS
     assert HARD_TIME_CAP_SECONDS == 3600
+
+
+# ---------------------------------------------------------------------------
+# Watchdog do platô — o CP-SAT só chama o callback em soluções novas; num
+# platô o patience do callback nunca é checado. O watchdog para de fora.
+# ---------------------------------------------------------------------------
+
+class _FakeSolver:
+    def __init__(self):
+        self.stopped = False
+
+    def stop_search(self):
+        self.stopped = True
+
+
+def test_watchdog_stops_on_plateau():
+    """Patience estourado sem novas soluções → watchdog chama stop_search."""
+    import time
+    from solver_ortools import start_patience_watchdog
+
+    cb = CoverageStabilizationCallback(deficit_vars={}, total_demand_slots=0, patience_s=0.2)
+    cb.mono_last_improvement = time.monotonic() - 10  # platô antigo
+    fake = _FakeSolver()
+
+    stop_evt, thread = start_patience_watchdog(fake, cb, patience_s=0.2, poll_s=0.05)
+    thread.join(timeout=2.0)
+    stop_evt.set()
+
+    assert fake.stopped is True
+    assert cb.stopped_by == "watchdog"
+
+
+def test_watchdog_idle_before_first_solution():
+    """Sem primeira solução (mono_last_improvement=None) o watchdog não age."""
+    import time
+    from solver_ortools import start_patience_watchdog
+
+    cb = CoverageStabilizationCallback(deficit_vars={}, total_demand_slots=0, patience_s=0.1)
+    fake = _FakeSolver()
+
+    stop_evt, thread = start_patience_watchdog(fake, cb, patience_s=0.1, poll_s=0.05)
+    time.sleep(0.4)  # bem além do patience
+    stop_evt.set()
+    thread.join(timeout=2.0)
+
+    assert fake.stopped is False
+    assert cb.stopped_by is None
+
+
+def test_watchdog_respects_recent_improvement():
+    """Melhora recente de cobertura → watchdog não dispara dentro do patience."""
+    import time
+    from solver_ortools import start_patience_watchdog
+
+    cb = CoverageStabilizationCallback(deficit_vars={}, total_demand_slots=0, patience_s=5.0)
+    cb.mono_last_improvement = time.monotonic()  # acabou de melhorar
+    fake = _FakeSolver()
+
+    stop_evt, thread = start_patience_watchdog(fake, cb, patience_s=5.0, poll_s=0.05)
+    time.sleep(0.3)
+    stop_evt.set()
+    thread.join(timeout=2.0)
+
+    assert fake.stopped is False
+    assert cb.stopped_by is None

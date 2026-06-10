@@ -21,7 +21,9 @@ export async function seedCoreData(): Promise<void> {
   if (!clt44) {
     const tipos: [string, number, string, number, number, boolean][] = [
       ['CLT 44h', 44, '5X2', 5, 585, true],
+      ['CLT 44h 6x1', 44, '6X1', 6, 585, true],
       ['CLT 36h', 36, '5X2', 5, 585, true],
+      ['CLT 36h 6x1', 36, '6X1', 6, 585, true],
       ['Estagiario', 20, '5X2', 5, 360, true],
       ['Intermitente', 0, '6X1', 6, 585, true],
     ]
@@ -36,7 +38,29 @@ export async function seedCoreData(): Promise<void> {
         )
       }
     })
-    console.log('[SEED] 4 tipos de contrato criados (CLT 44h, CLT 36h, Estagiario, Intermitente)')
+    console.log('[SEED] 6 tipos de contrato criados (CLT 44h/36h em 5x2 e 6x1, Estagiario, Intermitente)')
+  }
+
+  // Bancos JÁ existentes (instalados antes dos contratos 6x1 de fábrica):
+  // garante CLT 44h/36h em regime 6X1. O gate é por (regime + horas +
+  // protegido), não por nome — sobrevive a rename feito pelo usuário sem
+  // recriar duplicata. Intermitente (6X1, 0h) não colide.
+  const clt6x1Faltando: Array<[string, number]> = []
+  for (const [nome, horas] of [['CLT 44h 6x1', 44], ['CLT 36h 6x1', 36]] as Array<[string, number]>) {
+    const existe = await queryOne<{ id: number }>(
+      `SELECT id FROM tipos_contrato WHERE regime_escala = '6X1' AND horas_semanais = $1 AND protegido_sistema = TRUE`,
+      horas,
+    )
+    if (!existe) clt6x1Faltando.push([nome, horas])
+  }
+  if (clt6x1Faltando.length > 0) {
+    for (const [nome, horas] of clt6x1Faltando) {
+      await execute(
+        'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema) VALUES ($1, $2, $3, $4, $5, $6)',
+        nome, horas, '6X1', 6, 585, true,
+      )
+    }
+    console.log(`[SEED] Contratos 6x1 adicionados: ${clt6x1Faltando.map(([n]) => n).join(', ')}`)
   }
 
   // -- 2. Perfis de Horario por Contrato --

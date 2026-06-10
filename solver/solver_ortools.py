@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Tuple
@@ -122,6 +123,10 @@ class CoverageStabilizationCallback(cp_model.CpSolverSolutionCallback):
         self.stabilized_time: float | None = None
         self.solutions_found = 0
         self.coverage_history: list[tuple[float, float]] = []
+        self.stopped_by: str | None = None
+        # Relógio monotônico para o watchdog externo (wall_time só existe
+        # dentro do callback; o watchdog roda em outra thread).
+        self.mono_last_improvement: float | None = None
 
     def on_solution_callback(self):
         self.solutions_found += 1
@@ -130,6 +135,7 @@ class CoverageStabilizationCallback(cp_model.CpSolverSolutionCallback):
         if self.first_solution_time is None:
             self.first_solution_time = now
             self.last_coverage_improvement_time = now
+            self.mono_last_improvement = time.monotonic()
 
         # Compute coverage from deficit vars
         deficit_sum = sum(
@@ -144,6 +150,7 @@ class CoverageStabilizationCallback(cp_model.CpSolverSolutionCallback):
         if coverage > self.best_coverage:
             self.best_coverage = coverage
             self.last_coverage_improvement_time = now
+            self.mono_last_improvement = time.monotonic()
             log(f"[COBERTURA] {coverage}% (obj={obj:.0f}) em {now:.1f}s")
 
         self.best_objective = min(self.best_objective, obj)
@@ -152,6 +159,7 @@ class CoverageStabilizationCallback(cp_model.CpSolverSolutionCallback):
         since_last = now - self.last_coverage_improvement_time
         if since_last >= self.patience_s:
             self.stabilized_time = now
+            self.stopped_by = "callback"
             log(f"[ESTABILIZOU] Cobertura {self.best_coverage}% estavel ha {since_last:.0f}s — parando busca")
             self.StopSearch()
 
@@ -163,11 +171,52 @@ class CoverageStabilizationCallback(cp_model.CpSolverSolutionCallback):
             "solutions_found": self.solutions_found,
             "final_coverage": self.best_coverage,
             "patience_s": self.patience_s,
+            "stopped_by": self.stopped_by,
             "coverage_improvements": sum(
                 1 for i in range(1, len(self.coverage_history))
                 if self.coverage_history[i][1] > self.coverage_history[i - 1][1]
             ),
         }
+
+
+def start_patience_watchdog(
+    solver: Any,
+    cb: "CoverageStabilizationCallback",
+    patience_s: float,
+    poll_s: float = 1.0,
+) -> tuple[threading.Event, threading.Thread]:
+    """WATCHDOG do platô de estabilização.
+
+    O CP-SAT só invoca o solution callback quando ACHA solução nova. Se a
+    busca entra em platô (sem soluções novas — ex.: prova de otimalidade),
+    o check de patience do callback nunca roda e a busca varre até max_time
+    (1h). Esta thread observa o mesmo timestamp monotônico e para a busca de
+    fora quando o patience estoura. CpSolver.stop_search() é assíncrono e
+    thread-safe. Antes da primeira solução o watchdog não age (sem solução
+    não há o que estabilizar — infeasibility é detectada pelo presolve).
+
+    Retorna (stop_event, thread); o chamador deve stop_event.set() + join()
+    após o solve.
+    """
+    stop_evt = threading.Event()
+
+    def _watch() -> None:
+        while not stop_evt.wait(poll_s):
+            last = cb.mono_last_improvement
+            if last is None:
+                continue
+            if time.monotonic() - last >= patience_s:
+                cb.stopped_by = "watchdog"
+                log(
+                    f"[WATCHDOG] Cobertura {cb.best_coverage}% sem melhora ha "
+                    f"{patience_s:.0f}s (sem novas solucoes) — parando busca"
+                )
+                solver.stop_search()
+                return
+
+    thread = threading.Thread(target=_watch, daemon=True, name="patience-watchdog")
+    thread.start()
+    return stop_evt, thread
 
 
 DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
@@ -1819,8 +1868,14 @@ def _solve_pass(
     solver.parameters.log_to_stdout = False
     # No relative_gap_limit — callback controls stopping via coverage
 
+    _wd_stop, _wd_thread = start_patience_watchdog(solver, cb, patience_s)
+
     t0 = time.time()
-    status = solver.solve(model, cb)
+    try:
+        status = solver.solve(model, cb)
+    finally:
+        _wd_stop.set()
+        _wd_thread.join(timeout=2.0)
     solve_time_ms = (time.time() - t0) * 1000
 
     result = extract_solution(
@@ -1894,7 +1949,9 @@ def solve(data: dict) -> dict:
     generation_mode = config.get("generation_mode", "OFFICIAL")
     num_workers = config.get("num_workers", 8)
 
-    patience_s = DEFAULT_PATIENCE_S
+    # patience_s no config é uso interno de TESTE (specs reduzem para encurtar
+    # o solve). Produto não expõe — em produção é sempre DEFAULT_PATIENCE_S.
+    patience_s = float(config.get("patience_s", DEFAULT_PATIENCE_S))
     hard_cap = config.get("max_time_seconds", HARD_TIME_CAP_SECONDS)
 
     # Track total elapsed time for the hard cap

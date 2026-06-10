@@ -245,7 +245,7 @@ O app verifica atualizações ao iniciar (5s delay). Se há versão nova, baixa 
 
 ### 1. Cadastre setores
 
-Em **Setores**, crie os departamentos (Caixa, Açougue, Padaria). Defina horário de funcionamento.
+Em **Setores**, crie os departamentos (Caixa, Açougue, Padaria). Defina horário de funcionamento e o **regime de escala** do setor: **5x2** (5 dias + 2 folgas) ou **6x1** (6 dias + 1 folga — o padrão do varejo).
 
 ### 2. Defina demandas
 
@@ -257,6 +257,8 @@ Dentro de cada setor, cadastre faixas de demanda:
 ### 3. Cadastre colaboradores
 
 Em **Colaboradores**, adicione funcionários com nome, sexo e tipo de contrato. Horas semanais são preenchidas automaticamente pelo template.
+
+> **5x2 ou 6x1?** Os contratos de fábrica já vêm nos dois regimes — `CLT 44h` / `CLT 36h` (5x2) e `CLT 44h 6x1` / `CLT 36h 6x1`. Escolha o template certo e pronto: o motor aplica o número de dias automaticamente (a meta de horas é semanal, com a tolerância configurada na empresa). Também dá para criar contratos próprios em **Contratos** escolhendo o regime no formulário.
 
 ### 4. Gere a escala
 
@@ -307,7 +309,7 @@ Padrões operacionais indesejáveis detectados e penalizados pelo motor.
 | Entidade | Tabela | Descrição |
 |----------|--------|-----------|
 | Empresa | `empresa` | Config global (singleton) |
-| TipoContrato | `tipos_contrato` | Templates: CLT 44h, 36h, 30h, Estagiário 20h |
+| TipoContrato | `tipos_contrato` | Templates: CLT 44h/36h (regimes 5x2 e 6x1), Estagiário 20h, Intermitente |
 | Setor | `setores` | Departamentos da empresa |
 | Demanda | `demandas` | Faixas horárias com mínimo de pessoas |
 | Colaborador | `colaboradores` | Funcionários vinculados a setor + contrato |
@@ -390,7 +392,7 @@ O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui 
 - **Motor diz "Nenhum Python com OR-Tools":** rode `npm run setup` (cria a `.venv` com OR-Tools). O `solver-bridge` procura `.venv/bin/python` automaticamente.
 - **Busca semântica/IA sem resultados (RAG):** o modelo de embeddings não baixou — rode `npm run setup` ou `npm run model:download`. O app funciona mesmo sem ele (cai pra full-text search).
 - **Typecheck falha:** `npm run typecheck` mostra erros separados por node e web
-- **Motor trava:** Timeout de 30s protege. Verifique dados do setor (demandas, colaboradores)
+- **Motor demora:** o solver para sozinho quando a cobertura estabiliza (30s sem melhora — patience com watchdog de platô); o teto absoluto é 1h e a geração pode ser cancelada pela UI. Demora longa geralmente indica cenário muito apertado (demanda alta vs. equipe pequena)
 - **Dark mode quebrado:** Cores usam tokens semânticos de `cores.ts`. Se adicionou cor nova, inclua `dark:` variant
 - **Mac "corrompido"/Gatekeeper:** Abra o `LEIA ANTES DE INSTALAR.txt` dentro do `.dmg` e rode o comando indicado no Terminal
 
