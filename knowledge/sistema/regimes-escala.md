@@ -1,4 +1,4 @@
-<!-- quando_usar: regime de escala, 5x2, 6x1, folga unica, rodizio de domingo, dia avulso, trabalhar na folga, intermitente quinzenal, alternar semanas, a cada 15 dias, mudar regime do setor -->
+<!-- quando_usar: regime de escala, 5x2, 6x1, folga unica, rodizio de domingo, dia avulso, trabalhar na folga, intermitente quinzenal, alternar semanas, a cada 15 dias, recorrencia de semanas, semana sim semana nao, mudar regime do setor -->
 # Regimes de Escala: 5x2 e 6x1
 
 ## O que sao
@@ -38,13 +38,16 @@ Exemplo: "O Joao folga na quarta, mas vai trabalhar nesta quarta dia 15."
 
 Use a excecao por data com `domingo_forcar_folga: true` (apesar do nome, forca folga na data), ou ajuste a celula da escala para FOLGA. Para ausencias de periodo (ferias, atestado, bloqueio), use a excecao de periodo.
 
-## Recorrencia de intermitente
+## Recorrencia de semanas (semana sim, semana nao)
 
-O modelo nativo e SEMANAL: regras de horario por dia da semana + ciclo de domingo automatico.
+Suporte NATIVO na regra padrao do colaborador: semanas de trabalho (N), semanas de folga (M) e uma data ancora dentro de uma semana de trabalho. Configuravel na ficha do colaborador (aba Horarios, secao "Recorrencia de semanas") ou pela IA.
 
-- **Domingo sim, domingo nao (quinzenal nos domingos)**: automatico. O ciclo de domingo aceita qualquer razao (1/1 alterna domingos). Configure o intermitente Tipo B (com folga variavel) e o motor calcula o ciclo sozinho a partir da equipe e da demanda.
-- **Semana sim, semana nao (alternar semanas inteiras)**: NAO ha suporte nativo. Contorno pratico: criar excecoes de BLOQUEIO cobrindo as semanas em que a pessoa nao vem, antes de gerar a escala. Funciona, mas precisa ser repetido a cada novo periodo.
-- **"A cada 15 dias" num dia especifico**: mesmo contorno do BLOQUEIO alternado, ou gerar e ajustar as celulas manualmente.
+- **Semana sim, semana nao**: N=1, M=1. O motor tira a pessoa da escala nas semanas de folga automaticamente, com meta de horas proporcional (sem violacao de meta semanal). Preview do setor e validador respeitam o mesmo ciclo.
+- **Uma semana a cada tres**: N=1, M=2. Qualquer combinacao N/M funciona.
+- **Ancora obrigatoria**: o ciclo precisa de um ponto fixo no calendario. Use qualquer dia de uma semana em que a pessoa TRABALHA. Sem ancora, escalas comecando em semanas diferentes inverteriam o padrao.
+- **Domingo sim, domingo nao (quinzenal so nos domingos)**: continua automatico via ciclo de domingo (intermitente Tipo B com folga variavel) — nao use recorrencia de semanas para isso.
+- **"A cada 15 dias" num dia especifico**: sem campo nativo; contorno via excecoes de BLOQUEIO alternadas ou ajuste de celulas apos gerar.
+- Funciona para CLT, estagiario e intermitente, em 5x2 e 6x1. Para remover, limpe os tres campos.
 
 ## Mudando o regime de um setor existente
 
