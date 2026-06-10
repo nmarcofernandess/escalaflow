@@ -4,13 +4,22 @@
 
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'child_process'
+import { existsSync } from 'fs'
 import path from 'path'
 
 const SOLVER_PY = path.join(__dirname, '../../solver/solver_ortools.py')
 
+// Mesma resolução do solver-bridge: a .venv do projeto (npm run setup) tem
+// ortools garantido; `python3` do PATH pode ser uma venv qualquer sem ortools.
+const VENV_PY = path.join(
+  __dirname,
+  '../../.venv',
+  process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+)
+
 function runSolver(data: Record<string, unknown>) {
-  // Always use python3 directly to test latest source (binary may be stale)
-  const cmd = 'python3'
+  // Roda o source direto (binário pode estar desatualizado)
+  const cmd = existsSync(VENV_PY) ? VENV_PY : 'python3'
   const args = [SOLVER_PY]
   const stdout = execFileSync(cmd, args, {
     input: JSON.stringify(data),

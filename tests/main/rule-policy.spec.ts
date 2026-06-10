@@ -42,9 +42,12 @@ describe.sequential('rule policy', () => {
   it('permite endurecer regra sem cair para exploratory', async () => {
     await createSeededDb()
 
+    // S_SURPLUS é SOFT (status ON) no catálogo — desligar SOFT não relaxa
+    // HARD. (S_DEFICIT não serve aqui: hoje é HARD por default — bloqueante
+    // de cobertura — e OFF nela legitimamente cai pra EXPLORATORY.)
     const generationMode = await inferGenerationModeForOverrides({
       H10: 'HARD',
-      S_DEFICIT: 'OFF',
+      S_SURPLUS: 'OFF',
     })
 
     expect(generationMode).toBe('OFFICIAL')

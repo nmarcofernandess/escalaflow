@@ -343,12 +343,16 @@ async function bootstrap(): Promise<void> {
     // 1. Stop timer to prevent race condition
     if (backupTimer) clearInterval(backupTimer)
 
-    // 2. Auto-backup (DB still open)
+    // 2. Auto-backup (DB still open) — com timeout: pasta de backup
+    //    inacessível (drive removido, permissão) não pode segurar o quit.
     try {
       const { getBackupConfig, createSnapshot } = await import('./backup')
       const config = await getBackupConfig()
       if (config.ativo && config.backup_ao_fechar) {
-        await createSnapshot('auto_close', app.getPath('userData'), app.getVersion(), { scope: 'operational' })
+        await Promise.race([
+          createSnapshot('auto_close', app.getPath('userData'), app.getVersion(), { scope: 'operational' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('auto-backup timeout (15s)')), 15_000)),
+        ])
       }
     } catch (err) {
       console.error('[BACKUP] Falha no auto-backup ao fechar:', err)

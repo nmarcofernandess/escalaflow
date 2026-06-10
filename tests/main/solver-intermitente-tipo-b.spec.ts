@@ -183,8 +183,8 @@ describe('calcularCicloDomingo — tipo B intermitente', () => {
     )
 
     // nDom = 6 (5 CLTs + 1 tipo B in pool), guaranteed = 0 (tipo B not guaranteed)
-    // effective demand = 3, 6*(1/3)=2 > 3? No. 6*(1/2)=3 > 3? No. 6*(2/3)=4 > 3? Yes → 2:1
-    expect(ciclo).toEqual({ cicloTrabalho: 2, cicloFolga: 1 })
+    // effective demand = 3, 6*(1/2)=3 >= 3? Yes → 1:1 (f68ad22: >= permite match exato)
+    expect(ciclo).toEqual({ cicloTrabalho: 1, cicloFolga: 1 })
   })
 
   it('T3: tipo A excluded from pool, tipo B included', () => {
@@ -251,8 +251,8 @@ describe('calcularCicloDomingo — tipo B intermitente', () => {
 
     // nDom: 3 CLTs + 1 tipo B = 4, guaranteed = 0
     // effective demand = 2
-    // 4 * (1/3) = 1.33 > 2? No. 4*(1/2)=2 > 2? No. 4*(2/3)=2.67 > 2? Yes → 2:1
-    expect(ciclo).toEqual({ cicloTrabalho: 2, cicloFolga: 1 })
+    // 4*(1/2)=2 >= 2? Yes → 1:1 (f68ad22: >= permite match exato)
+    expect(ciclo).toEqual({ cicloTrabalho: 1, cicloFolga: 1 })
   })
 
   it('T11: tipo B with 7 active days has dias_trabalho=6 (7-1 XOR)', () => {

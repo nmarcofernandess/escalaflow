@@ -10,7 +10,7 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
-import { initDb } from '../src/main/db/pglite'
+import { initDb, closeDb } from '../src/main/db/pglite'
 import { createTables } from '../src/main/db/schema'
 import { ingestKnowledge } from '../src/main/knowledge/ingest'
 import { execute } from '../src/main/db/query'
@@ -68,7 +68,7 @@ async function main() {
   const mdFiles = findMarkdownFiles(KNOWLEDGE_DIR)
   if (mdFiles.length === 0) {
     console.log('[knowledge:seed] Nenhum .md encontrado em knowledge/. Nada a fazer.')
-    process.exit(0)
+    return
   }
 
   console.log(`[knowledge:seed] ${mdFiles.length} arquivo(s) encontrado(s)`)
@@ -92,12 +92,12 @@ async function main() {
 
   if (toIngest.length === 0) {
     console.log('[knowledge:seed] Tudo atualizado. Nada a ingestar.')
-    process.exit(0)
+    return
   }
 
   if (check) {
     console.log(`[knowledge:seed] --check: ${toIngest.length} arquivo(s) seriam ingestados.`)
-    process.exit(0)
+    return
   }
 
   // Inicializar banco
@@ -134,10 +134,17 @@ async function main() {
 
   saveManifest(newManifest)
   console.log(`[knowledge:seed] Concluído: ${toIngest.length} arquivo(s) ingestado(s).`)
-  process.exit(0)
 }
 
-main().catch((err) => {
-  console.error('[knowledge:seed] ERRO:', err.message)
-  process.exit(1)
-})
+main()
+  .catch((err) => {
+    console.error('[knowledge:seed] ERRO:', err.message)
+    process.exitCode = 1
+  })
+  .finally(() => {
+    void closeDb().catch(() => {})
+  })
+// NÃO chamar process.exit() — o ingest carrega o onnxruntime (embeddings) e um
+// exit abrupto com o thread pool nativo ativo dispara SIGABRT "mutex lock
+// failed" (popup "Electron encerrou inesperadamente"). Fechar o DB e deixar o
+// event loop drenar encerra limpo.

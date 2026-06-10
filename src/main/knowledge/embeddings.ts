@@ -24,7 +24,13 @@ function resolveModelPath(): string {
   } catch {
     // fallback para modo Node (test runner, scripts)
   }
-  return path.join(__dirname, '../../models/embeddings')
+  // App dev (electron-vite injeta __dirname) e vitest (CJS interop) têm
+  // __dirname; tsx/ESM puro não — usa o cwd do projeto, onde os scripts
+  // npm sempre rodam.
+  if (typeof __dirname !== 'undefined') {
+    return path.join(__dirname, '../../models/embeddings')
+  }
+  return path.join(process.cwd(), 'models', 'embeddings')
 }
 
 async function getExtractor(): Promise<any> {

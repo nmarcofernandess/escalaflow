@@ -5,9 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { initDb, closeDb } from '../../src/main/db/pglite'
 import { createTables } from '../../src/main/db/schema'
 import { seedCoreData } from '../../src/main/db/seed'
-import { seedLocalData } from '../../src/main/db/seed-local'
 import { runAdvisory, computeAdvisoryInputHash } from '../../src/main/motor/advisory-controller'
 import type { EscalaAdvisoryInput } from '../../src/shared/advisory-types'
+
+// seed-local.ts é privado (gitignored). Em clone limpo este dataset não existe —
+// skip declarado em vez de quebrar a suite inteira no import.
+const HAS_SEED_LOCAL = fs.existsSync(path.join(__dirname, '../../src/main/db/seed-local.ts'))
+const describeSeedLocal = HAS_SEED_LOCAL ? describe.sequential : describe.sequential.skip
 
 // ---------------------------------------------------------------------------
 // DB setup helpers (same pattern as solver-advisory.spec.ts)
@@ -32,6 +36,7 @@ async function createSeededDb(): Promise<void> {
   await initDb()
   await createTables()
   await seedCoreData()
+  const { seedLocalData } = await import('../../src/main/db/seed-local')
   await seedLocalData()
 }
 
@@ -47,7 +52,7 @@ const TEST_FIM = '2026-03-08'
 // Integration tests — runAdvisory black-box
 // ---------------------------------------------------------------------------
 
-describe.sequential('runAdvisory pipeline', () => {
+describeSeedLocal('runAdvisory pipeline', () => {
   it('returns a valid status and criteria when called without pinned folgas', async () => {
     await createSeededDb()
 

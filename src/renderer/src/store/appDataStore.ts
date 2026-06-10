@@ -539,16 +539,32 @@ export const useAppDataStore = create<AppDataStore>((set, get) => ({
     set({ _inicializado: true, carregando: true })
 
     try {
-      const [empresa, tiposContrato, feriados, regras, setores] = await Promise.all([
+      // allSettled: em banco novo a empresa ainda não existe (onboarding) e
+      // empresa.buscar lança — isso NÃO pode derrubar o carregamento dos
+      // demais dados (contratos/feriados/regras vêm do seed e precisam aparecer).
+      const [empresaR, tiposContratoR, feriadosR, regrasR, setoresR] = await Promise.allSettled([
         empresaService.buscar(),
         tiposContratoService.listar(),
         feriadosService.listar(),
         regrasService.listar(),
         setoresService.listar(true),
       ])
-      set({ empresa, tiposContrato, feriados, regras, setores })
-    } catch (err) {
-      console.error('[AppDataStore] init falhou:', err)
+      set({
+        empresa: empresaR.status === 'fulfilled' ? empresaR.value : null,
+        tiposContrato: tiposContratoR.status === 'fulfilled' ? tiposContratoR.value : [],
+        feriados: feriadosR.status === 'fulfilled' ? feriadosR.value : [],
+        regras: regrasR.status === 'fulfilled' ? regrasR.value : [],
+        setores: setoresR.status === 'fulfilled' ? setoresR.value : [],
+      })
+      const falhas = [
+        ['tiposContrato', tiposContratoR],
+        ['feriados', feriadosR],
+        ['regras', regrasR],
+        ['setores', setoresR],
+      ] as const
+      for (const [nome, r] of falhas) {
+        if (r.status === 'rejected') console.error(`[AppDataStore] init: falha ao carregar ${nome}:`, r.reason)
+      }
     } finally {
       set({ carregando: false })
     }

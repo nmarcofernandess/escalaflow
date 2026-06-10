@@ -5,8 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { initDb, closeDb } from '../../src/main/db/pglite'
 import { createTables } from '../../src/main/db/schema'
 import { seedCoreData } from '../../src/main/db/seed'
-import { seedLocalData } from '../../src/main/db/seed-local'
 import { buildSolverInput, runSolver } from '../../src/main/motor/solver-bridge'
+
+// seed-local.ts é privado (gitignored). Em clone limpo este dataset não existe —
+// skip declarado em vez de quebrar a suite inteira no import.
+const HAS_SEED_LOCAL = fs.existsSync(path.join(__dirname, '../../src/main/db/seed-local.ts'))
+const describeSeedLocal = HAS_SEED_LOCAL ? describe.sequential : describe.sequential.skip
 
 // ---------------------------------------------------------------------------
 // DB setup helpers (same pattern as solver-cli-parity and rule-policy specs)
@@ -31,6 +35,7 @@ async function createSeededDb(): Promise<void> {
   await initDb()
   await createTables()
   await seedCoreData()
+  const { seedLocalData } = await import('../../src/main/db/seed-local')
   await seedLocalData()
 }
 
@@ -42,7 +47,7 @@ const SETOR_ACOUGUE = 2
 const TEST_INICIO = '2026-03-02'
 const TEST_FIM = '2026-03-08'
 
-describe.sequential('solver advisory mode', () => {
+describeSeedLocal('solver advisory mode', () => {
   it('retorna ADVISORY_OK quando arranjo eh viavel', async () => {
     await createSeededDb()
 

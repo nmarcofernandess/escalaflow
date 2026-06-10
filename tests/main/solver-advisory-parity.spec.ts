@@ -17,11 +17,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { initDb, closeDb } from '../../src/main/db/pglite'
 import { createTables } from '../../src/main/db/schema'
 import { seedCoreData } from '../../src/main/db/seed'
-import { seedLocalData } from '../../src/main/db/seed-local'
 import { buildSolverInput, runSolver } from '../../src/main/motor/solver-bridge'
 import { normalizeAdvisoryToDiagnostics, runAdvisory } from '../../src/main/motor/advisory-controller'
 import type { EscalaAdvisoryOutput, AdvisoryCriterion } from '../../src/shared/advisory-types'
 import type { PreviewDiagnostic } from '../../src/shared/preview-diagnostics'
+
+// seed-local.ts é privado (gitignored). Em clone limpo este dataset não existe —
+// skip declarado em vez de quebrar a suite inteira no import.
+const HAS_SEED_LOCAL = fs.existsSync(path.join(__dirname, '../../src/main/db/seed-local.ts'))
+const describeSeedLocal = HAS_SEED_LOCAL ? describe.sequential : describe.sequential.skip
 
 // ---------------------------------------------------------------------------
 // DB setup helpers (same pattern as solver-cli-parity.spec.ts)
@@ -46,6 +50,7 @@ async function createSeededDb(): Promise<void> {
   await initDb()
   await createTables()
   await seedCoreData()
+  const { seedLocalData } = await import('../../src/main/db/seed-local')
   await seedLocalData()
 }
 
@@ -91,7 +96,7 @@ function assertNormalizedDiagnostic(
 // Tests
 // ---------------------------------------------------------------------------
 
-describe.sequential('advisory Phase 1 parity — solver output matches TS normalization', () => {
+describeSeedLocal('advisory Phase 1 parity — solver output matches TS normalization', () => {
   // -----------------------------------------------------------------------
   // ADVISORY_OK path: solver finds valid folga pattern
   // -----------------------------------------------------------------------

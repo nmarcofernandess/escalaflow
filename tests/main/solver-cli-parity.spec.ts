@@ -7,10 +7,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { initDb, closeDb } from '../../src/main/db/pglite'
 import { createTables } from '../../src/main/db/schema'
 import { seedCoreData } from '../../src/main/db/seed'
-import { seedLocalData } from '../../src/main/db/seed-local'
 import { persistirSolverResult } from '../../src/main/motor/solver-bridge'
 import { validarEscalaV3 } from '../../src/main/motor/validador'
 import type { SolverOutput } from '../../src/shared/types'
+
+// seed-local.ts é privado (gitignored). Em clone limpo este dataset não existe —
+// skip declarado em vez de quebrar a suite inteira no import.
+const HAS_SEED_LOCAL = fs.existsSync(path.join(__dirname, '../../src/main/db/seed-local.ts'))
+const describeSeedLocal = HAS_SEED_LOCAL ? describe.sequential : describe.sequential.skip
 
 const execFileAsync = promisify(execFile)
 
@@ -72,6 +76,7 @@ async function createSeededDb(): Promise<string> {
   await initDb()
   await createTables()
   await seedCoreData()
+  const { seedLocalData } = await import('../../src/main/db/seed-local')
   await seedLocalData()
   await closeDb()
 
@@ -134,7 +139,7 @@ function assertLunchLegality(output: SolverOutput): void {
   }
 }
 
-describe.sequential('solver CLI official parity', () => {
+describeSeedLocal('solver CLI official parity', () => {
   for (const scenario of SCENARIOS) {
     it(
       `${scenario.nome} permanece oficializavel e sem drift grosseiro`,

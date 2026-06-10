@@ -49,12 +49,11 @@ describe('IA tool schemas (.describe -> JSON Schema)', () => {
   })
 
   it('expõe descriptions nas tools da Onda 1 restante', () => {
-    const preflightCompleto = getToolParameters('preflight_completo')
+    // preflight_completo saiu de IA_TOOLS no enxugamento 33→30 tools (aa18b14)
     const salvarRegra = getToolParameters('salvar_regra_horario_colaborador')
     const ajustarHorario = getToolParameters('ajustar_horario')
     const diagnosticarEscala = getToolParameters('diagnosticar_escala')
 
-    expect(preflightCompleto.properties.regimes_override.description).toMatch(/override/i)
     expect(salvarRegra.properties.folga_fixa_dia_semana.description).toMatch(/SEG\.\.DOM|SEG/i)
     expect(ajustarHorario.properties.hora_inicio.description).toMatch(/HH:MM/i)
     expect(diagnosticarEscala.properties.escala_id.description).toMatch(/contexto autom[áa]tico|consultar/i)

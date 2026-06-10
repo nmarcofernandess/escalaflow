@@ -326,10 +326,11 @@ Provider `'local'` roda inferência in-process via `node-llama-cpp` — sem inte
 ## Banco de Dados
 
 - **Engine:** PGlite (Postgres 17 WASM) com pgvector, FTS português, pg_trgm
-- **Diretório:** `data/pglite/` (criado automaticamente)
+- **Diretório (dev):** `data/escalaflow-pg/` (criado automaticamente; override via `ESCALAFLOW_DB_PATH`)
+- **Diretório (app empacotado):** `userData/escalaflow-pg/` (macOS: `~/Library/Application Support/EscalaFlow/escalaflow-pg/`)
 - **Schema:** `src/main/db/schema.ts` (DDL + migrations incrementais)
 - **Seed:** `src/main/db/seed.ts` (roda na primeira inicialização se banco vazio)
-- **Reset:** `npm run db:reset` (ou delete `data/pglite/` e reinicie o app)
+- **Reset:** `npm run db:reset` (ou delete o diretório do banco e reinicie o app)
 
 ### Entidades Operacionais
 
@@ -391,7 +392,7 @@ O sistema usa dois seed JSONs pre-computados — gerados pelo dev, sem LLM em ru
 
 - `seed.ts` roda na primeira inicialização (banco vazio)
 - `seed-local.ts` opcional — dados de teste completos para dev. Período sugerido: 2026-03-02 a 2026-05-31
-- **Reset completo:** `npm run db:reset` (ou delete `data/pglite/` + reiniciar)
+- **Reset completo:** `npm run db:reset` (ou delete `data/escalaflow-pg/` + reiniciar)
 
 ### Padrões no schema
 
