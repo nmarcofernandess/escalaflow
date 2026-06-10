@@ -11,6 +11,14 @@ export interface SimulaCicloFase1Input {
   trabalham_domingo: number
   num_meses?: number              // default: 3 — semanas = ~4.33 * num_meses (calendário)
   preflight?: boolean             // default: true — sem TT, H1 <= 6
+  /**
+   * Regime do setor. Default '5X2' (2 folgas/semana: fixa + variável XOR DOM).
+   * '6X1' = 1 folga/semana: quem folga DOM naquela semana não folga mais nada;
+   * quem trabalha DOM folga no dia variável (XOR puro — mesma semântica do
+   * solver em add_folga_variavel_condicional). folga_fixa forçada em 6X1
+   * significa "folga sempre nesse dia" ⇒ trabalha TODOS os domingos.
+   */
+  regime?: '5X2' | '6X1'
   /** F/V forcadas por posto (indice 0..N-1). null em cada campo = auto decide. */
   folgas_forcadas?: Array<{
     folga_fixa_dia: number | null    // 0-5 (SEG-SAB) ou null
@@ -35,8 +43,8 @@ export interface SimulaCicloSemana {
 export interface SimulaCicloRow {
   posto: string
   semanas: SimulaCicloSemana[]
-  /** Dia da folga fixa (0=SEG .. 5=SAB) */
-  folga_fixa_dia: number
+  /** Dia da folga fixa (0=SEG .. 5=SAB). null em 6X1 rodízio (a folga semanal é DOM-XOR-variável, sem dia fixo) */
+  folga_fixa_dia: number | null
   /** Dia da folga variável (0=SEG .. 5=SAB), ou null se só houver uma folga semanal */
   folga_variavel_dia: number | null
 }
@@ -186,13 +194,15 @@ function maxConsecutivosPessoa(flat: DiaStatus[]): number {
   return max
 }
 
-/** Gerador fase 1: N pessoas, K no domingo, 5x2, sem TT quando preflight ON */
+/** Gerador fase 1: N pessoas, K no domingo, 5x2 ou 6x1, sem TT quando preflight ON */
 export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput {
   const N = input.num_postos
   const K = input.trabalham_domingo
   const SEMANAS_POR_MES = 4.33
   const numMeses = input.num_meses ?? 3
   const preflight = input.preflight ?? true
+  const regime = input.regime ?? '5X2'
+  const is6x1 = regime === '6X1'
 
   const emptyOutput = (erro: string, sugestao?: string): SimulaCicloOutput => ({
     sucesso: false,
@@ -272,6 +282,20 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     }
   }
 
+  // --- Step 1 postprocess (6X1): folga fixa SEG-SAB forçada ⇒ trabalha TODOS
+  // os domingos (1 folga/semana: se a fixa existe, DOM nunca pode ser folga —
+  // mesma semântica do solver: add_folga_fixa HARD + dias_trabalho=6) ---
+  if (is6x1) {
+    for (let p = 0; p < N; p++) {
+      const forcada = input.folgas_forcadas?.[p]
+      if (forcada?.folga_fixa_dia != null && !forcada.folga_fixa_dom) {
+        for (let w = 0; w < weeks; w++) {
+          grid[p][w * 7 + 6] = 'T'
+        }
+      }
+    }
+  }
+
   // --- Warnings acumulados durante toda a geracao ---
   const folgaWarnings: FolgaWarning[] = []
 
@@ -344,12 +368,67 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     return bestDay >= 0 ? bestDay : 0
   }
 
+  // Folgas resolvidas por pessoa (preenchidas no loop, usadas no output)
+  const fixaPorPessoa: Array<number | null> = Array(N).fill(null)
+  const variavelPorPessoa: Array<number | null> = Array(N).fill(null)
+
   for (let p = 0; p < N; p++) {
     const forcada = input.folgas_forcadas?.[p]
     const isFixaDom = forcada?.folga_fixa_dom === true
 
+    if (is6x1) {
+      // ── 6X1: UMA folga por semana ──
+      // folga_fixa_dom → DOM sempre F, trabalha SEG-SAB inteiro (nada a marcar).
+      // folga fixa SEG-SAB forçada → F nesse dia toda semana (DOM já pinado T no Step 1).
+      // rodízio (default) → XOR puro: semana T-DOM folga no dia variável;
+      //   semana F-DOM o próprio domingo é a folga.
+      if (isFixaDom) {
+        continue
+      }
+      if (forcada?.folga_fixa_dia != null) {
+        const fixa = forcada.folga_fixa_dia
+        fixaPorPessoa[p] = fixa
+        ffCount[fixa]++
+        folgaCount[fixa]++
+        if (hasDemanda) {
+          const cobRestante = (capDia[fixa] ?? N) - folgaCount[fixa]
+          const demDia = input.demanda_por_dia![fixa] ?? 0
+          if (cobRestante < demDia) {
+            folgaWarnings.push({ pessoa: p, dia: fixa, tipo: 'FF_CONFLITO', coberturaRestante: cobRestante, demandaDia: demDia })
+          }
+        }
+        for (let w = 0; w < weeks; w++) {
+          grid[p][w * 7 + fixa] = 'F'
+        }
+        continue
+      }
+      const varDay = forcada?.folga_variavel_dia
+        ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, null, false) : (p % 6))
+      variavelPorPessoa[p] = varDay
+      fvCount[varDay]++
+      folgaCount[varDay]++
+      if (hasDemanda) {
+        const cobRestante = (capDia[varDay] ?? N) - folgaCount[varDay]
+        const demDia = input.demanda_por_dia![varDay] ?? 0
+        if (cobRestante < demDia) {
+          folgaWarnings.push({ pessoa: p, dia: varDay, tipo: 'FV_CONFLITO', coberturaRestante: cobRestante, demandaDia: demDia })
+        }
+      }
+      for (let w = 0; w < weeks; w++) {
+        const sundayOff = grid[p][w * 7 + 6] === 'F'
+        if (!sundayOff) {
+          // Trabalha DOM → a folga da semana é o dia variável
+          grid[p][w * 7 + varDay] = 'F'
+        }
+        // Folga DOM → DOM é a única folga; SEG-SAB inteiro de trabalho
+      }
+      continue
+    }
+
+    // ── 5X2: DUAS folgas por semana (fixa + variável XOR DOM) ──
     const base1 = forcada?.folga_fixa_dia
       ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, null, true) : (p % 6))
+    fixaPorPessoa[p] = base1
     ffCount[base1]++
     folgaCount[base1]++
 
@@ -366,6 +445,7 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
     const base2 = isFixaDom ? null
       : (forcada?.folga_variavel_dia
         ?? (hasDemanda ? pickBestFolgaDay(input.demanda_por_dia!, base1, false) : ((p + 3) % 6)))
+    variavelPorPessoa[p] = base2
     if (base2 != null) {
       fvCount[base2]++
       folgaCount[base2]++
@@ -394,9 +474,12 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
   }
 
   // --- Step 2b: Auto-redistribution of auto-assigned folgas when they cause deficit ---
+  // 6X1: pulado — a folga única já é escolhida por demanda (pickBestFolgaDay) e a
+  // detecção de fixa/variável por scan da semana 1 não se aplica (semanas F-DOM
+  // não têm folga em SEG-SAB).
   const redistribuicoes: Array<{ pessoa: number; de_dia: number; para_dia: number }> = []
 
-  if (hasDemanda) {
+  if (hasDemanda && !is6x1) {
     // Build per-person folga tracking from Step 2 assignments
     const personFolgas: Array<{
       fixa: number; var: number | null
@@ -550,6 +633,16 @@ export function gerarCicloFase1(input: SimulaCicloFase1Input): SimulaCicloOutput
       })
     }
     const forcadaOut = input.folgas_forcadas?.[p]
+    if (is6x1) {
+      // 6X1: fixa/variável vêm direto da resolução do Step 2 (sem scan).
+      rows.push({
+        posto: nomes[p],
+        semanas,
+        folga_fixa_dia: fixaPorPessoa[p],
+        folga_variavel_dia: variavelPorPessoa[p],
+      })
+      continue
+    }
     const sorted = folgaCountByWeekday
       .map((count, dia) => ({ dia, count }))
       .filter(x => x.count > 0)
@@ -653,7 +746,9 @@ export function converterNivel1ParaEscala(
       inicio: null,
       fim: null,
       preferencia_turno_soft: null,
-      folga_fixa_dia_semana: DIAS_IDX_TO_DIASEMANA[row.folga_fixa_dia] ?? null,
+      folga_fixa_dia_semana: row.folga_fixa_dia != null
+        ? DIAS_IDX_TO_DIASEMANA[row.folga_fixa_dia] ?? null
+        : null,
       folga_variavel_dia_semana: row.folga_variavel_dia != null
         ? DIAS_IDX_TO_DIASEMANA[row.folga_variavel_dia] ?? null
         : null,

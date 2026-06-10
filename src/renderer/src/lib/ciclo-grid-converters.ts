@@ -323,7 +323,7 @@ export function escalaParaCicloGrid(
 function resolveSimbolo(
   status: 'T' | 'F',
   dIdx: number,
-  row: { folga_fixa_dia: number; folga_variavel_dia: number | null },
+  row: { folga_fixa_dia: number | null; folga_variavel_dia: number | null },
   fixaDom?: boolean,
 ): Simbolo {
   const isDomingo = dIdx === 6
@@ -336,7 +336,7 @@ function resolveSimbolo(
 }
 
 function getFixaDia(row: SimulaCicloRow): DiaSemana | null {
-  return DIAS_ORDEM[row.folga_fixa_dia] ?? null
+  return row.folga_fixa_dia != null ? (DIAS_ORDEM[row.folga_fixa_dia] ?? null) : null
 }
 
 function getVariavelDia(row: SimulaCicloRow): DiaSemana | null {

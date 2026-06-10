@@ -1343,13 +1343,12 @@ export function SetorDetalhe() {
         }))
 
     const multiPassResult: MultiPassResult | null =
-      regimeEfetivo !== '5X2'
-        ? null
-        : runPreviewMultiPass({
+      runPreviewMultiPass({
             fase1Input: {
               num_postos: effectiveN,
               trabalham_domingo: effectiveK,
               num_meses: simulacaoPreviewMeses,
+              regime: regimeEfetivo === '6X1' ? '6X1' : '5X2',
               folgas_forcadas: folgasForcadas.some((folga) => folga.folga_fixa_dia != null || folga.folga_variavel_dia != null || folga.folga_fixa_dom)
                 ? folgasForcadas
                 : undefined,
@@ -1382,10 +1381,7 @@ export function SetorDetalhe() {
           })
 
     const resultado: SimulaCicloOutput = multiPassResult?.output
-      ?? resultadoErro(
-          'Preview Nível 1 disponível apenas para setores 5x2.',
-          'Mude para o modo Livre para explorar o ciclo ou gere a escala pelo botão Gerar.',
-        )
+      ?? resultadoErro('Preview indisponível para esta configuração.')
 
     const savePadrao = modoSimulacaoEfetivo === 'SETOR' && resultado.sucesso
       ? previewSetorRows.flatMap((row, idx) => {
@@ -3496,11 +3492,7 @@ export function SetorDetalhe() {
                   ) : (
                     <div className="rounded-lg border border-dashed px-4 py-5">
                       <p className="text-sm font-medium text-foreground">
-                        {simulacaoPreview.resultado.erro ?? (
-                          regimeEfetivo === '6X1'
-                            ? 'Preview de ciclo disponivel apenas para regime 5x2. Use Gerar Escala para montar a escala deste setor.'
-                            : 'Configure postos e demandas para ver o preview do ciclo.'
-                        )}
+                        {simulacaoPreview.resultado.erro ?? 'Configure postos e demandas para ver o preview do ciclo.'}
                       </p>
                       {previewAvisos.length > 0 && (
                         <AvisosSection

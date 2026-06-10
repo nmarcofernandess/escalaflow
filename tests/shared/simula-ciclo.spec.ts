@@ -154,3 +154,137 @@ describe('gerarCicloFase1 com demanda_por_dia', () => {
     }
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regime 6X1 — 1 folga/semana (XOR puro com domingo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('gerarCicloFase1 — regime 6X1', () => {
+  it('rodizio: ~1 folga/semana (folga extra apenas na transicao que evitaria 7+ dias corridos)', () => {
+    const result = gerarCicloFase1({
+      num_postos: 6,
+      trabalham_domingo: 3,
+      regime: '6X1',
+    })
+    expect(result.sucesso).toBe(true)
+    expect(result.grid).toHaveLength(6)
+    let semanasCom1Folga = 0
+    let totalSemanas = 0
+    for (const row of result.grid) {
+      for (const semana of row.semanas) {
+        const folgas = semana.dias.filter(d => d === 'F').length
+        // Matemática do 6x1 em semanas civis: na transição "trabalha DOM →
+        // folga DOM", 6 dias exatos nas duas semanas forçariam 7+ dias
+        // corridos (viola H1). O repair injeta 1 folga extra nessa semana —
+        // mesmo comportamento do solver real (relaxa DIAS_TRABALHO no pass 2).
+        expect(folgas, `${row.posto}: 1 folga (2 na transição)`).toBeGreaterThanOrEqual(1)
+        expect(folgas).toBeLessThanOrEqual(2)
+        expect(semana.dias_trabalhados).toBeGreaterThanOrEqual(5)
+        expect(semana.dias_trabalhados).toBeLessThanOrEqual(6)
+        totalSemanas++
+        if (folgas === 1) semanasCom1Folga++
+      }
+    }
+    // A maioria das semanas tem exatamente 1 folga (6 dias de trabalho)
+    expect(semanasCom1Folga / totalSemanas).toBeGreaterThan(0.5)
+    expect(result.stats.folgas_por_pessoa_semana).toBeLessThan(1.6)
+  })
+
+  it('rodizio: semana que trabalha DOM folga no dia variavel; folga fixa é null', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 2,
+      regime: '6X1',
+    })
+    expect(result.sucesso).toBe(true)
+    for (const row of result.grid) {
+      expect(row.folga_fixa_dia, 'rodizio 6x1 nao tem folga fixa').toBeNull()
+      expect(row.folga_variavel_dia).not.toBeNull()
+      for (const semana of row.semanas) {
+        const folgasSemana = semana.dias.slice(0, 6).filter(d => d === 'F').length
+        if (semana.trabalhou_domingo) {
+          // O repair só ADICIONA folga — o dia variável permanece F
+          expect(semana.dias[row.folga_variavel_dia!]).toBe('F')
+        } else {
+          // Folgou DOM: no máximo 1 folga extra em SEG-SAB (repair de transição)
+          expect(folgasSemana).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+  })
+
+  it('folga_fixa_dom: folga todo DOM e trabalha SEG-SAB inteiro', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 2,
+      regime: '6X1',
+      folgas_forcadas: [
+        { folga_fixa_dia: null, folga_variavel_dia: null, folga_fixa_dom: true },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    for (const semana of result.grid[0].semanas) {
+      expect(semana.dias[6]).toBe('F')
+      expect(semana.dias.slice(0, 6).every(d => d === 'T')).toBe(true)
+      expect(semana.dias_trabalhados).toBe(6)
+    }
+  })
+
+  it('folga fixa SEG-SAB forcada: F nesse dia toda semana e trabalha TODOS os domingos', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 2,
+      regime: '6X1',
+      folgas_forcadas: [
+        { folga_fixa_dia: 2, folga_variavel_dia: null }, // QUA
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    const p0 = result.grid[0]
+    expect(p0.folga_fixa_dia).toBe(2)
+    expect(p0.folga_variavel_dia).toBeNull()
+    for (const semana of p0.semanas) {
+      expect(semana.dias[2]).toBe('F')
+      expect(semana.dias[6], 'fixa em 6x1 implica trabalhar todo DOM').toBe('T')
+      expect(semana.dias_trabalhados).toBe(6)
+    }
+  })
+
+  it('dia variavel forcado é respeitado nas semanas que trabalha DOM', () => {
+    const result = gerarCicloFase1({
+      num_postos: 4,
+      trabalham_domingo: 2,
+      regime: '6X1',
+      folgas_forcadas: [
+        { folga_fixa_dia: null, folga_variavel_dia: 4 }, // SEX
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+        { folga_fixa_dia: null, folga_variavel_dia: null },
+      ],
+    })
+    expect(result.sucesso).toBe(true)
+    const p0 = result.grid[0]
+    expect(p0.folga_variavel_dia).toBe(4)
+    for (const semana of p0.semanas) {
+      if (semana.trabalhou_domingo) expect(semana.dias[4]).toBe('F')
+    }
+  })
+
+  it('regressao 5x2: default continua com 2 folgas por semana', () => {
+    const result = gerarCicloFase1({
+      num_postos: 5,
+      trabalham_domingo: 2,
+    })
+    expect(result.sucesso).toBe(true)
+    expect(result.stats.folgas_por_pessoa_semana).toBeCloseTo(2, 0)
+    for (const row of result.grid) {
+      expect(row.folga_fixa_dia).not.toBeNull()
+    }
+  })
+})
