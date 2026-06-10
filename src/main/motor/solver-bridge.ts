@@ -34,6 +34,7 @@ import {
   resolveSundayRotatingDemand,
 } from '../../shared'
 import { buildEffectiveRulePolicy } from './rule-policy'
+import { expandirSemanasOff } from '../../shared/recorrencia'
 
 const require = createRequire(import.meta.url)
 
@@ -283,6 +284,7 @@ export async function buildSolverInput(
     min_intervalo_almoco_min: number
     usa_cct_intervalo_reduzido: number
     grid_minutos: number
+    corte_semanal: string | null
   }>('SELECT * FROM empresa LIMIT 1')
 
   // Setor
@@ -431,6 +433,9 @@ export async function buildSolverInput(
     preferencia_turno_soft: string | null;
     folga_fixa_dia_semana: string | null;
     folga_variavel_dia_semana: string | null;
+    recorrencia_semanas_trabalho: number | null;
+    recorrencia_semanas_folga: number | null;
+    recorrencia_ancora: string | null;
     p_inicio: string | null; p_fim: string | null;
     p_preferencia_turno_soft: string | null;
   }
@@ -440,6 +445,7 @@ export async function buildSolverInput(
            r.inicio, r.fim,
            r.preferencia_turno_soft,
            r.folga_fixa_dia_semana, r.folga_variavel_dia_semana,
+           r.recorrencia_semanas_trabalho, r.recorrencia_semanas_folga, r.recorrencia_ancora,
            p.inicio AS p_inicio, p.fim AS p_fim,
            p.preferencia_turno_soft AS p_preferencia_turno_soft
     FROM colaborador_regra_horario r
@@ -457,6 +463,37 @@ export async function buildSolverInput(
     if (!g) { g = { padrao: null, dias: new Map() }; regraGroupByColab.set(r.colaborador_id, g) }
     if (r.dia_semana_regra === null) g.padrao = r
     else g.dias.set(r.dia_semana_regra, r)
+  }
+
+  // Recorrência declarativa (semana sim/semana não): expande semanas OFF em
+  // exceções sintéticas. Flui pro Python como excecoes → H5 (work==0) +
+  // blocked_days → DIAS_TRABALHO pula a semana e H10 prorata a meta a zero.
+  // Não persiste no banco — declarativo é computado na hora.
+  const corteSemanalRec = emp?.corte_semanal ?? 'SEG_DOM'
+  for (const [recColabId, recGroup] of regraGroupByColab) {
+    const p = recGroup.padrao
+    if (!p?.recorrencia_semanas_trabalho || !p?.recorrencia_semanas_folga || !p?.recorrencia_ancora) continue
+    const rangesOff = expandirSemanasOff({
+      data_inicio: dataInicio,
+      data_fim: dataFim,
+      corte_semanal: corteSemanalRec,
+      recorrencia: {
+        semanas_trabalho: p.recorrencia_semanas_trabalho,
+        semanas_folga: p.recorrencia_semanas_folga,
+        ancora: p.recorrencia_ancora,
+      },
+    })
+    for (const r of rangesOff) {
+      excecoes.push({
+        colaborador_id: recColabId,
+        data_inicio: r.data_inicio,
+        data_fim: r.data_fim,
+        tipo: 'BLOQUEIO',
+      })
+    }
+    if (rangesOff.length > 0) {
+      console.log(`[solver-bridge] Recorrência colab ${recColabId}: ${rangesOff.length} semana(s) OFF no período`)
+    }
   }
 
   // v4: Excecoes de horario por data (v16: 2 campos inicio/fim)
