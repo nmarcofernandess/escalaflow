@@ -181,9 +181,13 @@ export function escalaParaCicloGrid(
         })
         .filter((count) => count > 0)
 
-      const domDemand = mode(sundayWorkers) ?? 1
-      const base = Math.floor(totalPostos / gcd(totalPostos, domDemand))
-      periodoCiclo = Math.max(1, Math.min(weeks.length, base))
+      if (sundayWorkers.length === 0) {
+        periodoCiclo = 1
+      } else {
+        const domDemand = mode(sundayWorkers) ?? 1
+        const base = Math.floor(totalPostos / gcd(totalPostos, domDemand))
+        periodoCiclo = Math.max(1, Math.min(weeks.length, base))
+      }
     }
   }
 
