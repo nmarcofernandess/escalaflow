@@ -261,12 +261,13 @@ ${C.bold}Listar setores:${C.reset}
       diagnostico: diag ?? null,
       horas_por_colaborador: (() => {
         const map = new Map<string, number>()
-        for (const a of output.alocacoes) {
+        for (const a of output.alocacoes ?? []) {
           if (a.status !== 'TRABALHO') continue
           map.set(a.colaborador, (map.get(a.colaborador) ?? 0) + a.minutos_trabalho)
         }
         return Object.fromEntries([...map.entries()].map(([nome, min]) => [nome, `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`]))
       })(),
+      erro: output.erro ?? null,
     }
     _origLog(JSON.stringify(summary, null, 2))
     await closeDb()

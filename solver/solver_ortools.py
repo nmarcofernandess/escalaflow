@@ -1866,11 +1866,12 @@ def _solve_pass(
         base_h,
         grid_min,
     ) = build_model(data, relaxations=relaxations, pinned_folga=pinned_folga)
+    has_external_hints = bool(data.get("hints"))
 
     # Warm-start from advisory pattern: OFFs as strong hints, INTEGRAL as directional hints.
     # AddHint is a starting-point suggestion — NOT a constraint. It helps the solver
     # find good solutions faster by seeding the search with the advisory's folga pattern.
-    if pinned_folga:
+    if pinned_folga and not has_external_hints:
         advisory_hints = 0
         for (c, d), band in pinned_folga.items():
             if c >= C or d >= D:
@@ -1887,7 +1888,7 @@ def _solve_pass(
             log(f"Warm-start: {advisory_hints} hints do padrao advisory aplicados")
 
     # Warm-start from hint_pattern (no constraints, just AddHint)
-    if hint_pattern and not pinned_folga:
+    if hint_pattern and not pinned_folga and not has_external_hints:
         hint_count = 0
         demanded_sundays = {
             d
