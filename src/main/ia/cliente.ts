@@ -31,14 +31,13 @@ let _devToolsMiddlewareFactory: null | (() => any) = null
 const TOOL_RESULT_MAX_CHARS = 1500
 const TOOL_RESULT_LEGACY_MAX_CHARS = 800
 
-function shouldEnableAiDevTools() {
+function shouldEnableAiDevTools(): boolean {
     const explicit = process.env.ESCALAFLOW_AI_DEVTOOLS?.trim()
     if (explicit === '0' || explicit?.toLowerCase() === 'false') return false
     if (explicit === '1' || explicit?.toLowerCase() === 'true') return true
-    // App empacotado: cwd é '/' e o middleware grava em cwd/.devtools —
-    // mkdir falha (ENOENT) e derruba o ia.chat.enviar do usuário final
-    if (_app?.isPackaged) return false
-    return process.env.NODE_ENV !== 'production'
+    // O middleware grava em cwd/.devtools; em Electron isso pode apontar para
+    // local protegido ou inconsistente. Mantemos opt-in explícito para dev.
+    return false
 }
 
 async function maybeWrapModelWithDevTools(model: any) {
@@ -321,6 +320,7 @@ export const __iaClienteTestables = {
     buildChatMessages,
     extractToolCallsFromSteps,
     buildFullSystemPrompt,
+    shouldEnableAiDevTools,
 }
 
 // PROVIDER_DEFAULTS, resolveModel, isValidModelForProvider, resolveProviderApiKey

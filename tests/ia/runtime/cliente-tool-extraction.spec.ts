@@ -3,6 +3,26 @@ import { __iaClienteTestables } from '../../../src/main/ia/cliente'
 import { makeToolStepFixture } from '../../setup/ia-fixtures'
 
 describe('cliente.ts tool step mapping', () => {
+  it('mantem AI DevTools desligado por padrao e so liga com opt-in explicito', () => {
+    const original = process.env.ESCALAFLOW_AI_DEVTOOLS
+    try {
+      delete process.env.ESCALAFLOW_AI_DEVTOOLS
+      expect(__iaClienteTestables.shouldEnableAiDevTools()).toBe(false)
+
+      process.env.ESCALAFLOW_AI_DEVTOOLS = 'false'
+      expect(__iaClienteTestables.shouldEnableAiDevTools()).toBe(false)
+
+      process.env.ESCALAFLOW_AI_DEVTOOLS = 'true'
+      expect(__iaClienteTestables.shouldEnableAiDevTools()).toBe(true)
+    } finally {
+      if (original === undefined) {
+        delete process.env.ESCALAFLOW_AI_DEVTOOLS
+      } else {
+        process.env.ESCALAFLOW_AI_DEVTOOLS = original
+      }
+    }
+  })
+
   it('pareia toolCalls/toolResults por toolCallId e preserva outputs falsy', () => {
     const steps = [makeToolStepFixture()]
     const acoes = __iaClienteTestables.extractToolCallsFromSteps(steps as any[])
