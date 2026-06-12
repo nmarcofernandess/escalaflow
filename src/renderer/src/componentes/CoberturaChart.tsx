@@ -5,7 +5,6 @@ import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
 } from '@/components/ui/chart'
@@ -20,6 +19,20 @@ interface CoberturaChartProps {
 }
 
 type ViewMode = 'semana' | 'mes' | 'tudo'
+
+type CoveragePoint = {
+  data?: string
+  hora?: string
+  label: string
+  necessario: number
+  coberto: number
+  necessarioHoras: number
+  cobertoHoras: number
+  deficitHoras: number
+  picoNecessario: number
+  picoCoberto: number
+  slotZero: boolean
+}
 
 const chartConfig = {
   necessario: { label: 'Necessario', color: 'hsl(var(--primary))' },
@@ -37,6 +50,90 @@ function getWeekLabel(dateStr: string): string {
   return dias[d.getDay()]
 }
 
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+
+function slotHours(slot: SlotComparacao): number {
+  return Math.max(0, timeToMinutes(slot.hora_fim) - timeToMinutes(slot.hora_inicio)) / 60
+}
+
+function formatHoras(value: number): string {
+  const totalMin = Math.round(value * 60)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`
+}
+
+function summarizeSlots(slots: SlotComparacao[]) {
+  return slots.reduce(
+    (acc, slot) => {
+      const hours = slotHours(slot)
+      const deficit = Math.max(0, slot.planejado - slot.executado)
+      acc.necessario += slot.planejado
+      acc.coberto += slot.executado
+      acc.necessarioHoras += slot.planejado * hours
+      acc.cobertoHoras += slot.executado * hours
+      acc.deficitHoras += deficit * hours
+      acc.picoNecessario = Math.max(acc.picoNecessario, slot.planejado)
+      acc.picoCoberto = Math.max(acc.picoCoberto, slot.executado)
+      acc.slotZero ||= slot.planejado > 0 && slot.executado === 0
+      return acc
+    },
+    {
+      necessario: 0,
+      coberto: 0,
+      necessarioHoras: 0,
+      cobertoHoras: 0,
+      deficitHoras: 0,
+      picoNecessario: 0,
+      picoCoberto: 0,
+      slotZero: false,
+    },
+  )
+}
+
+function CoberturaTooltip({ active, payload }: {
+  active?: boolean
+  payload?: Array<{ payload?: CoveragePoint }>
+}) {
+  if (!active) return null
+  const point = payload?.[0]?.payload
+  if (!point) return null
+
+  return (
+    <div className="min-w-[220px] rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="font-medium">{point.label}</p>
+        {point.slotZero && (
+          <span className="rounded-sm bg-destructive px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-destructive-foreground">
+            slot a ZERO
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3">
+          <span className="text-muted-foreground">Necessario</span>
+          <span className="font-medium tabular-nums">{formatHoras(point.necessarioHoras)}</span>
+          <span className="text-muted-foreground tabular-nums">{point.picoNecessario} pessoas</span>
+        </div>
+        <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3">
+          <span className="text-muted-foreground">Coberto</span>
+          <span className="font-medium tabular-nums">{formatHoras(point.cobertoHoras)}</span>
+          <span className="text-muted-foreground tabular-nums">{point.picoCoberto} pessoas</span>
+        </div>
+        {point.deficitHoras > 0 && (
+          <div className="border-t pt-1.5 text-muted-foreground">
+            Deficit {formatHoras(point.deficitHoras)} · {(point.deficitHoras / 44).toFixed(2)} pessoa-eq
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function CoberturaChart({ comparacao, indicadores, className }: CoberturaChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('tudo')
   const [pageIndex, setPageIndex] = useState(0)
@@ -44,19 +141,17 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
 
   // Agrupar por dia: somar planejado e executado de todos os slots do dia
   const porDia = useMemo(() => {
-    const acc = new Map<string, { necessario: number; coberto: number }>()
+    const acc = new Map<string, SlotComparacao[]>()
     for (const s of comparacao) {
-      if (!acc.has(s.data)) acc.set(s.data, { necessario: 0, coberto: 0 })
-      const entry = acc.get(s.data)!
-      entry.necessario += s.planejado
-      entry.coberto += s.executado
+      if (!acc.has(s.data)) acc.set(s.data, [])
+      acc.get(s.data)!.push(s)
     }
     return [...acc.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([data, vals]) => ({
+      .map(([data, slots]) => ({
         data,
         label: `${getWeekLabel(data)} ${formatDate(data)}`,
-        ...vals,
+        ...summarizeSlots(slots),
       }))
   }, [comparacao])
 
@@ -97,20 +192,18 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
   const porHora = useMemo(() => {
     if (!selectedDate) return []
     const slotsDay = comparacao.filter(s => s.data === selectedDate)
-    const acc = new Map<string, { necessario: number; coberto: number }>()
+    const acc = new Map<string, SlotComparacao[]>()
     for (const s of slotsDay) {
       const hora = s.hora_inicio.slice(0, 2)
-      if (!acc.has(hora)) acc.set(hora, { necessario: 0, coberto: 0 })
-      const entry = acc.get(hora)!
-      entry.necessario += s.planejado
-      entry.coberto += s.executado
+      if (!acc.has(hora)) acc.set(hora, [])
+      acc.get(hora)!.push(s)
     }
     return [...acc.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([hora, vals]) => ({
+      .map(([hora, slots]) => ({
         hora,
         label: `${hora}h`,
-        ...vals,
+        ...summarizeSlots(slots),
       }))
   }, [comparacao, selectedDate])
 
@@ -250,7 +343,7 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
               fontSize={11}
             />
             <ChartTooltip
-              content={<ChartTooltipContent />}
+              content={<CoberturaTooltip />}
             />
             <Bar dataKey="necessario" fill="var(--color-necessario)" radius={[3, 3, 0, 0]} />
             <Bar dataKey="coberto" fill="var(--color-coberto)" radius={[3, 3, 0, 0]} />
@@ -306,7 +399,7 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
               fontSize={11}
             />
             <ChartTooltip
-              content={<ChartTooltipContent />}
+              content={<CoberturaTooltip />}
             />
             <defs>
               <linearGradient id="gradNecessario" x1="0" y1="0" x2="0" y2="1">
