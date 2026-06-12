@@ -542,7 +542,9 @@ export async function buildSolverInput(
         const diaSemana = DIAS_SEMANA_MAP[d.getDay() === 0 ? 6 : d.getDay() - 1]
 
         const excecaoData = excecaoDataMap.get(`${colab.id}|${isoDate}`)
-        const isIntermitente = (colab.tipo_trabalhador || 'CLT') === 'INTERMITENTE'
+        // B7: deriva do contrato — coluna pode estar stale (ex: import/lote); a
+        // disponibilidade do intermitente depende disso e não pode vazar
+        const isIntermitente = derivarTipoTrabalhador(colab.tipo_trabalhador, colab.contrato_nome) === 'INTERMITENTE'
 
         // Precedencia: excecao_data > regra_dia_especifico > regra_padrao > perfil_contrato > sem regra
         // Intermitente: só dia_especifico conta (padrão não define disponibilidade)
@@ -643,7 +645,11 @@ export async function buildSolverInput(
   }
 
   // v22: Ciclo domingo calculado automaticamente (tenta 1/2 → 1/1 → 2/1)
-  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRowsFiltered, regraGroupByColab)
+  const colabRowsTipoDerivado = colabRowsFiltered.map((r) => ({
+    ...r,
+    tipo_trabalhador: derivarTipoTrabalhador(r.tipo_trabalhador, r.contrato_nome),
+  }))
+  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRowsTipoDerivado, regraGroupByColab)
   for (const c of colaboradores) {
     // Tipo A (sem folga_variavel): fora do pool
     if (c.tipo_trabalhador === 'INTERMITENTE' && !c.folga_variavel_dia_semana) continue

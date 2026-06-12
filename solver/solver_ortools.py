@@ -1072,8 +1072,14 @@ def build_model(
     # make it impossible to guarantee headcount every single Sunday.
     # S_DEFICIT (SOFT) already penalizes under-coverage per slot.
     # ---------------------------------------------------------------
+    # DIAS_TRABALHO esta presente nos relax sets de TODOS os passes 2+ — e o
+    # marcador correto de "Pass 2+" prometido no comentario acima. Sem ele, o
+    # headcount HARD de domingo sobrevivia ao Pass 2 e colidia com H10+H3
+    # (ex: pool 100% feminino + intermitente de DOM com recorrencia => false
+    # INFEASIBLE provado em ~0.2s; deficit de domingo ja e penalizado por S_DEFICIT).
     _skip_sunday_headcount = (
         "ALL_PRODUCT_RULES" in relax
+        or "DIAS_TRABALHO" in relax
         or "FOLGA_FIXA" in relax
         or "FOLGA_VARIAVEL" in relax
     )
@@ -1314,17 +1320,24 @@ def build_model(
     ) if rule_is('S_CYCLE_CONSISTENCY', 'ON') != 'OFF' and cycle_days < D else []
 
     max_total_minutes = D * S * grid_min
-    # Exclude intermitentes with horas_semanais=0 from spread calculation
-    # (their free domain [0, huge] distorts max/min equality)
+    # Exclude intermitentes from spread calculation: equilibrio de carga compara
+    # a equipe regular; intermitente (convocacao, ex: so domingos) tem total de
+    # periodo estruturalmente menor e distorce max/min — com o bound antigo de
+    # 9000min isso virava INFEASIBLE falso (CLT 44h precisa ~10440min/4sem vs
+    # intermitente cap ~1170min => spread necessario > 9000).
     spread_minutes = [wm for c, wm in enumerate(weekly_minutes)
-                      if int(colabs[c].get("horas_semanais", 44)) > 0]
+                      if int(colabs[c].get("horas_semanais", 44)) > 0
+                      and colabs[c].get("tipo_trabalhador", "CLT") != "INTERMITENTE"]
     if not spread_minutes:
         spread_minutes = weekly_minutes  # fallback: use all
     max_weekly = model.new_int_var(0, max_total_minutes, "max_weekly")
     min_weekly = model.new_int_var(0, max_total_minutes, "min_weekly")
     model.add_max_equality(max_weekly, spread_minutes)
     model.add_min_equality(min_weekly, spread_minutes)
-    spread = model.new_int_var(0, 9000, "spread")
+    # S_SPREAD e regra SOFT no catalogo: o dominio precisa ir ate o teto fisico
+    # (bound apertado = constraint HARD disfarcada). O peso no objetivo e quem
+    # promove o equilibrio.
+    spread = model.new_int_var(0, max_total_minutes, "spread")
     model.add(spread == max_weekly - min_weekly)
 
     objective_terms = []

@@ -12,7 +12,7 @@ import type { IaMensagem, IaAnexo, ToolCall, IaConfiguracao, IaContexto, IaStrea
 
 import { createRequire } from 'node:module'
 const _require = createRequire(import.meta.url)
-const { BrowserWindow: _BW } = _require('electron') as typeof import('electron')
+const { BrowserWindow: _BW, app: _app } = _require('electron') as typeof import('electron')
 
 function broadcastToRenderer(channel: string, data: unknown): void {
   for (const win of _BW.getAllWindows()) {
@@ -35,6 +35,9 @@ function shouldEnableAiDevTools() {
     const explicit = process.env.ESCALAFLOW_AI_DEVTOOLS?.trim()
     if (explicit === '0' || explicit?.toLowerCase() === 'false') return false
     if (explicit === '1' || explicit?.toLowerCase() === 'true') return true
+    // App empacotado: cwd é '/' e o middleware grava em cwd/.devtools —
+    // mkdir falha (ENOENT) e derruba o ia.chat.enviar do usuário final
+    if (_app?.isPackaged) return false
     return process.env.NODE_ENV !== 'production'
 }
 
