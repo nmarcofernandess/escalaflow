@@ -385,7 +385,39 @@ Após o solver gerar e as alocações serem salvas, o **validador TypeScript** (
 
 ---
 
-## 9. Relação Entre os Docs
+## 9. Gates de Teste e DB Descartavel
+
+O banco de desenvolvimento (`data/escalaflow-pg`) e fonte de verdade do usuario e nao
+e usado como gate de CI. Testes automatizados que precisam de dados operacionais
+devem criar um PGlite temporario, apagar o diretorio antes do run e reinjetar seeds.
+
+Seeds versionados:
+
+| Seed | Onde | Uso |
+|------|------|-----|
+| Core | `seedCoreData()` | Contratos, regras, feriados e dados de sistema. |
+| E2E | `seedE2eData()` | UI Electron/Playwright; roda com `ESCALAFLOW_E2E=1`; DB limpo em `tests/e2e/global-setup.ts`. |
+| CI solver | `seedCiData()` | Solver/bridge em banco descartavel; cria `CI Padaria 5x2` e `CI Mercearia 6x1 dificil`. |
+
+O comando `npm run test:ci-seed` remove `tmp/ci-solver-pglite`, cria schema,
+injeta core + seed CI e roda o solver nos cenarios 5x2 e 6x1. O 6x1 dificil
+inclui cinco CLTs 6x1 + uma intermitente convocada somente em domingos alternados,
+demanda de abertura e domingo OFF; o gate falha se houver HARD, slot com demanda
+e cobertura zero, intermitente fora do domingo ON, ou se o cenario 6x1 cair fora
+do Pass 1.
+
+O comando de CI consolidado e:
+
+```bash
+npm run ci:verify
+```
+
+Ele executa `typecheck`, `vitest`, `test:ci-seed`, `build` e `test:e2e`.
+`seed-local.ts` e privado e nao e gate de clone limpo.
+
+---
+
+## 10. Relação Entre os Docs
 
 | Doc | Escopo | Quando ler |
 |-----|--------|-----------|

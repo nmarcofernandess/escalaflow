@@ -16,6 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:ci-seed": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/test-ci-seed.ts",
+    "ci:verify": "npm run typecheck && npm run test && npm run test:ci-seed && npm run build && npm run test:e2e",
     "test:e2e": "playwright test",
     "test:e2e:build": "npm run build && playwright test",
     "test:ia:eval": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx tests/ia/evals/run-evals.ts",

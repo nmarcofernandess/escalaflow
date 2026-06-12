@@ -26,6 +26,18 @@ npm run build && npm run test:e2e
 npm run test:e2e:build
 ```
 
+Para o gate completo de CI:
+
+```bash
+npm run ci:verify
+```
+
+Esse comando roda typecheck, unit tests, build, E2E e tambem
+`npm run test:ci-seed`, que cria um PGlite descartavel em
+`tmp/ci-solver-pglite`, apaga o diretorio antes do run e reinjeta o seed
+versionado [`seed-ci.ts`](../../src/main/db/seed-ci.ts). Esse seed cobre um
+baseline 5x2 e um 6x1 dificil com intermitente somente em domingos alternados.
+
 ## O que é coberto
 
 | Arquivo | Conteúdo |
@@ -37,6 +49,7 @@ npm run test:e2e:build
 
 - Nome do setor E2E: **Padaria** (constante alinhada em `constants.ts` e `seed-e2e.ts`).
 - A navegação usa o cartão ou a tabela na lista de setores (evita depender de `setores.id` quando há `seed-local`).
+- Seed de solver/CI: **CI Padaria 5x2** e **CI Mercearia 6x1 dificil** (nao aparecem no app normal; só em DB temporario de teste).
 
 ## Limitações
 
