@@ -14,8 +14,8 @@ const TOOL_TIMEOUT = 300_000  // 5min — solver Python pode demorar em periodos
 try {
   const health = await fetch(`${TOOL_URL}/health`, { signal: AbortSignal.timeout(5000) })
   if (!health.ok) throw new Error(`HTTP ${health.status}`)
-  const info = await health.json() as { status: string; tools: number; version?: string }
-  console.error(`[escalaflow-mcp] Conectado ao EscalaFlow (${info.tools} tools, v${info.version ?? '?'})`)
+  const info = await health.json() as { status: string; tools: number; version?: string; app?: string }
+  console.error(`[escalaflow-mcp] Conectado ao ${info.app ?? 'EscalaFlow'} (${info.tools} tools, v${info.version ?? '?'})`)
 } catch {
   console.error('[escalaflow-mcp] EscalaFlow nao esta aberto. Abra o app e reinicie o MCP server.')
   process.exit(1)
