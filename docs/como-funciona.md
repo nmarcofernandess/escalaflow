@@ -238,13 +238,18 @@ Ciclo = N / gcd(N, K) semanas
 | 6 | 3 | 3 | 2 sem | 3T-3F alternando |
 | 4 | 2 | 2 | 2 sem | 2T-2F alternando |
 
-**Onde é calculado (6 locais — manter sincronizados!):**
+**Onde é calculado (pontos sincronizados):**
 1. `SetorDetalhe.tsx:setorSimulacaoInfo` — N/K pro preview
 2. `simula-ciclo.ts:gerarCicloFase1` — grid T/F (spacing implícito)
-3. `solver-bridge.ts:calcularCicloDomingo` — ratio por pessoa (thresholds)
+3. `solver-bridge.ts:calcularCicloDomingo` — ratio por pessoa (thresholds, não `N/gcd`)
 4. `solver_ortools.py:compute_cycle_length_weeks` — Phase 1 diagnóstico
 5. `solver_ortools.py:_compute_cycle_weeks_fast` — output diagnóstico
 6. `ciclo-grid-converters.ts:escalaParaCicloGrid` — grid escala oficial
+
+Nota: `N/gcd(N,K)` é o período visual/diagnóstico do ciclo. A bridge calcula
+`domingo_ciclo_trabalho/domingo_ciclo_folga` por thresholds para orientar o
+solver e o validador; é semântica operacional, não o comprimento visual do
+ciclo.
 
 ### 4.2 XOR Folga Variável — Mesma Semana (offset negativo)
 

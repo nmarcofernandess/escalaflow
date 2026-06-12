@@ -722,16 +722,23 @@ Detectado automaticamente por `folga_variavel_dia_semana`:
 - Tipo B e **pre-calculado** na bridge como `pinned_folga_externo` (determinístico, sem solver search).
 - `folga_fixa` e SEMPRE null pra intermitente.
 
-### Calculo de ciclo domingo — 6 locais (manter sincronizados!)
+### Calculo de ciclo domingo — pontos sincronizados
 
-O calculo `N/gcd(N,K)` existe em 6 locais independentes. Se mudar a logica de quem entra no pool, atualizar TODOS:
+Existem duas semanticas relacionadas, mas diferentes:
+
+- **Periodo visual/diagnostico do ciclo:** `N/gcd(N,K)` (N = pool rotativo, K = demanda dominical residual).
+- **Razao operacional por pessoa no solver/validador:** `domingo_ciclo_trabalho/domingo_ciclo_folga`, calculada por thresholds em `calcularCicloDomingo` para limitar domingos consecutivos e orientar a penalidade soft.
+
+Se mudar a logica de quem entra no pool (CLT + intermitente Tipo B; intermitente Tipo A fora), atualizar TODOS:
 
 1. `SetorDetalhe.tsx:setorSimulacaoInfo` — N/K pro preview
 2. `simula-ciclo.ts:gerarCicloFase1` — grid T/F (spacing implicito)
-3. `solver-bridge.ts:calcularCicloDomingo` — ratio por pessoa (thresholds)
+3. `solver-bridge.ts:calcularCicloDomingo` — ratio por pessoa (thresholds, nao `N/gcd`)
 4. `solver_ortools.py:compute_cycle_length_weeks` — Phase 1 diagnostico
 5. `solver_ortools.py:_compute_cycle_weeks_fast` — output diagnostico
 6. `ciclo-grid-converters.ts:escalaParaCicloGrid` — grid escala oficial
+
+O advisory da IA tambem chama `gerarCicloFase1`; ele deve resolver o regime pela cascata setor → contrato → `dias_trabalho` antes de montar o preview, para nao simular setor 6x1 como 5x2.
 
 ### Pipeline de geracao — doc canonico
 
