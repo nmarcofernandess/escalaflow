@@ -123,32 +123,58 @@ describe('SugestaoSheet', () => {
   })
 
   describe('escape hatch buttons', () => {
-    it('shows all 3 buttons: Aceitar e Gerar, Gerar mesmo assim, Cancelar', () => {
+    it('PROPOSAL_VALID shows Aceitar e Gerar plus Gerar sem os ajustes', () => {
       renderSheet()
 
       expect(screen.getByRole('button', { name: /Aceitar e Gerar/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Gerar mesmo assim/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Gerar sem os ajustes/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Gerar mesmo assim/i })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Cancelar/i })).toBeInTheDocument()
     })
 
-    it('Aceitar e Gerar is only visible when pin_cost > 0', () => {
-      const noCost: EscalaAdvisoryOutputV2 = {
-        ...mockAdvisoryV2,
+    it('CURRENT_VALID shows primary Gerar escala without duplicated OK copy', () => {
+      const currentValid: EscalaAdvisoryOutputV2 = {
+        status: 'CURRENT_VALID',
+        diagnostics: [],
         pin_violations: [],
         pin_cost: 0,
       }
 
-      renderSheet({ advisory: noCost })
+      renderSheet({ advisory: currentValid })
 
       expect(screen.queryByRole('button', { name: /Aceitar e Gerar/i })).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Gerar mesmo assim/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^Gerar escala$/i })).toHaveClass('bg-primary')
+      expect(screen.queryByRole('button', { name: /mesmo assim/i })).not.toBeInTheDocument()
+      expect(screen.getAllByText(/O arranjo de folgas esta OK para o periodo selecionado/i)).toHaveLength(1)
       expect(screen.getByRole('button', { name: /Cancelar/i })).toBeInTheDocument()
+    })
+
+    it('NO_PROPOSAL shows Analisar com IA and Tentar gerar mesmo assim', () => {
+      const noProposal: EscalaAdvisoryOutputV2 = {
+        status: 'NO_PROPOSAL',
+        diagnostics: [
+          { code: 'SEM_SOLUCAO', severity: 'error', title: 'Sem solução', detail: 'Revise equipe e demanda.' },
+        ],
+        pin_violations: [],
+        pin_cost: 0,
+        fallback: {
+          should_open_ia: true,
+          reason: 'Não há escala viável.',
+          diagnosis_payload: null,
+        },
+      }
+
+      renderSheet({ advisory: noProposal, onAnalisarIa: noop })
+
+      expect(screen.getByRole('button', { name: /Analisar com IA/i })).toHaveClass('bg-primary')
+      expect(screen.getByRole('button', { name: /Tentar gerar mesmo assim/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^Gerar escala$/i })).not.toBeInTheDocument()
     })
 
     it('buttons are disabled while loading', () => {
       renderSheet({ loading: true, advisory: null })
 
-      const gerarBtn = screen.getByRole('button', { name: /Gerar mesmo assim/i })
+      const gerarBtn = screen.getByRole('button', { name: /^Gerar escala$/i })
       expect(gerarBtn).toBeDisabled()
     })
   })

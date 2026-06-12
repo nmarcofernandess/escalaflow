@@ -52,7 +52,7 @@ const STATUS_CONFIG: Record<AdvisoryStatus, {
   icon: typeof CheckCircle2
 }> = {
   CURRENT_VALID: {
-    subtitle: 'O arranjo de folgas esta OK para o periodo selecionado.',
+    subtitle: 'Tudo pronto para gerar.',
     accent: 'text-emerald-500',
     icon: CheckCircle2,
   },
@@ -284,7 +284,9 @@ export function SugestaoSheet({
   const hasPinViolations = pinViolations.length > 0
   const hasLegacyProposal = !hasPinViolations && !!advisory?.proposal
   const hasAnyChanges = hasPinViolations || hasLegacyProposal
-  const pinCost = advisory?.pin_cost ?? 0
+  const status = advisory?.status ?? 'CURRENT_VALID'
+  const showAccept = status === 'PROPOSAL_VALID' && hasAnyChanges
+  const showAnalyze = status === 'NO_PROPOSAL' && !!onAnalisarIa
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -360,15 +362,6 @@ export function SugestaoSheet({
                 <p className="text-sm text-rose-700 dark:text-rose-400">
                   Nao foi possivel montar um arranjo viavel com a equipe e demanda atuais. Use a IA para entender melhor.
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onAnalisarIa}
-                  className="w-fit border-rose-500/30 text-rose-700 hover:bg-rose-500/10 dark:text-rose-400"
-                >
-                  <Sparkles className="size-4" />
-                  Analisar com IA
-                </Button>
               </div>
             )}
           </div>
@@ -376,7 +369,7 @@ export function SugestaoSheet({
 
         {/* Footer */}
         <SheetFooter className="flex-row gap-2 sm:justify-start">
-          {pinCost > 0 && (
+          {showAccept && (
             <Button
               onClick={onAceitarEGerar}
               disabled={loading}
@@ -385,9 +378,26 @@ export function SugestaoSheet({
               Aceitar e Gerar
             </Button>
           )}
-          <Button variant="secondary" onClick={onGerarMesmoAssim} disabled={loading}>
-            Gerar mesmo assim
-          </Button>
+          {showAnalyze ? (
+            <Button onClick={onAnalisarIa} disabled={loading}>
+              <Sparkles className="size-4" />
+              Analisar com IA
+            </Button>
+          ) : !showAccept && (
+            <Button onClick={onGerarMesmoAssim} disabled={loading}>
+              Gerar escala
+            </Button>
+          )}
+          {showAccept && (
+            <Button variant="secondary" onClick={onGerarMesmoAssim} disabled={loading}>
+              Gerar sem os ajustes
+            </Button>
+          )}
+          {showAnalyze && (
+            <Button variant="secondary" onClick={onGerarMesmoAssim} disabled={loading}>
+              Tentar gerar mesmo assim
+            </Button>
+          )}
           <Button variant="ghost" onClick={onCancelar}>
             Cancelar
           </Button>

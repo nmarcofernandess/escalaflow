@@ -2196,11 +2196,16 @@ export function SetorDetalhe() {
   }
 
   const handleGerarMesmoAssim = async () => {
+    const statusAntesDeGerar = advisoryResult?.status
     setSugestaoOpen(false)
     setGerandoLabel('Gerando...')
     await handleGerarOriginal()
     setGerandoLabel(null)
-    toast.info('Escala gerada com as suas folgas originais')
+    if (statusAntesDeGerar === 'PROPOSAL_VALID') {
+      toast.info('Escala gerada sem aplicar os ajustes sugeridos')
+    } else if (statusAntesDeGerar === 'NO_PROPOSAL') {
+      toast.warning('Tentativa de geração concluída. Revise os apontamentos antes de oficializar.')
+    }
   }
 
   const handleCancelarSugestao = () => {
