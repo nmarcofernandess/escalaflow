@@ -851,6 +851,56 @@ export interface IaAnexo {
   preview_url?: string        // transient — blob URL for renderer
 }
 
+export type SttModelId = 'parakeet-v3-int8'
+
+export interface SttModelCatalogItem {
+  id: SttModelId
+  label: string
+  engine: 'parakeet'
+  filename: string
+  size_bytes: number
+  ram_minima_gb: number
+  languages: string[]
+  supports_translation: boolean
+  supports_language_hint: boolean
+  notes: string
+}
+
+export interface SttModelStatus {
+  id: SttModelId
+  label: string
+  baixado: boolean
+  path: string
+  size_bytes?: number
+  notes: string
+}
+
+export interface SttStatus {
+  disponivel: boolean
+  active_model_id: SttModelId
+  modelos: Record<SttModelId, SttModelStatus>
+  sidecar_path: string
+  sidecar_disponivel: boolean
+  reason?: 'download_stt_model' | 'missing_sidecar'
+}
+
+export interface SttTranscriptResult {
+  text: string
+  raw_text: string
+  model_id: SttModelId
+  duration_ms: number
+  audio_duration_ms: number
+  language?: string
+  segments?: Array<{ start_ms: number; end_ms: number; text: string }>
+  post_processed: boolean
+}
+
+export interface SttPostProcessOptions {
+  enabled: boolean
+  mode: 'none' | 'clean_prompt' | 'formal_message' | 'rh_note'
+  provider: 'configured_ia' | 'local_only'
+}
+
 export interface IaMensagem {
   id: string
   papel: 'usuario' | 'assistente' | 'tool_result'

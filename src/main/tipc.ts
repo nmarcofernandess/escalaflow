@@ -3580,6 +3580,46 @@ const iaLocalUnload = t.procedure
     return { sucesso: true }
   })
 
+const iaSttStatus = t.procedure
+  .action(async () => {
+    const { getSttStatus } = await import('./stt/download')
+    return getSttStatus()
+  })
+
+const iaSttModels = t.procedure
+  .action(async () => {
+    const { getSttStatus } = await import('./stt/download')
+    return getSttStatus()
+  })
+
+const iaSttDownload = t.procedure
+  .input<{ model_id: import('@shared/index').SttModelId }>()
+  .action(async ({ input }) => {
+    const { downloadSttModel } = await import('./stt/download')
+    await downloadSttModel(input.model_id)
+    return { sucesso: true }
+  })
+
+const iaSttDeleteModel = t.procedure
+  .input<{ model_id: import('@shared/index').SttModelId }>()
+  .action(async ({ input }) => {
+    const { deleteSttModel } = await import('./stt/download')
+    deleteSttModel(input.model_id)
+    return { sucesso: true }
+  })
+
+const iaSttTranscribe = t.procedure
+  .input<{
+    wav_base64: string
+    model_id?: import('@shared/index').SttModelId
+    post_process?: boolean
+    post_process_mode?: 'clean_prompt' | 'formal_message' | 'rh_note'
+  }>()
+  .action(async ({ input }) => {
+    const { transcribeWavBase64 } = await import('./stt/download')
+    return transcribeWavBase64(input)
+  })
+
 const iaChatLerArquivo = t.procedure
   .input<{ conversa_id: string }>()
   .action(async ({ input }) => {
@@ -4839,6 +4879,11 @@ export const router = {
   'ia.local.cancelDownload': iaLocalCancelDownload,
   'ia.local.deleteModel': iaLocalDeleteModel,
   'ia.local.unload': iaLocalUnload,
+  'ia.stt.status': iaSttStatus,
+  'ia.stt.models': iaSttModels,
+  'ia.stt.download': iaSttDownload,
+  'ia.stt.deleteModel': iaSttDeleteModel,
+  'ia.stt.transcribe': iaSttTranscribe,
   'ia.configuracao.obter': iaConfiguracaoObter,
   'ia.capabilities.obter': iaCapabilitiesObter,
   'ia.configuracao.salvar': iaConfiguracaoSalvar,

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Plus, ArrowUp } from 'lucide-react'
+import { ArrowUp, Mic, Plus, Square } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -7,6 +7,9 @@ import { IaModelPill } from './IaModelPill'
 import { IaContextBadge } from './IaContextBadge'
 import { IaAnexoPreviewStrip } from './IaAnexoPreviewStrip'
 import { cn } from '@/lib/utils'
+import { uint8ToBase64 } from '@/lib/audio-wav'
+import { useAudioRecorder } from '@/hooks/useAudioRecorder'
+import { servicoStt } from '@/servicos/stt'
 import type { IaProviderId, IaAnexo } from '@shared/index'
 
 type ProviderOption = {
@@ -63,7 +66,9 @@ export function IaChatInput({
   supportsMultimodal, anexos, onAnexosChange,
 }: Props) {
   const [isDragging, setIsDragging] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
   const dragCounterRef = useRef(0)
+  const recorder = useAudioRecorder()
 
   // Validate + read file from renderer, then persist to disk via IPC
   const processFile = async (file: File): Promise<IaAnexo | null> => {
@@ -191,7 +196,36 @@ export function IaChatInput({
     }
   }
 
-  const canSend = !disabled && (value.trim().length > 0 || anexos.length > 0)
+  const handleMic = async () => {
+    try {
+      if (!recorder.recording) {
+        await recorder.start()
+        return
+      }
+
+      setTranscribing(true)
+      const wav = await recorder.stop()
+      const result = await servicoStt.transcribe({
+        wav_base64: uint8ToBase64(wav),
+        post_process: false,
+      })
+      const transcript = result.text.trim()
+      if (transcript) {
+        onChange(value.trim() ? `${value.trim()}\n${transcript}` : transcript)
+      }
+    } catch (err) {
+      recorder.cancel()
+      toast.error('Nao consegui transcrever o audio', {
+        description: err instanceof Error ? err.message : 'Verifique o microfone e o modelo de ditado local.',
+      })
+    } finally {
+      setTranscribing(false)
+    }
+  }
+
+  const canSend = !disabled && !transcribing && (value.trim().length > 0 || anexos.length > 0)
+  const inputDisabled = disabled || transcribing
+  const micDisabled = transcribing || (disabled && !recorder.recording)
 
   return (
     <div
@@ -214,7 +248,7 @@ export function IaChatInput({
           placeholder="Escreva sua mensagem..."
           className="border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none min-h-[60px] text-sm"
           value={value}
-          disabled={disabled}
+          disabled={inputDisabled}
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}
           onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -234,11 +268,24 @@ export function IaChatInput({
               size="icon"
               className="size-7 rounded-full"
               onClick={handleAttach}
-              disabled={disabled || !conversaId}
+              disabled={inputDisabled || !conversaId}
             >
               <Plus className="size-4" />
             </Button>
           )}
+
+          <Button
+            type="button"
+            variant={recorder.recording ? 'destructive' : 'ghost'}
+            size="icon"
+            className="size-7 rounded-full"
+            disabled={micDisabled}
+            onClick={() => { void handleMic() }}
+            aria-label={recorder.recording ? 'Parar gravacao' : 'Gravar audio'}
+            title={recorder.recording ? 'Parar gravacao' : 'Gravar audio'}
+          >
+            {recorder.recording ? <Square className="size-3.5" /> : <Mic className="size-4" />}
+          </Button>
 
           <div className="flex-1" />
 
