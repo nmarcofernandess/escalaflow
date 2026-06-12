@@ -354,6 +354,9 @@ export function SugestaoSheet({
                   <p className="text-xs text-muted-foreground mt-1">
                     O arranjo de folgas esta OK para o periodo selecionado.
                   </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    A geração final ainda confere feriados e afastamentos cadastrados.
+                  </p>
                 </div>
               </div>
             )}
