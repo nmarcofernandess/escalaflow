@@ -519,17 +519,25 @@ def add_demand_soft(
     work: SlotGrid,
     demand_by_slot: DaySlotDemand,
     C: int, D: int, S: int,
-) -> Dict[Tuple[int, int], cp_model.IntVar]:
+) -> Tuple[
+    Dict[Tuple[int, int], cp_model.IntVar],
+    List[cp_model.LinearExpr],
+    List[cp_model.IntVar],
+]:
     """Demand as SOFT constraint (not HARD).
 
-    Returns deficit vars: deficit[d,s] = max(0, target - coverage).
-    These are added to the objective with weight 10000.
+    Returns:
+      - deficit[d,s] = max(0, target - coverage)
+      - weighted deficit terms with concave slot weight
+      - slot_zero bool vars (coverage == 0 when target > 0)
 
     WHY SOFT: With 6 people and CLT constraints, 100% coverage is
     mathematically impossible (margin: 0.5%). Forcing HARD demand = INFEASIBLE.
     Rita (30+ years experience) achieves ~85%. Honest solver does the same.
     """
     deficit: Dict[Tuple[int, int], cp_model.IntVar] = {}
+    weighted_terms: List[cp_model.LinearExpr] = []
+    slot_zero: List[cp_model.IntVar] = []
     for d in range(D):
         for s in range(S):
             target = demand_by_slot.get((d, s), 0)
@@ -539,7 +547,16 @@ def add_demand_soft(
             dv = model.new_int_var(0, target, f"def_{d}_{s}")
             model.add(dv >= target - cov)
             deficit[d, s] = dv
-    return deficit
+
+            weight = 10000 + 30000 // max(1, target)
+            weighted_terms.append(weight * dv)
+
+            zero = model.new_bool_var(f"slot_zero_{d}_{s}")
+            model.add(cov == 0).only_enforce_if(zero)
+            model.add(cov >= 1).only_enforce_if(zero.negated())
+            slot_zero.append(zero)
+
+    return deficit, weighted_terms, slot_zero
 
 
 # ===================================================================

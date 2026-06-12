@@ -70,6 +70,8 @@ from constraints import (
 WEIGHTS = {
     "override_deficit": 40000,
     "demand_deficit": 10000,
+    "slot_zero": 50000,
+    "sunday_headcount": 40000,
     "surplus": 5000,
     "domingo_ciclo": 5000,
     "consistencia": 3000,
@@ -1077,6 +1079,7 @@ def build_model(
     # headcount HARD de domingo sobrevivia ao Pass 2 e colidia com H10+H3
     # (ex: pool 100% feminino + intermitente de DOM com recorrencia => false
     # INFEASIBLE provado em ~0.2s; deficit de domingo ja e penalizado por S_DEFICIT).
+    sunday_headcount_slacks = []
     _skip_sunday_headcount = (
         "ALL_PRODUCT_RULES" in relax
         or "DIAS_TRABALHO" in relax
@@ -1094,6 +1097,18 @@ def build_model(
                 available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
                 if len(available_c) >= peak:
                     model.add(sum(works_day[c, d] for c in available_c) >= peak)
+    elif "DIAS_TRABALHO" in relax and "ALL_PRODUCT_RULES" not in relax:
+        for d in sunday_indices:
+            peak = 0
+            for s in range(S):
+                target = demand_by_slot.get((d, s), 0)
+                if target > peak:
+                    peak = target
+            if peak > 0:
+                available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+                slack = model.new_int_var(0, peak, f"sunday_headcount_slack_{d}")
+                model.add(sum(works_day[c, d] for c in available_c) + slack >= peak)
+                sunday_headcount_slacks.append(slack)
 
     nivel_rigor = config.get("nivel_rigor", "ALTO")
     rules = config.get("rules", {})
@@ -1302,7 +1317,10 @@ def build_model(
     elif md_status == 'SOFT':
         add_min_diario_soft_penalty(model, obj_terms_list, work, works_day, C, D, S, min_slots=min_daily_slots)
 
-    deficit = add_demand_soft(model, work, demand_by_slot, C, D, S) if rule_is('S_DEFICIT', 'ON') != 'OFF' else {}
+    if rule_is('S_DEFICIT', 'ON') != 'OFF':
+        deficit, deficit_penalty_terms, slot_zero_penalties = add_demand_soft(model, work, demand_by_slot, C, D, S)
+    else:
+        deficit, deficit_penalty_terms, slot_zero_penalties = {}, [], []
     surplus = add_surplus_soft(model, work, demand_by_slot, C, D, S) if rule_is('S_SURPLUS', 'ON') != 'OFF' else {}
     ap1_excess = add_ap1_jornada_excessiva(model, work, C, D, S, grid_min=grid_min) if rule_is('S_AP1_EXCESS', 'ON') != 'OFF' else []
 
@@ -1342,10 +1360,14 @@ def build_model(
 
     objective_terms = []
     if deficit:
-        objective_terms.append(WEIGHTS["demand_deficit"] * sum(deficit.values()))
+        objective_terms.extend(deficit_penalty_terms)
+        if slot_zero_penalties:
+            objective_terms.append(WEIGHTS["slot_zero"] * sum(slot_zero_penalties))
         override_deficit = [dv for key, dv in deficit.items() if override_by_slot.get(key, False)]
         if override_deficit:
             objective_terms.append(WEIGHTS["override_deficit"] * sum(override_deficit))
+    if sunday_headcount_slacks:
+        objective_terms.append(WEIGHTS["sunday_headcount"] * sum(sunday_headcount_slacks))
     if surplus:
         objective_terms.append(WEIGHTS["surplus"] * sum(surplus.values()))
     if domingo_ciclo_penalties:
@@ -1852,10 +1874,18 @@ def _solve_pass(
     # Warm-start from hint_pattern (no constraints, just AddHint)
     if hint_pattern and not pinned_folga:
         hint_count = 0
+        demanded_sundays = {
+            d
+            for d, day in enumerate(days)
+            if date.fromisoformat(day).weekday() == 6
+            and any(demand_by_slot.get((d, s), 0) > 0 for s in range(S))
+        }
         for (c, d), band in hint_pattern.items():
             if c >= C or d >= D:
                 continue
             if band == 0:
+                if d in demanded_sundays:
+                    continue
                 for s in range(S):
                     model.add_hint(work[c, d, s], 0)
                 hint_count += S
