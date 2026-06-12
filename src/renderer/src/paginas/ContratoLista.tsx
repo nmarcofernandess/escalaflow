@@ -53,6 +53,7 @@ import {
 import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
 import { ViewToggle, useViewMode } from '@/componentes/ViewToggle'
+import { TipoTrabalhadorBadge } from '@/componentes/TipoTrabalhadorBadge'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { useApiData } from '@/hooks/useApiData'
 import { formatarMinutos, mapError } from '@/lib/formatadores'
@@ -62,6 +63,7 @@ import type { TipoContrato, PerfilHorarioContrato } from '@shared/index'
 const contratoSchema = z.object({
   nome: z.string().min(1, 'Nome e obrigatorio'),
   horas_semanais: z.coerce.number().min(0, 'Minimo 0h').max(44, 'Maximo 44h'),
+  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'INTERMITENTE']),
   regime_escala: z.enum(['5X2', '6X1']),
   max_minutos_dia: z.coerce.number().min(60, 'Minimo 60 min').max(600, 'Maximo 600 min'),
 })
@@ -72,6 +74,7 @@ type ContratoFormData = z.output<typeof contratoSchema>
 const DEFAULTS: ContratoFormInput = {
   nome: '',
   horas_semanais: 44,
+  tipo_trabalhador: 'CLT',
   regime_escala: '6X1',
   max_minutos_dia: 570,
 }
@@ -203,6 +206,7 @@ export function ContratoLista() {
     form.reset({
       nome: tc.nome,
       horas_semanais: tc.horas_semanais,
+      tipo_trabalhador: tc.tipo_trabalhador ?? 'CLT',
       regime_escala: tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1'),
       max_minutos_dia: tc.max_minutos_dia,
     })
@@ -323,6 +327,7 @@ export function ContratoLista() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-4">Nome</TableHead>
+                  <TableHead>Classe</TableHead>
                   <TableHead>Horas/semana</TableHead>
                   <TableHead>Regime</TableHead>
                   <TableHead>Dias</TableHead>
@@ -343,6 +348,9 @@ export function ContratoLista() {
                           </span>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <TipoTrabalhadorBadge tipo={tc.tipo_trabalhador ?? 'CLT'} />
                     </TableCell>
                     <TableCell>{tc.horas_semanais}h</TableCell>
                     <TableCell>{tc.regime_escala ?? (tc.dias_trabalho <= 5 ? '5X2' : '6X1')}</TableCell>
@@ -398,12 +406,15 @@ export function ContratoLista() {
                         </div>
                         <div className="flex flex-col gap-1">
                           <h3 className="text-sm font-semibold text-foreground">{tc.nome}</h3>
-                          {tc.protegido_sistema && (
-                            <span className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
-                              <Lock className="size-3" />
-                              Contrato de sistema
-                            </span>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <TipoTrabalhadorBadge tipo={tc.tipo_trabalhador ?? 'CLT'} />
+                            {tc.protegido_sistema && (
+                              <span className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
+                                <Lock className="size-3" />
+                                Contrato de sistema
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -488,6 +499,30 @@ export function ContratoLista() {
               />
 
               <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="tipo_trabalhador"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Classe legal</FormLabel>
+                      <FormControl>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="CLT">CLT</SelectItem>
+                              <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
+                              <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="horas_semanais"

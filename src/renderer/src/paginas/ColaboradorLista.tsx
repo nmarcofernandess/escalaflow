@@ -71,6 +71,7 @@ import { PageHeader } from '@/componentes/PageHeader'
 import { EmptyState } from '@/componentes/EmptyState'
 import { ViewToggle, useViewMode } from '@/componentes/ViewToggle'
 import { SetorIcon } from '@/componentes/IconPicker'
+import { TipoTrabalhadorBadge } from '@/componentes/TipoTrabalhadorBadge'
 import { colaboradoresService } from '@/servicos/colaboradores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { excecoesService } from '@/servicos/excecoes'
@@ -79,14 +80,13 @@ import { useApiData } from '@/hooks/useApiData'
 import { useAppDataStore } from '@/store/appDataStore'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import type { Colaborador, Excecao, Funcao, PerfilHorarioContrato } from '@shared/index'
+import { derivarTipoTrabalhador, type Colaborador, type Excecao, type Funcao, type PerfilHorarioContrato } from '@shared/index'
 
 const novoColabSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
   sexo: z.string().min(1, 'Selecione o sexo'),
   setor_id: z.string().min(1, 'Selecione o setor'),
   tipo_contrato_id: z.string().min(1, 'Selecione o tipo de contrato'),
-  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'INTERMITENTE']),
   funcao_id: z.string(),
   perfil_horario_id: z.string(),
 })
@@ -137,7 +137,7 @@ export function ColaboradorLista() {
 
   const novoColabForm = useForm<NovoColabData>({
     resolver: zodResolver(novoColabSchema),
-    defaultValues: { nome: '', sexo: '', setor_id: '', tipo_contrato_id: '', tipo_trabalhador: 'CLT', funcao_id: 'none', perfil_horario_id: 'none' },
+    defaultValues: { nome: '', sexo: '', setor_id: '', tipo_contrato_id: '', funcao_id: 'none', perfil_horario_id: 'none' },
   })
 
   const setoresList = useAppDataStore((s) => s.setores)
@@ -157,7 +157,7 @@ export function ColaboradorLista() {
   const excecoesList = excecoesAtivas ?? []
 
   const setorMap = new Map(setoresList.map((s) => [s.id, { nome: s.nome, icone: s.icone }]))
-  const contratoMap = new Map(contratosList.map((tc) => [tc.id, tc.nome]))
+  const contratoById = new Map(contratosList.map((tc) => [tc.id, tc]))
   const setorSelecionado = novoColabForm.watch('setor_id')
 
   useEffect(() => {
@@ -182,6 +182,13 @@ export function ColaboradorLista() {
   }, [showNewDialog, setorSelecionado, novoColabForm])
 
   const contratoSelecionado = novoColabForm.watch('tipo_contrato_id')
+  const contratoNovoSelecionado = contratoById.get(parseInt(contratoSelecionado || '0', 10))
+  const tipoNovoDerivado = contratoNovoSelecionado
+    ? derivarTipoTrabalhador({
+        contrato_nome: contratoNovoSelecionado.nome,
+        contrato_tipo_trabalhador: contratoNovoSelecionado.tipo_trabalhador,
+      })
+    : null
 
   useEffect(() => {
     if (!showNewDialog || !contratoSelecionado) {
@@ -252,7 +259,6 @@ export function ColaboradorLista() {
         sexo: data.sexo as 'M' | 'F',
         setor_id: parseInt(data.setor_id),
         tipo_contrato_id: parseInt(data.tipo_contrato_id),
-        tipo_trabalhador: data.tipo_trabalhador,
         funcao_id: data.funcao_id === 'none' ? null : parseInt(data.funcao_id, 10),
       })
 
@@ -480,6 +486,7 @@ export function ColaboradorLista() {
                   <TableHead className="pl-4">Nome</TableHead>
                   <TableHead>Setor</TableHead>
                   <TableHead>Contrato</TableHead>
+                  <TableHead>Classe</TableHead>
                   <TableHead>Sexo</TableHead>
                   <TableHead>Preferencia</TableHead>
                   <TableHead>Situacao</TableHead>
@@ -489,6 +496,12 @@ export function ColaboradorLista() {
               <TableBody>
                 {filtered.map((colab) => {
                   const excTipo = excecaoMap.get(colab.id)
+                  const contrato = contratoById.get(colab.tipo_contrato_id)
+                  const tipoDerivado = derivarTipoTrabalhador({
+                    tipo_colaborador: colab.tipo_trabalhador,
+                    contrato_nome: contrato?.nome,
+                    contrato_tipo_trabalhador: contrato?.tipo_trabalhador,
+                  })
                   return (
                     <TableRow key={colab.id} className={!colab.ativo ? 'opacity-60' : ''}>
                       <TableCell className="pl-4 font-medium">{colab.nome}</TableCell>
@@ -500,8 +513,11 @@ export function ColaboradorLista() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="whitespace-nowrap text-xs">
-                          {contratoMap.get(colab.tipo_contrato_id) ?? '—'}
+                          {contrato?.nome ?? '—'}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <TipoTrabalhadorBadge tipo={tipoDerivado} />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {colab.sexo === 'M' ? 'Masc' : 'Fem'}
@@ -547,6 +563,12 @@ export function ColaboradorLista() {
               {filtered.map((colab) => {
                 const excTipo = excecaoMap.get(colab.id)
                 const setor = setorMap.get(colab.setor_id)
+                const contrato = contratoById.get(colab.tipo_contrato_id)
+                const tipoDerivado = derivarTipoTrabalhador({
+                  tipo_colaborador: colab.tipo_trabalhador,
+                  contrato_nome: contrato?.nome,
+                  contrato_tipo_trabalhador: contrato?.tipo_trabalhador,
+                })
                 return (
                   <Card
                     key={colab.id}
@@ -569,8 +591,9 @@ export function ColaboradorLista() {
                       {/* Meta: Contrato + Situacao */}
                       <div className="flex items-center gap-1.5">
                         <Badge variant="outline" className="whitespace-nowrap text-xs">
-                          {contratoMap.get(colab.tipo_contrato_id) ?? '—'}
+                          {contrato?.nome ?? '—'}
                         </Badge>
+                        <TipoTrabalhadorBadge tipo={tipoDerivado} />
                         {excTipo ? (
                           <SituacaoBadge tipo={excTipo} />
                         ) : (
@@ -738,6 +761,12 @@ export function ColaboradorLista() {
                   </FormItem>
                 )}
               />
+              {tipoNovoDerivado && (
+                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
+                  <span className="text-xs text-muted-foreground">Classe legal derivada do contrato</span>
+                  <TipoTrabalhadorBadge tipo={tipoNovoDerivado} />
+                </div>
+              )}
               {perfisNovo.length > 0 && (
                 <FormField
                   control={novoColabForm.control}
@@ -767,30 +796,6 @@ export function ColaboradorLista() {
                   )}
                 />
               )}
-              <FormField
-                control={novoColabForm.control}
-                name="tipo_trabalhador"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo Trabalhador</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="CLT">CLT</SelectItem>
-                          <SelectItem value="ESTAGIARIO">Estagiario</SelectItem>
-                          <SelectItem value="INTERMITENTE">Intermitente</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <FormField
                 control={novoColabForm.control}
                 name="funcao_id"

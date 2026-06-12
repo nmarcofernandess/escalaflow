@@ -64,6 +64,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/componentes/PageHeader'
+import { TipoTrabalhadorBadge } from '@/componentes/TipoTrabalhadorBadge'
 // SaveIndicator removido — save via botao principal
 // useAutoSave removido — save via botao principal
 import { EmptyState } from '@/componentes/EmptyState'
@@ -82,9 +83,10 @@ import { useAppVersion } from '@/hooks/useAppVersion'
 import { formatarData } from '@/lib/formatadores'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import type {
-  Colaborador, Setor, TipoContrato, Excecao, TipoExcecao, DiaSemana, Funcao,
-  RegraHorarioColaborador, RegraHorarioColaboradorExcecaoData, PerfilHorarioContrato,
+import {
+  derivarTipoTrabalhador,
+  type Colaborador, type Setor, type TipoContrato, type Excecao, type TipoExcecao, type DiaSemana, type Funcao,
+  type RegraHorarioColaborador, type RegraHorarioColaboradorExcecaoData, type PerfilHorarioContrato,
 } from '@shared/index'
 
 const DIAS_SEMANA_OPTIONS = [
@@ -124,18 +126,6 @@ function inicioFimParaRestricao(inicio: string | null, fim: string | null): { ti
   if (inicio) return { tipo_restricao: 'entrada', horario: inicio }
   if (fim) return { tipo_restricao: 'saida', horario: fim }
   return { tipo_restricao: 'nenhum', horario: '' }
-}
-
-function derivarTipoTrabalhadorPorContrato(nomeContrato?: string): 'CLT' | 'ESTAGIARIO' | 'INTERMITENTE' {
-  if (!nomeContrato) return 'CLT'
-  const normalizado = nomeContrato
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-
-  if (normalizado.includes('estagi')) return 'ESTAGIARIO'
-  if (normalizado.includes('intermit')) return 'INTERMITENTE'
-  return 'CLT'
 }
 
 // Componente inline de Radio para tipo de restricao
@@ -190,7 +180,6 @@ const colabSchema = z.object({
   horas_semanais: z.coerce.number().min(1, 'Minimo 1 hora').max(44, 'Maximo 44 horas'),
   prefere_turno: z.enum(['none', 'MANHA', 'TARDE']),
   evitar_dia_semana: z.enum(['none', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']),
-  tipo_trabalhador: z.enum(['CLT', 'ESTAGIARIO', 'INTERMITENTE']),
   funcao_id: z.string(),
 })
 
@@ -282,7 +271,7 @@ export function ColaboradorDetalhe() {
     defaultValues: {
       nome: '', sexo: '' as 'M' | 'F', setor_id: '', tipo_contrato_id: '',
       horas_semanais: 44, prefere_turno: 'none', evitar_dia_semana: 'none',
-      tipo_trabalhador: 'CLT', funcao_id: 'none',
+      funcao_id: 'none',
     },
   })
 
@@ -368,7 +357,12 @@ export function ColaboradorDetalhe() {
   // Find selected contrato for template info
   const watchedContratoId = colabForm.watch('tipo_contrato_id')
   const selectedContrato = contratosList.find((tc) => tc.id === parseInt(watchedContratoId))
-  const isIntermitente = derivarTipoTrabalhadorPorContrato(selectedContrato?.nome) === 'INTERMITENTE'
+  const tipoTrabalhadorDerivado = derivarTipoTrabalhador({
+    tipo_colaborador: colab?.tipo_trabalhador,
+    contrato_nome: selectedContrato?.nome,
+    contrato_tipo_trabalhador: selectedContrato?.tipo_trabalhador,
+  })
+  const isIntermitente = tipoTrabalhadorDerivado === 'INTERMITENTE'
 
   // Regime efetivo (cascata: setor → contrato) — muda labels/hints de folga
   const regimeEfetivo = setoresList.find(s => s.id === setorIdNum)?.regime_escala
@@ -386,7 +380,6 @@ export function ColaboradorDetalhe() {
         horas_semanais: colab.horas_semanais,
         prefere_turno: colab.prefere_turno ?? 'none',
         evitar_dia_semana: colab.evitar_dia_semana ?? 'none',
-        tipo_trabalhador: colab.tipo_trabalhador ?? 'CLT',
         funcao_id: colab.funcao_id != null ? String(colab.funcao_id) : 'none',
       })
     }
@@ -576,19 +569,16 @@ export function ColaboradorDetalhe() {
       const contratoId = parseInt(formData.tipo_contrato_id)
       const contratoSel = contratosList.find((tc) => tc.id === contratoId)
       const horasSemanais = contratoSel?.horas_semanais ?? formData.horas_semanais
-      const tipoTrabalhador = derivarTipoTrabalhadorPorContrato(contratoSel?.nome)
       await colaboradoresService.atualizar(colabId, {
         nome,
         sexo: formData.sexo,
         tipo_contrato_id: contratoId,
         horas_semanais: horasSemanais as number,
-        tipo_trabalhador: tipoTrabalhador,
         funcao_id: formData.funcao_id === 'none' ? null : parseInt(formData.funcao_id),
         prefere_turno: formData.prefere_turno === 'none' ? null : formData.prefere_turno,
         evitar_dia_semana: formData.evitar_dia_semana === 'none' ? null : formData.evitar_dia_semana,
       })
       colabForm.setValue('horas_semanais', horasSemanais)
-      colabForm.setValue('tipo_trabalhador', tipoTrabalhador)
       // 2. Salva regra padrao
       await saveRegraPadrao(isIntermitente ? {
         perfil_horario_id: 'none',
@@ -994,10 +984,13 @@ export function ColaboradorDetalhe() {
                     />
                   </div>
                   {selectedContrato && (
-                    <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                      Template:{' '}
-                      <strong>{selectedContrato.nome}</strong> | {selectedContrato.horas_semanais}h/semana |
-                      {' '}{selectedContrato.regime_escala} | Max {selectedContrato.max_minutos_dia}min/dia
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                      <span>
+                        Template:{' '}
+                        <strong>{selectedContrato.nome}</strong> | {selectedContrato.horas_semanais}h/semana |
+                        {' '}{selectedContrato.regime_escala} | Max {selectedContrato.max_minutos_dia}min/dia
+                      </span>
+                      <TipoTrabalhadorBadge tipo={tipoTrabalhadorDerivado} />
                     </div>
                   )}
 

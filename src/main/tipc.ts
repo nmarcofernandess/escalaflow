@@ -110,11 +110,14 @@ function safeJsonParse<T = unknown>(json: string | null | undefined): T | undefi
 
 async function derivarTipoTrabalhadorPorContratoId(tipoContratoId: number | null | undefined): Promise<string> {
   if (!tipoContratoId) return 'CLT'
-  const contrato = await queryOne<{ nome: string }>(
-    'SELECT nome FROM tipos_contrato WHERE id = ?',
+  const contrato = await queryOne<{ nome: string; contrato_tipo_trabalhador: string | null }>(
+    'SELECT nome, tipo_trabalhador AS contrato_tipo_trabalhador FROM tipos_contrato WHERE id = ?',
     tipoContratoId,
   )
-  return derivarTipoTrabalhador({ contrato_nome: contrato?.nome })
+  return derivarTipoTrabalhador({
+    contrato_nome: contrato?.nome,
+    contrato_tipo_trabalhador: contrato?.contrato_tipo_trabalhador,
+  })
 }
 
 
@@ -448,6 +451,7 @@ const tiposContratoCriar = t.procedure
   .input<{
     nome: string
     horas_semanais: number
+    tipo_trabalhador?: 'CLT' | 'ESTAGIARIO' | 'INTERMITENTE'
     regime_escala?: '5X2' | '6X1'
     dias_trabalho?: number
     max_minutos_dia: number
@@ -455,10 +459,14 @@ const tiposContratoCriar = t.procedure
   .action(async ({ input }) => {
     const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
     const diasTrabalho = regime === '5X2' ? 5 : 6
+    const tipoTrabalhador = derivarTipoTrabalhador({
+      contrato_nome: input.nome,
+      contrato_tipo_trabalhador: input.tipo_trabalhador,
+    })
     const id = await insertReturningId(`
-      INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia, false)
+      INSERT INTO tipos_contrato (nome, horas_semanais, tipo_trabalhador, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, input.nome, input.horas_semanais, tipoTrabalhador, regime, diasTrabalho, input.max_minutos_dia, false)
 
     const result = await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', id)
     broadcastInvalidation(['tipos_contrato'])
@@ -470,6 +478,7 @@ const tiposContratoAtualizar = t.procedure
     id: number
     nome: string
     horas_semanais: number
+    tipo_trabalhador?: 'CLT' | 'ESTAGIARIO' | 'INTERMITENTE'
     regime_escala?: '5X2' | '6X1'
     dias_trabalho?: number
     max_minutos_dia: number
@@ -477,13 +486,18 @@ const tiposContratoAtualizar = t.procedure
   .action(async ({ input }) => {
     const regime = input.regime_escala ?? ((input.dias_trabalho ?? 6) <= 5 ? '5X2' : '6X1')
     const diasTrabalho = regime === '5X2' ? 5 : 6
+    const tipoTrabalhador = derivarTipoTrabalhador({
+      contrato_nome: input.nome,
+      contrato_tipo_trabalhador: input.tipo_trabalhador,
+    })
     await execute(`
-      UPDATE tipos_contrato SET nome = ?, horas_semanais = ?, regime_escala = ?, dias_trabalho = ?,
+      UPDATE tipos_contrato SET nome = ?, horas_semanais = ?, tipo_trabalhador = ?, regime_escala = ?, dias_trabalho = ?,
       max_minutos_dia = ? WHERE id = ?
-    `, input.nome, input.horas_semanais, regime, diasTrabalho, input.max_minutos_dia, input.id)
+    `, input.nome, input.horas_semanais, tipoTrabalhador, regime, diasTrabalho, input.max_minutos_dia, input.id)
+    await execute('UPDATE colaboradores SET tipo_trabalhador = ? WHERE tipo_contrato_id = ?', tipoTrabalhador, input.id)
 
     const result = await queryOne('SELECT * FROM tipos_contrato WHERE id = ?', input.id)
-    broadcastInvalidation(['tipos_contrato'])
+    broadcastInvalidation(['tipos_contrato', 'colaboradores'])
     return result
   })
 
@@ -2441,8 +2455,12 @@ const colaboradoresSalvarRegraHorario = t.procedure
   .action(async ({ input }) => {
     const diaSemana = input.dia_semana_regra ?? null
     const isDiaEspecifico = diaSemana !== null
-    const colaborador = await queryOne<{ tipo_trabalhador: string | null; contrato_nome: string | null }>(
-      `SELECT c.tipo_trabalhador, tc.nome AS contrato_nome
+    const colaborador = await queryOne<{
+      tipo_trabalhador: string | null
+      contrato_nome: string | null
+      contrato_tipo_trabalhador: string | null
+    }>(
+      `SELECT c.tipo_trabalhador, tc.nome AS contrato_nome, tc.tipo_trabalhador AS contrato_tipo_trabalhador
        FROM colaboradores c
        LEFT JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
        WHERE c.id = ?`,
@@ -2451,6 +2469,7 @@ const colaboradoresSalvarRegraHorario = t.procedure
     const isIntermitente = derivarTipoTrabalhador({
       tipo_colaborador: colaborador?.tipo_trabalhador,
       contrato_nome: colaborador?.contrato_nome,
+      contrato_tipo_trabalhador: colaborador?.contrato_tipo_trabalhador,
     }) === 'INTERMITENTE'
 
     const existe = diaSemana === null

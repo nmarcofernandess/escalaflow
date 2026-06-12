@@ -21,13 +21,13 @@ export async function seedCoreData(): Promise<void> {
   // Checa por CLT 44h (não usa COUNT(*) pois migration v17 pode já ter criado Intermitente)
   const clt44 = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'CLT 44h'`)
   if (!clt44) {
-    const tipos: [string, number, string, number, number, boolean][] = [
-      ['CLT 44h', 44, '5X2', 5, 585, true],
-      ['CLT 44h 6x1', 44, '6X1', 6, 585, true],
-      ['CLT 36h', 36, '5X2', 5, 585, true],
-      ['CLT 36h 6x1', 36, '6X1', 6, 585, true],
-      ['Estagiario', 20, '5X2', 5, 360, true],
-      ['Intermitente', 0, '6X1', 6, 585, true],
+    const tipos: [string, number, string, number, number, boolean, string][] = [
+      ['CLT 44h', 44, '5X2', 5, 585, true, 'CLT'],
+      ['CLT 44h 6x1', 44, '6X1', 6, 585, true, 'CLT'],
+      ['CLT 36h', 36, '5X2', 5, 585, true, 'CLT'],
+      ['CLT 36h 6x1', 36, '6X1', 6, 585, true, 'CLT'],
+      ['Estagiario', 20, '5X2', 5, 360, true, 'ESTAGIARIO'],
+      ['Intermitente', 0, '6X1', 6, 585, true, 'INTERMITENTE'],
     ]
 
     await transaction(async () => {
@@ -35,7 +35,7 @@ export async function seedCoreData(): Promise<void> {
         const existe = await queryOne<{ id: number }>('SELECT id FROM tipos_contrato WHERE nome = $1', tipo[0])
         if (existe) continue
         await execute(
-          'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema) VALUES ($1, $2, $3, $4, $5, $6)',
+          'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema, tipo_trabalhador) VALUES ($1, $2, $3, $4, $5, $6, $7)',
           ...tipo,
         )
       }
@@ -58,8 +58,8 @@ export async function seedCoreData(): Promise<void> {
   if (clt6x1Faltando.length > 0) {
     for (const [nome, horas] of clt6x1Faltando) {
       await execute(
-        'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema) VALUES ($1, $2, $3, $4, $5, $6)',
-        nome, horas, '6X1', 6, 585, true,
+        'INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia, protegido_sistema, tipo_trabalhador) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        nome, horas, '6X1', 6, 585, true, 'CLT',
       )
     }
     console.log(`[SEED] Contratos 6x1 adicionados: ${clt6x1Faltando.map(([n]) => n).join(', ')}`)

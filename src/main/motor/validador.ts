@@ -137,7 +137,7 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
 
   const colaboradoresRaw = await queryAll<ColabComContrato>(
     `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.max_minutos_dia,
-            tc.nome AS contrato_nome
+            tc.nome AS contrato_nome, tc.tipo_trabalhador AS contrato_tipo_trabalhador
      FROM colaboradores c
      JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
      WHERE c.setor_id = ? AND c.ativo = true

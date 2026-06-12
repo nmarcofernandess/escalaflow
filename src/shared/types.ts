@@ -33,6 +33,7 @@ export interface TipoContrato {
   id: number
   nome: string
   horas_semanais: number
+  tipo_trabalhador: TipoTrabalhador
   regime_escala: RegimeEscala
   dias_trabalho: number
   max_minutos_dia: number

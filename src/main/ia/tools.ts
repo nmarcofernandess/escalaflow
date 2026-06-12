@@ -93,8 +93,14 @@ function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
 async function derivarTipoTrabalhadorPorContratoId(tipoContratoId: unknown): Promise<string> {
   const id = typeof tipoContratoId === 'number' ? tipoContratoId : Number(tipoContratoId)
   if (!Number.isFinite(id) || id <= 0) return 'CLT'
-  const contrato = await queryOne<{ nome: string }>('SELECT nome FROM tipos_contrato WHERE id = ?', id)
-  return derivarTipoTrabalhador({ contrato_nome: contrato?.nome })
+  const contrato = await queryOne<{ nome: string; contrato_tipo_trabalhador: string | null }>(
+    'SELECT nome, tipo_trabalhador AS contrato_tipo_trabalhador FROM tipos_contrato WHERE id = ?',
+    id,
+  )
+  return derivarTipoTrabalhador({
+    contrato_nome: contrato?.nome,
+    contrato_tipo_trabalhador: contrato?.contrato_tipo_trabalhador,
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +227,7 @@ const CriarColaboradorSchema = z.object({
   setor_id: z.number().int().positive().describe('ID do setor. Use o contexto automático injetado pelo sistema.'),
   tipo_contrato_id: z.number().int().positive().optional().describe('ID do tipo de contrato. Contexto automático disponibiliza contratos. Default: CLT 44h (id=1).'),
   sexo: z.enum(['M', 'F']).optional().describe('Sexo do colaborador: "M" ou "F".'),
-  tipo_trabalhador: z.string().optional().describe('Tipo de trabalhador (ex: CLT, estagiario, intermitente).'),
+  tipo_trabalhador: z.string().optional().describe('Ignorado em colaboradores: o sistema deriva pelo tipo_contrato_id. Em tipos_contrato, use CLT, ESTAGIARIO ou INTERMITENTE.'),
   ativo: z.boolean().optional().describe('true = ativo, false = inativo.')
 })
 
@@ -629,7 +635,7 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
     'id', 'setor_id', 'dia_semana', 'hora_inicio', 'hora_fim', 'min_pessoas'
   ]),
   tipos_contrato: new Set([
-    'id', 'nome', 'horas_semanais', 'regime_escala', 'dias_trabalho',
+    'id', 'nome', 'horas_semanais', 'tipo_trabalhador', 'regime_escala', 'dias_trabalho',
     'max_minutos_dia'
   ]),
   empresa: new Set([
@@ -1790,6 +1796,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         if (entidade === 'colaboradores') {
             dadosFiltrados.tipo_trabalhador = await derivarTipoTrabalhadorPorContratoId(dadosFiltrados.tipo_contrato_id)
         }
+        if (entidade === 'tipos_contrato') {
+            dadosFiltrados.tipo_trabalhador = derivarTipoTrabalhador({
+                contrato_nome: dadosFiltrados.nome,
+                contrato_tipo_trabalhador: dadosFiltrados.tipo_trabalhador,
+            })
+        }
         const keys = Object.keys(dadosFiltrados)
         const placeholders = keys.map(() => '?').join(', ')
         const values = Object.values(dadosFiltrados)
@@ -1943,6 +1955,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 : (await queryOne<{ tipo_contrato_id: number }>('SELECT tipo_contrato_id FROM colaboradores WHERE id = ?', id))?.tipo_contrato_id
             dadosAtualizacao.tipo_trabalhador = await derivarTipoTrabalhadorPorContratoId(contratoId)
         }
+        if (entidade === 'tipos_contrato' && (hasOwnField(dados, 'nome') || hasOwnField(dados, 'tipo_trabalhador'))) {
+            const atual = await queryOne<{ nome: string; tipo_trabalhador: string | null }>(
+                'SELECT nome, tipo_trabalhador FROM tipos_contrato WHERE id = ?',
+                id,
+            )
+            dadosAtualizacao.tipo_trabalhador = derivarTipoTrabalhador({
+                contrato_nome: dadosAtualizacao.nome ?? atual?.nome,
+                contrato_tipo_trabalhador: dadosAtualizacao.tipo_trabalhador ?? atual?.tipo_trabalhador,
+            })
+        }
         const sets = Object.keys(dadosAtualizacao).map((k: string) => `${k} = ?`).join(', ')
         const values = [...Object.values(dadosAtualizacao), id]
 
@@ -1958,7 +1980,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 )
             }
             const res = await execute(`UPDATE ${entidade} SET ${sets} WHERE id = ?`, ...values)
-            broadcastInvalidation([entidade])
+            const entidadesInvalidadas = [entidade]
+            if (entidade === 'tipos_contrato' && hasOwnField(dadosAtualizacao, 'tipo_trabalhador')) {
+                await execute('UPDATE colaboradores SET tipo_trabalhador = ? WHERE tipo_contrato_id = ?', dadosAtualizacao.tipo_trabalhador, id)
+                entidadesInvalidadas.push('colaboradores')
+            }
+            broadcastInvalidation(entidadesInvalidadas)
             return toolOk(
               {
                 sucesso: true,
@@ -2735,6 +2762,12 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                       : dados
                   if (entidade === 'colaboradores') {
                     dadosLimpos.tipo_trabalhador = await derivarTipoTrabalhadorPorContratoId(dadosLimpos.tipo_contrato_id)
+                  }
+                  if (entidade === 'tipos_contrato') {
+                    dadosLimpos.tipo_trabalhador = derivarTipoTrabalhador({
+                      contrato_nome: dadosLimpos.nome,
+                      contrato_tipo_trabalhador: dadosLimpos.tipo_trabalhador,
+                    })
                   }
                   const keys = Object.keys(dadosLimpos)
                   const placeholders = keys.map(() => '?').join(', ')

@@ -365,10 +365,11 @@ export async function buildSolverInput(
     regime_escala: '5X2' | '6X1' | null;
     dias_trabalho: number; max_minutos_dia: number;
     contrato_nome: string;
+    contrato_tipo_trabalhador: string | null;
   }>(`
     SELECT c.id, c.setor_id, c.tipo_contrato_id, c.nome, c.sexo, c.horas_semanais, c.rank, c.prefere_turno, c.evitar_dia_semana,
            c.tipo_trabalhador, c.funcao_id, c.ativo, tc.regime_escala, tc.dias_trabalho, tc.max_minutos_dia,
-           tc.nome AS contrato_nome
+           tc.nome AS contrato_nome, tc.tipo_trabalhador AS contrato_tipo_trabalhador
     FROM colaboradores c
     JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
     WHERE c.setor_id = ? AND c.ativo = true
@@ -390,6 +391,7 @@ export async function buildSolverInput(
     tipo_trabalhador: derivarTipoTrabalhador({
       tipo_colaborador: row.tipo_trabalhador,
       contrato_nome: row.contrato_nome,
+      contrato_tipo_trabalhador: row.contrato_tipo_trabalhador,
     }),
     funcao_id: row.funcao_id,
   }))
@@ -417,6 +419,7 @@ export async function buildSolverInput(
       tipo_trabalhador: derivarTipoTrabalhador({
         tipo_colaborador: r.tipo_trabalhador,
         contrato_nome: r.contrato_nome,
+        contrato_tipo_trabalhador: r.contrato_tipo_trabalhador,
       }),
       sexo: r.sexo,
       funcao_id: r.funcao_id,
@@ -583,6 +586,7 @@ export async function buildSolverInput(
         const isIntermitente = derivarTipoTrabalhador({
           tipo_colaborador: colab.tipo_trabalhador,
           contrato_nome: colab.contrato_nome,
+          contrato_tipo_trabalhador: colab.contrato_tipo_trabalhador,
         }) === 'INTERMITENTE'
 
         // Precedencia: excecao_data > regra_dia_especifico > regra_padrao > perfil_contrato > sem regra
@@ -689,6 +693,7 @@ export async function buildSolverInput(
     tipo_trabalhador: derivarTipoTrabalhador({
       tipo_colaborador: r.tipo_trabalhador,
       contrato_nome: r.contrato_nome,
+      contrato_tipo_trabalhador: r.contrato_tipo_trabalhador,
     }),
   }))
   const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(

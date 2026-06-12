@@ -381,8 +381,17 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
     lines.push(`- Ativo: ${setor.ativo ? 'sim' : 'não'}`)
 
     // Colaboradores do setor
-    const colabs = await queryAll<{ id: number; nome: string; tipo_trabalhador: string | null; contrato_nome: string; horas_semanais: number; funcao_id: number | null }>(`
-        SELECT c.id, c.nome, c.tipo_trabalhador, t.nome as contrato_nome, t.horas_semanais, c.funcao_id
+    const colabs = await queryAll<{
+        id: number
+        nome: string
+        tipo_trabalhador: string | null
+        contrato_nome: string
+        contrato_tipo_trabalhador: string | null
+        horas_semanais: number
+        funcao_id: number | null
+    }>(`
+        SELECT c.id, c.nome, c.tipo_trabalhador, t.nome as contrato_nome,
+               t.tipo_trabalhador AS contrato_tipo_trabalhador, t.horas_semanais, c.funcao_id
         FROM colaboradores c
         JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
         WHERE c.setor_id = ? AND c.ativo = true
@@ -392,7 +401,11 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
     if (colabs.length > 0) {
         lines.push(`\n#### Colaboradores (${colabs.length} ativos):`)
         for (const c of colabs) {
-            const tipo = derivarTipoTrabalhador({ tipo_colaborador: c.tipo_trabalhador, contrato_nome: c.contrato_nome })
+            const tipo = derivarTipoTrabalhador({
+                tipo_colaborador: c.tipo_trabalhador,
+                contrato_nome: c.contrato_nome,
+                contrato_tipo_trabalhador: c.contrato_tipo_trabalhador,
+            })
             lines.push(`- ${c.nome} (ID: ${c.id}) — ${c.contrato_nome} ${c.horas_semanais}h · ${tipo}`)
         }
     } else {
@@ -569,7 +582,8 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
 
 async function _infoColaborador(colaborador_id: number): Promise<string | null> {
     const colab = await queryOne<any>(`
-        SELECT c.*, t.nome as contrato_nome, t.horas_semanais, t.regime_escala, t.dias_trabalho,
+        SELECT c.*, t.nome as contrato_nome, t.tipo_trabalhador AS contrato_tipo_trabalhador,
+               t.horas_semanais, t.regime_escala, t.dias_trabalho,
                s.nome as setor_nome
         FROM colaboradores c
         JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
@@ -583,7 +597,11 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
     lines.push(`\n### 👤 Colaborador em foco: ${colab.nome} (ID: ${colab.id})`)
     lines.push(`- Setor: ${colab.setor_nome} (ID: ${colab.setor_id})`)
     lines.push(`- Contrato: ${colab.contrato_nome} (${colab.horas_semanais}h/sem, ${colab.regime_escala})`)
-    lines.push(`- Tipo: ${derivarTipoTrabalhador({ tipo_colaborador: colab.tipo_trabalhador, contrato_nome: colab.contrato_nome })}`)
+    lines.push(`- Tipo: ${derivarTipoTrabalhador({
+        tipo_colaborador: colab.tipo_trabalhador,
+        contrato_nome: colab.contrato_nome,
+        contrato_tipo_trabalhador: colab.contrato_tipo_trabalhador,
+    })}`)
     if (colab.prefere_turno) lines.push(`- Preferência turno: ${colab.prefere_turno}`)
 
     // Regras de horário (padrão + por dia da semana)
@@ -1035,11 +1053,13 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
             id: number
             tipo_trabalhador: string | null
             contrato_nome: string
+            contrato_tipo_trabalhador: string | null
             funcao_id: number | null
             folga_fixa_dia_semana: string | null
             folga_variavel_dia_semana: string | null
         }>(`
-            SELECT c.id, c.tipo_trabalhador, tc.nome AS contrato_nome, c.funcao_id,
+            SELECT c.id, c.tipo_trabalhador, tc.nome AS contrato_nome,
+                   tc.tipo_trabalhador AS contrato_tipo_trabalhador, c.funcao_id,
                    r.folga_fixa_dia_semana, r.folga_variavel_dia_semana
             FROM colaboradores c
             JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
@@ -1052,6 +1072,7 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
             tipo_trabalhador: derivarTipoTrabalhador({
                 tipo_colaborador: c.tipo_trabalhador,
                 contrato_nome: c.contrato_nome,
+                contrato_tipo_trabalhador: c.contrato_tipo_trabalhador,
             }),
         }))
 

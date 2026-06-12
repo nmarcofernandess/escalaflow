@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS tipos_contrato (
     id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
     horas_semanais INTEGER NOT NULL,
+    tipo_trabalhador TEXT NOT NULL DEFAULT 'CLT' CHECK (tipo_trabalhador IN ('CLT', 'ESTAGIARIO', 'INTERMITENTE')),
     regime_escala TEXT NOT NULL DEFAULT '6X1' CHECK (regime_escala IN ('5X2', '6X1')),
     dias_trabalho INTEGER NOT NULL,
     max_minutos_dia INTEGER NOT NULL DEFAULT 600,
@@ -588,15 +589,67 @@ async function backfillSetorDemandaPadraoWindow(): Promise<void> {
   }
 }
 
+function inferirTipoTrabalhadorContrato(nome: string): 'CLT' | 'ESTAGIARIO' | 'INTERMITENTE' {
+  const normalized = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (normalized.includes('intermit')) return 'INTERMITENTE'
+  if (normalized.includes('estagi')) return 'ESTAGIARIO'
+  return 'CLT'
+}
+
+async function backfillTipoTrabalhadorContratos(): Promise<void> {
+  const contratos = await queryAll<{
+    id: number
+    nome: string
+    tipo_trabalhador: string | null
+    protegido_sistema: boolean
+  }>('SELECT id, nome, tipo_trabalhador, protegido_sistema FROM tipos_contrato')
+
+  let atualizados = 0
+  const customAtualizados: string[] = []
+
+  for (const contrato of contratos) {
+    const tipo = inferirTipoTrabalhadorContrato(contrato.nome)
+    if (contrato.tipo_trabalhador === tipo) continue
+    await execute('UPDATE tipos_contrato SET tipo_trabalhador = $1 WHERE id = $2', tipo, contrato.id)
+    atualizados += 1
+    if (!contrato.protegido_sistema) customAtualizados.push(`${contrato.id}:${contrato.nome}->${tipo}`)
+  }
+
+  if (atualizados > 0) {
+    console.log(`[DB] tipos_contrato.tipo_trabalhador backfill: ${atualizados} contrato(s) atualizados`)
+    if (customAtualizados.length > 0) {
+      console.log(`[DB] tipos_contrato custom backfill por heuristica: ${customAtualizados.join(', ')}`)
+    }
+  }
+}
+
+async function syncColaboradorTipoTrabalhadorFromContrato(): Promise<void> {
+  const result = await execute(`
+    UPDATE colaboradores c
+    SET tipo_trabalhador = tc.tipo_trabalhador
+    FROM tipos_contrato tc
+    WHERE c.tipo_contrato_id = tc.id
+      AND c.tipo_trabalhador IS DISTINCT FROM tc.tipo_trabalhador
+  `)
+  if (result.changes > 0) {
+    console.log(`[DB] colaboradores.tipo_trabalhador sincronizado a partir do contrato: ${result.changes} registro(s)`)
+  }
+}
+
 async function migrateSchema(): Promise<void> {
   // --- v3.1: Empresa columns ---
   await addColumnIfMissing('empresa', 'min_intervalo_almoco_min', 'INTEGER NOT NULL DEFAULT 60')
   await addColumnIfMissing('empresa', 'usa_cct_intervalo_reduzido', 'BOOLEAN NOT NULL DEFAULT TRUE')
   await addColumnIfMissing('empresa', 'grid_minutos', 'INTEGER NOT NULL DEFAULT 30')
 
+  // --- v3.1/Q5: Tipo legal do contrato ---
+  await addColumnIfMissing('tipos_contrato', 'tipo_trabalhador', "TEXT NOT NULL DEFAULT 'CLT'")
+  await backfillTipoTrabalhadorContratos()
+
   // --- v3.1: Colaborador columns ---
   await addColumnIfMissing('colaboradores', 'tipo_trabalhador', "TEXT NOT NULL DEFAULT 'CLT'")
   await addColumnIfMissing('colaboradores', 'funcao_id', 'INTEGER REFERENCES funcoes(id)')
+  await syncColaboradorTipoTrabalhadorFromContrato()
 
   // --- v3.1: Demanda override ---
   await addColumnIfMissing('demandas', 'override', 'BOOLEAN NOT NULL DEFAULT FALSE')
@@ -775,7 +828,7 @@ async function migrateSchema(): Promise<void> {
       estUnificadoId = estExistente.id
     } else {
       // Rename "Estagiario Manha" → "Estagiario" (reuse its id, update horas to 20)
-      await execute(`UPDATE tipos_contrato SET nome = 'Estagiario', horas_semanais = 20, max_minutos_dia = 360 WHERE id = ?`, estManha.id)
+      await execute(`UPDATE tipos_contrato SET nome = 'Estagiario', horas_semanais = 20, max_minutos_dia = 360, tipo_trabalhador = 'ESTAGIARIO' WHERE id = ?`, estManha.id)
       estUnificadoId = estManha.id
     }
 
@@ -816,7 +869,7 @@ async function migrateSchema(): Promise<void> {
   const intermitente = await queryOne<{ id: number }>(`SELECT id FROM tipos_contrato WHERE nome = 'Intermitente'`)
   if (!intermitente) {
     await execute(
-      `INSERT INTO tipos_contrato (nome, horas_semanais, regime_escala, dias_trabalho, max_minutos_dia) VALUES ('Intermitente', 0, '6X1', 6, 585)`
+      `INSERT INTO tipos_contrato (nome, horas_semanais, tipo_trabalhador, regime_escala, dias_trabalho, max_minutos_dia) VALUES ('Intermitente', 0, 'INTERMITENTE', '6X1', 6, 585)`
     )
   }
 
@@ -842,6 +895,8 @@ async function migrateSchema(): Promise<void> {
      SET protegido_sistema = TRUE
      WHERE nome IN ('CLT 44h', 'CLT 36h', 'Estagiario', 'Intermitente')`,
   )
+  await backfillTipoTrabalhadorContratos()
+  await syncColaboradorTipoTrabalhadorFromContrato()
 
   // --- v21: tolerancia_semanal_min default 30 → 0 ---
   await execute(`UPDATE empresa SET tolerancia_semanal_min = 0 WHERE tolerancia_semanal_min = 30`)

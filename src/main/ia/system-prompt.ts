@@ -207,7 +207,7 @@ Departamento: Açougue, Padaria, Caixa. Tem colaboradores, demandas e postos.
 
 ### Colaborador
 Pessoa real. Pertence a 1 setor, tem 1 tipo de contrato.
-- \`tipo_trabalhador\`: CLT, ESTAGIARIO ou INTERMITENTE — **chave** que define restrições
+- A classe legal (CLT, ESTAGIARIO, INTERMITENTE) é derivada do contrato. Não escreva \`tipo_trabalhador\` no colaborador.
 - \`rank\`: senioridade (0=junior). Evitar junior sozinho em pico
 - \`prefere_turno\`: MANHA ou TARDE (SOFT — motor tenta respeitar)
 - \`funcao_id\`: é só o vínculo atual de titular com um posto. Pode ser \`null\`.
@@ -358,7 +358,7 @@ Use estes campos como guia para filtros e leitura via \`consultar_contexto\`:
 - \`colaboradores\`: \`id\`, \`setor_id->setores\`, \`tipo_contrato_id->tipos_contrato\`, \`nome\`, \`sexo\`, \`ativo\`, \`rank\`, \`prefere_turno\`, \`tipo_trabalhador\`, \`funcao_id->funcoes\`
 - \`escalas\`: \`id\`, \`setor_id->setores\`, \`status\` (RASCUNHO/OFICIAL/ARQUIVADA), \`data_inicio\`, \`data_fim\`, \`pontuacao\`, \`cobertura_percent\`, \`violacoes_hard\`, \`violacoes_soft\`, \`equilibrio\`
 - \`alocacoes\`: \`id\`, \`escala_id->escalas\`, \`colaborador_id->colaboradores\`, \`data\`, \`status\`, \`hora_inicio\`, \`hora_fim\`, \`minutos_trabalho\`, \`hora_almoco_inicio\`, \`hora_almoco_fim\`, \`funcao_id->funcoes\`
-- \`tipos_contrato\`: \`id\`, \`nome\`, \`horas_semanais\`, \`regime_escala\`, \`dias_trabalho\`, \`max_minutos_dia\`
+- \`tipos_contrato\`: \`id\`, \`nome\`, \`horas_semanais\`, \`tipo_trabalhador\`, \`regime_escala\`, \`dias_trabalho\`, \`max_minutos_dia\`
 - \`excecoes\`: \`id\`, \`colaborador_id->colaboradores\`, \`tipo\` (FERIAS/ATESTADO/BLOQUEIO), \`data_inicio\`, \`data_fim\`, \`observacao\`
 - \`demandas\`: \`id\`, \`setor_id->setores\`, \`dia_semana\`, \`hora_inicio\`, \`hora_fim\`, \`min_pessoas\`
 - \`funcoes\`: \`id\`, \`setor_id->setores\`, \`apelido\`, \`tipo_contrato_id->tipos_contrato\`, \`cor_hex\`, \`ativo\`, \`ordem\`
@@ -575,7 +575,7 @@ INFEASIBLE: detectado em <1s. Mais tempo NÃO resolve. Use executar_acao({ acao:
 
 **Empresa:** singleton, config global (corte_semanal, grid_minutos=15)
 **Setor:** departamento (Açougue, Caixa). Tem colaboradores e demandas.
-**Colaborador:** pessoa real, 1 setor, 1 contrato. tipo_trabalhador (CLT/ESTAGIARIO/INTERMITENTE).
+**Colaborador:** pessoa real, 1 setor, 1 contrato. A classe legal vem do contrato.
 **Demanda:** quantas pessoas por slot/dia. Semanal ou exceção por data.
 **Exceção:** férias/atestado — pessoa INDISPONÍVEL (HARD).
 **Escala:** alocações + indicadores + decisões + comparação demanda.
