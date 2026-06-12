@@ -32,6 +32,7 @@ import {
   listEscalaParticipantes,
   normalizeSetorSimulacaoConfig,
   resolveSundayRotatingDemand,
+  derivarTipoTrabalhador,
 } from '../../shared'
 import { buildEffectiveRulePolicy } from './rule-policy'
 import { expandirSemanasOff } from '../../shared/recorrencia'
@@ -247,22 +248,6 @@ export function calcularCicloDomingo<TPadrao extends { folga_fixa_dia_semana: st
 // Build SolverInput from DB
 // ---------------------------------------------------------------------------
 
-/**
- * B7: Derive tipo_trabalhador from contract name.
- * Ensures consistency even if the DB column is stale.
- * Mirrors frontend derivarTipoTrabalhadorPorContrato() in ColaboradorDetalhe.tsx.
- */
-function derivarTipoTrabalhador(
-  tipoColuna: string | null,
-  contratoNome: string,
-): Colaborador['tipo_trabalhador'] {
-  // NFD normalization to strip accents (matches frontend logic)
-  const nome = contratoNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  if (nome.includes('intermit')) return 'INTERMITENTE'
-  if (nome.includes('estagi')) return 'ESTAGIARIO'
-  return tipoColuna === 'INTERMITENTE' || tipoColuna === 'ESTAGIARIO' ? tipoColuna : 'CLT'
-}
-
 export async function buildSolverInput(
   setorId: number,
   dataInicio: string,
@@ -357,7 +342,10 @@ export async function buildSolverInput(
     prefere_turno: (row.prefere_turno as Colaborador['prefere_turno']) ?? null,
     evitar_dia_semana: (row.evitar_dia_semana as DiaSemana | null) ?? null,
     ativo: Boolean(row.ativo),
-    tipo_trabalhador: derivarTipoTrabalhador(row.tipo_trabalhador, row.contrato_nome),
+    tipo_trabalhador: derivarTipoTrabalhador({
+      tipo_colaborador: row.tipo_trabalhador,
+      contrato_nome: row.contrato_nome,
+    }),
     funcao_id: row.funcao_id,
   }))
   const participantes = listEscalaParticipantes(colabRowsForHelper, funcoesAtivas)
@@ -381,7 +369,10 @@ export async function buildSolverInput(
       regime_escala: regimeEfetivo,
       dias_trabalho: diasTrabalhoEfetivo,
       max_minutos_dia: r.max_minutos_dia,
-      tipo_trabalhador: derivarTipoTrabalhador(r.tipo_trabalhador, r.contrato_nome),
+      tipo_trabalhador: derivarTipoTrabalhador({
+        tipo_colaborador: r.tipo_trabalhador,
+        contrato_nome: r.contrato_nome,
+      }),
       sexo: r.sexo,
       funcao_id: r.funcao_id,
       rank: r.rank ?? 0,
@@ -544,7 +535,10 @@ export async function buildSolverInput(
         const excecaoData = excecaoDataMap.get(`${colab.id}|${isoDate}`)
         // B7: deriva do contrato — coluna pode estar stale (ex: import/lote); a
         // disponibilidade do intermitente depende disso e não pode vazar
-        const isIntermitente = derivarTipoTrabalhador(colab.tipo_trabalhador, colab.contrato_nome) === 'INTERMITENTE'
+        const isIntermitente = derivarTipoTrabalhador({
+          tipo_colaborador: colab.tipo_trabalhador,
+          contrato_nome: colab.contrato_nome,
+        }) === 'INTERMITENTE'
 
         // Precedencia: excecao_data > regra_dia_especifico > regra_padrao > perfil_contrato > sem regra
         // Intermitente: só dia_especifico conta (padrão não define disponibilidade)
@@ -647,7 +641,10 @@ export async function buildSolverInput(
   // v22: Ciclo domingo calculado automaticamente (tenta 1/2 → 1/1 → 2/1)
   const colabRowsTipoDerivado = colabRowsFiltered.map((r) => ({
     ...r,
-    tipo_trabalhador: derivarTipoTrabalhador(r.tipo_trabalhador, r.contrato_nome),
+    tipo_trabalhador: derivarTipoTrabalhador({
+      tipo_colaborador: r.tipo_trabalhador,
+      contrato_nome: r.contrato_nome,
+    }),
   }))
   const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRowsTipoDerivado, regraGroupByColab)
   for (const c of colaboradores) {

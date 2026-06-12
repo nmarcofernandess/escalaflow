@@ -7,6 +7,7 @@ import { inferGenerationModeForOverrides } from '../motor/rule-policy'
 import { persistirResumoAutoritativoEscala } from '../tipc/escalas-utils'
 import { salvarDetalheFuncao, deletarFuncao } from '../funcoes-service'
 import { textoResumoCobertura, textoResumoViolacoesHard, textoResumoViolacoesSoft, textoResumoRelaxacoes } from '../../shared/resumo-user'
+import { derivarTipoTrabalhador } from '../../shared/tipo-trabalhador'
 import { validarEscalaV3 } from '../motor/validador'
 import { searchKnowledge, exploreRelations } from '../knowledge/search'
 import { ingestKnowledge } from '../knowledge/ingest'
@@ -87,6 +88,13 @@ function toolTruncated<T extends Record<string, any>>(
 
 function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+async function derivarTipoTrabalhadorPorContratoId(tipoContratoId: unknown): Promise<string> {
+  const id = typeof tipoContratoId === 'number' ? tipoContratoId : Number(tipoContratoId)
+  if (!Number.isFinite(id) || id <= 0) return 'CLT'
+  const contrato = await queryOne<{ nome: string }>('SELECT nome FROM tipos_contrato WHERE id = ?', id)
+  return derivarTipoTrabalhador({ contrato_nome: contrato?.nome })
 }
 
 // ---------------------------------------------------------------------------
@@ -601,8 +609,7 @@ const ENTIDADES_LEITURA_PERMITIDAS = new Set([
 const CAMPOS_VALIDOS: Record<string, Set<string>> = {
   colaboradores: new Set([
     'id', 'nome', 'setor_id', 'tipo_contrato_id', 'sexo', 'ativo', 'rank',
-    'prefere_turno', 'evitar_dia_semana', 'horas_semanais', 'tipo_trabalhador',
-    'funcao_id'
+    'prefere_turno', 'evitar_dia_semana', 'horas_semanais', 'funcao_id'
   ]),
   setores: new Set([
     'id', 'nome', 'icone', 'hora_abertura', 'hora_fechamento', 'regime_escala', 'ativo'
@@ -664,6 +671,11 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
     'colaborador_id', 'dia_semana_regra', 'inicio', 'fim',
     'folga_fixa_dia_semana', 'folga_variavel_dia_semana', 'perfil_horario_id', 'ativo'
   ]),
+}
+
+const CAMPOS_CONSULTA_VALIDOS: Record<string, Set<string>> = {
+  ...CAMPOS_VALIDOS,
+  colaboradores: new Set([...CAMPOS_VALIDOS.colaboradores, 'tipo_trabalhador']),
 }
 
 const ENTIDADES_CRIACAO_PERMITIDAS = new Set([
@@ -1002,7 +1014,7 @@ async function applyColaboradorDefaults(
     setor?: { hora_abertura?: string; hora_fechamento?: string } | null
 ): Promise<Record<string, any>> {
     if (!dados.tipo_contrato_id) dados.tipo_contrato_id = 1
-    if (!dados.tipo_trabalhador) dados.tipo_trabalhador = 'CLT'
+    dados.tipo_trabalhador = await derivarTipoTrabalhadorPorContratoId(dados.tipo_contrato_id)
     if (dados.ativo === undefined) dados.ativo = true
     return dados
 }
@@ -1450,7 +1462,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
         // VALIDAÇÃO DE CAMPOS (Fase 1: protege contra SQL injection e erros de campo inexistente)
         if (filtros && Object.keys(filtros).length > 0) {
-            const camposValidos = CAMPOS_VALIDOS[entidade]
+            const camposValidos = CAMPOS_CONSULTA_VALIDOS[entidade]
             if (!camposValidos) {
                 return toolError(
                   'CONSULTAR_MAPA_CAMPOS_AUSENTE',
@@ -1500,6 +1512,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               filtros_aplicados: filtros ?? {},
               ids_usaveis_em: getConsultarRelatedTools(entidade),
               campos_validos: [...(CAMPOS_VALIDOS[entidade] ?? [])],
+              campos_consulta_validos: [...(CAMPOS_CONSULTA_VALIDOS[entidade] ?? [])],
               total,
               retornados: dados.length,
             }
@@ -1774,6 +1787,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         const dadosFiltrados = camposValidos
             ? Object.fromEntries(Object.entries(dados).filter(([k]) => camposValidos.has(k)))
             : dados
+        if (entidade === 'colaboradores') {
+            dadosFiltrados.tipo_trabalhador = await derivarTipoTrabalhadorPorContratoId(dadosFiltrados.tipo_contrato_id)
+        }
         const keys = Object.keys(dadosFiltrados)
         const placeholders = keys.map(() => '?').join(', ')
         const values = Object.values(dadosFiltrados)
@@ -1917,10 +1933,30 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
             }
         }
 
-        const sets = Object.keys(dados).map((k: string) => `${k} = ?`).join(', ')
-        const values = [...Object.values(dados), id]
+        const camposValidosAtualizacao = CAMPOS_VALIDOS[entidade]
+        const dadosAtualizacao = camposValidosAtualizacao
+            ? Object.fromEntries(Object.entries(dados).filter(([k]) => camposValidosAtualizacao.has(k)))
+            : { ...dados }
+        if (entidade === 'colaboradores' && (hasOwnField(dados, 'tipo_contrato_id') || hasOwnField(dados, 'tipo_trabalhador'))) {
+            const contratoId = hasOwnField(dadosAtualizacao, 'tipo_contrato_id')
+                ? dadosAtualizacao.tipo_contrato_id
+                : (await queryOne<{ tipo_contrato_id: number }>('SELECT tipo_contrato_id FROM colaboradores WHERE id = ?', id))?.tipo_contrato_id
+            dadosAtualizacao.tipo_trabalhador = await derivarTipoTrabalhadorPorContratoId(contratoId)
+        }
+        const sets = Object.keys(dadosAtualizacao).map((k: string) => `${k} = ?`).join(', ')
+        const values = [...Object.values(dadosAtualizacao), id]
 
         try {
+            if (Object.keys(dadosAtualizacao).length === 0) {
+                return toolError(
+                  'ATUALIZAR_SEM_CAMPOS_VALIDOS',
+                  `Nenhum campo válido para atualizar em ${entidade}.`,
+                  {
+                    correction: 'Envie ao menos um campo permitido para escrita.',
+                    meta: { entidade, id, campos_recebidos: Object.keys(dados) },
+                  }
+                )
+            }
             const res = await execute(`UPDATE ${entidade} SET ${sets} WHERE id = ?`, ...values)
             broadcastInvalidation([entidade])
             return toolOk(
@@ -1937,7 +1973,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   action: 'update',
                   entidade,
                   id,
-                  campos_atualizados: Object.keys(dados),
+                  campos_atualizados: Object.keys(dadosAtualizacao),
                 }
               }
             )
@@ -1947,7 +1983,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
               e.message,
               {
                 correction: 'Revise o ID e os campos enviados em `dados`.',
-                meta: { entidade, id, campos_atualizados: Object.keys(dados) }
+                meta: { entidade, id, campos_atualizados: Object.keys(dadosAtualizacao) }
               }
             )
         }
@@ -2697,6 +2733,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                   const dadosLimpos = camposValidosLote
                       ? Object.fromEntries(Object.entries(dados).filter(([k]) => camposValidosLote.has(k)))
                       : dados
+                  if (entidade === 'colaboradores') {
+                    dadosLimpos.tipo_trabalhador = await derivarTipoTrabalhadorPorContratoId(dadosLimpos.tipo_contrato_id)
+                  }
                   const keys = Object.keys(dadosLimpos)
                   const placeholders = keys.map(() => '?').join(', ')
                   const values = Object.values(dadosLimpos)

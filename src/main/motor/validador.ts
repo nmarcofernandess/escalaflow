@@ -1,7 +1,7 @@
 import { queryOne, queryAll } from '../db/query'
 import { parseEscalaEquipeSnapshot } from '../escala-equipe-snapshot'
 import { buildEffectiveRulePolicy } from './rule-policy'
-import { listEscalaParticipantes } from '../../shared'
+import { derivarTipoTrabalhador, listEscalaParticipantes } from '../../shared'
 import { calcularCicloDomingo } from './solver-bridge'
 import { expandirSemanasOff } from '../../shared/recorrencia'
 import type {
@@ -63,6 +63,8 @@ interface ColabComContrato {
   prefere_turno: string | null
   evitar_dia_semana: string | null
   tipo_trabalhador: string | null
+  contrato_nome: string | null
+  contrato_tipo_trabalhador?: string | null
   funcao_id: number | null
 }
 
@@ -134,7 +136,8 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
   )
 
   const colaboradoresRaw = await queryAll<ColabComContrato>(
-    `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.max_minutos_dia
+    `SELECT c.*, tc.horas_semanais, tc.dias_trabalho, tc.max_minutos_dia,
+            tc.nome AS contrato_nome
      FROM colaboradores c
      JOIN tipos_contrato tc ON c.tipo_contrato_id = tc.id
      WHERE c.setor_id = ? AND c.ativo = true
@@ -235,7 +238,11 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     prefere_turno: c.prefere_turno as Colaborador['prefere_turno'] ?? null,
     evitar_dia_semana: (c.evitar_dia_semana ?? null) as import('../../shared').DiaSemana | null,
     ativo: true,
-    tipo_trabalhador: (c.tipo_trabalhador as Colaborador['tipo_trabalhador']) ?? 'CLT',
+    tipo_trabalhador: derivarTipoTrabalhador({
+      tipo_colaborador: c.tipo_trabalhador,
+      contrato_nome: c.contrato_nome,
+      contrato_tipo_trabalhador: c.contrato_tipo_trabalhador,
+    }),
     funcao_id: c.funcao_id ?? null,
   }))
   const participantes = listEscalaParticipantes(colaboradoresForHelper, funcoesAtivas)
@@ -245,7 +252,14 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     .filter((item): item is ColabComContrato => item != null)
   const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(
     demandas.map((demanda) => ({ dia_semana: demanda.dia_semana, min_pessoas: demanda.min_pessoas })),
-    colaboradoresRawFiltrados.map((item) => ({ id: item.id, tipo_trabalhador: item.tipo_trabalhador })),
+    colaboradoresRawFiltrados.map((item) => ({
+      id: item.id,
+      tipo_trabalhador: derivarTipoTrabalhador({
+        tipo_colaborador: item.tipo_trabalhador,
+        contrato_nome: item.contrato_nome,
+        contrato_tipo_trabalhador: item.contrato_tipo_trabalhador,
+      }),
+    })),
     regraGroupByColab,
   )
 
@@ -253,7 +267,11 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
     id: c.id,
     nome: c.nome,
     sexo: c.sexo as 'M' | 'F',
-    tipo_trabalhador: c.tipo_trabalhador ?? 'CLT',
+    tipo_trabalhador: derivarTipoTrabalhador({
+      tipo_colaborador: c.tipo_trabalhador,
+      contrato_nome: c.contrato_nome,
+      contrato_tipo_trabalhador: c.contrato_tipo_trabalhador,
+    }),
     horas_semanais: c.horas_semanais,
     dias_trabalho: c.dias_trabalho,
     max_minutos_dia: c.max_minutos_dia,

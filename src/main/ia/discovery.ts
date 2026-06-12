@@ -1,4 +1,5 @@
 import { queryOne, queryAll } from '../db/query'
+import { derivarTipoTrabalhador } from '../../shared/tipo-trabalhador'
 import { buildSolverInput, computeSolverScenarioHash } from '../motor/solver-bridge'
 import { searchKnowledge } from '../knowledge/search'
 import { gerarCicloFase1 } from '../../shared/simula-ciclo'
@@ -380,7 +381,7 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
     lines.push(`- Ativo: ${setor.ativo ? 'sim' : 'não'}`)
 
     // Colaboradores do setor
-    const colabs = await queryAll<{ id: number; nome: string; tipo_trabalhador: string; contrato_nome: string; horas_semanais: number; funcao_id: number | null }>(`
+    const colabs = await queryAll<{ id: number; nome: string; tipo_trabalhador: string | null; contrato_nome: string; horas_semanais: number; funcao_id: number | null }>(`
         SELECT c.id, c.nome, c.tipo_trabalhador, t.nome as contrato_nome, t.horas_semanais, c.funcao_id
         FROM colaboradores c
         JOIN tipos_contrato t ON c.tipo_contrato_id = t.id
@@ -391,7 +392,8 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
     if (colabs.length > 0) {
         lines.push(`\n#### Colaboradores (${colabs.length} ativos):`)
         for (const c of colabs) {
-            lines.push(`- ${c.nome} (ID: ${c.id}) — ${c.contrato_nome} ${c.horas_semanais}h`)
+            const tipo = derivarTipoTrabalhador({ tipo_colaborador: c.tipo_trabalhador, contrato_nome: c.contrato_nome })
+            lines.push(`- ${c.nome} (ID: ${c.id}) — ${c.contrato_nome} ${c.horas_semanais}h · ${tipo}`)
         }
     } else {
         lines.push(`\n⚠️ Setor sem colaboradores ativos.`)
@@ -581,7 +583,7 @@ async function _infoColaborador(colaborador_id: number): Promise<string | null> 
     lines.push(`\n### 👤 Colaborador em foco: ${colab.nome} (ID: ${colab.id})`)
     lines.push(`- Setor: ${colab.setor_nome} (ID: ${colab.setor_id})`)
     lines.push(`- Contrato: ${colab.contrato_nome} (${colab.horas_semanais}h/sem, ${colab.regime_escala})`)
-    lines.push(`- Tipo: ${colab.tipo_trabalhador}`)
+    lines.push(`- Tipo: ${derivarTipoTrabalhador({ tipo_colaborador: colab.tipo_trabalhador, contrato_nome: colab.contrato_nome })}`)
     if (colab.prefere_turno) lines.push(`- Preferência turno: ${colab.prefere_turno}`)
 
     // Regras de horário (padrão + por dia da semana)
@@ -1031,18 +1033,27 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
         // 1. Colaboradores do setor com regras
         const colabs = await queryAll<{
             id: number
-            tipo_trabalhador: string
+            tipo_trabalhador: string | null
+            contrato_nome: string
             funcao_id: number | null
             folga_fixa_dia_semana: string | null
             folga_variavel_dia_semana: string | null
         }>(`
-            SELECT c.id, c.tipo_trabalhador, c.funcao_id,
+            SELECT c.id, c.tipo_trabalhador, tc.nome AS contrato_nome, c.funcao_id,
                    r.folga_fixa_dia_semana, r.folga_variavel_dia_semana
             FROM colaboradores c
+            JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
             LEFT JOIN colaborador_regra_horario r
                 ON r.colaborador_id = c.id AND r.ativo = true AND r.dia_semana_regra IS NULL
             WHERE c.setor_id = ? AND c.ativo = true
         `, setor_id)
+        const colabsComTipo = colabs.map((c) => ({
+            ...c,
+            tipo_trabalhador: derivarTipoTrabalhador({
+                tipo_colaborador: c.tipo_trabalhador,
+                contrato_nome: c.contrato_nome,
+            }),
+        }))
 
         // 2. Demandas do setor
         const demandasRows = await queryAll<{ dia_semana: string | null; min_pessoas: number }>('SELECT dia_semana, min_pessoas FROM demandas WHERE setor_id = ? ORDER BY dia_semana', setor_id)
@@ -1061,21 +1072,21 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
 
         // 4. Identificar titulares e intermitentes Tipo B
         // Titular = tem funcao_id. Intermitente Tipo B = tipo_trabalhador=INTERMITENTE e folga_variavel != null
-        const titulares = colabs.filter(c => c.funcao_id !== null && c.tipo_trabalhador !== 'INTERMITENTE')
-        const intermediosB = colabs.filter(c => c.tipo_trabalhador === 'INTERMITENTE' && c.folga_variavel_dia_semana !== null)
+        const titulares = colabsComTipo.filter(c => c.funcao_id !== null && c.tipo_trabalhador !== 'INTERMITENTE')
+        const intermediosB = colabsComTipo.filter(c => c.tipo_trabalhador === 'INTERMITENTE' && c.folga_variavel_dia_semana !== null)
         const N = titulares.length + intermediosB.length
         if (N < 1) return null
 
         // 5. Calcular K: quantos trabalham domingo
         // Cobertura garantida de DOM por Tipo A (intermitente com regra DOM e folga_variavel = null)
-        const tiposA = colabs.filter(c => c.tipo_trabalhador === 'INTERMITENTE' && c.folga_variavel_dia_semana === null)
+        const tiposA = colabsComTipo.filter(c => c.tipo_trabalhador === 'INTERMITENTE' && c.folga_variavel_dia_semana === null)
         // Tipo A com regra DOM = conta como 1 no domingo (cobertura garantida)
         const tiposAComDom = await queryAll<{ colaborador_id: number }>(`
             SELECT r.colaborador_id
             FROM colaborador_regra_horario r
             JOIN colaboradores c ON c.id = r.colaborador_id
             WHERE c.setor_id = ? AND c.ativo = true AND r.ativo = true
-              AND r.dia_semana_regra = 'DOM' AND c.tipo_trabalhador = 'INTERMITENTE'
+              AND r.dia_semana_regra = 'DOM'
         `, setor_id)
         const tiposAComDomIds = new Set(tiposAComDom.map(r => r.colaborador_id))
         const coberturaGarantidaDom = tiposA.filter(c => tiposAComDomIds.has(c.id)).length

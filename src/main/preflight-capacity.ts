@@ -1,5 +1,5 @@
 import { dayLabel, listDays, minutesBetween } from './date-utils'
-import type { DiaSemana, EscalaPreflightResult, SolverInput } from '../shared'
+import { derivarTipoTrabalhador, type DiaSemana, type EscalaPreflightResult, type SolverInput } from '../shared'
 
 export type RegimeEscalaInput = '5X2' | '6X1'
 
@@ -81,8 +81,11 @@ export function enrichPreflightWithCapacityChecks(
   }
 
   const TIPOS_BLOQUEADOS_DOMINGO = new Set<string>([])
+  const tipoDoColaborador = (c: (typeof input.colaboradores)[number]) =>
+    derivarTipoTrabalhador({ tipo_colaborador: c.tipo_trabalhador })
+
   function bloqueadoDomingo(c: (typeof input.colaboradores)[number]): boolean {
-    if (TIPOS_BLOQUEADOS_DOMINGO.has(c.tipo_trabalhador)) return true
+    if (TIPOS_BLOQUEADOS_DOMINGO.has(tipoDoColaborador(c))) return true
     if (c.domingo_ciclo_trabalho != null && c.domingo_ciclo_trabalho <= 0) return true
     return false
   }
@@ -93,7 +96,7 @@ export function enrichPreflightWithCapacityChecks(
     label: DiaSemana,
   ): boolean {
     const regra = regraPorColabDia.get(`${c.id}|${day}`)
-    if (c.tipo_trabalhador === 'INTERMITENTE') {
+    if (tipoDoColaborador(c) === 'INTERMITENTE') {
       if (!regra) return true
       if (regra.folga_fixa) return true
       if (label === 'DOM' && regra.domingo_forcar_folga) return true

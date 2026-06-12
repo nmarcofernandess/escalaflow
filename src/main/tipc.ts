@@ -33,6 +33,7 @@ import type {
   InfeasibleError,
 } from '../shared'
 import {
+  derivarTipoTrabalhador,
   inferFolgasFromAlocacoes,
   stringifyDemandaPadraoSegmentos,
   stringifySetorSimulacaoConfig,
@@ -105,6 +106,15 @@ function safeJsonParse<T = unknown>(json: string | null | undefined): T | undefi
   if (!json) return undefined
   try { return JSON.parse(json) as T }
   catch { return undefined }
+}
+
+async function derivarTipoTrabalhadorPorContratoId(tipoContratoId: number | null | undefined): Promise<string> {
+  if (!tipoContratoId) return 'CLT'
+  const contrato = await queryOne<{ nome: string }>(
+    'SELECT nome FROM tipos_contrato WHERE id = ?',
+    tipoContratoId,
+  )
+  return derivarTipoTrabalhador({ contrato_nome: contrato?.nome })
 }
 
 
@@ -843,6 +853,7 @@ const colaboradoresCriar = t.procedure
       if (!tipo) throw new Error('Tipo de contrato nao encontrado')
       horasSemanais = tipo.horas_semanais
     }
+    const tipoTrabalhador = await derivarTipoTrabalhadorPorContratoId(input.tipo_contrato_id)
 
     const id = await insertReturningId(`
       INSERT INTO colaboradores (setor_id, tipo_contrato_id, nome, sexo, horas_semanais, rank, prefere_turno, evitar_dia_semana, tipo_trabalhador, funcao_id)
@@ -856,7 +867,7 @@ const colaboradoresCriar = t.procedure
       input.rank ?? 0,
       input.prefere_turno ?? null,
       input.evitar_dia_semana ?? null,
-      input.tipo_trabalhador ?? 'CLT',
+      tipoTrabalhador,
       input.funcao_id ?? null
     )
 
@@ -895,7 +906,13 @@ const colaboradoresAtualizar = t.procedure
     if (input.prefere_turno !== undefined) { fields.push('prefere_turno = ?'); values.push(input.prefere_turno) }
     if (input.evitar_dia_semana !== undefined) { fields.push('evitar_dia_semana = ?'); values.push(input.evitar_dia_semana) }
     if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo) }
-    if (input.tipo_trabalhador !== undefined) { fields.push('tipo_trabalhador = ?'); values.push(input.tipo_trabalhador) }
+    if (input.tipo_contrato_id !== undefined || input.tipo_trabalhador !== undefined) {
+      const tipoContratoId = input.tipo_contrato_id ?? (
+        await queryOne<{ tipo_contrato_id: number }>('SELECT tipo_contrato_id FROM colaboradores WHERE id = ?', input.id)
+      )?.tipo_contrato_id
+      fields.push('tipo_trabalhador = ?')
+      values.push(await derivarTipoTrabalhadorPorContratoId(tipoContratoId))
+    }
     if (input.funcao_id !== undefined) { fields.push('funcao_id = ?'); values.push(input.funcao_id) }
 
     if (fields.length > 0) {
@@ -2424,11 +2441,17 @@ const colaboradoresSalvarRegraHorario = t.procedure
   .action(async ({ input }) => {
     const diaSemana = input.dia_semana_regra ?? null
     const isDiaEspecifico = diaSemana !== null
-    const colaborador = await queryOne<{ tipo_trabalhador: string | null }>(
-      'SELECT tipo_trabalhador FROM colaboradores WHERE id = ?',
+    const colaborador = await queryOne<{ tipo_trabalhador: string | null; contrato_nome: string | null }>(
+      `SELECT c.tipo_trabalhador, tc.nome AS contrato_nome
+       FROM colaboradores c
+       LEFT JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
+       WHERE c.id = ?`,
       input.colaborador_id,
     )
-    const isIntermitente = (colaborador?.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE'
+    const isIntermitente = derivarTipoTrabalhador({
+      tipo_colaborador: colaborador?.tipo_trabalhador,
+      contrato_nome: colaborador?.contrato_nome,
+    }) === 'INTERMITENTE'
 
     const existe = diaSemana === null
       ? await queryOne<{
