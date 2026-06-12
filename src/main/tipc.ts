@@ -1395,12 +1395,11 @@ const escalasAjustar = t.procedure
       throw new Error(solverResult.erro?.mensagem ?? 'Erro ao gerar escala via solver')
     }
 
-    const ind = solverResult.indicadores
     const decisoes = solverResult.decisoes ?? []
     const comparacao = solverResult.comparacao_demanda ?? []
 
     // Persistir resultado do solver (substituir alocacoes + decisoes + comparacao)
-    await persistirAjusteResult(escalaId, solverResult, ind, decisoes, comparacao, inputHash, cfg)
+    await persistirAjusteResult(escalaId, solverResult, decisoes, comparacao, inputHash, cfg)
 
     const validacao = await validarEscalaV3(escalaId)
     await persistirResumoAutoritativoEscala(escalaId, validacao)

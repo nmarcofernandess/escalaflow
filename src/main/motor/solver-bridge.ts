@@ -1153,10 +1153,10 @@ export async function persistirSolverResult(
   inputHash?: string,
   regimesOverride?: Array<{ colaborador_id: number; regime_escala: string }>,
 ): Promise<number> {
-  const ind = solverResult.indicadores!
   const decisoes = solverResult.decisoes ?? []
   // comparacao_demanda NÃO é inserida aqui: é gravada só em persistirResumoAutoritativoEscala
-  // após validarEscalaV3(), evitando duplicate key (escala_comparacao_demanda_pkey)
+  // após validarEscalaV3(), evitando duplicate key (escala_comparacao_demanda_pkey).
+  // Indicadores também ficam com o validador TS; cobertura do solver é só diagnóstico.
   const equipeSnapshot = await buildEscalaEquipeSnapshot(setorId)
   const setor = await queryOne<{ simulacao_config_json?: string | null }>(
     'SELECT simulacao_config_json FROM setores WHERE id = ?',
@@ -1172,12 +1172,10 @@ export async function persistirSolverResult(
     const diagnosticoJson = solverResult.diagnostico ? JSON.stringify(solverResult.diagnostico) : null
     const escalaId = await insertReturningId(`
       INSERT INTO escalas
-        (setor_id, data_inicio, data_fim, status, pontuacao,
-         cobertura_percent, violacoes_hard, violacoes_soft, equilibrio, input_hash, simulacao_config_json, equipe_snapshot_json, diagnostico_json)
-      VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (setor_id, data_inicio, data_fim, status, input_hash, simulacao_config_json, equipe_snapshot_json, diagnostico_json)
+      VALUES (?, ?, ?, 'RASCUNHO', ?, ?, ?, ?)
     `,
       setorId, dataInicio, dataFim,
-      ind.pontuacao, ind.cobertura_percent, ind.violacoes_hard, ind.violacoes_soft, ind.equilibrio,
       inputHash ?? null,
       simulacaoConfigJson,
       JSON.stringify(equipeSnapshot),

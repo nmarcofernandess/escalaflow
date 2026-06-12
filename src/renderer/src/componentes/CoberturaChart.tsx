@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/chart'
 import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { Indicadores, SlotComparacao } from '@shared/index'
+import { calcularCoberturaDemanda, type Indicadores, type SlotComparacao } from '@shared/index'
 
 interface CoberturaChartProps {
   comparacao: SlotComparacao[]
@@ -216,8 +216,8 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
     }
   }
 
-  // KPIs: contextuais — escopados pela pagina/dia selecionado
-  // Cobertura usa formula slot-binary (mesma do KPI card): % de slots com executado >= planejado
+  // KPIs: contextuais por pagina/dia. Na visao "Tudo", cobertura de escala persistida
+  // vem do validador autoritativo; recortes usam a mesma formula compartilhada.
   const { totalDeficit, totalSurplus, pageCoverage, showEquilibrio } = useMemo(() => {
     const pageDates = new Set(pageData.map(d => d.data))
     const source = selectedDate
@@ -227,13 +227,19 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
     const deficit = source.filter(s => s.delta < 0).reduce((sum, s) => sum + Math.abs(s.delta), 0)
     const surplus = source.filter(s => s.delta > 0).reduce((sum, s) => sum + s.delta, 0)
 
-    // Cobertura: % de slots onde executado >= planejado (slot-binary, igual a calcularIndicadoresV3)
-    const slotsTotal = source.length
-    const slotsCobertos = source.filter(s => s.executado >= s.planejado).length
-    const coverage = slotsTotal > 0 ? (slotsCobertos / slotsTotal) * 100 : 100
+    const coverage = !selectedDate && viewMode === 'tudo'
+      ? indicadores.cobertura_percent
+      : calcularCoberturaDemanda(source.map(s => ({
+        data: s.data,
+        hora_inicio: s.hora_inicio,
+        hora_fim: s.hora_fim,
+        planejado: s.planejado,
+        executado: s.executado,
+        ignorar_cobertura: s.feriado_proibido,
+      }))).cobertura_percent
 
     return { totalDeficit: deficit, totalSurplus: surplus, pageCoverage: coverage, showEquilibrio: !selectedDate }
-  }, [comparacao, selectedDate, pageData])
+  }, [comparacao, selectedDate, pageData, viewMode, indicadores.cobertura_percent])
 
   if (comparacao.length === 0) return null
 
@@ -263,7 +269,7 @@ export function CoberturaChart({ comparacao, indicadores, className }: Cobertura
           )}
           <div>
             <span className="text-2xl font-bold tabular-nums">
-              {pageCoverage.toFixed(1)}%
+              {Math.round(pageCoverage)}%
             </span>
             <span className="ml-1.5 text-xs text-muted-foreground">cobertura</span>
           </div>

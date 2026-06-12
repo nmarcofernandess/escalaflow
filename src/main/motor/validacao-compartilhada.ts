@@ -1,4 +1,4 @@
-import { CLT, ANTIPATTERNS, FERIADOS_CCT_PROIBIDOS, type DiaSemana } from '../../shared'
+import { CLT, ANTIPATTERNS, FERIADOS_CCT_PROIBIDOS, calcularCoberturaDemanda, type CoberturaDemandaSlot, type DiaSemana } from '../../shared'
 import type {
   RuleConfig, RuleStatus,
   Setor, Demanda, Colaborador, Excecao, Alocacao, Funcao, Feriado,
@@ -2247,13 +2247,10 @@ export function calcularIndicadoresV3(params: CalcIndicadoresParams): Indicadore
   const softOcorrencias = softPenalty < 0 ? Math.round(Math.abs(softPenalty) / 2) : 0
   const violacoes_soft = apCount + softOcorrencias
 
-  // cobertura_percent — % de slots onde executado >= target_planejado
-  let slotsTotal = 0
-  let slotsCobertos = 0
-
+  // cobertura_percent — formula canonica compartilhada com UI/IA
+  const slotsCobertura: CoberturaDemandaSlot[] = []
   for (const slot of grid) {
     if (slot.dia_fechado || slot.feriado_proibido) continue
-    slotsTotal++
 
     const slotInicioMin = timeToMin(slot.hora_inicio)
     const slotFimMin = timeToMin(slot.hora_fim)
@@ -2264,39 +2261,16 @@ export function calcularIndicadoresV3(params: CalcIndicadoresParams): Indicadore
       colaboradores,
       resultado,
     })
-
-    if (executado >= slot.target_planejado) slotsCobertos++
-  }
-
-  const cobertura_percent = slotsTotal > 0
-    ? Math.round((slotsCobertos / slotsTotal) * 100)
-    : 100
-
-  // cobertura_efetiva — ignora gaps de 1 pessoa em faixas de transição
-  const TRANSICAO_FAIXAS = [
-    [7 * 60, 7 * 60 + 30],   // café abertura
-    [11 * 60, 12 * 60],      // stagger almoço
-    [19 * 60, 19 * 60 + 30],  // café fechamento
-  ]
-  let slotsEfetivoCobertos = 0
-  for (const slot of grid) {
-    if (slot.dia_fechado || slot.feriado_proibido) continue
-    const slotInicioMin = timeToMin(slot.hora_inicio)
-    const slotFimMin = timeToMin(slot.hora_fim)
-    const executado = countExecutadoNoSlot({
-      data: slot.data, slotInicioMin, slotFimMin, colaboradores, resultado,
+    slotsCobertura.push({
+      data: slot.data,
+      hora_inicio: slot.hora_inicio,
+      hora_fim: slot.hora_fim,
+      planejado: slot.target_planejado,
+      executado,
     })
-    if (executado >= slot.target_planejado) {
-      slotsEfetivoCobertos++
-    } else {
-      const deficit = slot.target_planejado - executado
-      const inTransicao = TRANSICAO_FAIXAS.some(([from, to]) => slotInicioMin >= from && slotInicioMin < to)
-      if (inTransicao && deficit === 1) slotsEfetivoCobertos++
-    }
   }
-  const cobertura_efetiva_percent = slotsTotal > 0
-    ? Math.round((slotsEfetivoCobertos / slotsTotal) * 100)
-    : 100
+
+  const { cobertura_percent, cobertura_efetiva_percent } = calcularCoberturaDemanda(slotsCobertura)
 
   // equilibrio — 0-100 baseado no desvio padrão do % de meta atingida por colab
   // Baixo desvio = alto equilíbrio. Calculamos o DP do % atingido por colaborador.
@@ -2397,6 +2371,7 @@ export function gerarSlotComparacao(params: {
       executado,
       delta,
       override: slot.override,
+      feriado_proibido: slot.feriado_proibido,
       justificativa,
     })
   }

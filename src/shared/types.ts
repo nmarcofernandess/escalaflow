@@ -321,6 +321,7 @@ export interface SlotComparacao {
   executado: number
   delta: number
   override: boolean
+  feriado_proibido?: boolean
   justificativa?: string
 }
 

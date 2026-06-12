@@ -55,7 +55,6 @@ export async function persistirResumoAutoritativoEscala(
 export async function persistirAjusteResult(
   escalaId: number,
   solverResult: SolverOutput,
-  ind: NonNullable<SolverOutput['indicadores']>,
   decisoes: NonNullable<SolverOutput['decisoes']>,
   comparacao: NonNullable<SolverOutput['comparacao_demanda']>,
   inputHash: string,
@@ -139,14 +138,9 @@ export async function persistirAjusteResult(
     await execute(
       `
       UPDATE escalas
-      SET pontuacao = ?, cobertura_percent = ?, violacoes_hard = ?, violacoes_soft = ?, equilibrio = ?, input_hash = ?, simulacao_config_json = ?, equipe_snapshot_json = ?
+      SET input_hash = ?, simulacao_config_json = ?, equipe_snapshot_json = ?
       WHERE id = ?
     `,
-      ind.pontuacao,
-      ind.cobertura_percent,
-      ind.violacoes_hard,
-      ind.violacoes_soft,
-      ind.equilibrio,
       inputHash,
       JSON.stringify({ regimes_override: cfg.regimes_override ?? [] } satisfies EscalaSimulacaoConfig),
       JSON.stringify(equipeSnapshot),
