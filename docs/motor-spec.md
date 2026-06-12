@@ -1,6 +1,7 @@
 # MOTOR v3 — Especificacao Completa
 
-> **Status:** RASCUNHO — em revisao
+> **Status:** RASCUNHO HISTORICO — nao usar como fonte atual de implementacao
+> **Nota 2026-06-12:** este arquivo preserva a pesquisa original do Motor v3. A fonte atual e `docs/motor-regras.md` + `docs/como-funciona.md`. Trechos com grid 30min, `APRENDIZ` como tipo ativo, `trabalha_domingo` em contrato e ausencia de `INTERMITENTE` estao desatualizados.
 > **Principio:** O SISTEMA propoe. O RH aprova. Ninguem monta na mao.
 > **Filosofia:** Ou compila limpo, ou diz POR QUE nao compila. Nunca gera lixo silencioso.
 > **Base legal:** CLT + CCT FecomercioSP x FECOMERCIARIOS (interior/base inorganizada) 2025/2026

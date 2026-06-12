@@ -1,4 +1,4 @@
-import type { Alocacao, RegraHorarioColaborador } from '@shared/index'
+import type { Alocacao, Colaborador, RegraHorarioColaborador } from '@shared/index'
 
 const DAY_LABELS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'] as const
 
@@ -17,9 +17,13 @@ export function tipoFolga(
   regra: RegraHorarioColaborador | undefined,
   alocacoes: Alocacao[],
   colaboradorId?: number,
-): 'FF' | 'FV' | 'DF' | 'F' {
+  colaborador?: Pick<Colaborador, 'tipo_trabalhador'>,
+): 'FF' | 'FV' | 'DF' | 'F' | 'NT' {
   const dow = new Date(data + 'T00:00:00').getDay()
   const dayLabel = DAY_LABELS[dow]
+  const isIntermitenteTipoA = colaborador?.tipo_trabalhador === 'INTERMITENTE'
+    && !regra?.folga_variavel_dia_semana
+  if (isIntermitenteTipoA) return 'NT'
   if (regra?.folga_fixa_dia_semana === dayLabel) return 'FF'
   if (regra?.folga_variavel_dia_semana === dayLabel) {
     const domDate = encontrarDomingoDaSemana(data)

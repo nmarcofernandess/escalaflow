@@ -78,6 +78,8 @@ O fluxo completo: **UI → Bridge TS → Python solver → Validador TS → Banc
 6. Repara violações H1 (max 6 consecutivos)
 7. Retorna grid T/F por posto × semana + cobertura por dia
 
+Intermitente tem uma regra visual própria no preview e na grid oficial: Tipo A mostra **T/NT** (trabalha ou não trabalha por regra/recorrência), e Tipo B mostra **DT/DF/FV/T/NT** quando participa do XOR domingo↔dia variável. NT não é folga fixa nem folga variável; é ausência de convocação.
+
 **Funções-chave:**
 - `gerarCicloFase1()` — orquestra tudo
 - `pickBestFolgaDay()` — heurística de espalhamento demand-aware
@@ -267,6 +269,12 @@ SEG: -6, TER: -5, QUA: -4, QUI: -3, SEX: -2, SAB: -1
 | Pool domingo | Não participa | Participa do ciclo |
 | Dias sem regra | NT (não trabalha) — HARD | NT — HARD |
 | Pré-cálculo | Trivial (mesmos dias toda semana) | Bridge calcula XOR deterministicamente |
+
+**Persistência vs exibição:** `alocacoes.status` continua limitado a `TRABALHO`, `FOLGA` e `INDISPONIVEL`. O sistema não cria um status novo "NAO_TRABALHA", porque isso quebraria solver, validador e export. A UI/export/IA traduzem `FOLGA` de intermitente Tipo A sem regra, ou semana OFF por recorrência, como **NT**. Assim o RH não lê uma não convocação como folga que concorre com as folgas CLT.
+
+**Meta no Resumo:** intermitente não deve aparecer com déficit contra uma meta semanal fixa. No resumo por colaborador, a meta exibida para intermitente é a carga convocada/trabalhada no período. Exemplo: se Hellen trabalhou dois domingos de 6h no mês, Real = 12h e Meta = 12h; os domingos OFF são NT, não déficit.
+
+**Quinzenal só no domingo:** use Tipo A com regra por dia `DOM` + recorrência de semanas `1 ON / 1 OFF` e âncora numa semana de trabalho. Tipo B é para rodízio DOM↔dia variável, não para dizer "ela não trabalha naquela semana".
 
 ### 4.4 Hierarquia de Horários (5 níveis)
 

@@ -1,9 +1,11 @@
-<!-- quando_usar: tipos de contrato, CLT 44h 36h 30h, 6x1, 5x2, estagiario, aprendiz, horas semanais, jornada maxima, compensacao 9h45, perfis de horario -->
+<!-- quando_usar: tipos de contrato, CLT 44h 36h 30h, 6x1, 5x2, estagiario, intermitente, NT, horas semanais, jornada maxima, compensacao 9h45, perfis de horario, aprendiz conhecimento legal nao ativo -->
 # Tipos de Contrato no EscalaFlow
 
 ## Visao geral
 
 O EscalaFlow vem com contratos de fabrica para os dois regimes de escala (5x2 e 6x1), cada um com restricoes legais distintas que o motor aplica automaticamente. CLT 44h e CLT 36h existem nas duas versoes: a padrao (5x2) e a de varejo ("CLT 44h 6x1" / "CLT 36h 6x1"). Tambem e possivel criar contratos customizados escolhendo o regime no formulario.
+
+Tipos ativos de trabalhador no produto atual: `CLT`, `ESTAGIARIO` e `INTERMITENTE`. Jovem Aprendiz e conhecimento legal geral, mas nao e tipo ativo no cadastro atual.
 
 ## CLT 44 horas
 
@@ -70,13 +72,13 @@ Contrato de estagio com restricoes severas. Protegido pela Lei 11.788 (Lei do Es
 - **Regime**: 5X2
 - **Horas semanais**: 20 horas
 - **Jornada maxima diaria**: 4 horas (240 minutos)
-- **Trabalha domingo**: NUNCA
+- **Trabalha domingo**: Sim, se a operacao/TCE permitir; o motor nao bloqueia automaticamente
 - **Hora extra**: NUNCA (proibido por lei)
 - **Compensacao**: Nao se aplica
 
 ### Restricoes especificas
 - Maximo 4 horas por dia, 20 horas por semana
-- NUNCA trabalha domingo
+- Pode trabalhar domingo se permitido pela operacao/TCE, respeitando o limite diario/semanal
 - NUNCA faz hora extra — e proibido por lei, nao e so uma regra de empresa
 - Intervalo de 15 minutos obrigatorio (jornada entre 4h e 6h)
 - Nao tem direito a almoco (jornada de 4h nao exige)
@@ -91,13 +93,13 @@ Estagio com carga horaria maior, mas ainda protegido pela Lei 11.788.
 - **Regime**: 5X2
 - **Horas semanais**: 30 horas
 - **Jornada maxima diaria**: 6 horas (360 minutos)
-- **Trabalha domingo**: NUNCA
+- **Trabalha domingo**: Sim, se a operacao/TCE permitir; o motor nao bloqueia automaticamente
 - **Hora extra**: NUNCA
 - **Compensacao**: Nao se aplica
 
 ### Restricoes especificas
 - Maximo 6 horas por dia, 30 horas por semana
-- NUNCA trabalha domingo
+- Pode trabalhar domingo se permitido pela operacao/TCE, respeitando o limite diario/semanal
 - NUNCA faz hora extra
 - Almoco obrigatorio para jornada acima de 6h (na pratica, se a jornada e exatamente 6h, nao precisa de almoco, mas precisa de intervalo de 15min)
 - Intervalo de 15 minutos obrigatorio para jornada entre 4h e 6h
@@ -105,9 +107,23 @@ Estagio com carga horaria maior, mas ainda protegido pela Lei 11.788.
 ### Exemplo pratico
 - Camila (Estagiario Tarde): Trabalha segunda a sexta das 14:00 as 20:00 (6h/dia = 30h/semana)
 
-## Jovem Aprendiz
+## Intermitente
+
+Contrato convocado sob demanda. No EscalaFlow, o intermitente trabalha apenas nos dias definidos por regra de horario e recorrencia.
+
+- **Horas semanais**: nao usar como meta fixa de tela. A meta exibida no resumo e a carga convocada/trabalhada no periodo.
+- **Dias sem regra**: aparecem como **NT (Nao Trabalha)** na UI/export/IA.
+- **Persistencia**: NT nao e status novo no banco. As alocacoes continuam usando `TRABALHO`, `FOLGA` e `INDISPONIVEL`.
+- **Tipo A**: `folga_variavel = NULL`; trabalha dias fixos/recorrentes. Para domingo quinzenal, use regra no DOM + recorrencia 1 semana ON / 1 OFF.
+- **Tipo B**: `folga_variavel != NULL`; participa do rodizio DOM↔dia variavel.
+
+O DSR do intermitente e tratado na convocacao/pagamento. O produto nao deve criar folga variavel artificial para representar "nao convocado".
+
+## Jovem Aprendiz (conhecimento legal, nao tipo ativo)
 
 Contrato com as restricoes mais severas. Protegido pela CLT (Arts. 404, 405, 432).
+
+O EscalaFlow atual NAO tem `APRENDIZ` como `tipo_trabalhador` ativo. Nao crie contrato/colaborador prometendo suporte operacional a Aprendiz; esta secao fica como referencia legal para evolucao futura.
 
 - **Regime**: Variavel (definido pelo programa de aprendizagem)
 - **Horas semanais**: Variavel (geralmente 20-30h)
@@ -118,29 +134,29 @@ Contrato com as restricoes mais severas. Protegido pela CLT (Arts. 404, 405, 432
 - **Hora extra**: NUNCA
 - **Compensacao**: Nao se aplica
 
-### Restricoes especificas (as mais severas do sistema)
+### Restricoes legais especificas
 - NUNCA trabalha domingo
 - NUNCA trabalha feriado (nenhum, nao so os CCT proibidos)
 - NUNCA trabalha em horario noturno (entre 22:00 e 05:00)
 - NUNCA faz hora extra
 - Jornada maxima de 6 horas por dia
 
-### Exemplo pratico
-- Pedro (Jovem Aprendiz): Trabalha segunda a sexta das 08:00 as 14:00 (6h/dia = 30h/semana), nunca escala para domingo, feriado ou noite
+### Exemplo legal
+- Pedro (Jovem Aprendiz): poderia trabalhar segunda a sexta das 08:00 as 14:00 (6h/dia = 30h/semana), nunca domingo, feriado ou noite. No EscalaFlow atual, isso exigiria suporte futuro de tipo ativo.
 
 ## Tabela comparativa
 
-| Aspecto | CLT 44h | CLT 44h 6x1 | CLT 36h | CLT 36h 6x1 | Estagiario 20h | Estagiario 30h | Aprendiz |
-|---------|---------|-------------|---------|-------------|-----------------|-----------------|----------|
-| Regime | 5X2 | 6X1 | 5X2 | 6X1 | 5X2 | 5X2 | Variavel |
-| Folgas/semana | 2 | 1 | 2 | 1 | 2 | 2 | Variavel |
-| Horas/semana | 44h | 44h | 36h | 36h | 20h | 30h | 20-30h |
-| Max/dia | 9h45 | 9h45 | 9h45 | 9h45 | 4h | 6h | 6h |
-| Domingo | Sim (ciclo) | Sim (ciclo) | Sim (ciclo) | Sim (ciclo) | NUNCA | NUNCA | NUNCA |
-| Feriado | Sim* | Sim* | Sim* | Sim* | Sim* | Sim* | NUNCA |
-| Hora extra | Sim (ate 10h) | Sim (ate 10h) | Sim (ate 10h) | Sim (ate 10h) | NUNCA | NUNCA | NUNCA |
-| Noturno | Sim | Sim | Sim | Sim | Sim | Sim | NUNCA |
-| Compensacao | 9h45 | 9h45 | 9h45 | 9h45 | Nao | Nao | Nao |
+| Aspecto | CLT 44h | CLT 44h 6x1 | CLT 36h | CLT 36h 6x1 | Estagiario 20h | Estagiario 30h | Intermitente | Aprendiz legal |
+|---------|---------|-------------|---------|-------------|-----------------|-----------------|--------------|----------|
+| Regime | 5X2 | 6X1 | 5X2 | 6X1 | 5X2 | 5X2 | Por convocacao | Variavel |
+| Folgas/semana | 2 | 1 | 2 | 1 | 2 | 2 | N/A (NT fora da convocacao) | Variavel |
+| Horas/semana | 44h | 44h | 36h | 36h | 20h | 30h | Convocadas | 20-30h |
+| Max/dia | 9h45 | 9h45 | 9h45 | 9h45 | 4h | 6h | 9h45 | 6h |
+| Domingo | Sim (ciclo) | Sim (ciclo) | Sim (ciclo) | Sim (ciclo) | Se permitido | Se permitido | Se convocado por regra | NUNCA |
+| Feriado | Sim* | Sim* | Sim* | Sim* | Sim* | Sim* | Se convocado e permitido | NUNCA |
+| Hora extra | Sim (ate 10h) | Sim (ate 10h) | Sim (ate 10h) | Sim (ate 10h) | NUNCA | NUNCA | Evitar | NUNCA |
+| Noturno | Sim | Sim | Sim | Sim | Sim | Sim | Sim | NUNCA |
+| Compensacao | 9h45 | 9h45 | 9h45 | 9h45 | Nao | Nao | Nao | Nao |
 
 *Exceto 25/12 e 01/01 que sao proibidos pela CCT FecomercioSP para todos.
 

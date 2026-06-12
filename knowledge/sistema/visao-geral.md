@@ -70,8 +70,8 @@ Uma escala passa por tres estados:
 | CLT | CLT 44h ou 36h | 5X2 | 36-44h | 5 dias + 2 folgas/semana — compensacao 9h45 permitida |
 | CLT | CLT 44h 6x1 ou CLT 36h 6x1 | 6X1 | 36-44h | 6 dias + 1 folga/semana (padrao varejo) — meta semanal com tolerancia |
 | ESTAGIARIO | Estagiario | 5X2 | 20-30h | NUNCA hora extra, max 6h/dia, PODE domingo |
-| INTERMITENTE Tipo A | Intermitente | fixo | variavel | Trabalha dias fixos pela regra. Nao participa do ciclo domingo. |
-| INTERMITENTE Tipo B | Intermitente | rotativo | variavel | XOR domingo/dia variavel. Participa do ciclo domingo. |
+| INTERMITENTE Tipo A | Intermitente | fixo/recorrente | convocacao | Trabalha dias definidos por regra e recorrencia. Dias sem convocacao aparecem como NT. Nao participa do ciclo domingo. |
+| INTERMITENTE Tipo B | Intermitente | rotativo | convocacao | XOR domingo/dia variavel. Participa do ciclo domingo. Use apenas quando ha rodizio real. |
 
 ## O que torna o EscalaFlow diferente
 

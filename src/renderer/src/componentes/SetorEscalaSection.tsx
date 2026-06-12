@@ -35,6 +35,7 @@ import { funcoesService } from '@/servicos/funcoes'
 import { setoresService } from '@/servicos/setores'
 import { tiposContratoService } from '@/servicos/tipos-contrato'
 import { resolveEscalaEquipe } from '@/lib/escala-team'
+import { calcularResumoColaboradores } from '@/lib/escala-resumo-colaboradores'
 import type {
   Setor,
   Escala,
@@ -66,8 +67,6 @@ interface SetorEscalaSectionProps {
   isSelected?: boolean
   onToggleSelection?: () => void
 }
-
-const TOLERANCIA_POR_SEMANA = 15
 
 export function SetorEscalaSection({ setor, escalaResumo, viewMode, searchHighlight, matchedColabs, onExportFunc, onExport, selectionMode, isSelected, onToggleSelection }: SetorEscalaSectionProps) {
   const [expanded, setExpanded] = useState(true)
@@ -314,35 +313,14 @@ function SectionTabs({
 
   // Count collaborators with problems (for badge)
   const problemCount = useMemo(() => {
-    const start = new Date(escalaCompleta.escala.data_inicio + 'T00:00:00')
-    const end = new Date(escalaCompleta.escala.data_fim + 'T00:00:00')
-    const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-    const semanas = Math.max(1, totalDays / 7)
-
-    const minutosReais = new Map<number, number>()
-    for (const a of escalaCompleta.alocacoes) {
-      if (a.status === 'TRABALHO' && a.minutos != null) {
-        minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + a.minutos)
-      }
-    }
-
-    const colabsComViolacao = new Set(
-      escalaCompleta.violacoes
-        .filter((v) => v.colaborador_id != null)
-        .map((v) => v.colaborador_id!),
-    )
-
-    let count = 0
-    for (const colab of equipeEscala.colaboradores) {
-      const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
-      const real = minutosReais.get(colab.id) ?? 0
-      const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
-      const delta = real - metaTotal
-      const toleranciaTotal = Math.ceil(semanas) * TOLERANCIA_POR_SEMANA
-      const belowTolerance = delta < -toleranciaTotal
-      if (belowTolerance || colabsComViolacao.has(colab.id)) count++
-    }
-    return count
+    return calcularResumoColaboradores({
+      colaboradores: equipeEscala.colaboradores,
+      alocacoes: escalaCompleta.alocacoes,
+      violacoes: escalaCompleta.violacoes,
+      tiposContrato,
+      dataInicio: escalaCompleta.escala.data_inicio,
+      dataFim: escalaCompleta.escala.data_fim,
+    }).filter((row) => row.hard.length > 0 || row.soft.length > 0 || !row.ok).length
   }, [equipeEscala.colaboradores, escalaCompleta, tiposContrato])
 
   return (
@@ -416,40 +394,13 @@ interface ResumoTableProps {
 
 function ResumoTable({ colaboradores, alocacoes, violacoes, tiposContrato, dataInicio, dataFim }: ResumoTableProps) {
   const rows = useMemo(() => {
-    const start = new Date(dataInicio + 'T00:00:00')
-    const end = new Date(dataFim + 'T00:00:00')
-    const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-    const semanas = Math.max(1, totalDays / 7)
-
-    // Sum real minutes per collaborator
-    const minutosReais = new Map<number, number>()
-    for (const a of alocacoes) {
-      const minutos = a.minutos_trabalho ?? a.minutos
-      if (a.status === 'TRABALHO' && minutos != null) {
-        minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + minutos)
-      }
-    }
-
-    // Group violations per collaborator
-    const violacoesPorColab = new Map<number, typeof violacoes>()
-    for (const v of violacoes) {
-      if (v.colaborador_id != null) {
-        const arr = violacoesPorColab.get(v.colaborador_id) ?? []
-        arr.push(v)
-        violacoesPorColab.set(v.colaborador_id, arr)
-      }
-    }
-
-    const toleranciaTotal = Math.ceil(semanas) * TOLERANCIA_POR_SEMANA
-
-    return colaboradores.map((colab) => {
-      const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
-      const real = minutosReais.get(colab.id) ?? 0
-      const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
-      const delta = real - metaTotal
-      const ok = delta >= -toleranciaTotal
-      const colabViolacoes = violacoesPorColab.get(colab.id) ?? []
-      return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-', violacoes: colabViolacoes }
+    return calcularResumoColaboradores({
+      colaboradores,
+      alocacoes,
+      violacoes,
+      tiposContrato,
+      dataInicio,
+      dataFim,
     })
   }, [colaboradores, alocacoes, violacoes, tiposContrato, dataInicio, dataFim])
 

@@ -61,6 +61,14 @@ function mode(numbers: number[]): number | null {
   return best
 }
 
+function isIntermitenteTipoA(
+  colab: Colaborador | null,
+  regra: RegraHorarioColaborador | null | undefined,
+): boolean {
+  return (colab?.tipo_trabalhador ?? 'CLT') === 'INTERMITENTE'
+    && !regra?.folga_variavel_dia_semana
+}
+
 // ============================================================================
 // Function 1: escalaParaCicloGrid
 // ============================================================================
@@ -188,6 +196,11 @@ export function escalaParaCicloGrid(
     const colabId = row.titular.id
     const regra = regrasMap.get(colabId)
 
+    if (isIntermitenteTipoA(row.titular, regra)) {
+      inferredFolgas.set(colabId, { fixa: null, variavel: null })
+      continue
+    }
+
     // Case 1: both defined explicitly
     if (regra?.folga_fixa_dia_semana && regra?.folga_variavel_dia_semana) {
       inferredFolgas.set(colabId, {
@@ -250,6 +263,8 @@ export function escalaParaCicloGrid(
       return dia === 'DOM' ? 'DT' : 'T'
     }
     if (alloc.status === 'INDISPONIVEL') return 'I'
+
+    if (isIntermitenteTipoA(colab, regrasMap.get(colab.id))) return 'NT'
 
     // Folga — domingo: FF se folga_fixa=DOM, senao DF (ciclo)
     if (dia === 'DOM') {

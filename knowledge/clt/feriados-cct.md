@@ -1,4 +1,4 @@
-<!-- quando_usar: feriado CCT FecomercioSP, Natal Ano Novo proibido trabalhar, aprendiz feriado, Black Friday demanda excepcional, Carnaval, domingos CCT -->
+<!-- quando_usar: feriado CCT FecomercioSP, Natal Ano Novo proibido trabalhar, Black Friday demanda excepcional, Carnaval, domingos CCT, aprendiz conhecimento legal nao ativo -->
 # Feriados e CCT FecomercioSP no EscalaFlow
 
 ## CCT FecomercioSP — O que e
@@ -12,7 +12,7 @@ A CCT determina que em dois dias do ano e ABSOLUTAMENTE PROIBIDO trabalhar no co
 ### 25 de Dezembro (Natal)
 - Ninguem trabalha. Sem excecao.
 - O motor trata como HARD constraint: qualquer colaborador escalado nesse dia e violacao grave.
-- Aplica-se a TODOS os tipos de trabalhador (CLT, estagiario, aprendiz).
+- Aplica-se a TODOS os tipos ativos de trabalhador (CLT, estagiario, intermitente).
 
 ### 01 de Janeiro (Ano Novo)
 - Mesma regra do Natal.
@@ -56,11 +56,13 @@ A CLT padrao exige almoco minimo de 1 hora para jornadas acima de 6 horas (Art. 
 ### Por que importa?
 Com almoco de 30 minutos ao inves de 1 hora, o colaborador ganha 30 minutos de jornada util. Isso pode ser a diferenca entre uma escala viavel e INFEASIBLE, especialmente em setores com poucos colaboradores.
 
-## Aprendiz e feriados
+## Aprendiz e feriados (conhecimento legal, nao tipo ativo)
 
 O Jovem Aprendiz tem tratamento especial: NUNCA trabalha em NENHUM feriado, independente da CCT autorizar. Isso vale para todos os feriados (nacionais, estaduais, municipais), nao apenas os CCT proibidos.
 
 Base legal: CLT Arts. 404 e 432.
+
+No produto atual, `APRENDIZ` nao e tipo ativo de trabalhador. Nao crie contrato/colaborador como Aprendiz; use este trecho apenas como referencia legal se o produto vier a suportar esse tipo no futuro.
 
 ## Trabalho em feriado e remuneracao
 
@@ -80,13 +82,13 @@ No EscalaFlow, o motor implementa o ciclo de domingos:
 - Homens: Trabalha ate 2 domingos consecutivos, folga no 3o (ciclo 2:1)
 - Mulheres: Trabalha 1 domingo, folga no proximo (ciclo 1:1, conforme Art. 386 CLT)
 
-O ciclo e personalizavel por colaborador. Se o RH definir que "Maria trabalha 1 domingo e folga 2" (ciclo 1:2), o motor respeita.
+O ciclo de domingo e calculado automaticamente pelo motor. O RH nao preenche mais `domingo_ciclo_*`; para intermitente fixo/quinzenal, use regra por dia (`DOM`) + recorrencia de semanas.
 
 ## Feriados que caem no domingo
 
 Quando um feriado cai no domingo:
 - Para CLT: o dia e tratado como feriado (nao como domingo). As regras de feriado prevalecem.
-- Para Aprendiz: NUNCA trabalha (feriado + domingo = duplamente proibido).
+- Aprendiz: regra legal geral de nunca trabalhar, mas o tipo nao e ativo no produto atual.
 - O ciclo de domingos pode ser afetado — se o domingo e feriado e a pessoa nao trabalha, ele nao conta como "domingo trabalhado" no ciclo.
 
 ## Pontos de atencao praticos

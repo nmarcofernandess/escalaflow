@@ -40,6 +40,16 @@ simulacaoPreview.resultado (grid T/F + cobertura)
 
 **Consequencia:** `null` no override faz o TS decidir. Limpar overrides faz voltar pro banco. Ambos sao validos para contextos diferentes.
 
+### 2.1 Intermitente Tipo A, NT e a mentira que nao pode voltar
+
+Intermitente Tipo A (`folga_variavel = null`) nao participa do ciclo de folgas. Ele trabalha apenas nos dias com regra ativa e nas semanas ON da recorrencia. Todo resto aparece como **NT (Nao Trabalha)**.
+
+- NT nao e um quarto status no banco. `alocacoes.status` continua `TRABALHO | FOLGA | INDISPONIVEL`.
+- NT nao e FF, FV nem DF. Nao inferir folga fixa/variavel para Tipo A.
+- NT nao concorre com folgas dos CLTs no flow de calculo.
+- Resumo por colaborador nao cobra meta semanal fixa de intermitente; usa a carga convocada/trabalhada.
+- Domingo quinzenal fixo = regra DOM + recorrencia 1/1. Tipo B e so para XOR domingo↔dia variavel.
+
 ---
 
 ## 3. Voltar ao automatico (reset ↺)

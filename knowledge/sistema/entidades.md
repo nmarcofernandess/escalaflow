@@ -56,10 +56,14 @@ Cada colaborador pode ter regras personalizadas (tabela colaborador_regra_horari
 
 Quando `tipo_trabalhador = 'INTERMITENTE'`, o colaborador trabalha APENAS nos dias que tem regra de horario ativa (regra por dia da semana). Dias sem regra = NT (Nao Trabalha).
 
-- **Tipo A (fixo):** `folga_variavel = NULL`. Trabalha os mesmos dias toda semana. Nao participa do rodizio de domingo. Exemplo: Maria trabalha toda terca e quinta.
+- **Tipo A (fixo):** `folga_variavel = NULL`. Trabalha nos dias definidos por regra e recorrencia. Nao participa do rodizio de domingo. Exemplo: Maria trabalha toda terca e quinta; Hellen trabalha domingo sim, domingo nao via recorrencia 1/1.
 - **Tipo B (rotativo):** `folga_variavel != NULL`. Participa do ciclo de domingo com os CLTs. Quando trabalha domingo, folga no dia variavel; quando nao trabalha domingo, trabalha no dia variavel (XOR). Exemplo: Clara pode trabalhar segunda e domingo, mas nao os dois na mesma semana.
 
 `folga_fixa` e sempre NULL pra intermitente (dias sem regra ja cumprem essa funcao).
+
+NT e semantica de exibicao: o banco segue com status `TRABALHO`, `FOLGA` e `INDISPONIVEL`. Quando um intermitente Tipo A nao tem regra ativa naquele dia, ou esta em semana OFF por recorrencia, a UI/export/IA exibem **NT (Nao Trabalha)**. Nao chame isso de folga fixa, folga variavel ou falta.
+
+No resumo por colaborador, intermitente nao deve aparecer devendo meta semanal fixa. A meta exibida e a carga convocada/trabalhada no periodo.
 
 Excecoes por data (tabela colaborador_regra_horario_excecao_data):
 - Override pontual: "No dia 15/03, Cleunice so pode de 08:00 a 12:00"
@@ -73,9 +77,9 @@ Template que define as restricoes legais de um grupo de colaboradores.
 Contratos padroes do sistema:
 - **CLT 44h**: Regime 5X2, 44 horas semanais, max 9h45/dia (compensacao), trabalha domingo
 - **CLT 36h**: Regime 5X2, 36 horas semanais, max 9h45/dia (compensacao), trabalha domingo
-- **Estagiario Manha**: Regime 5X2, 20 horas semanais, max 4h/dia, NUNCA domingo, NUNCA hora extra
-- **Estagiario Tarde/Noite**: Regime 5X2, 30 horas semanais, max 6h/dia, NUNCA domingo, NUNCA hora extra
-- **Jovem Aprendiz**: NUNCA domingo, NUNCA feriado, NUNCA noturno (22h-5h), NUNCA hora extra
+- **Estagiario**: Regime 5X2, 20-30 horas semanais, max 6h/dia, NUNCA hora extra. Domingo depende da regra operacional/TCE; o motor atual nao bloqueia automaticamente.
+- **Intermitente**: Regime operacional 6X1, 0h fixas; convocacao por regra/recorrencia. Fora da convocacao aparece como NT.
+- **Jovem Aprendiz**: conhecimento legal, mas nao e tipo ativo no cadastro atual do EscalaFlow.
 
 Cada tipo de contrato pode ter perfis de horario (tabela contrato_perfis_horario) que definem janelas padrao de entrada e saida.
 
@@ -164,7 +168,7 @@ Feriados CCT proibidos: 25/12 (Natal) e 01/01 (Ano Novo) — nesses dias e PROIB
 
 35 regras catalogadas que o motor aplica automaticamente:
 
-- **16 regras CLT**: Legislacao trabalhista obrigatoria (interjornada 11h, max 10h/dia, max 6 dias consecutivos, almoco, estagiarios, aprendizes, feriados CCT)
+- **Regras CLT/CCT**: Legislacao trabalhista obrigatoria (interjornada 11h, max 10h/dia, max 6 dias consecutivos, almoco, estagiarios, intermitentes, feriados CCT)
 - **7 regras SOFT**: Otimizacao de qualidade (deficit de cobertura, turno preferido, consistencia de horario, spread justo, ciclo de domingo)
 - **12 regras ANTIPATTERN**: Boas praticas (clopening, junior sozinho, almoco simultaneo, hora extra evitavel, ioio de horario, etc.)
 

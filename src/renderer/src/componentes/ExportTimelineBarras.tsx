@@ -45,6 +45,7 @@ const FOLGA_LABELS: Record<string, string> = {
   FV: 'Folga Variavel',
   DF: 'Folga (dom ciclo)',
   F: 'Folga',
+  NT: 'Nao trabalha',
 }
 
 /** Build a funcaoId -> apelido map */
@@ -570,7 +571,7 @@ export function ExportTimelineBarras({
 
               if (!alloc || alloc.status === 'FOLGA') {
                 const regra = regrasMap?.get(colab.id)
-                const ft = tipoFolga(data, regra, dayAlocs, colab.id)
+                const ft = tipoFolga(data, regra, alocacoes, colab.id, colab)
                 return <FolgaRow key={colab.id} colab={colab} folgaType={ft} posto={posto} />
               }
 

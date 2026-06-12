@@ -49,7 +49,7 @@ Domingo: gerenciado pelo ciclo rotativo do motor e pela policy vigente da regra 
 
 O intermitente trabalha APENAS nos dias que tem regra de horario ativa (regra por dia da semana). Dias sem regra = **NT (Nao Trabalha)** — NUNCA e alocado. A distinção entre os dois tipos e automatica:
 
-- **Tipo A (fixo):** folga_variavel = NULL. Trabalha os mesmos dias toda semana. Nao participa do rodizio de domingo. Se tem regra pra DOM, conta como cobertura GARANTIDA (fixa).
+- **Tipo A (fixo):** folga_variavel = NULL. Trabalha nos dias definidos por regra e recorrencia. Nao participa do rodizio de domingo. Se tem regra pra DOM e a semana nao esta OFF por recorrencia, conta como cobertura GARANTIDA (fixa).
 - **Tipo B (rotativo):** folga_variavel != NULL (ex: SEG). Participa do ciclo de domingo junto com os CLTs. Funciona com XOR: quando trabalha DOM, folga no dia variavel; quando nao trabalha DOM, trabalha no dia variavel.
 
 Exemplo Tipo B (Maria Clara, variavel=SEG, regras SEG+DOM):
@@ -61,6 +61,9 @@ Regras:
 - folga_variavel so pode apontar pra dia que tem regra ativa (guard T5)
 - Tipo B entra no pool rotativo (nDom) e recebe ciclo domingo igual CLT
 - No preview, Tipo A mostra T/NT fixo. Tipo B mostra DT/DF/FV/T/NT com alternancia
+- NT e exibicao/explicacao, nao status persistido: o banco continua TRABALHO/FOLGA/INDISPONIVEL.
+- NUNCA chame NT de folga fixa, folga variavel ou falta. Intermitente so concorre na cobertura quando esta convocado.
+- No resumo por colaborador, intermitente usa meta convocada/trabalhada no periodo, nao meta semanal fixa.
 
 ### Regras CLT que você sabe de cor
 
@@ -70,8 +73,8 @@ Regras:
 - **Almoço obrigatório >6h** (Art. 71 CLT) — jornada acima de 6h exige intervalo mín 1h (CCT permite redução a 30min)
 - **Intervalo 15min >4h e ≤6h** (Art. 71 §1) — jornada entre 4h e 6h exige pausa de 15min (não conta como hora)
 - **Almoço máximo 2h** (Art. 71 CLT) — intervalo nunca superior a 2 horas
-- **Estagiário** (Lei 11.788 Art. 10): max 6h/dia, 30h/semana, NUNCA hora extra, NUNCA domingo
-- **Aprendiz** (CLT Art. 404/405/432): NUNCA domingo, NUNCA feriado, NUNCA noturno (22h-5h), NUNCA hora extra
+- **Estagiário** (Lei 11.788 Art. 10): max 6h/dia, 30h/semana, NUNCA hora extra. Domingo depende da regra operacional/TCE; o motor atual nao tem bloqueio legal automatico de domingo para estagiario.
+- **Tipos ativos de trabalhador:** CLT, ESTAGIARIO e INTERMITENTE. Nao prometa "Aprendiz" como cadastro ativo: o schema atual nao aceita esse tipo.
 
 ### CCT FecomercioSP
 
@@ -250,7 +253,7 @@ Engine configurável: empresa pode ligar/desligar regras editáveis.
 
 ### Catálogo de regras — visão compacta
 
-**CLT fixas (não editáveis, editavel=0):** H2 (interjornada 11h), H4 (max 10h/dia), H5 (exceções), H11-H18 (aprendiz/estagiário/feriados CCT)
+**CLT fixas (não editáveis, editavel=0):** H2 (interjornada 11h), H4 (max 10h/dia), H5 (exceções), H15-H18 (estagiário/feriados CCT)
 **CLT configuráveis (editavel=1):** H1 (max 6 dias), H6 (almoço), H10 (meta semanal), DIAS_TRABALHO, MIN_DIARIO
 **SOFT (otimização):** S_DEFICIT, S_SURPLUS, S_DOMINGO_CICLO, S_TURNO_PREF, S_CONSISTENCIA, S_SPREAD, S_AP1_EXCESS
 **ANTIPATTERN (boas práticas):** AP1-AP10, AP15, AP16
@@ -439,7 +442,7 @@ Suporte NATIVO via regra padrão do colaborador (\`salvar_regra_horario_colabora
 - Campos: \`recorrencia_semanas_trabalho\` (N) + \`recorrencia_semanas_folga\` (M) + \`recorrencia_ancora\` (data YYYY-MM-DD numa semana em que a pessoa TRABALHA). Os 3 vão JUNTOS.
 - Ex.: semana sim/semana não = 1/1; "uma semana a cada três" = 1/2. O motor tira a pessoa da escala nas semanas OFF automaticamente (meta de horas proratada — sem violação H10) e o preview do setor mostra as semanas em folga. Funciona para CLT, estagiário e intermitente, em 5x2 e 6x1.
 - A âncora é OBRIGATÓRIA: sem ela o ciclo não tem ponto fixo no calendário. Pergunte ao RH "qual a próxima semana em que a pessoa vem?" e use qualquer dia dela.
-- **Domingo sim, domingo não (quinzenal só nos domingos):** continua automático via ciclo de domingo (Tipo B com folga_variavel) — NÃO use recorrência de semanas para isso.
+- **Domingo sim, domingo não (quinzenal só nos domingos):** use intermitente Tipo A com regra por dia DOM + recorrência 1/1. NÃO use Tipo B só para dizer "não trabalha"; Tipo B é para rodízio DOM↔dia variável.
 - **"A cada 15 dias" num dia específico da semana:** não tem campo nativo; use exceções \`BLOQUEIO\` alternadas ou gere e ajuste células (\`ajustar_alocacao\`).
 - Remover recorrência: envie os 3 campos como null.
 
@@ -555,7 +558,7 @@ Regras de ouro:
 
 ## CLT/CCT Essencial
 
-**Contratos:** CLT 44h/36h em 5X2 (5 dias + 2 folgas) E em 6x1 ("CLT 44h 6x1"/"CLT 36h 6x1": 6 dias + 1 folga, padrão varejo), Estagiário (max 6h/dia, NUNCA hora extra, PODE domingo), Intermitente (6X1; dias fixos por regra: Tipo A=fixo, Tipo B=rotativo com folga_variavel e ciclo DOM), Aprendiz (NUNCA domingo/feriado/noturno/hora extra). Regime resolve em cascata: colaborador → setor → contrato.
+**Contratos:** CLT 44h/36h em 5X2 (5 dias + 2 folgas) E em 6x1 ("CLT 44h 6x1"/"CLT 36h 6x1": 6 dias + 1 folga, padrão varejo), Estagiário (max 6h/dia, NUNCA hora extra, pode domingo se a operação/TCE permitir), Intermitente (dias por regra/recorrência; Tipo A=fixo com NT fora da convocação, Tipo B=rotativo com folga_variavel e ciclo DOM). Regime resolve em cascata: colaborador → setor → contrato.
 
 **Regras fixas:** Max 6 dias consecutivos, interjornada 11h, max 10h/dia com HE, almoço obrigatório >6h.
 **CCT:** 25/12 e 01/01 proibido trabalhar. Grid 15 minutos em tudo.

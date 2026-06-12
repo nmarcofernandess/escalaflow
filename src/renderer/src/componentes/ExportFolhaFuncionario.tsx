@@ -163,12 +163,14 @@ function WeekTable({
   semanaLabel,
   dates,
   alocacoes,
+  colaborador,
   regra,
   horasSemanaisContrato,
 }: {
   semanaLabel: string
   dates: string[]
   alocacoes: Alocacao[]
+  colaborador: Colaborador
   regra?: RegraHorarioColaborador
   horasSemanaisContrato: number
 }) {
@@ -303,7 +305,7 @@ function WeekTable({
             }
 
             // FOLGA (or missing allocation = treat as folga)
-            const folga = tipoFolga(dt, regra, alocacoes)
+            const folga = tipoFolga(dt, regra, alocacoes, colaborador.id, colaborador)
             const folgaLabel =
               folga === 'FF'
                 ? 'Folga Fixa'
@@ -311,7 +313,9 @@ function WeekTable({
                   ? 'Folga Variavel'
                   : folga === 'DF'
                     ? 'Folga (dom ciclo)'
-                    : 'Folga'
+                    : folga === 'NT'
+                      ? 'Nao trabalha'
+                      : 'Folga'
 
             return (
               <tr key={dt}>
@@ -480,6 +484,7 @@ export function ExportFolhaFuncionario({
           semanaLabel={formatWeekLabel(week.startDate, week.endDate)}
           dates={week.dates}
           alocacoes={alocacoes}
+          colaborador={colaborador}
           regra={regra}
           horasSemanaisContrato={tipoContrato.horas_semanais}
         />
@@ -515,6 +520,9 @@ export function ExportFolhaFuncionario({
           </span>
           <span>
             <strong>DF</strong> Dom folga ciclo
+          </span>
+          <span>
+            <strong>NT</strong> Nao trabalha
           </span>
         </div>
         <div>

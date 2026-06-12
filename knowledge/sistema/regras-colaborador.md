@@ -1,4 +1,4 @@
-<!-- quando_usar: regras individuais colaborador, janela horario, folga fixa, ciclo domingos, excecao por data, upsert_regra_excecao, hierarquia precedencia, inicio fim -->
+<!-- quando_usar: regras individuais colaborador, janela horario, folga fixa, recorrencia semanas, intermitente NT, excecao por data, upsert_regra_excecao, hierarquia precedencia, inicio fim -->
 # Regras Individuais de Colaborador no EscalaFlow
 
 ## O que são regras individuais
@@ -9,7 +9,7 @@ Exemplos de uso:
 - "A Cleunice só pode trabalhar de manhã"
 - "O João tem acordo de folga fixa toda quarta"
 - "A Maria entra às 09:00 por questão médica"
-- "O Pedro trabalha domingos em ciclo 2:1 (2 trabalha, 1 folga)"
+- "A Hellen trabalha somente domingo, semana sim semana nao"
 
 ## Hierarquia de precedência (mais específico ganha)
 
@@ -23,20 +23,31 @@ Exemplo: Se o contrato padrão é CLT 44h (08:00–18:00) e a Maria tem regra in
 
 ## Regra Individual de Horário (recorrente)
 
-Configura horário fixo de entrada/saída, ciclo de domingo e folga fixa. Use `salvar_regra_horario_colaborador`.
+Configura horario fixo de entrada/saida, regra por dia, recorrencia de semanas e folga fixa. Use `salvar_regra_horario_colaborador`.
 
 ### Tool: `salvar_regra_horario_colaborador`
 
 **Campos disponíveis:**
 - `colaborador_id` — obrigatório
+- `dia_semana_regra` — dia especifico da regra: SEG..DOM. Se omitido/null, regra padrao.
 - `inicio` — horário fixo de entrada (HH:MM)
 - `fim` — horário máximo de saída (HH:MM)
-- `domingo_ciclo_trabalho` — quantos domingos seguidos trabalha (0–10)
-- `domingo_ciclo_folga` — quantos domingos seguidos folga (0–10)
 - `folga_fixa_dia_semana` — folga fixa semanal: SEG, TER, QUA, QUI, SEX, SAB, DOM
+- `folga_variavel_dia_semana` — dia condicional do XOR com domingo, apenas SEG..SAB; use so para rodizio real
+- `recorrencia_semanas_trabalho` — semanas ON do ciclo
+- `recorrencia_semanas_folga` — semanas OFF do ciclo
+- `recorrencia_ancora` — data em uma semana ON
 - `preferencia_turno_soft` — preferência soft de turno: MANHA, TARDE, NOITE
 - `perfil_horario_id` — vincula a um perfil de horário pré-definido do contrato
 - `ativo` — ativa/desativa a regra
+
+### Intermitente e NT
+
+Para intermitente, regras por dia definem convocacao. Dia sem regra ativa = **NT (Nao Trabalha)** na UI/export/IA. NT nao e folga fixa, folga variavel nem falta; e ausencia de convocacao.
+
+- Tipo A: `folga_variavel_dia_semana = null`. Trabalha dias fixos/recorrentes. Para "domingo sim, domingo nao", use regra `DOM` + recorrencia 1/1.
+- Tipo B: `folga_variavel_dia_semana != null`. Use apenas quando o intermitente participa do XOR domingo↔dia variavel.
+- `folga_fixa_dia_semana` deve ficar null para intermitente.
 
 **Exemplos:**
 
@@ -50,12 +61,17 @@ salvar_regra_horario_colaborador({
 })
 ```
 
-Funcionário com ciclo de domingo 2:1 (trabalha 2 domingos, folga 1):
+Intermitente que trabalha somente domingo, semana sim semana nao:
 ```
 salvar_regra_horario_colaborador({
   colaborador_id: 8,
-  domingo_ciclo_trabalho: 2,
-  domingo_ciclo_folga: 1
+  dia_semana_regra: "DOM",
+  inicio: "07:00",
+  fim: "12:45",
+  recorrencia_semanas_trabalho: 1,
+  recorrencia_semanas_folga: 1,
+  recorrencia_ancora: "2026-06-15",
+  folga_variavel_dia_semana: null
 })
 ```
 
@@ -91,18 +107,13 @@ upsert_regra_excecao_data({
 
 ---
 
-## Ciclo de Domingos
+## Domingos
 
-O sistema gerencia automaticamente o ciclo de trabalho nos domingos. Os parâmetros são:
-- `domingo_ciclo_trabalho`: número de domingos consecutivos que o colaborador trabalha
-- `domingo_ciclo_folga`: número de domingos consecutivos que o colaborador folga
+O ciclo de domingos nao e mais configurado por campos `domingo_ciclo_*` na regra do colaborador. A bridge calcula o ciclo automaticamente a partir do setor, do regime, do sexo e da disponibilidade real do periodo.
 
-**Padrões comuns:**
-- CLT geral: 2:1 (2 trabalha, 1 folga)
-- Proteção legal para alguns grupos: 1:1 (trabalha 1 domingo, folga o próximo)
-- Exceção total: 0:0 (não configurado, motor decide livremente)
+Para CLT, o rodizio dominical e decidido pelo motor. Para intermitente Tipo A, domingo so entra quando existe regra `dia_semana_regra = DOM` e a recorrencia esta em semana ON. Para intermitente Tipo B, `folga_variavel_dia_semana` ativa o XOR domingo↔dia variavel e coloca a pessoa no pool rotativo.
 
-A CCT FecomercioSP garante que nenhum colaborador trabalhe mais de 2 domingos seguidos sem folga dominical.
+A CCT FecomercioSP garante que nenhum colaborador trabalhe mais de 2 domingos seguidos sem folga dominical. Mulheres seguem protecao mais restritiva no motor atual.
 
 ---
 
@@ -133,6 +144,7 @@ Retorna a regra individual ativa (se existir) e o perfil de horário vinculado (
 |----------|-------------|
 | "A Maria só pode de manhã" (recorrente) | `salvar_regra_horario_colaborador` com `fim: "14:00"` |
 | "O João folga toda quarta" (recorrente) | `salvar_regra_horario_colaborador` com `folga_fixa_dia_semana` |
-| "Ciclo de domingos do Pedro é 2:1" | `salvar_regra_horario_colaborador` com `domingo_ciclo_*` |
+| "Hellen trabalha domingo sim, domingo nao" | `salvar_regra_horario_colaborador` com `dia_semana_regra: "DOM"` + recorrencia 1/1 |
+| "Intermitente alterna domingo com segunda" | `salvar_regra_horario_colaborador` com regra DOM + regra SEG + `folga_variavel_dia_semana: "SEG"` |
 | "Na quinta-feira específica ela entra às 10h" (pontual) | `upsert_regra_excecao_data` com `data` |
 | "O Carlos está de férias na semana do dia 10" | `criar` excecao com `tipo: FERIAS` |

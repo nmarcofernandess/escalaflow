@@ -1149,11 +1149,11 @@
       "tipo": "regra"
     },
     {
-      "nome": "domingo_ciclo_folga",
+      "nome": "recorrencia_semanas_folga",
       "tipo": "regra"
     },
     {
-      "nome": "domingo_ciclo_trabalho",
+      "nome": "recorrencia_semanas_trabalho",
       "tipo": "regra"
     },
     {
@@ -2269,8 +2269,8 @@
     {
       "from_nome": "Estagiario",
       "to_nome": "Domingo",
-      "tipo_relacao": "proibe",
-      "peso": 1
+      "tipo_relacao": "permite_condicionado",
+      "peso": 0.7
     },
     {
       "from_nome": "Estagiario",
@@ -2299,8 +2299,8 @@
     {
       "from_nome": "Estagiario Manha",
       "to_nome": "Domingo",
-      "tipo_relacao": "proibe",
-      "peso": 1
+      "tipo_relacao": "permite_condicionado",
+      "peso": 0.7
     },
     {
       "from_nome": "Estagiario Manha",
@@ -2311,8 +2311,8 @@
     {
       "from_nome": "Estagiario Tarde/Noite",
       "to_nome": "Domingo",
-      "tipo_relacao": "proibe",
-      "peso": 1
+      "tipo_relacao": "permite_condicionado",
+      "peso": 0.7
     },
     {
       "from_nome": "Estagiario Tarde/Noite",
@@ -2341,8 +2341,8 @@
     {
       "from_nome": "Estagiarios",
       "to_nome": "Trabalho aos domingos",
-      "tipo_relacao": "proibe",
-      "peso": 1
+      "tipo_relacao": "permite_condicionado",
+      "peso": 0.7
     },
     {
       "from_nome": "Estagiário",
@@ -3431,14 +3431,14 @@
       "peso": 1
     },
     {
-      "from_nome": "domingo_ciclo_folga",
-      "to_nome": "ciclo_trabalho_domingos",
+      "from_nome": "recorrencia_semanas_folga",
+      "to_nome": "Recorrência de semanas",
       "tipo_relacao": "compoe",
       "peso": 1
     },
     {
-      "from_nome": "domingo_ciclo_trabalho",
-      "to_nome": "ciclo_trabalho_domingos",
+      "from_nome": "recorrencia_semanas_trabalho",
+      "to_nome": "Recorrência de semanas",
       "tipo_relacao": "compoe",
       "peso": 1
     },
@@ -3516,9 +3516,9 @@
     },
     {
       "from_nome": "Intermitente quinzenal",
-      "to_nome": "Ciclo de domingo",
+      "to_nome": "Recorrência de semanas",
       "tipo_relacao": "depende_de",
-      "peso": 0.8
+      "peso": 0.9
     },
     {
       "from_nome": "Recorrência de semanas",

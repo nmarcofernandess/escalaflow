@@ -532,7 +532,7 @@ export const IA_TOOLS = [
     },
     {
         name: 'salvar_regra_horario_colaborador',
-        description: 'Cria/atualiza regra de horário individual. Pode ser padrão (dia_semana_regra omitido = todos os dias) ou específica de um dia (ex: dia_semana_regra="QUA" para só quartas). Campos de folga fixa/variável só se aplicam à regra padrão. Para INTERMITENTE: regras por dia definem quais dias trabalha (sem regra = NT/não trabalha). Se definir folga_variavel na regra padrão, intermitente vira tipo B (rotativo com ciclo domingo).',
+        description: 'Cria/atualiza regra de horário individual. Pode ser padrão (dia_semana_regra omitido = todos os dias) ou específica de um dia (ex: dia_semana_regra="QUA" para só quartas). Campos de folga fixa/variável só se aplicam à regra padrão. Para INTERMITENTE: regras por dia definem quais dias trabalha (sem regra = NT/não trabalha). Domingo quinzenal fixo é Tipo A: regra DOM + recorrência 1/1. Só defina folga_variavel quando quiser Tipo B, isto é, rodízio real DOM↔dia variável.',
         parameters: toJsonSchema(SalvarRegraHorarioColaboradorSchema)
     },
     {

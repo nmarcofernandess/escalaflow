@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo } from 'react'
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   CalendarDays,
@@ -39,6 +39,7 @@ import { formatarData, formatarDataHora } from '@/lib/formatadores'
 import { buildStandaloneHtml } from '@/lib/export-standalone-html'
 import { gerarCSVAlocacoes, gerarCSVViolacoes, gerarCSVComparacaoDemanda } from '@/lib/gerarCSV'
 import { resolveEscalaEquipe } from '@/lib/escala-team'
+import { calcularResumoColaboradores } from '@/lib/escala-resumo-colaboradores'
 import { useAppDataStore } from '@/store/appDataStore'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { escalasService } from '@/servicos/escalas'
@@ -46,6 +47,7 @@ import { exportarService } from '@/servicos/exportar'
 import type {
   EscalaCompletaV3,
   Colaborador,
+  TipoContrato,
   Setor,
   Funcao,
   RegraHorarioColaborador,
@@ -65,9 +67,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { formatarMinutos, REGRAS_TEXTO } from '@/lib/formatadores'
 import { textoResumoRelaxacoes } from '@shared/resumo-user'
 
-/** Margem por arredondamento de grid (15min/slot × semanas) */
-const TOLERANCIA_POR_SEMANA = 15
-
 function ResumoTable({
   colaboradores,
   alocacoes,
@@ -79,7 +78,7 @@ function ResumoTable({
   colaboradores: Colaborador[]
   alocacoes: EscalaCompletaV3['alocacoes']
   violacoes: EscalaCompletaV3['violacoes']
-  tiposContrato: { id: number; nome: string; horas_semanais: number }[]
+  tiposContrato: Pick<TipoContrato, 'id' | 'nome' | 'horas_semanais' | 'tipo_trabalhador'>[]
   dataInicio: string
   dataFim: string
 }) {
@@ -95,40 +94,13 @@ function ResumoTable({
   }
 
   const rows = useMemo(() => {
-    const start = new Date(dataInicio + 'T00:00:00')
-    const end = new Date(dataFim + 'T00:00:00')
-    const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-    const semanas = Math.max(1, totalDays / 7)
-
-    const minutosReais = new Map<number, number>()
-    for (const a of alocacoes) {
-      const minutos = a.minutos_trabalho ?? a.minutos
-      if (a.status === 'TRABALHO' && minutos != null) {
-        minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + minutos)
-      }
-    }
-
-    const violacoesPorColab = new Map<number, typeof violacoes>()
-    for (const v of violacoes) {
-      if (v.colaborador_id != null) {
-        const arr = violacoesPorColab.get(v.colaborador_id) ?? []
-        arr.push(v)
-        violacoesPorColab.set(v.colaborador_id, arr)
-      }
-    }
-
-    const toleranciaTotal = Math.ceil(semanas) * TOLERANCIA_POR_SEMANA
-
-    return colaboradores.map((colab) => {
-      const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
-      const real = minutosReais.get(colab.id) ?? 0
-      const metaTotal = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
-      const delta = real - metaTotal
-      const ok = delta >= -toleranciaTotal
-      const colabViolacoes = violacoesPorColab.get(colab.id) ?? []
-      const hard = colabViolacoes.filter((v) => v.severidade === 'HARD')
-      const soft = colabViolacoes.filter((v) => v.severidade !== 'HARD')
-      return { colab, real, meta: metaTotal, delta, ok, contratoNome: tc?.nome ?? '-', hard, soft }
+    return calcularResumoColaboradores({
+      colaboradores,
+      alocacoes,
+      violacoes,
+      tiposContrato,
+      dataInicio,
+      dataFim,
     })
   }, [colaboradores, alocacoes, violacoes, tiposContrato, dataInicio, dataFim])
 
@@ -150,9 +122,8 @@ function ResumoTable({
             const hasAvisos = hard.length > 0 || soft.length > 0 || !ok
             const isExpanded = expandedIds.has(colab.id)
             return (
-              <>
+              <Fragment key={colab.id}>
                 <TableRow
-                  key={colab.id}
                   className={cn(hasAvisos && 'cursor-pointer hover:bg-muted/50')}
                   onClick={hasAvisos ? () => toggleExpand(colab.id) : undefined}
                 >
@@ -200,7 +171,7 @@ function ResumoTable({
                   </TableCell>
                 </TableRow>
                 {isExpanded && (
-                  <TableRow key={`${colab.id}-detail`} className="bg-muted/30 hover:bg-muted/30">
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
                     <TableCell colSpan={6} className="py-3 px-4">
                       <div className="flex flex-col gap-2">
                         {hard.map((v, i) => (
@@ -235,7 +206,7 @@ function ResumoTable({
                     </TableCell>
                   </TableRow>
                 )}
-              </>
+              </Fragment>
             )
           })}
         </TableBody>
@@ -813,27 +784,6 @@ export function EscalaPagina() {
                           </div>
                         </CardContent>
                       </Card>
-                      {escalaCompleta?.diagnostico && (() => {
-                        const texto = textoResumoRelaxacoes(
-                          escalaCompleta.diagnostico.pass_usado ?? 1,
-                          escalaCompleta.diagnostico.regras_relaxadas ?? [],
-                          escalaCompleta.diagnostico.generation_mode,
-                        )
-                        if (!texto) return null
-                        return (
-                          <Card>
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                                <AlertTriangle className="size-4 text-warning" />
-                                Ajustes automáticos
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <p className="text-sm text-muted-foreground">{texto}</p>
-                            </CardContent>
-                          </Card>
-                        )
-                      })()}
                     </div>
                   )
                 })()}

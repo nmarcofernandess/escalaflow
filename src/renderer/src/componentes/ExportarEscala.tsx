@@ -158,7 +158,7 @@ function ExportFooter({
 }) {
   const legendaParts: string[] = []
   if (mode === 'funcionario') {
-    legendaParts.push('FF = Folga Fixa', 'FV = Folga Variavel', 'DF = Dom folga ciclo')
+    legendaParts.push('FF = Folga Fixa', 'FV = Folga Variavel', 'DF = Dom folga ciclo', 'NT = Nao trabalha')
   } else if (mostrarTimeline && timelineMode === 'barras') {
     legendaParts.push(
       'F = Folga', 'I = Indisponivel', 'ALM = Almoco',
@@ -341,8 +341,8 @@ function ExportSemanal({
                     }
 
                     // FOLGA or missing
-                    const folga = tipoFolga(dh.iso, regra, alocacoes, colab.id)
-                    const folgaLabel = folga === 'FF' ? 'FF' : folga === 'FV' ? 'FV' : folga === 'DF' ? 'DF' : 'F'
+                    const folga = tipoFolga(dh.iso, regra, alocacoes, colab.id, colab)
+                    const folgaLabel = folga === 'FF' ? 'FF' : folga === 'FV' ? 'FV' : folga === 'DF' ? 'DF' : folga === 'NT' ? 'NT' : 'F'
                     return (
                       <td
                         key={dh.iso}

@@ -2,7 +2,7 @@
 
 > **Proposito:** Mapeamento completo do sistema para reescrita do system prompt, gap analysis de tools, e evolucao da IA.
 >
-> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-03-13 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
+> **Gerado em:** 2026-02-22 | **Atualizado em:** 2026-06-12 | **Metodo:** Deep dive iterativo por fases, leitura de codigo real.
 
 ---
 
@@ -60,9 +60,9 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 | Entidade | Tabela | Campos criticos | Notas |
 |----------|--------|-----------------|-------|
 | **Empresa** | `empresa` | `nome`, `corte_semanal`, `tolerancia_semanal_min`, `min_intervalo_almoco_min`, `usa_cct_intervalo_reduzido`, `grid_minutos` | **Singleton** (1 registro). Config global do supermercado. `corte_semanal` define quando a semana "vira" (SEG_DOM, TER_SEG, etc). `grid_minutos=15` e fonte unica do grid. |
-| **TipoContrato** | `tipos_contrato` | `nome`, `horas_semanais`, `regime_escala`, `dias_trabalho`, `max_minutos_dia` | 4 templates imutaveis (seed): CLT 44h, CLT 36h, Estagiario, Intermitente. Define as restricoes legais de cada tipo de trabalhador. `trabalha_domingo` foi removido — domingo e gerenciado por ciclo rotativo e regras por colaborador. |
+| **TipoContrato** | `tipos_contrato` | `nome`, `horas_semanais`, `tipo_trabalhador`, `regime_escala`, `dias_trabalho`, `max_minutos_dia` | Templates seed: CLT 44h/36h nos regimes 5X2 e 6X1, Estagiario e Intermitente. Define a classe legal do contrato. `trabalha_domingo` foi removido — domingo e gerenciado por ciclo rotativo e regras por colaborador. |
 | **Setor** | `setores` | `nome`, `icone`, `hora_abertura`, `hora_fechamento`, `ativo` | Departamento do supermercado (Acougue, Padaria, Caixa...). `hora_abertura/fechamento` sao defaults — podem ser overridden por `setor_horario_semana`. Soft delete via `ativo`. |
-| **Colaborador** | `colaboradores` | `setor_id`, `tipo_contrato_id`, `nome`, `sexo`, `horas_semanais`, `rank`, `prefere_turno`, `evitar_dia_semana`, `tipo_trabalhador`, `funcao_id`, `ativo` | FK setor + contrato. `tipo_trabalhador` (CLT/ESTAGIARIO/APRENDIZ) determina restricoes especiais. `rank` define senioridade (0=junior). `funcao_id` e apenas o vínculo atual do titular com um posto; `null` = reserva operacional. Soft delete. |
+| **Colaborador** | `colaboradores` | `setor_id`, `tipo_contrato_id`, `nome`, `sexo`, `horas_semanais`, `rank`, `prefere_turno`, `evitar_dia_semana`, `tipo_trabalhador`, `funcao_id`, `ativo` | FK setor + contrato. `tipo_trabalhador` e cache derivado de `tipos_contrato.tipo_trabalhador` (`CLT`, `ESTAGIARIO`, `INTERMITENTE`); a IA nao deve escrever esse campo livremente. `rank` define senioridade (0=junior). `funcao_id` e apenas o vínculo atual do titular com um posto; `null` = reserva operacional. Soft delete. |
 | **Funcao** | `funcoes` | `setor_id`, `apelido`, `tipo_contrato_id`, `cor_hex`, `ativo`, `ordem` | Posto de trabalho dentro do setor (Caixa 1, Repositor...). Existe independentemente de pessoa. Se nao ha titular anexado, o posto fica na **reserva de postos**. FK `tipo_contrato_id` define qual contrato esse posto exige. |
 | **Demanda** | `demandas` | `setor_id`, `dia_semana`, `hora_inicio`, `hora_fim`, `min_pessoas`, `override` | "Quantas pessoas preciso nesse slot". Segmentada por dia da semana e faixa horaria. `override=1` significa que o gestor forcou esse valor (nao e sugestao do sistema). |
 | **Excecao** | `excecoes` | `colaborador_id`, `data_inicio`, `data_fim`, `tipo`, `observacao` | Ferias, atestado ou bloqueio. Periodo em que o colaborador esta INDISPONIVEL. Motor respeita como HARD constraint (H5). |
@@ -74,7 +74,7 @@ O sistema tem **21 tabelas** organizadas em 5 camadas:
 | **EmpresaHorarioSemana** | `empresa_horario_semana` | `dia_semana`, `ativo`, `hora_abertura`, `hora_fechamento` | Horario de funcionamento da empresa por dia da semana. Fallback global quando setor nao tem horario proprio. UNIQUE(dia_semana). Seed: SEG-SEX 08-22, SAB 08-20, DOM 08-14. |
 | **SetorHorarioSemana** | `setor_horario_semana` | `setor_id`, `dia_semana`, `ativo`, `usa_padrao`, `hora_abertura`, `hora_fechamento` | Override do horario da empresa para um setor especifico. `usa_padrao=1` herda da empresa. UNIQUE(setor_id, dia_semana). |
 | **PerfilHorarioContrato** | `contrato_perfis_horario` | `tipo_contrato_id`, `nome`, `inicio`, `fim`, `preferencia_turno_soft` | Horario de entrada/saida por tipo de contrato. Seed: 3 perfis de estagiario (Manha 08-12, Tarde 13:30-20, Noite-Estudo 08-14). CLT nao tem perfil (usa janela do setor). |
-| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id` (UNIQUE), `perfil_horario_id`, `inicio`, `fim`, `domingo_ciclo_trabalho/folga`, `folga_fixa_dia_semana`, `folga_variavel_dia_semana` | Regra individual 1:1. Override dos campos do perfil. Ciclo domingo default: 2 trabalho / 1 folga. Folga fixa = dia que SEMPRE folga. Folga variavel = segundo dia de folga (SEG-SAB). **Fonte de verdade persistida: regra do colaborador.** Na UI da Equipe, Fixo/Variavel podem aparecer tambem por fallback inferido da escala OFICIAL quando a regra ainda nao foi salva. Ao oficializar, colaboradores sem F/V definido tem esses valores inferidos a partir da escala e gravados automaticamente. |
+| **RegraHorarioColaborador** | `colaborador_regra_horario` | `colaborador_id`, `dia_semana_regra`, `perfil_horario_id`, `inicio`, `fim`, `folga_fixa_dia_semana`, `folga_variavel_dia_semana`, `recorrencia_semanas_trabalho`, `recorrencia_semanas_folga`, `recorrencia_ancora` | Regra padrao ou por dia da semana. Override dos campos do perfil. Folga fixa = dia que SEMPRE folga. Folga variavel = dia condicional do XOR com domingo. Recorrencia controla semanas ON/OFF. Para intermitente, dias sem regra = NT e folga_fixa e sempre null. |
 | **ExcecaoDataColaborador** | `colaborador_regra_horario_excecao_data` | `colaborador_id`, `data`, `inicio`, `fim`, `domingo_forcar_folga` | Override pontual por data. Ex: "dia 15/03, Cleunice so pode 08-12". Maior precedencia na hierarquia. UNIQUE(colaborador_id, data). |
 | **DemandaExcecaoData** | `demandas_excecao_data` | `setor_id`, `data`, `hora_inicio`, `hora_fim`, `min_pessoas`, `override` | Override de demanda por data especifica (Black Friday, vespera de feriado). Substitui a demanda semanal padrao naquele dia. |
 
@@ -177,14 +177,14 @@ historico = preservado por equipe_snapshot_json nas escalas
 |----|------|-----------|--------|------|---------|------------------|---------------------|
 | 1 | CLT 44h | 44 | 5X2 | 5 | 585min | Sim | Nenhuma |
 | 2 | CLT 36h | 36 | 5X2 | 5 | 585min | Sim | Nenhuma |
-| 3 | Estagiario | 20-30 | 5X2 | 5 | 360min | Nao | Max 6h/dia, nunca hora extra, nunca domingo (H11) |
-| 4 | Intermitente | 0+ | 5X2 | 5 | 585min | Nao | horas_semanais.min(0) — convocado sob demanda |
+| 3 | Estagiario | 20-30 | 5X2 | 5 | 360min | Nao | Max 6h/dia, nunca hora extra; domingo depende da regra operacional/TCE |
+| 4 | Intermitente | 0+ | 6X1 | 0+ | 585min | Nao | convocado por regra de horario; dias sem regra/semana OFF aparecem como NT |
 
 **Nota sobre compensacao:** CLT 44h/36h em regime 5X2 podem fazer ate 9h45/dia para compensar o sabado sem trabalho. Estagiarios e Intermitentes NUNCA fazem compensacao.
 
-**Nota sobre Aprendiz:** Existe como `tipo_trabalhador` (APRENDIZ) mas nao tem contrato seed dedicado. Restricoes: NUNCA domingo, NUNCA feriado, NUNCA noturno (22h-5h), NUNCA hora extra.
+**Nota sobre Intermitente:** Tipo A (`folga_variavel = null`) trabalha apenas os dias com regra ativa e pode usar recorrencia de semanas para "semana sim, semana nao". Tipo B (`folga_variavel != null`) participa do XOR domingo↔dia variavel. NT e simbolo de exibicao/explicacao, nao status persistido.
 
-**Nota sobre domingo:** `trabalha_domingo` foi removido dos contratos. Domingo e gerenciado por `colaborador_regra_horario.domingo_ciclo_trabalho/folga` (ciclo rotativo) e regras SOFT (H3 rodizio). Estagiarios/Aprendizes nunca trabalham domingo via constraints HARD (H11).
+**Nota sobre domingo:** `trabalha_domingo` foi removido dos contratos. Domingo e gerenciado por regras de horario/ciclo rotativo. Estagiarios nao tem bloqueio automatico de domingo no motor atual; intermitentes so trabalham domingo quando existe regra ativa e a recorrencia permite.
 
 ### 2.5 Perfis de Horario (Seed)
 
@@ -238,14 +238,12 @@ Quando o motor precisa saber a janela de horario de um colaborador num dia espec
 | H5 | Ferias/atestado/bloqueio | HARD | Nao | Respeita excecoes cadastradas |
 | H6 | Human blocks (almoco) | HARD | Sim | CLT Art. 71 — intervalo obrigatorio |
 | H10 | Meta semanal de horas | HARD | Sim | CLT Art. 58 |
-| H11 | Aprendiz nunca domingo | HARD | Nao | CLT Art. 405 |
-| H12 | Aprendiz nunca feriado | HARD | Nao | CLT Art. 405 |
-| H13 | Aprendiz nunca noturno | HARD | Nao | CLT Art. 404 |
-| H14 | Aprendiz nunca hora extra | HARD | Nao | CLT Art. 432 |
 | H15 | Estagiario max 6h/dia 30h/sem | HARD | Nao | Lei 11.788 Art. 10 |
 | H16 | Estagiario nunca hora extra | HARD | Nao | Lei 11.788 |
 | H17 | Feriado 25/12 proibido | HARD | Nao | CCT FecomercioSP |
 | H18 | Feriado 01/01 proibido | HARD | Nao | CCT FecomercioSP |
+
+> H11-H14 foram removidas na migracao v23 porque `APRENDIZ` nao e tipo ativo no negocio atual. Os tipos ativos sao `CLT`, `ESTAGIARIO` e `INTERMITENTE`.
 | DIAS_TRABALHO | Dias corretos por semana | HARD | Sim | 5x2 ou 6x1 conforme contrato |
 | MIN_DIARIO | Jornada minima 4h | HARD | Sim | Evita microturnos |
 
@@ -320,15 +318,16 @@ CLT.GRID_MINUTOS               = 15    // quantizacao universal
 
 **Gaps restantes (a IA NAO manipula):**
 - `escala_ciclo_modelos` / `escala_ciclo_itens` — pode consultar mas nao criar/editar (operacao complexa com modelo + itens + semana_idx)
-- `tipos_contrato` — pode ler via `consultar` mas nao criar/editar via tools (editavel na UI)
+
+**Observacao:** `tipos_contrato` deixou de ser gap. A IA pode criar/atualizar contratos via tools genericas, mas a classe legal (`tipo_trabalhador`) e normalizada pelo servidor.
 
 **Regras inviolaveis:**
 1. snake_case ponta a ponta — DB = IPC = TS = React
 2. UNIQUE(escala_id, colaborador_id, data) — nunca 2 alocacoes do mesmo colab/dia/escala
 3. Escala so oficializa com `violacoes_hard = 0`
-4. Estagiario NUNCA domingo, NUNCA hora extra
-5. Aprendiz NUNCA domingo, feriado, noturno (22h-5h), hora extra
-6. 25/12 e 01/01 = proibido trabalhar (CCT)
+4. Estagiario: max 6h/dia, 30h/semana, NUNCA hora extra
+5. 25/12 e 01/01 = proibido trabalhar (CCT)
+6. Tipos ativos de trabalhador: CLT, ESTAGIARIO, INTERMITENTE. Nao criar/prometer APRENDIZ.
 7. Soft delete — `ativo=0`, nunca DELETE (exceto `funcoes`, cujo historico agora e preservado por snapshot)
 8. Grid 15min — tudo quantizado
 
@@ -379,8 +378,8 @@ UI (EscalaPagina)
   │     │     ├── Variaveis: work[c,d,s], works_day[c,d], block_starts[c,d,s]
   │     │     ├── Phase 1 pattern → slots pinados (OFF, MANHA, TARDE, INTEGRAL)
   │     │     ├── Warm-start hints → model.add_hint()
-  │     │     ├── Blocked days (feriados proibidos, excecoes, aprendiz dom/feriado)
-  │     │     ├── HARD constraints (H1-H18, DIAS_TRABALHO, MIN_DIARIO, janela, folga fixa)
+  │     │     ├── Blocked days (feriados proibidos, excecoes, regras/recorrencia de intermitente)
+  │     │     ├── HARD constraints (H1-H10, H15-H18, DIAS_TRABALHO, MIN_DIARIO, janela, folga fixa)
   │     │     ├── SOFT penalties (deficit, surplus, domingo_ciclo, turno_pref, consistencia, spread, ap1_excess)
   │     │     └── model.minimize(sum(objective_terms))
   │     │     Se OPTIMAL/FEASIBLE → retorna
@@ -450,10 +449,6 @@ Onde:
 | H6 | `add_human_blocks` | `constraints.py:156` | Estrutura jornada: <=6h → 1 bloco; >6h → 2 blocos + almoco [1h-2h]. A janela dura do almoco e checada separadamente em 11h-14h com min 2h antes/depois. | Sim (HARD/SOFT/OFF) |
 | H10 | `add_h10_meta_semanal` | `constraints.py:256` | Horas semanais ± tolerancia. Pro-rata em chunks parciais. Ajusta por dias disponiveis. | Sim (HARD/SOFT/OFF) |
 | H10 (elastic) | `add_h10_meta_semanal_elastic` | `constraints.py:315` | Variante elastic: dominio [0, max_capacity] com slack variables. Peso 8000/min desvio. Usada quando a policy efetiva define H10 como SOFT ou em fallback exploratorio. | Via policy / exploratory |
-| H11 | `add_h11_aprendiz_domingo` | `constraints.py:493` | Aprendiz NUNCA domingo (Art. 432 CLT). | Nao (sempre HARD) |
-| H12 | `add_h12_aprendiz_feriado` | `constraints.py:507` | Aprendiz NUNCA feriado. | Nao (sempre HARD) |
-| H13 | `add_h13_aprendiz_noturno` | `constraints.py:521` | Aprendiz NUNCA slots >= 22h. Para janela 08-20h: zero clauses. | Nao (sempre HARD) |
-| H14 | `add_h14_aprendiz_hora_extra` | `constraints.py:553` | Aprendiz: weekly_minutes <= target (zero tolerancia upper). | Nao (sempre HARD) |
 | H15 | `add_h15_estagiario_jornada` | `constraints.py:572` | Estagiario: max 360min/dia, max 1800min/sem (Lei 11.788 Art. 10). | Nao (sempre HARD) |
 | H16 | `add_h16_estagiario_hora_extra` | `constraints.py:596` | Estagiario: weekly_minutes <= target (zero tolerancia upper). | Nao (sempre HARD) |
 | H17/H18 | `add_h17_h18_feriado_proibido` | `constraints.py:615` | 25/12 e 01/01: works_day[c,d] = 0 para todos (CCT). | Nao (sempre HARD) |
@@ -700,7 +695,7 @@ O campo `solve_mode` no JSON e mantido por backward-compatibility mas e **ignora
 **INFEASIBLE e provado em <1s** — dar mais tempo NAO resolve. Se o CP-SAT prova impossibilidade matematica, e instantaneo. O multi-pass tenta com regras relaxadas, nao com mais tempo. O patience so roda no pass que encontra solucao.
 
 **Regras que NUNCA relaxam (CLT core):**
-H2 (interjornada 11h), H4 (max 10h/dia), H5 (excecoes), H11-H18 (aprendiz/estagiario/feriados proibidos)
+H2 (interjornada 11h), H4 (max 10h/dia), H5 (excecoes), H15-H18 (estagiario/feriados proibidos)
 
 **Observacao importante:** `H10` nao entra mais no relaxamento automatico do modo `OFFICIAL`. Se estiver SOFT, foi por configuracao/policy, nao por fallback silencioso.
 
@@ -793,7 +788,7 @@ UI ou IA pede "gerar escala"
 |--------|-----------|---------------|------------------|
 | `SETOR_INVALIDO` | BLOCKER | Setor nao encontrado ou `ativo=0` | Setor deletado (soft delete) |
 | `SEM_COLABORADORES` | BLOCKER | Zero colabs ativos no setor | Setor recem-criado, ninguem cadastrado |
-| `DOMINGO_SEM_COLABORADORES` | BLOCKER | Ha demanda em domingo mas nenhum colab aceita | Todos com `trabalha_domingo=false` |
+| `DOMINGO_SEM_COLABORADORES` | BLOCKER | Ha demanda em domingo mas nenhum colab elegivel pode trabalhar naquele dia | Todos bloqueados por regra, recorrencia, ciclo, excecao ou contrato |
 | `DEMANDA_EM_FERIADO_PROIBIDO` | BLOCKER | Demanda cadastrada num dia que CCT proibe trabalho | 25/12 com demanda > 0 no acougue |
 | `CAPACIDADE_DIARIA_INSUFICIENTE` | BLOCKER | Colabs disponiveis no dia < pico de demanda | Dia com 3 colabs e demanda de 5 |
 | `CAPACIDADE_INDIVIDUAL_INSUFICIENTE` | BLOCKER | Janela de um colab impossibilita a meta de horas do contrato | Colab com janela 08-12h (4h) e contrato CLT 44h (7h20/dia) |
@@ -844,8 +839,11 @@ function buildEscalaPreflight(setorId, dataInicio, dataFim, regimesOverride?) {
 ```typescript
 function enrichPreflightWithCapacityChecks(input, blockers, warnings) {
   for (const day of days) {
-    // Domingo com demanda mas ninguem aceita domingo
-    if (label === 'DOM' && input.colaboradores.every(c => !c.trabalha_domingo)) {
+    const label = dayLabel(day)
+    const availableToday = input.colaboradores.filter((c) => !indisponivelNoDia(c, day, label))
+
+    // Domingo com demanda mas nenhum colaborador elegivel
+    if (label === 'DOM' && availableToday.length === 0) {
       blockers.push({ codigo: 'DOMINGO_SEM_COLABORADORES', ... })
       break
     }
@@ -1019,10 +1017,13 @@ nivel 4: sem regra                               (janela do setor/empresa inteir
 | `inicio` | TIME | Horario fixo de entrada |
 | `fim` | TIME | Horario maximo de saida |
 | `preferencia_turno_soft` | TEXT | MANHA, TARDE ou null |
-| `domingo_ciclo_trabalho` | INT | Domingos consecutivos de TRABALHO no ciclo (default 2) |
-| `domingo_ciclo_folga` | INT | Domingos consecutivos de FOLGA no ciclo (default 1) |
 | `folga_fixa_dia_semana` | TEXT | Dia que SEMPRE folga (SEG, TER... DOM, ou null) |
-| `folga_variavel_dia_semana` | TEXT | Segundo dia de folga semanal (SEG-SAB, sem DOM, ou null). Condicional ao domingo — só se aplica em semanas sem folga dominical. |
+| `folga_variavel_dia_semana` | TEXT | Dia condicional do XOR com domingo (SEG-SAB, sem DOM, ou null). Para intermitente, valor null = Tipo A; valor preenchido = Tipo B. |
+| `recorrencia_semanas_trabalho` | INT | Quantas semanas trabalha por ciclo; null = sem recorrencia |
+| `recorrencia_semanas_folga` | INT | Quantas semanas fica OFF por ciclo; null = sem recorrencia |
+| `recorrencia_ancora` | TEXT | Data numa semana de trabalho que fixa o ciclo |
+
+Para intermitente, dia sem regra ativa ou semana OFF por recorrencia aparece como **NT** na UI/export/IA. NT nao e folga fixa/variavel nem status novo no banco.
 
 #### Tabela `colaborador_regra_horario_excecao_data` (N por colab)
 
@@ -1212,7 +1213,7 @@ buildSolverInput(setor_id, datas, pinnedCells, options)
 |---------|-------|---------------|-------|
 | `tiposContrato.listar` | — | `TipoContrato[]` | ORDER BY horas_semanais DESC |
 | `tiposContrato.buscar` | `{id}` | `TipoContrato` | Throws se nao encontrado |
-| `tiposContrato.criar` | `{nome, horas_semanais, regime_escala?, trabalha_domingo, max_minutos_dia}` | `TipoContrato` criado | Regime inferido se omitido |
+| `tiposContrato.criar` | `{nome, horas_semanais, tipo_trabalhador?, regime_escala?, max_minutos_dia}` | `TipoContrato` criado | Regime inferido se omitido; classe legal derivada/normalizada |
 | `tiposContrato.atualizar` | `{id, nome, horas_semanais, ...}` | `TipoContrato` atualizado | |
 | `tiposContrato.deletar` | `{id}` | void | Throws se tem colabs usando |
 | `tiposContrato.listarPerfisHorario` | `{tipo_contrato_id}` | `PerfilHorario[]` | ORDER BY ordem, id |
@@ -1836,7 +1837,7 @@ Quando a IA cria um `colaborador` sem fornecer todos os campos:
 |---------------|-----------------|
 | `sexo` | `'M'` |
 | `tipo_contrato_id` | `1` (CLT 44h 6x1 — mais comum) |
-| `tipo_trabalhador` | `'regular'` |
+| `tipo_trabalhador` | Derivado de `tipo_contrato_id`; input livre do LLM e ignorado |
 | `data_nascimento` | Aleatoria entre 25-40 anos |
 | `hora_inicio_min` | `setor.hora_abertura` |
 | `hora_fim_max` | `setor.hora_fechamento` |
@@ -1848,10 +1849,11 @@ Para `excecoes`:
 
 ### 6.11 DevTools middleware (opcional)
 
-Se `ESCALAFLOW_AI_DEVTOOLS=1` ou `NODE_ENV !== 'production'`:
+Se `ESCALAFLOW_AI_DEVTOOLS=1`, ou em desenvolvimento local quando o app nao esta empacotado:
 - Tenta importar `@ai-sdk/devtools` dinamicamente
 - Se disponivel, wrapa o model com `wrapLanguageModel({ model, middleware: devToolsMiddleware() })`
 - Permite visualizar requests no AI SDK DevTools (http://localhost:4983)
+- Em app empacotado, `NODE_ENV` indefinido nao liga DevTools sozinho; isso evita tentativa de gravar `/.devtools`.
 
 ### 6.12 Gaps e limitacoes remanescentes
 
@@ -1860,7 +1862,6 @@ Se `ESCALAFLOW_AI_DEVTOOLS=1` ou `NODE_ENV !== 'production'`:
 | Operacao | Por que nao tem tool |
 |----------|---------------------|
 | Ciclo rotativo (criar/editar) | Complexidade: modelo + itens + semana_idx — operacao visual na UI |
-| Tipos contrato (criar/editar) | Raramente necessario via chat — editavel na UI |
 | Export HTML/PDF | Requer acesso ao filesystem nativo |
 | Timeline dia (drag de demanda) | Operacao intrinsecamente visual |
 | Dashboard metricas | handler existe mas nao exposto — IA usa `get_context` + `resumir_horas_setor` |
@@ -2259,7 +2260,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
                      │  └─────────────────────────────────┘       │
                      │                                             │
                      │  ❌ Ciclo rotativo (criar/editar)           │
-                     │  ❌ Tipos contrato (criar/editar)           │
+                     │  ✅ Tipos contrato (classe normalizada)     │
                      │  ❌ Export HTML/PDF                         │
                      │  ❌ Timeline dia (drag visual)              │
                      │  ❌ Dashboard metricas (handler)            │
@@ -2331,7 +2332,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | 4 | **Feriados orientados por demanda** | So 25/12 e 01/01 sao proibidos por CCT. Outros feriados: trabalho permitido se houver demanda. Portaria MTE 3.665 (apos 01/03/2026) pode mudar isso. Flag `proibido_trabalhar` por feriado. | Sim, mas precisa revisao quando Portaria entrar em vigor. |
 | 5 | **Motor Python, nao TypeScript** | OR-Tools CP-SAT e ordens de magnitude mais eficiente que backtracking JS. Motor TS legado (`gerador.ts`) deletado. Trade-off: bridge via child_process stdin/stdout JSON adiciona ~200ms de overhead, mas solver roda em < 30s vs minutos no TS. | Sim. Insubstituivel. |
 | 6 | **snake_case ponta a ponta** | DB columns = IPC keys = TS interfaces = React props. Zero adaptadores. Reduz bugs de mapeamento em sistema com 80+ handlers. Convencao incomum em TS mas necessaria para produto com time de 1 pessoa. | Sim. Consistencia > convencao do ecossistema. |
-| 7 | **Compensacao 9h45** | CLT 44h = 7h20/dia em 6 dias. Mas supermercados usam jornada 8h48 (5 dias) ou 9h45 (5 dias com sabado alternado). `max_minutos_dia` vem do contrato, nao de calculo fixo. So CLT 44h e 36h — nunca estagiario/aprendiz. | Sim. Reflete pratica real. |
+| 7 | **Compensacao 9h45** | CLT 44h = 7h20/dia em 6 dias. Mas supermercados usam jornada 8h48 (5 dias) ou 9h45 (5 dias com sabado alternado). `max_minutos_dia` vem do contrato, nao de calculo fixo. So CLT 44h e 36h — nunca estagiario/intermitente. | Sim. Reflete pratica real. |
 | 8 | **H19 (folga comp domingo) — NOOP no solver, ativo no validador** | No solver: matematicamente redundante com H1 (max 6 dias consecutivos). Emitir causava INFEASIBLE com dias_trabalho + H10. No validador TS: checa Lei 605/1949 (folga compensatoria 7 dias apos domingo trabalhado). Fix v1.4: boundary guard — se nao ha dias apos o domingo no periodo, pula (folga pode estar fora do periodo gerado). (`validacao-compartilhada.ts`) | Sim. NOOP no solver, check no validador com boundary guard. |
 | 9 | **Surplus penalty (peso 5.000)** | Sem surplus, solver empilha colabs em slots ja cobertos (surplus=3) enquanto outros ficam com deficit=2. Deficit sozinho nao distingue ONDE colocar capacidade. Surplus torna excesso CARO, forcando redistribuicao. Math: mover 1 pessoa de surplus pra deficit economiza 15.000 (10k+5k). (`constraints.py:877-912`) | Sim. Sem isso, escalas ficam desequilibradas. |
 | 10 | **Vercel AI SDK (cloud) + node-llama-cpp (local)** | Cloud: Vercel AI SDK abstrai Gemini + OpenRouter. Local: node-llama-cpp roda GGUF in-process com `defineChatSessionFunction` para tool calling. Ambos emitem mesmos `IaStreamEvent` — UI identica. Trade-off local: modelo 9B precisa 8GB+ RAM, tool calling menos preciso que cloud. | Sim. 3 providers com mesma experiencia de chat. |

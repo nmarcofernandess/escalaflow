@@ -148,7 +148,7 @@ O `solver:cli` roda o motor OR-Tools direto do terminal, sem precisar abrir o ap
 **O que mostra no output:**
 1. **Status** — OPTIMAL / FEASIBLE / INFEASIBLE com tempo, pass usado, capacidade vs demanda
 2. **Indicadores** — cobertura %, pontuacao, equilibrio, violacoes HARD/SOFT
-3. **Escala por colaborador** — tabela formatada com dia da semana, horarios, FOLGA, total semanal e delta vs contrato (com cores)
+3. **Escala por colaborador** — tabela formatada com dia da semana, horarios, FOLGA/NT, total semanal e delta vs meta aplicavel (contrato para CLT/estagiario; convocacao real para intermitente)
 4. **Cobertura de demanda** — por dia, mostrando faixas com falta de pessoal agregadas
 5. **Horas por semana** — breakdown semanal por colaborador (se periodo > 7 dias)
 
@@ -256,7 +256,7 @@ Dentro de cada setor, cadastre faixas de demanda:
 
 ### 3. Cadastre colaboradores
 
-Em **Colaboradores**, adicione funcionários com nome, sexo e tipo de contrato. Horas semanais são preenchidas automaticamente pelo template.
+Em **Colaboradores**, adicione funcionários com nome, sexo e tipo de contrato. Horas semanais e classe legal são preenchidas automaticamente pelo contrato.
 
 > **5x2 ou 6x1?** Os contratos de fábrica já vêm nos dois regimes — `CLT 44h` / `CLT 36h` (5x2) e `CLT 44h 6x1` / `CLT 36h 6x1`. Escolha o template certo e pronto: o motor aplica o número de dias automaticamente (a meta de horas é semanal, com a tolerância configurada na empresa). Também dá para criar contratos próprios em **Contratos** escolhendo o regime no formulário.
 
@@ -285,8 +285,8 @@ Com 0 violações HARD, clique em **Oficializar**. A escala é travada e pode se
 | H3 | Rodízio domingo (mulher: max 1 consecutivo, homem: max 2) → SOFT |
 | H4 | Max jornada diária 10h (CLT absoluto) |
 | H5 | Contrato max dia (estagiário 4h, etc) |
-| H6 | Estagiário nunca trabalha domingo/feriado |
-| H7 | Menor aprendiz: nunca noturno (22h–5h), nunca hora extra |
+| H6 | Estagiário: limite de 6h/dia e 30h/semana, nunca hora extra |
+| H7 | Intermitente: trabalha apenas quando convocado por regra/recorrência; fora disso aparece como NT |
 | H8 | Grid 15 minutos em toda alocação |
 | H9–H18 | Regras adicionais CLT/CCT (ver `docs/motor-regras.md`) |
 
@@ -404,7 +404,7 @@ O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui 
 |---------|----------|
 | `.claude/CLAUDE.md` | Instruções para Claude Code |
 | `docs/motor-regras.md` | RFC canônico do motor (20 HARD, SOFT, antipatterns) |
-| `docs/motor-spec.md` | Spec técnica do motor (edge cases, entrada/saída) |
+| `docs/motor-spec.md` | Rascunho histórico do Motor v3; use `motor-regras.md` como fonte atual |
 | `docs/release.md` | Guia completo de releases e auto-update |
 | `docs/solver-consistency.md` | Guia de teste de paridade solver/validador |
 | `docs/ia-sistema.md` | Como o sistema de IA funciona |

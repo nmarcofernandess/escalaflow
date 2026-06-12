@@ -109,10 +109,10 @@ O trabalho no domingo e permitido para o comercio mediante CCT. A folga compensa
 ### No EscalaFlow
 O domingo virou SOFT constraint (S_DOMINGO_CICLO). O motor tenta respeitar o ciclo, mas nao bloqueia a geracao se nao conseguir. A razao: com poucos colaboradores, forcar o ciclo como HARD frequentemente causa INFEASIBLE.
 
-O ciclo e personalizavel por colaborador na tabela `colaborador_regra_horario`.
+O ciclo e calculado automaticamente pelo motor. O RH nao preenche mais `domingo_ciclo_*` na regra do colaborador.
 
 ### Estagiarios e Aprendizes
-NUNCA trabalham domingo. E HARD constraint, nao SOFT.
+Estagiario pode trabalhar domingo se a operacao/TCE permitir; o motor atual bloqueia hora extra e excesso de jornada, nao domingo. Jovem Aprendiz tem restricoes legais severas, mas `APRENDIZ` nao e tipo ativo no cadastro atual do EscalaFlow.
 
 ## Jornada maxima
 
@@ -126,7 +126,7 @@ NUNCA trabalham domingo. E HARD constraint, nao SOFT.
 - 30h semanais: maximo 6h/dia (360 minutos)
 - NUNCA hora extra
 
-### Aprendizes
+### Aprendizes (conhecimento legal, nao tipo ativo)
 - Maximo 6h/dia (360 minutos)
 - NUNCA hora extra
 

@@ -32,6 +32,8 @@ Apos gerar a escala, o RH pode precisar fazer ajustes manuais.
 ### Ajuste de status
 Mudar o dia de uma pessoa entre TRABALHO, FOLGA e INDISPONIVEL. Exemplo: "Cleunice nao pode quarta — trocar para FOLGA".
 
+Para intermitente, cuidado com a palavra "folga": se o objetivo e dizer que a pessoa nao e convocada naquele dia, ajuste a regra de horario/recorrencia. A UI vai mostrar **NT**. Use FOLGA em alocacao apenas para ajuste de uma escala ja gerada.
+
 ### Ajuste de horario
 Mudar hora de inicio/fim de uma alocacao. Exemplo: "Joao comeca as 09:00 no lugar de 08:00 na segunda".
 
@@ -86,8 +88,14 @@ Cada colaborador pode ter regras individuais que sobrescrevem o padrao:
 ### Folga fixa
 "Joao sempre folga na quarta" -> Define folga_fixa_dia_semana=QUA.
 
+Para intermitente, nao use folga fixa para representar dias em que a pessoa nao vem. Dias sem regra ja sao NT.
+
 ### Ciclo de domingo
-"Maria trabalha 1 domingo e folga 2" -> Define domingo_ciclo_trabalho=1, domingo_ciclo_folga=2.
+O RH nao configura mais `domingo_ciclo_*` manualmente. O motor calcula o rodizio dominical automaticamente.
+
+"Hellen trabalha domingo sim, domingo nao" -> Crie regra por dia `DOM` + recorrencia 1/1 com ancora em uma semana de trabalho.
+
+"Maria alterna domingo com segunda" -> Use regra DOM + regra SEG + `folga_variavel_dia_semana=SEG` somente se isso for rodizio real, nao apenas "nao trabalha".
 
 ### Excecao por data
 "No dia 15/03, Pedro so pode ate 12:00" -> Cria excecao com inicio_min/max e fim_min/max especificos.

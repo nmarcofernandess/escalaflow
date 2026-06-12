@@ -9,6 +9,7 @@ import type {
 } from '@shared/index'
 import { formatarData, formatarMinutos, toMinutes, minutesToTime } from '@/lib/formatadores'
 import { cn } from '@/lib/utils'
+import { calcularResumoColaboradores } from '@/lib/escala-resumo-colaboradores'
 import {
   Table,
   TableBody,
@@ -320,24 +321,20 @@ export function EscalaTimelineDiaria({
             </TableHeader>
             <TableBody>
               {(() => {
-                const totalDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-                const semanas = Math.max(1, totalDays / 7)
-                const minutosReais = new Map<number, number>()
-                for (const a of alocacoes) {
-                  if (a.status === 'TRABALHO' && a.minutos != null) {
-                    minutosReais.set(a.colaborador_id, (minutosReais.get(a.colaborador_id) ?? 0) + a.minutos)
-                  }
-                }
-                return colaboradores.map((colab) => {
-                  const tc = tiposContrato.find((t) => t.id === colab.tipo_contrato_id)
-                  const real = minutosReais.get(colab.id) ?? 0
-                  const meta = tc ? Math.round(tc.horas_semanais * 60 * semanas) : 0
-                  const delta = real - meta
-                  const ok = delta >= -30
+                const rows = calcularResumoColaboradores({
+                  colaboradores,
+                  alocacoes,
+                  violacoes: [],
+                  tiposContrato,
+                  dataInicio: escala.data_inicio,
+                  dataFim: escala.data_fim,
+                })
+
+                return rows.map(({ colab, contratoNome, real, meta, delta, ok }) => {
                   return (
                     <TableRow key={colab.id}>
                       <TableCell className="border px-2 py-1.5 text-xs">{colab.nome}</TableCell>
-                      <TableCell className="border px-2 py-1.5 text-xs text-muted-foreground">{tc?.nome ?? '-'}</TableCell>
+                      <TableCell className="border px-2 py-1.5 text-xs text-muted-foreground">{contratoNome}</TableCell>
                       <TableCell className="border px-2 py-1.5 text-center text-xs">{formatarMinutos(real)}</TableCell>
                       <TableCell className="border px-2 py-1.5 text-center text-xs text-muted-foreground">{formatarMinutos(meta)}</TableCell>
                       <TableCell

@@ -69,7 +69,7 @@ Quando uma regra vira SOFT no solver, ela vira uma penalidade na função objeti
 
 Sempre roda TODAS as regras como HARD. Não tem conceito de "relaxar". H6 é HARD, ponto.
 
-As 20 regras: H1 (max 6 dias consecutivos), H2 (interjornada 11h), H4 (max jornada diária), H5 (exceções), H6 (almoço obrigatório >6h), H7b (max 6h sem pausa), H9 (almoço 1-2h), H10 (meta semanal), H11-H16 (aprendiz/estagiário), H17-H18 (feriados), H19 (DSR), H20 (posição do almoço 11:00-14:00, min 2h antes/depois).
+Regras principais: H1 (max 6 dias consecutivos), H2 (interjornada 11h), H4 (max jornada diária), H5 (exceções), H6/H7/H9/H20 (intervalos e almoço), H10 (meta semanal), H15-H16 (estagiário), H17-H18 (feriados), H19 (DSR). H11-H14 de Aprendiz foram removidas porque `APRENDIZ` não é tipo ativo no produto atual.
 
 ### Gráfico de Cobertura (`CoberturaChart.tsx`)
 

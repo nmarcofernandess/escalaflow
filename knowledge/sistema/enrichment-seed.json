@@ -295,14 +295,14 @@
         },
         {
           "chunk_index": 1,
-          "resumo": "Detalha a tool salvar_regra_horario_colaborador com todos os campos disponiveis (inicio, fim, domingo_ciclo, folga_fixa, preferencia_turno, perfil_horario_id) e exemplos praticos de uso.",
+          "resumo": "Detalha a tool salvar_regra_horario_colaborador com campos atuais (dia_semana_regra, inicio, fim, folga_fixa, folga_variavel, recorrencia, preferencia_turno, perfil_horario_id) e exemplos praticos de uso.",
           "tags": [
             "salvar regra",
             "tool",
             "horario colaborador",
             "inicio",
             "fim",
-            "domingo ciclo",
+            "recorrencia semanas",
             "folga fixa",
             "preferencia turno",
             "perfil horario",
@@ -327,7 +327,7 @@
               "tipo": "conceito"
             },
             {
-              "nome": "Ciclo de Domingos",
+              "nome": "Recorrencia de Semanas",
               "tipo": "regra"
             }
           ],
@@ -346,7 +346,7 @@
             },
             {
               "from": "salvar_regra_horario_colaborador",
-              "to": "Ciclo de Domingos",
+              "to": "Recorrencia de Semanas",
               "tipo_relacao": "compoe",
               "peso": 1.0
             }
@@ -660,11 +660,11 @@
         },
         {
           "chunk_index": 3,
-          "resumo": "Diferenca entre CLT, Estagiario e Aprendiz, compensacao 9h45 no regime 5X2, e como funciona a regra de domingos por genero (homens 2:1, mulheres 1:1).",
+          "resumo": "Diferenca entre CLT, Estagiario e Intermitente, compensacao 9h45 no regime 5X2, domingo por genero e regra de intermitente por convocacao/recorrencia.",
           "tags": [
             "CLT",
             "estagiario",
-            "aprendiz",
+            "intermitente",
             "tipo trabalhador",
             "diferenca contrato",
             "hora extra",
@@ -679,9 +679,9 @@
             "ciclo 2:1",
             "ciclo 1:1",
             "Art 386",
-            "nunca domingo",
-            "nunca feriado",
-            "noturno"
+            "convocacao",
+            "recorrencia",
+            "NT"
           ],
           "entidades": [
             {
@@ -693,7 +693,7 @@
               "tipo": "contrato"
             },
             {
-              "nome": "Jovem Aprendiz",
+              "nome": "Intermitente",
               "tipo": "contrato"
             },
             {
@@ -713,9 +713,9 @@
               "peso": 1.0
             },
             {
-              "from": "Estagiario",
+              "from": "Intermitente",
               "to": "Ciclo de Domingos",
-              "tipo_relacao": "proibe",
+              "tipo_relacao": "condiciona",
               "peso": 1.0
             },
             {
@@ -1289,7 +1289,7 @@
         },
         {
           "chunk_index": 1,
-          "resumo": "Entidade Colaborador com campos nome, setor_id, tipo_contrato_id, tipo_trabalhador, sexo (afeta domingos), horas_semanais, rank, funcao_id, e regras individuais (janela, ciclo, folga fixa, excecao por data).",
+          "resumo": "Entidade Colaborador com campos nome, setor_id, tipo_contrato_id, tipo_trabalhador derivado, sexo (afeta domingos), horas_semanais, rank, funcao_id, e regras individuais (janela, recorrencia, folga fixa, excecao por data).",
           "tags": [
             "colaborador",
             "funcionario",
@@ -1300,7 +1300,7 @@
             "tipo trabalhador",
             "CLT",
             "estagiario",
-            "aprendiz",
+            "intermitente",
             "sexo",
             "homem mulher",
             "horas semanais",
@@ -1310,7 +1310,7 @@
             "posto",
             "regra individual",
             "janela horario",
-            "ciclo domingo",
+            "recorrencia semanas",
             "folga fixa",
             "excecao data",
             "turno preferido"
@@ -1356,7 +1356,7 @@
         },
         {
           "chunk_index": 2,
-          "resumo": "Entidade Tipo de Contrato com os 5 contratos padrao (CLT 44h, CLT 36h, Estagiario Manha 20h, Estagiario Tarde 30h, Jovem Aprendiz) e suas restricoes legais especificas.",
+          "resumo": "Entidade Tipo de Contrato com CLT 44h/36h, Estagiario e Intermitente; tipo_trabalhador e classe legal do contrato. Jovem Aprendiz nao e tipo ativo no produto atual.",
           "tags": [
             "tipo contrato",
             "contrato",
@@ -1364,16 +1364,16 @@
             "CLT 36h",
             "estagiario manha",
             "estagiario tarde",
-            "jovem aprendiz",
+            "intermitente",
             "20 horas",
             "30 horas",
             "36 horas",
             "44 horas",
             "regime 5X2",
             "hora extra",
-            "domingo proibido",
-            "feriado proibido",
-            "noturno proibido",
+            "NT",
+            "convocacao",
+            "recorrencia",
             "compensacao"
           ],
           "entidades": [
@@ -1394,7 +1394,7 @@
               "tipo": "contrato"
             },
             {
-              "nome": "Jovem Aprendiz",
+              "nome": "Intermitente",
               "tipo": "contrato"
             }
           ],
@@ -1406,15 +1406,15 @@
               "peso": 1.0
             },
             {
-              "from": "Estagiario 20h",
+              "from": "Intermitente",
               "to": "Ciclo de Domingos",
-              "tipo_relacao": "proibe",
+              "tipo_relacao": "condiciona",
               "peso": 1.0
             },
             {
-              "from": "Jovem Aprendiz",
-              "to": "Ciclo de Domingos",
-              "tipo_relacao": "proibe",
+              "from": "Intermitente",
+              "to": "Recorrencia de Semanas",
+              "tipo_relacao": "depende_de",
               "peso": 1.0
             }
           ]
@@ -1715,7 +1715,7 @@
         },
         {
           "chunk_index": 1,
-          "resumo": "Regras de estagiario (H11 max horas/dia, H12 max horas/semana, H13 nunca domingo, H14 nunca hora extra) e aprendiz (H15 nunca domingo, H16 nunca feriado, H17 nunca noturno), baseadas na Lei 11.788 e CLT Arts 404/432.",
+          "resumo": "Regras atuais de estagiario: H15 limita 6h/dia e 30h/semana, H16 proibe hora extra. Estagiario pode domingo se operacao/TCE permitir. Aprendiz e conhecimento legal, nao tipo ativo.",
           "tags": [
             "estagiario",
             "max horas dia",
@@ -1724,12 +1724,12 @@
             "6 horas",
             "20 horas",
             "30 horas",
-            "nunca domingo",
+            "domingo permitido condicionado",
             "nunca hora extra",
             "Lei 11788",
             "Lei do Estagio",
-            "aprendiz",
-            "jovem aprendiz",
+            "aprendiz legal nao ativo",
+            "jovem aprendiz legal",
             "nunca feriado",
             "nunca noturno",
             "22h 05h",
@@ -2362,7 +2362,7 @@
         },
         {
           "chunk_index": 4,
-          "resumo": "Domingos: trabalho permitido no comercio via CCT, folga compensatoria em 7 dias, ciclo por genero (homens 2:1, mulheres 1:1 Art 386 CLT), SOFT no motor, estagiarios e aprendizes NUNCA trabalham domingo.",
+          "resumo": "Domingos: trabalho permitido no comercio via CCT, folga compensatoria em 7 dias, ciclo por genero (homens 2:1, mulheres 1:1 Art 386 CLT), SOFT no motor; estagiario pode domingo se operacao/TCE permitir.",
           "tags": [
             "domingo",
             "trabalho domingo",
@@ -2376,9 +2376,9 @@
             "domingos consecutivos",
             "SOFT constraint",
             "S_DOMINGO_CICLO",
-            "estagiario nunca",
-            "aprendiz nunca",
-            "HARD constraint domingo",
+            "estagiario domingo condicionado",
+            "aprendiz legal nao ativo",
+            "domingo calculado automaticamente",
             "comercio"
           ],
           "entidades": [
@@ -2418,7 +2418,7 @@
         },
         {
           "chunk_index": 5,
-          "resumo": "Jornada maxima CLT (8h normal, 10h com hora extra, 9h45 compensacao 5X2), limites de estagiarios (4h/20h ou 6h/30h sem hora extra) e aprendizes (6h sem HE), e jornada minima de 4h como decisao de produto.",
+          "resumo": "Jornada maxima CLT (8h normal, 10h com hora extra, 9h45 compensacao 5X2), limites de estagiarios (4h/20h ou 6h/30h sem hora extra), intermitente por convocacao, e jornada minima de 4h como decisao de produto.",
           "tags": [
             "jornada maxima",
             "8 horas",
@@ -2429,7 +2429,7 @@
             "5X2",
             "estagiario 4h",
             "estagiario 6h",
-            "aprendiz 6h",
+            "intermitente convocacao",
             "nunca hora extra",
             "jornada minima",
             "4 horas",
@@ -2652,7 +2652,7 @@
         },
         {
           "chunk_index": 2,
-          "resumo": "Almoco reduzido pela CCT (30min ao inves de 1h), configuracao no EscalaFlow (usa_cct_intervalo_reduzido), impacto na viabilidade de escalas, e tratamento especial de aprendiz que NUNCA trabalha em NENHUM feriado.",
+          "resumo": "Almoco reduzido pela CCT (30min ao inves de 1h), configuracao no EscalaFlow (usa_cct_intervalo_reduzido), impacto na viabilidade de escalas, e nota legal de Aprendiz como tipo nao ativo no produto atual.",
           "tags": [
             "almoco reduzido",
             "30 minutos",
@@ -2662,10 +2662,10 @@
             "min intervalo almoco",
             "viabilidade",
             "INFEASIBLE",
-            "aprendiz feriado",
-            "jovem aprendiz",
-            "nunca feriado",
-            "todos feriados",
+            "aprendiz legal nao ativo",
+            "jovem aprendiz legal",
+            "tipo nao ativo",
+            "referencia legal",
             "Art 404",
             "Art 432",
             "proibido",
@@ -2854,20 +2854,20 @@
         },
         {
           "chunk_index": 3,
-          "resumo": "Exemplo pratico de colaborador 6x1 no acougue (folga DOM numa semana, folga QUA na outra) e especificacao do Estagiario Manha 20h (Lei 11.788): max 4h/dia, nunca domingo, nunca hora extra.",
+          "resumo": "Exemplo pratico de colaborador 6x1 no acougue (folga DOM numa semana, folga QUA na outra) e especificacao do Estagiario Manha 20h (Lei 11.788): max 4h/dia, sem hora extra; domingo depende da operacao/TCE.",
           "tags": [
             "exemplo 6x1",
             "acougue",
             "estagiario 20h",
             "lei 11788",
             "jornada 4h",
-            "nunca domingo",
+            "domingo permitido condicionado",
             "nunca hora extra"
           ]
         },
         {
           "chunk_index": 4,
-          "resumo": "Especificacao do Estagiario Tarde/Noite 30h: max 6h/dia, nunca domingo, nunca hora extra, intervalo de 15 minutos para jornada entre 4h e 6h.",
+          "resumo": "Especificacao do Estagiario Tarde/Noite 30h: max 6h/dia, nunca hora extra, intervalo de 15 minutos para jornada entre 4h e 6h; domingo depende da operacao/TCE.",
           "tags": [
             "estagiario 30h",
             "jornada 6h",
@@ -2878,10 +2878,10 @@
         },
         {
           "chunk_index": 5,
-          "resumo": "Restricoes do Jovem Aprendiz (nunca domingo, feriado, noturno ou hora extra) e tabela comparativa de todos os contratos incluindo regimes (5x2 vs 6x1) e folgas por semana.",
+          "resumo": "Nota legal sobre Jovem Aprendiz como tipo nao ativo no EscalaFlow atual e tabela comparativa de contratos ativos incluindo CLT, Estagiario e Intermitente.",
           "tags": [
-            "jovem aprendiz",
-            "nunca noturno",
+            "jovem aprendiz legal",
+            "tipo nao ativo",
             "tabela comparativa",
             "regimes",
             "folgas por semana",

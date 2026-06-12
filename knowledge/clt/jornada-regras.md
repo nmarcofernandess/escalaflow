@@ -3,7 +3,9 @@
 
 ## As 20 Regras do Motor
 
-O motor do EscalaFlow aplica 20 regras HARD (obrigatorias) automaticamente. Estas sao as regras que o sistema verifica ao gerar e validar escalas.
+O motor do EscalaFlow aplica regras HARD (obrigatorias) automaticamente. Estas sao as regras que o sistema verifica ao gerar e validar escalas.
+
+Tipos ativos de trabalhador no produto atual: `CLT`, `ESTAGIARIO` e `INTERMITENTE`. Jovem Aprendiz aparece aqui apenas como conhecimento legal geral; nao e tipo ativo no cadastro atual do EscalaFlow.
 
 ## Regras CLT Fixas (editavel=0, nao podem ser alteradas)
 
@@ -21,33 +23,22 @@ O motor do EscalaFlow aplica 20 regras HARD (obrigatorias) automaticamente. Esta
 ### H5 — Respeitar excecoes (ferias, atestado, bloqueio)
 **Regra**: Colaboradores com excecao ativa ficam INDISPONIVEIS no periodo. O motor NUNCA escala alguem em ferias ou atestado.
 
-### H11 — Estagiario max horas/dia
+### H15 — Estagiario max horas/dia e semana
 **Base legal**: Lei 11.788 Art. 10
-**Regra**: Estagiario de 20h max 4h/dia. Estagiario de 30h max 6h/dia.
+**Regra**: Estagiario de 20h max 4h/dia. Estagiario de 30h max 6h/dia. Teto absoluto: 6h/dia e 30h/semana.
 
-### H12 — Estagiario max horas/semana
-**Base legal**: Lei 11.788 Art. 10
-**Regra**: Estagiario de 20h max 20h/semana. Estagiario de 30h max 30h/semana.
-
-### H13 — Estagiario nunca domingo
-**Base legal**: Lei 11.788 + pratica do setor
-**Regra**: Estagiario NUNCA trabalha domingo, independente do contrato.
-
-### H14 — Estagiario nunca hora extra
+### H16 — Estagiario nunca hora extra
 **Base legal**: Lei 11.788 Art. 10
 **Regra**: Estagiario NUNCA excede a carga diaria/semanal. Nao existe "hora extra" para estagiario.
 
-### H15 — Aprendiz nunca domingo
-**Base legal**: CLT Art. 404/432
-**Regra**: Jovem Aprendiz NUNCA trabalha domingo.
+### Domingo para estagiario
+**Regra do produto atual**: o motor nao tem bloqueio automatico de domingo para estagiario. Se a operacao/TCE permitir, o estagiario pode entrar no ciclo de domingo, respeitando jornada diaria/semanal e sem hora extra.
 
-### H16 — Aprendiz nunca feriado
-**Base legal**: CLT Art. 404/432
-**Regra**: Jovem Aprendiz NUNCA trabalha em NENHUM feriado (nao apenas os CCT proibidos).
+### Jovem Aprendiz (conhecimento legal, nao tipo ativo)
+**Base legal**: CLT Arts. 404/405/432.
+**Regra legal geral**: menor aprendiz nao trabalha em domingo, feriado, noturno ou hora extra.
 
-### H17 — Aprendiz nunca noturno
-**Base legal**: CLT Art. 404/405
-**Regra**: Jovem Aprendiz NUNCA trabalha entre 22:00 e 05:00.
+**Produto atual**: nao cadastre Aprendiz como `tipo_trabalhador`; o schema aceita apenas `CLT`, `ESTAGIARIO` e `INTERMITENTE`.
 
 ### H18 — Feriados CCT proibidos
 **Base legal**: CCT FecomercioSP
@@ -73,6 +64,8 @@ O motor do EscalaFlow aplica 20 regras HARD (obrigatorias) automaticamente. Esta
 ### H10 — Meta semanal de horas
 **Regra padrao**: HARD — colaborador deve cumprir a meta semanal do contrato (44h, 36h, 30h, 20h) com tolerancia (padrao +-30min).
 **Configuravel**: Pode ser mudado para SOFT (permite desvio sem bloquear geracao).
+
+Na tela de resumo, essa leitura muda para intermitente: o sistema nao deve cobrar uma meta semanal fixa quando nao houve convocacao. Intermitente mostra meta convocada/trabalhada no periodo; dias sem regra ou semana OFF aparecem como NT.
 
 ### DIAS_TRABALHO — Dias de trabalho por semana
 **Regra padrao**: HARD — respeitar o numero de dias de trabalho definido no contrato (5 dias para 5X2, 6 para 6X1).

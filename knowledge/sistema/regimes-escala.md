@@ -42,10 +42,11 @@ Use a excecao por data com `domingo_forcar_folga: true` (apesar do nome, forca f
 
 Suporte NATIVO na regra padrao do colaborador: semanas de trabalho (N), semanas de folga (M) e uma data ancora dentro de uma semana de trabalho. Configuravel na ficha do colaborador (aba Horarios, secao "Recorrencia de semanas") ou pela IA.
 
-- **Semana sim, semana nao**: N=1, M=1. O motor tira a pessoa da escala nas semanas de folga automaticamente, com meta de horas proporcional (sem violacao de meta semanal). Preview do setor e validador respeitam o mesmo ciclo.
+- **Semana sim, semana nao**: N=1, M=1. O motor tira a pessoa da escala nas semanas de folga automaticamente. Preview do setor e validador respeitam o mesmo ciclo. Para CLT/estagiario, a meta e proporcional; para intermitente, a tela mostra apenas a carga convocada.
 - **Uma semana a cada tres**: N=1, M=2. Qualquer combinacao N/M funciona.
 - **Ancora obrigatoria**: o ciclo precisa de um ponto fixo no calendario. Use qualquer dia de uma semana em que a pessoa TRABALHA. Sem ancora, escalas comecando em semanas diferentes inverteriam o padrao.
-- **Domingo sim, domingo nao (quinzenal so nos domingos)**: continua automatico via ciclo de domingo (intermitente Tipo B com folga variavel) — nao use recorrencia de semanas para isso.
+- **Domingo sim, domingo nao (quinzenal so nos domingos)**: use intermitente **Tipo A** com regra ativa no DOM + recorrencia 1/1. A ancora deve cair numa semana em que a pessoa trabalha. A tela mostra os domingos OFF como NT.
+- **Tipo B nao significa "nao trabalha"**: use Tipo B so quando a pessoa participa do rodizio DOM↔dia variavel. Para intermitente que vem em dias fixos, deixe `folga_variavel` null.
 - **"A cada 15 dias" num dia especifico**: sem campo nativo; contorno via excecoes de BLOQUEIO alternadas ou ajuste de celulas apos gerar.
 - Funciona para CLT, estagiario e intermitente, em 5x2 e 6x1. Para remover, limpe os tres campos.
 

@@ -41,28 +41,35 @@ O rules_override permite relaxar temporariamente uma regra para uma unica geraca
 **Se a escala for gerada PELO CICLO** (template repetido no calendário): o calendário **não ignora** o ciclo — ele repete fielmente o que está em `escala_ciclo_itens`. Acontece o seguinte:
 
 1. **Folga compensatória (Lei 605):** Se o **próprio template do ciclo** tiver uma semana em que alguém trabalha domingo e nos 7 dias seguintes (seg–dom) também trabalha, ao repetir esse template a violação aparece. Ou seja: o ciclo está sendo aplicado; o **conteúdo** do ciclo é que pode estar ilegal. A origem do ciclo (exportado de uma escala solver que tinha regras relaxadas, ou montado na UI) precisa garantir que nunca haja "domingo trabalhado + 7 dias seguidos trabalhados".
-2. **Abaixo da meta semanal:** Na geração por ciclo o sistema só grava **status** (TRABALHO/FOLGA) por dia — **não grava** `hora_inicio`, `hora_fim` nem `minutos_trabalho`. O validador lê as alocações e, sem horários, usa 0 min por dia de trabalho → "abaixo da meta". Ou seja: o calendário está integrado com o ciclo para **quem trabalha em qual dia**, mas **não está integrado com os horários** (turnos); para meta semanal bater, seria preciso preencher horários após gerar por ciclo (ex.: a partir do perfil/regra de cada um) ou o ciclo já carregar essa informação.
+2. **Abaixo da meta semanal:** Na geração por ciclo o sistema só grava **status** (TRABALHO/FOLGA) por dia — **não grava** `hora_inicio`, `hora_fim` nem `minutos_trabalho`. O validador lê as alocações e, sem horários, usa 0 min por dia de trabalho → "abaixo da meta". Ou seja: o calendário está integrado com o ciclo para **quem trabalha em qual dia**, mas **não está integrado com os horários** (turnos); para meta semanal bater, seria preciso preencher horários após gerar por ciclo (ex.: a partir do perfil/regra de cada um) ou o ciclo já carregar essa informação. Intermitente é exceção de leitura: a UI não deve inventar déficit contra uma meta semanal fixa, e mostra a meta convocada/trabalhada no período.
 
 **Resumo para escala pelo solver:** os passes relaxam H1/meta semanal; o validador depois aponta as violações. Preferir modo Otimizado e nível ALTO; evitar rules_override; aumentar equipe ou reduzir demanda se o Pass 1 não conseguir solução.
 
-### Qual a diferenca entre CLT, Estagiario e Aprendiz?
+### Por que um intermitente aparece como NT e nao FOLGA?
+
+Porque intermitente sem regra ativa naquele dia nao foi convocado. O banco ainda grava alocacoes com os status internos `TRABALHO`, `FOLGA` e `INDISPONIVEL`, mas a UI/export/IA traduzem a nao convocacao como **NT (Nao Trabalha)**. NT nao concorre com folga fixa/variavel dos CLTs e nao deve gerar deficit de meta semanal.
+
+Para "domingo sim, domingo nao", cadastre o intermitente como Tipo A: regra no DOM + recorrencia 1/1. Tipo B e so para rodizio DOM↔dia variavel.
+
+### Qual a diferenca entre CLT, Estagiario e Intermitente?
 
 - **CLT**: Funcionario regular. Pode trabalhar domingo, pode fazer hora extra (ate 10h/dia). Compensacao 9h45 permitida em regime 5X2.
-- **Estagiario**: Max 6h/dia (30h/sem) ou 4h/dia (20h/sem). NUNCA trabalha domingo. NUNCA faz hora extra.
-- **Aprendiz**: NUNCA trabalha domingo. NUNCA trabalha feriado. NUNCA trabalha em horario noturno (22h-5h). NUNCA faz hora extra.
+- **Estagiario**: Max 6h/dia (30h/sem) ou 4h/dia (20h/sem). NUNCA faz hora extra. Domingo depende da regra operacional/TCE; o motor atual nao bloqueia automaticamente.
+- **Intermitente**: Trabalha apenas quando ha regra de horario/recorrencia que o convoca. Dias sem convocacao aparecem como NT.
 
 ### O que e compensacao 9h45?
 
-Colaboradores CLT em regime 5X2 (5 dias de trabalho, 2 de folga) podem trabalhar ate 9h45 por dia para compensar o sabado sem trabalho. Isso esta previsto na CLT e permite que a meta semanal de 44h seja atingida em 5 dias (5 x 8h48min = 44h). Estagiarios e aprendizes NUNCA compensam.
+Colaboradores CLT em regime 5X2 (5 dias de trabalho, 2 de folga) podem trabalhar ate 9h45 por dia para compensar o sabado sem trabalho. Isso esta previsto na CLT e permite que a meta semanal de 44h seja atingida em 5 dias (5 x 8h48min = 44h). Estagiarios e intermitentes NUNCA compensam.
 
 ### Como funciona a regra de domingos?
 
 O domingo e tratado como dia especial pela CLT:
 - **Homens**: Podem trabalhar ate 2 domingos consecutivos, depois precisam de 1 domingo de folga (ciclo 2:1 padrao)
 - **Mulheres**: Podem trabalhar ate 1 domingo consecutivo, depois precisam de 1 domingo de folga (ciclo 1:1)
-- **Estagiarios e Aprendizes**: NUNCA trabalham domingo
+- **Estagiarios**: podem trabalhar domingo se a regra operacional/TCE permitir; o motor limita jornada/semana/hora extra
+- **Intermitentes**: so trabalham domingo se houver regra ativa para DOM e a recorrencia permitir
 
-O ciclo pode ser personalizado por colaborador. Exemplo: "Maria trabalha 1 domingo e folga 2" (ciclo 1:2).
+O ciclo de domingo e calculado automaticamente pelo motor. O RH nao configura mais `domingo_ciclo_*` manualmente. Para intermitente fixo/quinzenal, use regra por dia (`DOM`) + recorrencia de semanas.
 
 ### O que e rank e para que serve?
 
@@ -77,7 +84,7 @@ Depende. Regras marcadas como `editavel=0` sao CLT obrigatorias e NAO podem ser 
 ### O que sao as 35 regras do motor?
 
 O motor aplica 35 regras automaticamente, divididas em:
-- **16 CLT**: Legislacao trabalhista (interjornada, jornada maxima, almoco, estagiarios, aprendizes, feriados)
+- **CLT/CCT**: Legislacao trabalhista (interjornada, jornada maxima, almoco, estagiarios, intermitentes, feriados)
 - **7 SOFT**: Otimizacao (deficit de cobertura, turno preferido, consistencia de horario, equilibrio)
 - **12 ANTIPATTERN**: Boas praticas (clopening, junior sozinho, almoco simultaneo, hora extra evitavel, ioio de horario, etc.)
 

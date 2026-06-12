@@ -296,10 +296,6 @@ Schema (v3.1):
 | H8 | GRID_HORARIOS | Multiplos de 30min | Produto |
 | H9 | MAX_SAIDA_VOLTA | Max 2 blocos trabalho/dia | Art. 71 CLT |
 | H10 | META_SEMANAL | Soma semanal +-tolerancia | Art. 58 CLT |
-| H11 | APRENDIZ_DOMINGO | Aprendiz nunca domingo | Art. 432 CLT |
-| H12 | APRENDIZ_FERIADO | Aprendiz nunca feriado | Art. 432 CLT |
-| H13 | APRENDIZ_NOTURNO | Aprendiz nunca 22h-5h | Art. 404 CLT |
-| H14 | APRENDIZ_HORA_EXTRA | Aprendiz nunca HE | Art. 432 CLT |
 | H15 | ESTAGIARIO_JORNADA | Max 6h/dia 30h/sem | Lei 11.788 Art. 10 |
 | H16 | ESTAGIARIO_HORA_EXTRA | Estagiario nunca HE | Lei 11.788 |
 | H17 | FERIADO_PROIBIDO | 25/12 e 01/01 proibidos | CCT FecomercioSP |
@@ -307,13 +303,21 @@ Schema (v3.1):
 | H19 | FOLGA_COMP_DOM | Folga dom dentro de 7 dias | Lei 605/1949 |
 | H20 | ALMOCO_POSICAO | Almoco nunca 1a/ultima hora | TST 5a Turma |
 
+H11-H14 (Aprendiz) foram removidas na migracao v23 porque `APRENDIZ` nao e tipo ativo no negocio atual. Tipos ativos: `CLT`, `ESTAGIARIO`, `INTERMITENTE`.
+
 ### Intermitente — Tipo A (fixo) vs Tipo B (rotativo)
 
 O intermitente trabalha APENAS nos dias com regra de horario ativa (`colaborador_regra_horario` por `dia_semana_regra`). Dias sem regra = NT (Nao Trabalha) — HARD, inviolavel. `folga_fixa` e sempre NULL (dias sem regra ja cumprem essa funcao).
 
-**Tipo A (`folga_variavel = NULL`):** Trabalha os mesmos dias toda semana. Fora do pool rotativo de domingo. Se tem regra pra DOM, conta como cobertura garantida (fixa). Constraints de ciclo/XOR/dom_max sao puladas.
+**Tipo A (`folga_variavel = NULL`):** Trabalha nos dias definidos por regra e recorrencia. Fora do pool rotativo de domingo. Se tem regra pra DOM e nao esta em semana OFF por recorrencia, conta como cobertura garantida (fixa). Constraints de ciclo/XOR/dom_max sao puladas.
 
 **Tipo B (`folga_variavel != NULL`):** Entra no pool rotativo de domingo junto com CLTs. XOR: `trabalha_dom + trabalha_variavel == 1`. `dias_trabalho = dias_ativos - 1` (desconta o dia variavel). Constraints de ciclo, XOR e dom_max se aplicam normalmente. `folga_variavel` so pode apontar pra dia com regra ativa (guard T5 no tipc.ts). Belt-and-suspenders no solver: `work[c,d] = 0` forcado em dias sem regra, mesmo se constraints forem relaxadas.
+
+**Persistencia vs exibicao:** `StatusAlocacao` continua `TRABALHO | FOLGA | INDISPONIVEL`. Nao criar status novo `NAO_TRABALHA`: o solver, o validador e os exports continuam falando em alocacao diaria. O simbolo **NT** e uma camada de leitura para intermitente sem convocacao (dia sem regra ou semana OFF por recorrencia). NT nunca deve ser inferido como FF/FV/DF, nem entrar no ciclo de folga dos CLTs.
+
+**Resumo de horas:** H10 legal segue a policy do motor/validador, mas a UI nao mostra intermitente contra uma meta semanal fixa. Para intermitente, a meta exibida em "Por colaborador" e a carga convocada/trabalhada no periodo. Exemplo: 2 domingos de 6h => Real 12h, Meta 12h, Delta 0; os demais dias aparecem como NT.
+
+**Quinzenal fixo em domingo:** usar Tipo A com regra `dia_semana_regra = DOM` + recorrencia declarativa (`1` semana de trabalho, `1` semana de folga, ancora numa semana ON). Tipo B e apenas para rodizio DOM↔dia variavel.
 
 **Nota H6 — Cliff da Sumula 437:** Motor NUNCA gera jornada entre 361min e 389min (6h01-6h29). Com grid 30min = impossivel (360 ou 390). Guard no codigo mesmo assim.
 
@@ -387,7 +391,7 @@ FASE 1 — MONTAR GRID DE SLOTS
 
 FASE 2 — DISTRIBUIR FOLGAS
   1 folga/semana (CLT 44h) ou 2 (CLT 36h, estagiario).
-  Rodizio domingo (H3/H3b). Aprendiz nunca domingo (H11).
+  Rodizio domingo (H3/H3b). Intermitente Tipo A so entra se houver regra/recorrencia ON.
   Max 6 consecutivos (H1). Folga compensatoria dom 7 dias (H19).
   Prioriza folga em dia de menor demanda.
 
@@ -401,7 +405,7 @@ FASE 3 — DISTRIBUIR HORAS POR DIA
 
 FASE 4 — ALOCAR HORARIOS
   Grid 30min. Descanso entre jornadas >= 11h (H2).
-  DSR + interjornada >= 35h (H2b). Aprendiz fora do noturno (H13).
+  DSR + interjornada >= 35h (H2b).
   Score por candidato: cobertura de slots deficitarios vs demanda planejada.
 
 FASE 5 — POSICIONAR ALMOCO
@@ -434,8 +438,8 @@ O v3 MANTEM e EXPANDE:
 ```
 HIERARQUIA DE PINS:
 
-1. Pin viola HARD (ex: pin coloca aprendiz no domingo)?
-   → AVISA: "Celula fixada viola regra H11 (aprendiz nunca domingo)."
+1. Pin viola HARD (ex: pin coloca colaborador em feriado proibido)?
+   → AVISA: "Celula fixada viola regra H17/H18 (feriado proibido)."
    → REMOVE o pin automaticamente. HARD sempre vence.
 
 2. Pin viola PISO (ex: pin remove a unica pessoa de um slot)?
@@ -535,11 +539,12 @@ FERIADO:
    Todos os colaboradores foram marcados como INDISPONIVEL nessa data.
    Semana com feriado: meta semanal proporcional (37.7h ao inves de 44h)."
 
-APRENDIZ:
+TIPO NAO SUPORTADO:
 
-  "Menor aprendiz Carlos esta escalado pra domingo 15/03.
-   Aprendizes NAO podem trabalhar domingo (CLT Art. 432).
-   → Sugestao: trocar Carlos com colaborador CLT nesse dia."
+  "Aprendiz tem regras legais especificas, mas o EscalaFlow atual nao possui
+   `APRENDIZ` como tipo ativo de trabalhador.
+   → Sugestao: nao criar contrato/colaborador como Aprendiz ate o produto
+   implementar esse tipo explicitamente."
 ```
 
 **Na UI:** Modal com mensagem + sugestoes (ver secao 10, EscalaPagina).
@@ -824,13 +829,14 @@ Adicionar:
 #### B) ColaboradorLista.tsx + ColaboradorDetalhe.tsx
 
 Adicionar no form:
-- Campo `tipo_trabalhador`: select (CLT / Estagiario / Aprendiz). Default: CLT
+- Campo `tipo_contrato_id`: select de contrato; a classe legal vem do contrato.
+- Badge derivado `tipo_trabalhador` (CLT / Estagiario / Intermitente), somente leitura.
 - Campo `funcao_id`: select "Posto" com postos do setor + "Sem posto (reserva)"
 
 Comportamento inteligente:
-- Tipo = Estagiario → contrato auto-seleciona "Estagiario 30h"
-- Tipo = Aprendiz → idem "Aprendiz 30h"
-- Setor muda → lista de postos atualiza
+- Trocar contrato atualiza o badge de classe legal imediatamente.
+- A criacao/edicao server-side ignora `tipo_trabalhador` livre e recalcula pelo contrato.
+- Setor muda → lista de postos atualiza.
 
 #### C) EscalaPagina.tsx
 
@@ -853,7 +859,7 @@ Mudancas:
 | Pagina | Por que nao muda |
 |---|---|
 | Dashboard.tsx | Ja mostra resumo. Dados novos vem do backend. |
-| ContratoLista.tsx | Contratos nao mudam. Seed pode add Estagiario/Aprendiz. |
+| ContratoLista.tsx | Contrato define/exibe a classe legal (`tipo_trabalhador`); colaborador apenas escolhe contrato. |
 | SetorLista.tsx | Lista de setores nao muda. |
 | NaoEncontrado.tsx | 404 e 404. |
 
@@ -1014,7 +1020,7 @@ CREATE TABLE IF NOT EXISTS setor_horario_semana (
 
 -- Colaborador
 ALTER TABLE colaboradores ADD COLUMN tipo_trabalhador TEXT NOT NULL DEFAULT 'CLT'
-  CHECK (tipo_trabalhador IN ('CLT', 'ESTAGIARIO', 'APRENDIZ'));
+  CHECK (tipo_trabalhador IN ('CLT', 'ESTAGIARIO', 'INTERMITENTE'));
 ALTER TABLE colaboradores ADD COLUMN funcao_id INTEGER REFERENCES funcoes(id);
 
 -- Demanda (campo novo)
@@ -1193,10 +1199,6 @@ export const CLT = {
   FOLGA_COMPENSATORIA_DOM_DIAS: 7,
   ESTAGIARIO_MAX_JORNADA_MIN: 360,
   ESTAGIARIO_MAX_SEMANAL_MIN: 1800,
-  APRENDIZ_MAX_JORNADA_MIN: 360,
-  APRENDIZ_MAX_SEMANAL_MIN: 1800,
-  APRENDIZ_HORARIO_NOTURNO_INICIO: '22:00',
-  APRENDIZ_HORARIO_NOTURNO_FIM: '05:00',
   GRID_MINUTOS: 30,
 } as const
 
@@ -1244,7 +1246,7 @@ export const ANTIPATTERNS = {
 } as const
 
 export const FERIADOS_CCT_PROIBIDOS = ['12-25', '01-01'] as const
-export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'APRENDIZ'] as const
+export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'INTERMITENTE'] as const
 ```
 
 ---
@@ -1252,7 +1254,7 @@ export const TIPOS_TRABALHADOR = ['CLT', 'ESTAGIARIO', 'APRENDIZ'] as const
 ## 17. INTERFACES TYPESCRIPT v3 — REFERENCIA RAPIDA
 
 ```typescript
-type TipoTrabalhador = 'CLT' | 'ESTAGIARIO' | 'APRENDIZ'
+type TipoTrabalhador = 'CLT' | 'ESTAGIARIO' | 'INTERMITENTE'
 type StatusAlocacao = 'TRABALHO' | 'FOLGA' | 'INDISPONIVEL'
 
 interface Funcao {
@@ -1407,7 +1409,7 @@ Perguntas que surgiram durante a especificacao e foram RESPONDIDAS.
 | 15 | Tolerancia semanal existe na CLT? | **NAO.** Ultrapassou 44h = hora extra. Campo e margem operacional. | — |
 | 16 | Intervalo almoco conta como hora? | **NAO.** Art. 71 ss2 CLT. | Art. 71 ss2 CLT |
 | 17 | Estagiario pode trabalhar domingo? | **Pode,** se consta no TCE. Silencio legislativo. | Silencio legislativo |
-| 18 | Menor aprendiz pode trabalhar domingo? | **NUNCA.** CLT Art. 432 + IN MTE 146. | CLT Art. 432 |
+| 18 | O sistema suporta Jovem Aprendiz? | **Nao no produto atual.** E conhecimento legal, mas `APRENDIZ` nao e tipo ativo no schema. | Produto |
 | 19 | Feriados a partir de 01/03/2026? | **So com CCT autorizando.** Portaria MTE 3.665/2023. | Portaria 3.665/2023 |
 | 20 | 25/12 e 01/01? | **PROIBIDO** trabalhar. CCT FecomercioSP interior. | CCT |
 | 21 | Banco de horas tiers? | **3 niveis:** 12 meses (CCT), 6 meses (individual escrito), mesmo mes (tacito). | Art. 59 ss2, ss5, ss6 |
@@ -1437,8 +1439,8 @@ ARQUIVOS QUE SERAO MODIFICADOS (add campos/handlers):
 ├── src/main/motor/worker.ts                     ← Atualizar chamada motor v3
 │
 ├── src/renderer/src/paginas/EmpresaConfig.tsx    ← +toggle CCT +feriados
-├── src/renderer/src/paginas/ColaboradorLista.tsx ← +tipo_trabalhador
-├── src/renderer/src/paginas/ColaboradorDetalhe.tsx ← +tipo_trabalhador +funcao_id
+├── src/renderer/src/paginas/ColaboradorLista.tsx ← badge derivado de tipo_trabalhador + funcao_id
+├── src/renderer/src/paginas/ColaboradorDetalhe.tsx ← badge derivado de tipo_trabalhador + funcao_id
 ├── src/renderer/src/paginas/SetorDetalhe.tsx     ← +aba Postos +timeline demanda
 ├── src/renderer/src/paginas/EscalaPagina.tsx     ← +preflight +almoco +posto +delta +tab "Por que?"
 ├── src/renderer/src/paginas/EscalasHub.tsx       ← +avisos HARD/SOFT separados

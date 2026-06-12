@@ -12,7 +12,7 @@ Na tela **Detalhes da Escala** (`/setores/:id/escala`), a primeira aba é **Resu
 - **Problemas que impedem oficializar:** frase única. Ou "Nenhum problema que impeça oficializar." ou "X problema(s) que precisam ser corrigidos antes de oficializar."
 - **Avisos:** frase única. Ou "Nenhum aviso." ou "X aviso(s) (preferências ou metas)."
 - **Qualidade da escala:** um número com badge colorido (verde/âmbar/vermelho), ex.: "Qualidade da escala: 85".
-- **Por colaborador:** tabela com Colaborador, Real (horas), Meta, Delta e Avisos (texto amigável por violação).
+- **Por colaborador:** tabela com Colaborador, Real (horas), Meta, Delta e Avisos (texto amigável por violação). Para CLT/estagiário, Meta vem do contrato. Para intermitente, Meta exibida = horas convocadas/trabalhadas no período; não invente déficit semanal onde não houve convocação.
 
 Nenhum termo técnico é exibido: nem "cobertura_efetiva", nem "violacoes_hard", nem códigos de regra (R1, R4, etc.).
 
@@ -45,9 +45,15 @@ Para a IA explicar o que está na tela ou relacionar pergunta do usuário com da
 | "Nenhum problema que impeça oficializar" / "X problemas que precisam ser corrigidos..." | `indicadores.violacoes_hard` |
 | "Nenhum aviso" / "X avisos (preferências ou metas)" | `indicadores.violacoes_soft` |
 | "Qualidade da escala: N" (badge) | `indicadores.pontuacao` |
-| Tabela "Por colaborador" (Real, Meta, Delta, Avisos) | `alocacoes`, `violacoes` por `colaborador_id`, contratos para meta semanal |
+| Tabela "Por colaborador" (Real, Meta, Delta, Avisos) | `calcularResumoColaboradores` sobre `alocacoes`, `violacoes` e contratos. CLT/estagiário usam meta contratual; intermitente usa meta convocada/real. |
 
 Textos exatos do Resumo estão em \`src/shared/resumo-user.ts\` (usados por \`gerar_escala\`, \`diagnosticar_escala\` e pela UI em \`formatadores.ts\`).
+
+### Intermitente no Resumo
+
+- Dias sem regra ou fora da recorrência aparecem como **NT (não trabalha)** nas telas e exportações.
+- O banco continua usando status de alocação `FOLGA`/`INDISPONIVEL` quando necessário; **NT não é um quarto status persistido**.
+- Não chamar NT de folga fixa, folga variável, déficit de meta ou falta. Intermitente só concorre por cobertura nos dias em que está convocado pela regra.
 
 ---
 
