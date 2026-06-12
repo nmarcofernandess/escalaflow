@@ -50,6 +50,43 @@ function buildPreflightInput(): SolverInput {
   }
 }
 
+function buildSlotPreflightInput(): SolverInput {
+  return {
+    ...buildPreflightInput(),
+    piso_operacional: 1,
+    colaboradores: [{
+      id: 1,
+      nome: 'CLT Unica',
+      horas_semanais: 44,
+      regime_escala: '5X2',
+      dias_trabalho: 5,
+      max_minutos_dia: 585,
+      tipo_trabalhador: 'CLT',
+      sexo: 'F',
+      funcao_id: 1,
+      rank: 1,
+    }],
+    demanda: [{
+      dia_semana: 'SEG',
+      hora_inicio: '08:00',
+      hora_fim: '09:00',
+      min_pessoas: 1,
+      override: false,
+    }],
+    regras_colaborador_dia: [{
+      colaborador_id: 1,
+      data: '2026-03-02',
+      inicio_min: '12:00',
+      inicio_max: '12:00',
+      fim_min: null,
+      fim_max: '16:00',
+      preferencia_turno_soft: null,
+      domingo_forcar_folga: false,
+      folga_fixa: false,
+    }],
+  }
+}
+
 describe('operational floor', () => {
   it('enforces an attainable floor as a hard CP-SAT constraint', () => {
     const script = String.raw`
@@ -91,5 +128,19 @@ assert solver.Value(work[(0, 0, 0)]) == 1
     expect(warnings.some((warning) => warning.codigo === 'PISO_OPERACIONAL_IMPOSSIVEL')).toBe(true)
     expect(warnings.find((warning) => warning.codigo === 'PISO_OPERACIONAL_IMPOSSIVEL')?.mensagem)
       .toContain('piso 2, disponiveis 1')
+  })
+
+  it('warns when the floor is impossible for a specific time slot even with day availability', () => {
+    const blockers: Array<{ codigo: string }> = []
+    const warnings: Array<{ codigo: string; mensagem: string; detalhe?: string }> = []
+
+    enrichPreflightWithCapacityChecks(buildSlotPreflightInput(), blockers as any, warnings as any)
+
+    const warning = warnings.find((item) => item.codigo === 'PISO_OPERACIONAL_SLOT_IMPOSSIVEL')
+    expect(warning).toBeDefined()
+    expect(warning?.mensagem).toContain('2026-03-02')
+    expect(warning?.mensagem).toContain('08:00-08:30')
+    expect(warning?.mensagem).toContain('piso 1, disponiveis 0')
+    expect(warning?.detalhe).toContain('CLT Unica (12:00-16:00)')
   })
 })

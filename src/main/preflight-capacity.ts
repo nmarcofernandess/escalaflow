@@ -21,6 +21,27 @@ interface CapacityOptions {
   addNoBlockersWarning?: boolean
 }
 
+const DIA_SEMANA_INDEX: Record<DiaSemana, number> = {
+  DOM: 0,
+  SEG: 1,
+  TER: 2,
+  QUA: 3,
+  QUI: 4,
+  SEX: 5,
+  SAB: 6,
+}
+
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function minutesToTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
+}
+
 export function normalizeRegimesOverride(
   overrides?: SimulacaoRegimeOverride[],
 ): SimulacaoRegimeOverride[] {
@@ -109,6 +130,41 @@ export function enrichPreflightWithCapacityChecks(
     return false
   }
 
+  function indisponivelNoDia(c: (typeof input.colaboradores)[number], day: string, label: DiaSemana): boolean {
+    if (label === 'DOM' && bloqueadoDomingo(c)) return true
+    if (holidayForbidden.has(day)) return true
+    if (indisponivelPorRegra(c, day, label)) return true
+    return input.excecoes.some((e) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
+  }
+
+  function janelaOperacional(label: DiaSemana): { abertura: string; fechamento: string } {
+    const horarioDoDia = input.empresa.horario_por_dia?.[DIA_SEMANA_INDEX[label]]
+    return {
+      abertura: horarioDoDia?.abertura ?? input.empresa.hora_abertura,
+      fechamento: horarioDoDia?.fechamento ?? input.empresa.hora_fechamento,
+    }
+  }
+
+  function janelaColaborador(
+    c: (typeof input.colaboradores)[number],
+    day: string,
+    label: DiaSemana,
+  ): { inicio: string; fim: string; inicioMin: number; fimMax: number } {
+    const empresaWindow = janelaOperacional(label)
+    const regra = regraPorColabDia.get(`${c.id}|${day}`)
+    const inicio = regra?.inicio_min ?? empresaWindow.abertura
+    const fim = regra?.fim_max ?? empresaWindow.fechamento
+    return {
+      inicio,
+      fim,
+      inicioMin: timeToMinutes(inicio),
+      fimMax: timeToMinutes(fim),
+    }
+  }
+
+  const MAX_SLOT_FLOOR_WARNINGS = 20
+  let slotFloorWarnings = 0
+
   for (const day of days) {
     const dayDemand = demandByDay.get(day) ?? []
     if (dayDemand.length === 0) continue
@@ -125,12 +181,8 @@ export function enrichPreflightWithCapacityChecks(
     }
 
     const peakDemand = dayDemand.reduce((acc, d) => Math.max(acc, d.min_pessoas), 0)
-    const availableCount = input.colaboradores.filter((c) => {
-      if (label === 'DOM' && bloqueadoDomingo(c)) return false
-      if (holidayForbidden.has(day)) return false
-      if (indisponivelPorRegra(c, day, label)) return false
-      return !input.excecoes.some((e) => e.colaborador_id === c.id && e.data_inicio <= day && day <= e.data_fim)
-    }).length
+    const availableToday = input.colaboradores.filter((c) => !indisponivelNoDia(c, day, label))
+    const availableCount = availableToday.length
 
     if (label === 'DOM' && availableCount === 0) {
       blockers.push({
@@ -150,6 +202,47 @@ export function enrichPreflightWithCapacityChecks(
         mensagem: `Piso operacional impossivel em ${day}: piso ${floorRequired}, disponiveis ${availableCount}.`,
         detalhe: 'O solver limita o piso pela disponibilidade fisica do slot; revise excecoes, regras de horario ou o piso do setor.',
       })
+    }
+
+    for (const seg of dayDemand) {
+      if (slotFloorWarnings >= MAX_SLOT_FLOOR_WARNINGS) break
+
+      const requiredInSegment = Math.min(pisoOperacional, seg.min_pessoas)
+      if (requiredInSegment <= 0) continue
+
+      const grid = Math.max(1, input.empresa.grid_minutos || 30)
+      const segmentStart = timeToMinutes(seg.hora_inicio)
+      const segmentEnd = timeToMinutes(seg.hora_fim)
+
+      for (let slotStart = segmentStart; slotStart < segmentEnd; slotStart += grid) {
+        if (slotFloorWarnings >= MAX_SLOT_FLOOR_WARNINGS) break
+
+        const slotEnd = Math.min(slotStart + grid, segmentEnd)
+        const slotAvailable = availableToday.filter((c) => {
+          const janela = janelaColaborador(c, day, label)
+          return janela.inicioMin <= slotStart && janela.fimMax >= slotEnd
+        })
+
+        if (slotAvailable.length >= requiredInSegment) continue
+
+        const quaseCobre = availableToday
+          .filter((c) => !slotAvailable.some((available) => available.id === c.id))
+          .slice(0, 3)
+          .map((c) => {
+            const janela = janelaColaborador(c, day, label)
+            return `${c.nome} (${janela.inicio}-${janela.fim})`
+          })
+
+        warnings.push({
+          codigo: 'PISO_OPERACIONAL_SLOT_IMPOSSIVEL',
+          severidade: 'WARNING',
+          mensagem: `Piso operacional impossivel em ${day} ${minutesToTime(slotStart)}-${minutesToTime(slotEnd)}: piso ${requiredInSegment}, disponiveis ${slotAvailable.length}.`,
+          detalhe: quaseCobre.length > 0
+            ? `Quase cobre: ${quaseCobre.join(', ')}. Revise regras de horario, excecoes ou piso do setor.`
+            : 'Nenhum colaborador elegivel no dia cobre a faixa. Revise regras de horario, excecoes ou piso do setor.',
+        })
+        slotFloorWarnings += 1
+      }
     }
 
     if (availableCount < peakDemand) {
