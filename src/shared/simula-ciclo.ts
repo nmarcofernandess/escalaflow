@@ -129,9 +129,8 @@ export function sugerirK(N: number, maxCiclo = 7): number {
   return melhor > 0 ? melhor : 1
 }
 
-/** Build base sunday pattern: d domingos em H semanas, sem TT.
- * Cada pessoa segue o mesmo padrão tipo T F F T F (2 trab em 5 = pos 0 e 3).
- * step = ceil(H/d) garante espaçamento sem dois T seguidos. */
+/** Build base sunday pattern: d domingos em H semanas, sem TT circular quando possível.
+ * Cada pessoa segue o mesmo padrão espaçado, depois rotacionado no ciclo. */
 function buildBasePatternDomingos(d: number, H: number): DiaStatus[] {
   const pattern: DiaStatus[] = Array(H).fill('F')
   if (d <= 0) return pattern
@@ -140,11 +139,8 @@ function buildBasePatternDomingos(d: number, H: number): DiaStatus[] {
     pattern[0] = 'T'
     return pattern
   }
-  // step >= 2 evita TT; step <= (H-1)/(d-1) cabe d T's
-  const step = Math.max(2, Math.min(Math.ceil(H / d), Math.floor((H - 1) / (d - 1))))
   for (let i = 0; i < d; i++) {
-    const pos = i * step
-    if (pos < H) pattern[pos] = 'T'
+    pattern[Math.floor((i * H) / d)] = 'T'
   }
   return pattern
 }

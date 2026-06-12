@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { escalaParaCicloGrid } from '../../src/renderer/src/lib/ciclo-grid-converters'
+import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '../../src/renderer/src/lib/ciclo-grid-converters'
 import type { Alocacao, Colaborador, Funcao, RegraHorarioColaborador } from '../../src/shared'
+import { gerarCicloFase1 } from '../../src/shared/simula-ciclo'
 
 const hellen: Colaborador = {
   id: 10,
@@ -81,5 +82,34 @@ describe('escalaParaCicloGrid intermitente tipo A', () => {
     expect(grid.rows[0].fixa).toBeNull()
     expect(grid.rows[0].variavel).toBeNull()
     expect(grid.rows[0].semanas[0]).toEqual(['NT', 'NT', 'NT', 'NT', 'NT', 'NT', 'DT'])
+  })
+})
+
+describe('simulacaoParaCicloGrid 6x1', () => {
+  it('renderiza folga unica semanal sem inventar folga fixa', () => {
+    const resultado = gerarCicloFase1({
+      num_postos: 5,
+      trabalham_domingo: 2,
+      num_meses: 1,
+      preflight: true,
+      regime: '6X1',
+    })
+
+    expect(resultado.sucesso).toBe(true)
+    if (!resultado.sucesso) return
+
+    const grid = simulacaoParaCicloGrid(resultado)
+    const rowComDomingoTrabalhado = grid.rows.find((row) => row.semanas.some((semana) => semana[6] === 'DT'))
+
+    expect(rowComDomingoTrabalhado).toBeDefined()
+    expect(rowComDomingoTrabalhado?.fixa).toBeNull()
+    expect(rowComDomingoTrabalhado?.variavel).not.toBeNull()
+
+    const semanasComDomingoTrabalhado = rowComDomingoTrabalhado!.semanas.filter((semana) => semana[6] === 'DT')
+    expect(semanasComDomingoTrabalhado.length).toBeGreaterThan(0)
+    for (const semana of semanasComDomingoTrabalhado) {
+      expect(semana.filter((dia) => dia === 'FV')).toHaveLength(1)
+      expect(semana.filter((dia) => dia === 'DF')).toHaveLength(0)
+    }
   })
 })

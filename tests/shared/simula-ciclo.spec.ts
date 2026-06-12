@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarCicloFase1 } from '../../src/shared/simula-ciclo'
+import { gerarCicloFase1, sugerirK } from '../../src/shared/simula-ciclo'
 
 describe('gerarCicloFase1', () => {
   it('gera ciclo basico 5 pessoas, K=2', () => {
@@ -160,6 +160,69 @@ describe('gerarCicloFase1 com demanda_por_dia', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('gerarCicloFase1 — regime 6X1', () => {
+  it('trata edge cases N=1, K=0, K=N e N=30 nos dois regimes', () => {
+    for (const regime of ['5X2', '6X1'] as const) {
+      const n1SemDomingo = gerarCicloFase1({
+        num_postos: 1,
+        trabalham_domingo: 0,
+        preflight: true,
+        regime,
+      })
+      expect(n1SemDomingo.sucesso, `${regime} N=1 K=0`).toBe(true)
+
+      const n1TodosDomingo = gerarCicloFase1({
+        num_postos: 1,
+        trabalham_domingo: 1,
+        preflight: true,
+        regime,
+      })
+      expect(n1TodosDomingo.sucesso, `${regime} N=1 K=N`).toBe(false)
+      expect(n1TodosDomingo.erro).toMatch(/preflight/i)
+      expect(n1TodosDomingo.sugestao).toMatch(/K/i)
+
+      const todosDomingo = gerarCicloFase1({
+        num_postos: 5,
+        trabalham_domingo: 5,
+        preflight: true,
+        regime,
+      })
+      expect(todosDomingo.sucesso, `${regime} K=N`).toBe(false)
+      expect(todosDomingo.erro).toMatch(/preflight/i)
+      expect(todosDomingo.sugestao).toMatch(/K/i)
+
+      const n30 = gerarCicloFase1({
+        num_postos: 30,
+        trabalham_domingo: sugerirK(30, 7),
+        preflight: true,
+        regime,
+      })
+      expect(n30.sucesso, `${regime} N=30`).toBe(true)
+      if (!n30.sucesso) return
+      expect(n30.grid).toHaveLength(30)
+      expect(n30.stats.sem_TT).toBe(true)
+    }
+  })
+
+  it('sugerirK mantém o alvo de 40% quando o padrão consegue evitar domingos consecutivos', () => {
+    expect(sugerirK(7, 7)).toBe(3)
+
+    for (const regime of ['5X2', '6X1'] as const) {
+      for (const N of [7, 13, 30]) {
+        const result = gerarCicloFase1({
+          num_postos: N,
+          trabalham_domingo: sugerirK(N, 7),
+          num_meses: 3,
+          preflight: true,
+          regime,
+        })
+
+        expect(result.sucesso).toBe(true)
+        if (!result.sucesso) return
+        expect(result.stats.sem_TT, `${regime} N=${N}`).toBe(true)
+      }
+    }
+  })
+
   it('rodizio: ~1 folga/semana (folga extra apenas na transicao que evitaria 7+ dias corridos)', () => {
     const result = gerarCicloFase1({
       num_postos: 6,
