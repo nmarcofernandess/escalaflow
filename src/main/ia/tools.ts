@@ -505,11 +505,11 @@ export const IA_TOOLS = [
         description: 'Trava a escala como OFICIAL. Só é possível quando violacoes_hard = 0. Se o usuário já informou `escala_id` e pediu para oficializar, chame esta tool diretamente (ela já valida e recusa se houver violação HARD).',
         parameters: toJsonSchema(OficializarEscalaSchema)
     },
-    {
+      {
         name: 'preflight',
-        description: 'Verifica viabilidade ANTES de gerar escala. Retorna blockers e warnings. Use o setor_id do contexto automático. Exemplo: preflight({"setor_id": 5, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}).',
+        description: 'Executa a verificação prévia antes de gerar escala. Retorna impedimentos e avisos em linguagem de RH. Use o setor_id do contexto automático. Exemplo: preflight({"setor_id": 5, "data_inicio": "2026-03-01", "data_fim": "2026-03-31"}).',
         parameters: toJsonSchema(PreflightSchema)
-    },
+      },
     {
         name: 'diagnosticar_escala',
         description: 'Revalida e resume uma escala existente (indicadores, top violações/antipadrões e próximas ações possíveis). Use quando o usuário pedir diagnóstico/análise/explicação. Não use como passo obrigatório antes de `oficializar_escala` quando o usuário já deu um `escala_id` explícito.',
@@ -2575,7 +2575,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     codigo: 'SEM_DEMANDA',
                     severidade: 'WARNING',
                     mensagem: 'Setor sem demanda planejada cadastrada.',
-                    detalhe: 'O motor vai considerar demanda zero — todos os slots serão de livre distribuição.'
+                    detalhe: 'Sem demanda cadastrada, o sistema não terá meta de cobertura para o período.'
                 })
             }
 
@@ -2598,7 +2598,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                     warnings.push({
                         codigo: 'PREFLIGHT_DETALHADO_DIAGNOSTICO_INDISPONIVEL',
                         severidade: 'WARNING',
-                        mensagem: 'Não foi possível executar checks detalhados de capacidade.',
+                        mensagem: 'Não foi possível executar a verificação detalhada de capacidade.',
                         detalhe: err?.message ?? String(err),
                     })
                 }
@@ -2620,8 +2620,8 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
                 },
             }, {
                 summary: ok
-                  ? `Preflight OK para setor ${setor_id}. ${warnings.length} warning(s), 0 blocker(s).`
-                  : `Preflight encontrou ${blockers.length} blocker(s) e ${warnings.length} warning(s) para o setor ${setor_id}.`,
+                  ? `Pré-requisitos básicos OK para o setor ${setor_id}. ${warnings.length} aviso(s). A viabilidade final é confirmada na geração ou na verificação prévia completa.`
+                  : `Verificação prévia encontrou ${blockers.length} impedimento(s) e ${warnings.length} aviso(s) para o setor ${setor_id}.`,
                 meta: {
                   tool_kind: 'validation',
                   validation_level: detalhado ? 'completo' : 'basico',
@@ -2633,7 +2633,7 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         } catch (e: any) {
             return toolError(
               'PREFLIGHT_FAILED',
-              `Erro ao executar preflight: ${e.message}`,
+              `Erro ao executar a verificação prévia: ${e.message}`,
               {
                 correction: 'Verifique se o setor_id e o período estão corretos e tente novamente.',
                 meta: { tool_kind: 'validation', next_tools_hint: ['consultar'] }

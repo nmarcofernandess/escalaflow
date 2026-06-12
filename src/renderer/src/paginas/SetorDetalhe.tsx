@@ -107,7 +107,7 @@ import { SugestaoSheet } from '@/componentes/SugestaoSheet'
 import { converterPreviewParaPinned, converterPreviewParaPinnedWithOrigin, sugerirK, type SimulaCicloOutput } from '@shared/simula-ciclo'
 import { indiceSemanaRecorrencia } from '@shared/recorrencia'
 import { runPreviewMultiPass, type MultiPassResult } from '@shared/preview-multi-pass'
-import type { EscalaAdvisoryOutputV2 } from '@shared/index'
+import type { EscalaAdvisoryInput, EscalaAdvisoryOutputV2 } from '@shared/index'
 import { textoResumoRelaxacoes } from '@shared/resumo-user'
 import { CoberturaChart } from '@/componentes/CoberturaChart'
 import { escalaParaCicloGrid, simulacaoParaCicloGrid } from '@/lib/ciclo-grid-converters'
@@ -133,6 +133,7 @@ import { gerarCSVAlocacoes, gerarCSVComparacaoDemanda, gerarCSVViolacoes } from 
 import { getPresetLabel, resolvePresetRange, type EscalaPeriodoPreset } from '@/lib/escala-periodo-preset'
 import { resolveEscalaEquipe } from '@/lib/escala-team'
 import { buildPreviewAvisos } from '@/lib/build-avisos'
+import { executarVerificacaoPrevia, type VerificacaoPreviaStage } from '@/lib/verificacao-previa'
 import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
 import { exportarService } from '@/servicos/exportar'
@@ -480,6 +481,7 @@ export function SetorDetalhe() {
   const [sugestaoOpen, setSugestaoOpen] = useState(false)
   const [advisoryResult, setAdvisoryResult] = useState<EscalaAdvisoryOutputV2 | null>(null)
   const [advisoryLoading, setAdvisoryLoading] = useState(false)
+  const [advisoryLoadingLabel, setAdvisoryLoadingLabel] = useState('Analisando o arranjo...')
   const [gerandoLabel, setGerandoLabel] = useState<string | null>(null)
   const [periodoGeracao, setPeriodoGeracao] = useState(() => resolvePresetRange('3_MESES'))
   const [solverConfigOpen, setSolverConfigOpen] = useState(false)
@@ -2299,6 +2301,7 @@ export function SetorDetalhe() {
     if (advisoryLoading || !setorId) return
     setSugestaoOpen(true)
     setAdvisoryLoading(true)
+    setAdvisoryLoadingLabel('Analisando o arranjo...')
     setAdvisoryResult(null)
 
     try {
@@ -2350,6 +2353,7 @@ export function SetorDetalhe() {
     if (advisoryLoading || !setorId || !simulacaoPreview.resultado.sucesso) return
     setSugestaoOpen(true)
     setAdvisoryLoading(true)
+    setAdvisoryLoadingLabel('Verificando cadastro e demanda...')
     setAdvisoryResult(null)
 
     try {
@@ -2372,7 +2376,7 @@ export function SetorDetalhe() {
         }
       })
 
-      const result = await escalasService.advisory({
+      const advisoryInput: EscalaAdvisoryInput = {
         setor_id: setorId,
         data_inicio: periodoGeracao.data_inicio,
         data_fim: periodoGeracao.data_fim,
@@ -2380,24 +2384,25 @@ export function SetorDetalhe() {
         current_folgas: currentFolgas,
         preview_diagnostics: previewDiagnostics,
         validate_only: true,
-      })
-
-      setAdvisoryResult(result)
-
-      if (result.fallback?.should_open_ia) {
-        setSugestaoOpen(false)
-        toast.info('Abrindo IA para analisar a situação...')
-        const prompt = `Valide a escala do setor ${setor?.nome ?? ''} (${periodoGeracao.data_inicio} a ${periodoGeracao.data_fim}). O solver nao conseguiu viabilizar: ${result.fallback.reason}`
-        useIaStore.getState().setPendingAutoMessage(prompt)
-        useIaStore.getState().setAberto(true)
       }
+
+      const loadingByStage: Record<VerificacaoPreviaStage, string> = {
+        basic: 'Verificando cadastro e demanda...',
+        motor: 'Validando viabilidade com o motor...',
+      }
+      const result = await executarVerificacaoPrevia(advisoryInput, {
+        runPreflight: escalasService.preflight,
+        runAdvisory: escalasService.advisory,
+        onStage: (stage) => setAdvisoryLoadingLabel(loadingByStage[stage]),
+      })
+      setAdvisoryResult(result)
     } catch (err) {
-      toast.error('Erro ao validar arranjo')
+      toast.error('Erro na verificação prévia')
       console.error(err)
     } finally {
       setAdvisoryLoading(false)
     }
-  }, [advisoryLoading, setorId, simulacaoPreview, previewSetorRows, periodoGeracao, previewDiagnostics, setor])
+  }, [advisoryLoading, setorId, simulacaoPreview, previewSetorRows, periodoGeracao, previewDiagnostics])
 
   // Invalidate advisory when ANY input changes (folgas, N, K, demanda)
   useEffect(() => {
@@ -3413,7 +3418,7 @@ export function SetorDetalhe() {
                                 size="icon"
                                 onClick={handleValidar}
                                 disabled={advisoryLoading || gerando}
-                                aria-label="Validar arranjo"
+                                aria-label="Verificação prévia"
                               >
                                 {advisoryLoading ? (
                                   <Loader2 className="animate-spin" />
@@ -3422,7 +3427,7 @@ export function SetorDetalhe() {
                                 )}
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Validar arranjo</TooltipContent>
+                            <TooltipContent>Verificação prévia</TooltipContent>
                           </Tooltip>
                       )}
                       <Tooltip>
@@ -3570,6 +3575,7 @@ export function SetorDetalhe() {
                 open={sugestaoOpen}
                 onOpenChange={setSugestaoOpen}
                 loading={advisoryLoading}
+                loadingLabel={advisoryLoadingLabel}
                 advisory={advisoryResult}
                 onAceitarEGerar={handleAceitarEGerar}
                 onGerarMesmoAssim={handleGerarMesmoAssim}

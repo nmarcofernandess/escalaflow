@@ -157,7 +157,7 @@ async function buildEscalaPreflight(
       codigo: 'SEM_DEMANDA',
       severidade: 'WARNING',
       mensagem: 'Setor sem demanda planejada cadastrada.',
-      detalhe: 'O motor vai considerar demanda zero nos slots sem segmento cadastrado.',
+      detalhe: 'Sem demanda cadastrada, o sistema não terá meta de cobertura para o período.',
     })
   }
 
@@ -174,7 +174,7 @@ async function buildEscalaPreflight(
       warnings.push({
         codigo: 'PREFLIGHT_DIAGNOSTICO_INDISPONIVEL',
         severidade: 'WARNING',
-        mensagem: 'Nao foi possivel rodar o diagnostico de capacidade completo.',
+        mensagem: 'Nao foi possivel rodar a verificação detalhada de capacidade.',
         detalhe: err instanceof Error ? err.message : String(err),
       })
     }
@@ -1440,10 +1440,10 @@ const escalasGerar = t.procedure
     const setorId = input.setor_id
     const regimesOverride = normalizeRegimesOverride(input.regimes_override)
 
-    // Preflight antes de chamar solver
+    // Verificação prévia antes de chamar o gerador.
     const preflight = await buildEscalaPreflight(setorId, input.data_inicio, input.data_fim, regimesOverride)
     if (!preflight.ok) {
-      const msg = preflight.blockers[0]?.mensagem ?? 'Preflight falhou'
+      const msg = preflight.blockers[0]?.mensagem ?? 'A verificação prévia encontrou um impedimento.'
       throw new Error(msg)
     }
 

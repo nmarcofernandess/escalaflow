@@ -37,6 +37,7 @@ interface SugestaoSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   loading: boolean
+  loadingLabel?: string
   advisory: EscalaAdvisoryOutputV2 | null
   onAceitarEGerar: () => void
   onGerarMesmoAssim: () => void
@@ -267,6 +268,7 @@ export function SugestaoSheet({
   open,
   onOpenChange,
   loading,
+  loadingLabel = 'Analisando o arranjo...',
   advisory,
   onAceitarEGerar,
   onGerarMesmoAssim,
@@ -302,7 +304,7 @@ export function SugestaoSheet({
             Sugestao de ajuste
           </SheetTitle>
           <SheetDescription>
-            {loading ? 'Analisando o arranjo...' : config?.subtitle ?? ''}
+            {loading ? loadingLabel : config?.subtitle ?? ''}
           </SheetDescription>
         </SheetHeader>
 
@@ -310,7 +312,7 @@ export function SugestaoSheet({
         {loading && (
           <div className="flex flex-col items-center justify-center gap-3 py-12">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Analisando o arranjo...</span>
+            <span className="text-sm text-muted-foreground">{loadingLabel}</span>
           </div>
         )}
 

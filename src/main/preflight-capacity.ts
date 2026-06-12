@@ -174,8 +174,8 @@ export function enrichPreflightWithCapacityChecks(
       blockers.push({
         codigo: 'DEMANDA_EM_FERIADO_PROIBIDO',
         severidade: 'BLOCKER',
-        mensagem: `Ha demanda no feriado proibido ${day}.`,
-        detalhe: 'Ajuste demanda do dia ou permissao de feriado.',
+        mensagem: `Ha demanda cadastrada no feriado sem trabalho ${day}.`,
+        detalhe: 'Ajuste a demanda do dia ou a regra do feriado.',
       })
       break
     }
@@ -189,7 +189,7 @@ export function enrichPreflightWithCapacityChecks(
         codigo: 'DOMINGO_SEM_COLABORADORES',
         severidade: 'BLOCKER',
         mensagem: `Ha demanda no domingo (${day}), mas nenhum colaborador pode trabalhar domingo.`,
-        detalhe: 'Todos estao bloqueados por contrato, ciclo, regra de horario ou excecao nesse domingo.',
+        detalhe: 'Todos estao indisponiveis por contrato, regra de horario ou excecao nesse domingo.',
       })
       break
     }
@@ -199,8 +199,8 @@ export function enrichPreflightWithCapacityChecks(
       warnings.push({
         codigo: 'PISO_OPERACIONAL_IMPOSSIVEL',
         severidade: 'WARNING',
-        mensagem: `Piso operacional impossivel em ${day}: piso ${floorRequired}, disponiveis ${availableCount}.`,
-        detalhe: 'O solver limita o piso pela disponibilidade fisica do slot; revise excecoes, regras de horario ou o piso do setor.',
+        mensagem: `Piso operacional sem equipe suficiente em ${day}: precisa de ${floorRequired}, ha ${availableCount} pessoa(s) disponivel(is).`,
+        detalhe: 'Revise excecoes, regras de horario ou o piso operacional do setor.',
       })
     }
 
@@ -236,10 +236,10 @@ export function enrichPreflightWithCapacityChecks(
         warnings.push({
           codigo: 'PISO_OPERACIONAL_SLOT_IMPOSSIVEL',
           severidade: 'WARNING',
-          mensagem: `Piso operacional impossivel em ${day} ${minutesToTime(slotStart)}-${minutesToTime(slotEnd)}: piso ${requiredInSegment}, disponiveis ${slotAvailable.length}.`,
+          mensagem: `Piso operacional sem equipe suficiente em ${day} das ${minutesToTime(slotStart)} as ${minutesToTime(slotEnd)}: precisa de ${requiredInSegment}, ha ${slotAvailable.length} pessoa(s) disponivel(is).`,
           detalhe: quaseCobre.length > 0
-            ? `Quase cobre: ${quaseCobre.join(', ')}. Revise regras de horario, excecoes ou piso do setor.`
-            : 'Nenhum colaborador elegivel no dia cobre a faixa. Revise regras de horario, excecoes ou piso do setor.',
+            ? `Quase cobre: ${quaseCobre.join(', ')}. Revise regras de horario, excecoes ou o piso operacional do setor.`
+            : 'Nenhum colaborador disponivel nesse dia cobre a faixa. Revise regras de horario, excecoes ou o piso operacional do setor.',
         })
         slotFloorWarnings += 1
       }
@@ -247,14 +247,14 @@ export function enrichPreflightWithCapacityChecks(
 
     if (availableCount < peakDemand) {
       const mensagem = collectiveMessageMode === 'coletiva'
-        ? `Capacidade insuficiente em ${day}: demanda pico ${peakDemand}, disponiveis ${availableCount}.`
-        : `Capacidade insuficiente em ${day}: disponiveis=${availableCount}, minimo requerido=${peakDemand}.`
+        ? `Equipe insuficiente em ${day}: a maior faixa pede ${peakDemand} pessoa(s), mas ha ${availableCount} disponivel(is).`
+        : `Equipe insuficiente em ${day}: ha ${availableCount} pessoa(s) disponivel(is), mas a demanda pede ${peakDemand}.`
 
       blockers.push({
         codigo: collectiveCode,
         severidade: 'BLOCKER',
         mensagem,
-        detalhe: 'Revise piso operacional, excecoes, regime dos contratos ou demanda.',
+        detalhe: 'Revise piso operacional, excecoes, contratos ou demanda.',
       })
       break
     }
@@ -277,7 +277,7 @@ export function enrichPreflightWithCapacityChecks(
       codigo: 'CAPACIDADE_TOTAL_ESTOURADA',
       severidade: 'WARNING',
       mensagem: `Demanda total do periodo (${Math.round(requiredMinutes / 60)}h) excede a capacidade nominal da equipe (${Math.round(companyCapacity / 60)}h).`,
-      detalhe: 'O solver pode precisar relaxar preferencias e gerar avisos.',
+      detalhe: 'A escala pode precisar flexibilizar preferencias e gerar avisos.',
     })
   }
 
@@ -307,7 +307,7 @@ export function enrichPreflightWithCapacityChecks(
         codigo: 'CAPACIDADE_INDIVIDUAL_INSUFICIENTE',
         severidade: 'BLOCKER',
         mensagem: `A janela de disponibilidade de ${c.nome} torna a carga horaria incompativel.`,
-        detalhe: `Capacidade maxima da jornada e ${Math.round(capacidadeMaxSemanal / 60)}h. Contrato exige minimo de ${Math.round(limiteInferiorSemanal / 60)}h.`,
+        detalhe: `Pelas regras atuais, a pessoa conseguiria no maximo ${Math.round(capacidadeMaxSemanal / 60)}h por semana. O contrato exige pelo menos ${Math.round(limiteInferiorSemanal / 60)}h.`,
       })
     }
   }
@@ -316,8 +316,8 @@ export function enrichPreflightWithCapacityChecks(
     warnings.push({
       codigo: 'PREFLIGHT_COMPLETO_SEM_BLOCKERS',
       severidade: 'WARNING',
-      mensagem: 'Preflight completo executado sem blockers adicionais.',
-      detalhe: 'Capacidade basica e restricoes gerais parecem consistentes para o periodo.',
+      mensagem: 'Verificação prévia completa sem novos impedimentos.',
+      detalhe: 'Capacidade basica e regras gerais parecem consistentes para o periodo.',
     })
   }
 }

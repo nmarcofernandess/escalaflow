@@ -79,7 +79,8 @@ describe('executeTool(preflight)', () => {
 
     expect(result.status).toBe('ok')
     expect(result.ok).toBe(false)
-    expect(result.summary).toMatch(/blocker/i)
+    expect(result.summary).toMatch(/impedimento/i)
+    expect(result.summary).not.toMatch(/preflight|blocker|warning/i)
     expect(result._meta).toEqual(
       expect.objectContaining({
         tool_kind: 'validation',
@@ -122,6 +123,9 @@ describe('executeTool(preflight)', () => {
 
     expect(result.status).toBe('ok')
     expect(result.ok).toBe(true)
+    expect(result.summary).toMatch(/Pré-requisitos básicos OK/i)
+    expect(result.summary).toMatch(/viabilidade final/i)
+    expect(result.summary).not.toMatch(/Preflight OK|blocker|warning/i)
     expect(result.blockers).toHaveLength(0)
     expect(result.diagnostico).toEqual(
       expect.objectContaining({
