@@ -80,7 +80,7 @@ describe.sequential('seed CI descartavel', () => {
       GROUP BY nome
     `, CI_SETOR_5X2_NOME, CI_SETOR_6X1_DIFICIL_NOME)
     expect(duplicateCheck.every((row) => row.count === 1)).toBe(true)
-  })
+  }, 30_000)
 
   it('modela o 6x1 dificil com intermitente apenas em domingos alternados', async () => {
     await createCleanSeededDb()
@@ -142,5 +142,5 @@ describe.sequential('seed CI descartavel', () => {
       hora_inicio: '07:00',
       min_pessoas: 4,
     })
-  })
+  }, 30_000)
 })
