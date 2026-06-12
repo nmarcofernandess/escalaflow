@@ -7,7 +7,7 @@
 
 ## TL;DR EXECUTIVO
 
-1. **A quarta 07:00 ficou vazia porque o solver cobra o MESMO preço por qualquer pessoa faltante** — déficit 4→3 custa igual a 1→0. A tua intuição do "piso" já existe especificada no RFC do motor (`piso_operacional`, Nível 2 da cadeia) e **nunca foi implementada** (zero ocorrências no código). Proposta: penalidade proporcional ao target + slot-vazio proibido em duas camadas (soft agora, hard depois).
+1. **A quarta 07:00 ficou vazia porque o solver cobrava o MESMO preço por qualquer pessoa faltante** — déficit 4→3 custava igual a 1→0. A intuição do "piso" já existia especificada no RFC do motor (`piso_operacional`, Nível 2 da cadeia) e foi implementada na Ordem de Ataque v2 junto com peso relativo, slot-vazio e preflight.
 2. **A Hellen NÃO tem e NÃO precisa de folga variável** — a arquitetura atual já resolve sem custo pros demais. O único vazamento real é o cálculo do ciclo de domingo contar a garantia dela em semanas que ela está OFF.
 3. **Visão por pessoas nos gráficos é 100% viável** — o dado já É pessoas por slot de 15min; tooltip duplo (horas + pessoas) dá em todas as granularidades, com semântica exata no dia e "pessoas-equivalente" na semana.
 4. **Trocar contrato já é possível na ficha hoje** (campo "Tipo de Contrato" no ColaboradorDetalhe). O que não dá pra trocar é o "Tipo Trabalhador" — e a resposta certa não é torná-lo editável: é **eliminá-lo como escolha**.
@@ -18,7 +18,7 @@
 * Review 2026-06-11
 ** Q1 Cobertura 1 -> 0
 *** Hoje: peso linear 10000/pessoa-slot
-*** piso_operacional do RFC: nao implementado
+*** piso_operacional do RFC: implementado na Ordem de Ataque v2
 *** Proposta: peso relativo + slot-vazio
 ** Q2 Hellen folga variavel
 *** Tipo A: campo null, sem rodizio
@@ -72,11 +72,11 @@ A penalidade é `10000 × pessoas_faltantes × slots`. Consequência matemática
 
 O solver é indiferente entre os dois. E tem um agravante de produto: a "cobertura efetiva" (`validacao-compartilhada.ts`, `calcularIndicadoresV3`) **perdoa explicitamente** déficit de 1 pessoa nas faixas 07:00–07:30, 11:00–12:00 e 19:00–19:30 ("faixas de transição"). Ou seja: o indicador foi desenhado para tratar a abertura como tolerável — o solver deixa o buraco exatamente onde o indicador não dói.
 
-### O que o RFC já previu e nunca foi construído
+### O que o RFC já previa e agora foi construído
 
 `docs/motor-regras.md` §2 define a cadeia de precedência com o **NÍVEL 2 — PISO OPERACIONAL**: *"Violação = abaixo do mínimo estrutural do setor. Campo: `setor.piso_operacional` (hard). Exemplo: Açougue precisa de min 1 pessoa pra funcionar."*
 
-`grep -rn piso_operacional src/ solver/` → **zero resultados**. O conceito está aprovado em RFC desde fevereiro e não existe uma linha de código. Tua pergunta redescobriu o próprio backlog.
+Status pós-v2: `setores.piso_operacional` existe no schema/UI, o preflight avisa impossibilidade estrutural por slot e o solver aplica o piso como constraint de cobertura. O diagnóstico original ("zero ocorrências no código") fica preservado aqui apenas como histórico da causa.
 
 ### A matemática proposta (em duas camadas)
 
@@ -316,7 +316,7 @@ C ||--o{ E : historico imutavel
 
 - **Spread (peso 800/min)**: risco invertido — pode competir DEMAIS com cobertura (igualar totais > cobrir um slot). Dado empírico da escala #37: capacidade estava 100% esgotada (todas as CLTs no teto da banda H10), então o spread não roubou cobertura *neste* caso. Vigiar: se aparecer escala sacrificando slot para igualar 15min de total, baixar o peso ou tornar o spread critério secundário pós-déficit.
 - **Sunday headcount removido do Pass 2**: resolvido na execução pós-v2 como **slack quasi-hard em todos os passes**. Como demanda é SOFT, o headcount derivado não pode ser HARD.
-- **Pass 1 da Padaria continua genuinamente INFEASIBLE**: prova pós-fix em mini-SAT de dias, sem horarios/almoço/H10/pins. Com `piso_operacional=1`, H3 feminino, H1 e `DIAS_TRABALHO == 6`, o modelo já é INFEASIBLE. Razão: em 6x1 exato, trabalhar domingo na semana N exige uma folga antes do sábado seguinte para respeitar H1; se H3 feminino força folga no domingo N+1, a semana N+1 precisa de duas folgas. Logo o Pass 2 relaxando `DIAS_TRABALHO` não é migué, é o repair legal necessário.
+- **Pass 1 da Padaria**: risco original reaberto e resolvido na auditoria de 6x1. A causa operacional era a janela de almoço rígida em relógio fixo para turnos de tarde/noite; com H6 relativo ao turno, a Padaria resolve em Pass 1 no banco real mantendo zero HARD/zero SOFT.
 - **Janela de almoço relógio-fixo 11:00-14:00**: corrigida para semântica relativa ao turno. H6 continua exigindo intervalo em jornada >6h, gap 1-2h, blocos mínimos e 2h antes/depois; 11:00-14:00 fica como preferência/antipattern diurno, não como constraint HARD para turno de tarde/noite.
 - **Convenção de dias `horario_por_dia`**: auditada em 2026-06-11. Bridge envia chaves 0=DOM..6=SAB; Python usa `(date.weekday() + 1) % 7`, convertendo `weekday()` 0=SEG..6=DOM para a mesma convenção. Dump real: 2026-06-15 SEG -> chave 1; 2026-06-21 DOM -> chave 0. Sem bug encontrado.
 - **`ESCALAFLOW_AI_DEVTOOLS=true` ainda força DevTools em app empacotado** — aceito como escape hatch de debug explícito.
