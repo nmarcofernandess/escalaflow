@@ -33,13 +33,14 @@ import {
   normalizeSetorSimulacaoConfig,
   resolveSundayRotatingDemand,
   derivarTipoTrabalhador,
+  diasTrabalhoPorRegime,
+  resolverRegimeEscala,
+  type RegimeEscalaInput,
 } from '../../shared'
 import { buildEffectiveRulePolicy } from './rule-policy'
 import { expandirSemanasOff } from '../../shared/recorrencia'
 
 const require = createRequire(import.meta.url)
-
-type RegimeEscalaInput = '5X2' | '6X1'
 
 export type SolveMode = 'rapido' | 'balanceado' | 'otimizado' | 'maximo'
 
@@ -408,8 +409,13 @@ export async function buildSolverInput(
   }
 
   const colaboradores: SolverInputColab[] = colabRowsFiltered.map(r => {
-    const regimeEfetivo = overrideByColab.get(r.id) ?? setor.regime_escala ?? r.regime_escala ?? (r.dias_trabalho <= 5 ? '5X2' : '6X1')
-    const diasTrabalhoEfetivo = regimeEfetivo === '5X2' ? 5 : 6
+    const regimeEfetivo = resolverRegimeEscala({
+      override: overrideByColab.get(r.id),
+      setor: setor.regime_escala,
+      contrato: r.regime_escala,
+      dias_trabalho: r.dias_trabalho,
+    })
+    const diasTrabalhoEfetivo = diasTrabalhoPorRegime(regimeEfetivo)
     return ({
       id: r.id,
       nome: r.nome,

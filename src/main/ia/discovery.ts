@@ -1,5 +1,6 @@
 import { queryOne, queryAll } from '../db/query'
 import { derivarTipoTrabalhador } from '../../shared/tipo-trabalhador'
+import { resolverRegimeEscala } from '../../shared/regime-escala'
 import { buildSolverInput, computeSolverScenarioHash } from '../motor/solver-bridge'
 import { searchKnowledge } from '../knowledge/search'
 import { gerarCicloFase1 } from '../../shared/simula-ciclo'
@@ -1049,18 +1050,28 @@ type ContratosRelevantes = NonNullable<ContextBundle['setor']>['contratos_releva
 
 async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
     try {
+        const setor = await queryOne<{ regime_escala: string | null }>(
+            'SELECT regime_escala FROM setores WHERE id = ?',
+            setor_id,
+        )
+
         // 1. Colaboradores do setor com regras
         const colabs = await queryAll<{
             id: number
             tipo_trabalhador: string | null
             contrato_nome: string
             contrato_tipo_trabalhador: string | null
+            contrato_regime_escala: string | null
+            contrato_dias_trabalho: number | null
             funcao_id: number | null
             folga_fixa_dia_semana: string | null
             folga_variavel_dia_semana: string | null
         }>(`
             SELECT c.id, c.tipo_trabalhador, tc.nome AS contrato_nome,
-                   tc.tipo_trabalhador AS contrato_tipo_trabalhador, c.funcao_id,
+                   tc.tipo_trabalhador AS contrato_tipo_trabalhador,
+                   tc.regime_escala AS contrato_regime_escala,
+                   tc.dias_trabalho AS contrato_dias_trabalho,
+                   c.funcao_id,
                    r.folga_fixa_dia_semana, r.folga_variavel_dia_semana
             FROM colaboradores c
             JOIN tipos_contrato tc ON tc.id = c.tipo_contrato_id
@@ -1118,6 +1129,11 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
 
         // 6. Montar folgas_forcadas por pessoa (apenas titulares + intermitentes B na ordem)
         const pool = [...titulares, ...intermediosB]
+        const regime = resolverRegimeEscala({
+            setor: setor?.regime_escala,
+            contrato: pool[0]?.contrato_regime_escala,
+            dias_trabalho: pool[0]?.contrato_dias_trabalho,
+        })
         const folgas_forcadas = pool.map(c => ({
             folga_fixa_dia: c.folga_fixa_dia_semana ? (DIA_PARA_IDX[c.folga_fixa_dia_semana] ?? null) : null,
             folga_variavel_dia: c.folga_variavel_dia_semana ? (DIA_PARA_IDX[c.folga_variavel_dia_semana] ?? null) : null,
@@ -1128,6 +1144,7 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
         const resultado = gerarCicloFase1({
             num_postos: N,
             trabalham_domingo: Math.min(K, N),
+            regime,
             folgas_forcadas,
             demanda_por_dia,
         })
