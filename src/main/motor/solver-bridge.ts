@@ -193,24 +193,69 @@ type SundayRuleEntry = {
   p_fim?: string | null
 }
 
-function contarIntermitentesGarantidosNoDomingo<TPadrao extends { folga_fixa_dia_semana: string | null; folga_variavel_dia_semana?: string | null } | null, TDia>(
+type SundayCyclePeriodo = {
+  dataInicio: string
+  dataFim: string
+  corteSemanal?: string | null
+}
+
+type SundayPadraoEntry = {
+  folga_fixa_dia_semana: string | null
+  folga_variavel_dia_semana?: string | null
+  recorrencia_semanas_trabalho?: number | null
+  recorrencia_semanas_folga?: number | null
+  recorrencia_ancora?: string | null
+}
+
+function rangeTemDomingo(dataInicio: string, dataFim: string): boolean {
+  const cursor = new Date(`${dataInicio}T00:00:00`)
+  const end = new Date(`${dataFim}T00:00:00`)
+  while (cursor <= end) {
+    if (cursor.getDay() === 0) return true
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return false
+}
+
+function recorrenciaTemDomingoOff(padrao: SundayPadraoEntry | null | undefined, periodo?: SundayCyclePeriodo): boolean {
+  if (!periodo) return false
+  if (!padrao?.recorrencia_semanas_trabalho || !padrao.recorrencia_semanas_folga || !padrao.recorrencia_ancora) return false
+
+  const rangesOff = expandirSemanasOff({
+    data_inicio: periodo.dataInicio,
+    data_fim: periodo.dataFim,
+    corte_semanal: periodo.corteSemanal ?? 'SEG_DOM',
+    recorrencia: {
+      semanas_trabalho: padrao.recorrencia_semanas_trabalho,
+      semanas_folga: padrao.recorrencia_semanas_folga,
+      ancora: padrao.recorrencia_ancora,
+    },
+  })
+
+  return rangesOff.some((range) => rangeTemDomingo(range.data_inicio, range.data_fim))
+}
+
+function contarIntermitentesGarantidosNoDomingo<TPadrao extends SundayPadraoEntry | null, TDia>(
   colabRows: { id: number; tipo_trabalhador: string | null }[],
   regraGroupByColab: Map<number, { padrao: TPadrao; dias: Map<string, TDia> }>,
+  periodo?: SundayCyclePeriodo,
 ): number {
   return colabRows.reduce((count, colab) => {
     if ((colab.tipo_trabalhador ?? 'CLT') !== 'INTERMITENTE') return count
     // Tipo B (com folga_variavel) entra no pool rotativo — nao conta como garantido
     const padrao = regraGroupByColab.get(colab.id)?.padrao
     if (padrao?.folga_variavel_dia_semana) return count
+    if (recorrenciaTemDomingoOff(padrao, periodo)) return count
     const regraDomingo = regraGroupByColab.get(colab.id)?.dias.get('DOM')
     return count + (hasGuaranteedSundayWindow(regraDomingo as SundayRuleEntry | undefined) ? 1 : 0)
   }, 0)
 }
 
-export function calcularCicloDomingo<TPadrao extends { folga_fixa_dia_semana: string | null; folga_variavel_dia_semana?: string | null } | null, TDia>(
+export function calcularCicloDomingo<TPadrao extends SundayPadraoEntry | null, TDia>(
   demandaRows: { dia_semana: string | null; min_pessoas: number }[],
   colabRows: { id: number; tipo_trabalhador: string | null }[],
   regraGroupByColab: Map<number, { padrao: TPadrao; dias: Map<string, TDia> }>,
+  periodo?: SundayCyclePeriodo,
 ): { cicloTrabalho: number; cicloFolga: number } {
   // null = todos os dias (inclui domingo). Consistente com preflight-capacity.ts:70
   const domDemandas = demandaRows.filter(d => d.dia_semana === 'DOM' || d.dia_semana === null)
@@ -227,7 +272,7 @@ export function calcularCicloDomingo<TPadrao extends { folga_fixa_dia_semana: st
     return true
   }).length
 
-  const intermitentesGarantidos = contarIntermitentesGarantidosNoDomingo(colabRows, regraGroupByColab)
+  const intermitentesGarantidos = contarIntermitentesGarantidosNoDomingo(colabRows, regraGroupByColab, periodo)
   const { effectiveSundayDemand: dDom } = resolveSundayRotatingDemand({
     totalSundayDemand: dDomBruta,
     guaranteedSundayCoverage: intermitentesGarantidos,
@@ -646,7 +691,12 @@ export async function buildSolverInput(
       contrato_nome: r.contrato_nome,
     }),
   }))
-  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(demandaRows, colabRowsTipoDerivado, regraGroupByColab)
+  const { cicloTrabalho, cicloFolga } = calcularCicloDomingo(
+    demandaRows,
+    colabRowsTipoDerivado,
+    regraGroupByColab,
+    { dataInicio, dataFim, corteSemanal: corteSemanalRec },
+  )
   for (const c of colaboradores) {
     // Tipo A (sem folga_variavel): fora do pool
     if (c.tipo_trabalhador === 'INTERMITENTE' && !c.folga_variavel_dia_semana) continue

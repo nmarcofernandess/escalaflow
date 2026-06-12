@@ -159,7 +159,13 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
       .map((regra) => [regra.colaborador_id, regra]),
   )
   const regraGroupByColab = new Map<number, {
-    padrao: { folga_fixa_dia_semana: string | null } | null
+    padrao: {
+      folga_fixa_dia_semana: string | null
+      folga_variavel_dia_semana?: string | null
+      recorrencia_semanas_trabalho?: number | null
+      recorrencia_semanas_folga?: number | null
+      recorrencia_ancora?: string | null
+    } | null
     dias: Map<string, { perfil_horario_id: number | null; inicio: string | null; fim: string | null }>
   }>()
   for (const regra of regrasHorarioColab) {
@@ -168,7 +174,13 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
       dias: new Map<string, { perfil_horario_id: number | null; inicio: string | null; fim: string | null }>(),
     }
     if (regra.dia_semana_regra === null) {
-      group.padrao = { folga_fixa_dia_semana: regra.folga_fixa_dia_semana }
+      group.padrao = {
+        folga_fixa_dia_semana: regra.folga_fixa_dia_semana,
+        folga_variavel_dia_semana: regra.folga_variavel_dia_semana,
+        recorrencia_semanas_trabalho: regra.recorrencia_semanas_trabalho,
+        recorrencia_semanas_folga: regra.recorrencia_semanas_folga,
+        recorrencia_ancora: regra.recorrencia_ancora,
+      }
     } else {
       group.dias.set(regra.dia_semana_regra, {
         perfil_horario_id: regra.perfil_horario_id,
@@ -261,6 +273,11 @@ export async function validarEscalaV3(escalaId: number): Promise<EscalaCompletaV
       }),
     })),
     regraGroupByColab,
+    {
+      dataInicio: escala.data_inicio,
+      dataFim: escala.data_fim,
+      corteSemanal: corteSemanalRec,
+    },
   )
 
   const colaboradores: ColabMotor[] = colaboradoresRawFiltrados.map(c => ({

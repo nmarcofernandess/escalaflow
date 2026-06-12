@@ -141,6 +141,43 @@ describe('solver sunday capacity with intermitente', () => {
     expect(ciclo).toEqual({ cicloTrabalho: 1, cicloFolga: 1 })
   })
 
+  it('does not count fixed-DOM intermitente as guaranteed when recurrence has any Sunday OFF', () => {
+    const ciclo = calcularCicloDomingo(
+      [{ dia_semana: 'DOM', min_pessoas: 3 }],
+      [
+        { id: 1, tipo_trabalhador: 'CLT' },
+        { id: 2, tipo_trabalhador: 'CLT' },
+        { id: 3, tipo_trabalhador: 'CLT' },
+        { id: 4, tipo_trabalhador: 'CLT' },
+        { id: 5, tipo_trabalhador: 'CLT' },
+        { id: 6, tipo_trabalhador: 'INTERMITENTE' },
+      ],
+      new Map([
+        [1, { padrao: null, dias: new Map() }],
+        [2, { padrao: null, dias: new Map() }],
+        [3, { padrao: null, dias: new Map() }],
+        [4, { padrao: null, dias: new Map() }],
+        [5, { padrao: null, dias: new Map() }],
+        [
+          6,
+          {
+            padrao: {
+              folga_fixa_dia_semana: null,
+              folga_variavel_dia_semana: null,
+              recorrencia_semanas_trabalho: 1,
+              recorrencia_semanas_folga: 1,
+              recorrencia_ancora: '2026-06-15',
+            },
+            dias: new Map([['DOM', { inicio: '08:00', fim: '16:00' }]]),
+          },
+        ],
+      ]),
+      { dataInicio: '2026-06-15', dataFim: '2026-07-12', corteSemanal: 'SEG_DOM' },
+    )
+
+    expect(ciclo).toEqual({ cicloTrabalho: 2, cicloFolga: 1 })
+  })
+
   it('solver stays feasible with 5 CLTs + 1 intermitente covering the extra Sunday slot', async () => {
     const result = await runSolver(buildInput(), 30_000)
 
