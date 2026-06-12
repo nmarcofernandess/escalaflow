@@ -50,6 +50,7 @@ export interface Setor {
   demanda_padrao_hora_fechamento?: string | null
   demanda_padrao_segmentos_json?: string | null
   regime_escala: RegimeEscala
+  piso_operacional: number
   ativo: boolean
   simulacao_config_json?: string | null
 }
@@ -708,6 +709,7 @@ export interface SolverInput {
   setor_id: number
   data_inicio: string
   data_fim: string
+  piso_operacional?: number
   empresa: {
     tolerancia_semanal_min: number
     hora_abertura: string

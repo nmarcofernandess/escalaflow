@@ -55,6 +55,7 @@ from constraints import (
     add_min_headcount_per_day,
     add_h10_meta_semanal,
     add_h10_meta_semanal_elastic,
+    add_operational_floor_hard,
     add_h15_estagiario_jornada,
     add_h16_estagiario_hora_extra,
     add_h17_h18_feriado_proibido,
@@ -920,6 +921,7 @@ def build_model(
     log(f"Ciclo detectado: {cycle_weeks} semanas ({cycle_days} dias)")
 
     min_daily_slots = 240 // grid_min
+    piso_operacional = int(data.get("piso_operacional", 1) or 0)
 
     work: SlotGrid = {}
     for c in range(C):
@@ -1163,6 +1165,19 @@ def build_model(
     # HARD constraints (CLT Legal — NEVER relaxed)
     # ---------------------------------------------------------------
     regras_dia = data.get("regras_colaborador_dia", [])
+
+    # Piso operacional do setor: HARD de produto, mas limitado por capacidade
+    # fisica do slot. Nao entra em relax de nenhum pass.
+    add_operational_floor_hard(
+        model,
+        work,
+        demand_by_slot,
+        blocked_days,
+        C,
+        D,
+        S,
+        piso_operacional=piso_operacional,
+    )
 
     # H1: Max 6 dias consecutivos
     h1_status = rule_is('H1', 'HARD')

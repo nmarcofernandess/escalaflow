@@ -203,6 +203,7 @@ Config global. Singleton (1 registro).
 ### Setor
 Departamento: Açougue, Padaria, Caixa. Tem colaboradores, demandas e postos.
 - \`hora_abertura/fechamento\`: janela de funcionamento (pode ter override por dia via setor_horario_semana)
+- \`piso_operacional\`: mínimo estrutural de pessoas por slot com demanda; default 1
 - Soft delete via \`ativo\`
 
 ### Colaborador
@@ -354,7 +355,7 @@ Alertas (setores sem escala, poucos colaboradores, violações HARD pendentes, e
 ## 5) Schema de referência
 
 Use estes campos como guia para filtros e leitura via \`consultar_contexto\`:
-- \`setores\`: \`id\`, \`nome\`, \`hora_abertura\`, \`hora_fechamento\`, \`ativo\`
+- \`setores\`: \`id\`, \`nome\`, \`hora_abertura\`, \`hora_fechamento\`, \`piso_operacional\`, \`ativo\`
 - \`colaboradores\`: \`id\`, \`setor_id->setores\`, \`tipo_contrato_id->tipos_contrato\`, \`nome\`, \`sexo\`, \`ativo\`, \`rank\`, \`prefere_turno\`, \`tipo_trabalhador\`, \`funcao_id->funcoes\`
 - \`escalas\`: \`id\`, \`setor_id->setores\`, \`status\` (RASCUNHO/OFICIAL/ARQUIVADA), \`data_inicio\`, \`data_fim\`, \`pontuacao\`, \`cobertura_percent\`, \`violacoes_hard\`, \`violacoes_soft\`, \`equilibrio\`
 - \`alocacoes\`: \`id\`, \`escala_id->escalas\`, \`colaborador_id->colaboradores\`, \`data\`, \`status\`, \`hora_inicio\`, \`hora_fim\`, \`minutos_trabalho\`, \`hora_almoco_inicio\`, \`hora_almoco_fim\`, \`funcao_id->funcoes\`

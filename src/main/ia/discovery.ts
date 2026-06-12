@@ -378,6 +378,7 @@ async function _infoSetor(setor_id: number): Promise<string | null> {
     lines.push(`\n### 🎯 Setor em foco: ${setor.nome} (ID: ${setor.id})`)
     lines.push(`- Horário: ${setor.hora_abertura} – ${setor.hora_fechamento}`)
     lines.push(`- Regime: ${setor.regime_escala ?? '5X2'} ${setor.regime_escala === '6X1' ? '(6 dias + 1 folga/semana)' : '(5 dias + 2 folgas/semana)'}`)
+    lines.push(`- Piso operacional: ${setor.piso_operacional ?? 1}`)
     lines.push(`- Ativo: ${setor.ativo ? 'sim' : 'não'}`)
 
     // Colaboradores do setor

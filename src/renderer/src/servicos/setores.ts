@@ -18,7 +18,7 @@ export const setoresService = {
   buscar: (id: number) =>
     client['setores.buscar']({ id }) as Promise<Setor>,
 
-  criar: (data: { nome: string; hora_abertura: string; hora_fechamento: string; regime_escala?: '5X2' | '6X1'; icone?: string | null }) =>
+  criar: (data: { nome: string; hora_abertura: string; hora_fechamento: string; regime_escala?: '5X2' | '6X1'; icone?: string | null; piso_operacional?: number }) =>
     client['setores.criar'](data) as Promise<Setor>,
 
   atualizar: (id: number, data: Partial<Setor>) =>
@@ -64,7 +64,7 @@ export const setoresService = {
 
   salvarCompleto: (data: {
     setor_id: number
-    setor: { nome: string; icone: string | null; hora_abertura: string; hora_fechamento: string; regime_escala: '5X2' | '6X1' }
+    setor: { nome: string; icone: string | null; hora_abertura: string; hora_fechamento: string; regime_escala: '5X2' | '6X1'; piso_operacional?: number }
     timeline: SalvarTimelineSemanaInput
   }) =>
     client['setores.salvarCompleto'](data as any) as Promise<Setor>,

@@ -59,6 +59,7 @@ export function enrichPreflightWithCapacityChecks(
   const collectiveCode = options?.collectiveCode ?? 'CAPACIDADE_DIARIA_INSUFICIENTE'
   const collectiveMessageMode = options?.collectiveMessageMode ?? 'diaria'
   const addNoBlockersWarning = options?.addNoBlockersWarning ?? false
+  const pisoOperacional = Math.max(0, Math.floor(input.piso_operacional ?? 1))
 
   const days = listDays(input.data_inicio, input.data_fim)
   const holidayForbidden = new Set(
@@ -139,6 +140,16 @@ export function enrichPreflightWithCapacityChecks(
         detalhe: 'Todos estao bloqueados por contrato, ciclo, regra de horario ou excecao nesse domingo.',
       })
       break
+    }
+
+    const floorRequired = Math.min(pisoOperacional, peakDemand)
+    if (floorRequired > 0 && availableCount < floorRequired) {
+      warnings.push({
+        codigo: 'PISO_OPERACIONAL_IMPOSSIVEL',
+        severidade: 'WARNING',
+        mensagem: `Piso operacional impossivel em ${day}: piso ${floorRequired}, disponiveis ${availableCount}.`,
+        detalhe: 'O solver limita o piso pela disponibilidade fisica do slot; revise excecoes, regras de horario ou o piso do setor.',
+      })
     }
 
     if (availableCount < peakDemand) {

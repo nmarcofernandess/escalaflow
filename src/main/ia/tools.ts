@@ -618,7 +618,7 @@ const CAMPOS_VALIDOS: Record<string, Set<string>> = {
     'prefere_turno', 'evitar_dia_semana', 'horas_semanais', 'funcao_id'
   ]),
   setores: new Set([
-    'id', 'nome', 'icone', 'hora_abertura', 'hora_fechamento', 'regime_escala', 'ativo'
+    'id', 'nome', 'icone', 'hora_abertura', 'hora_fechamento', 'regime_escala', 'piso_operacional', 'ativo'
   ]),
   escalas: new Set([
     'id', 'setor_id', 'data_inicio', 'data_fim', 'status', 'pontuacao',

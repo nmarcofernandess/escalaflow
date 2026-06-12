@@ -333,6 +333,7 @@ const setorSchema = z.object({
   hora_abertura: z.string().min(1, 'Hora de abertura e obrigatoria'),
   hora_fechamento: z.string().min(1, 'Hora de fechamento e obrigatoria'),
   regime_escala: z.enum(['5X2', '6X1']),
+  piso_operacional: z.coerce.number().int().min(0, 'Minimo 0').max(20, 'Maximo 20'),
 })
 
 type SetorFormInput = z.input<typeof setorSchema>
@@ -387,7 +388,7 @@ export function SetorDetalhe() {
   // Form
   const setorForm = useForm<SetorFormInput, unknown, SetorFormData>({
     resolver: zodResolver(setorSchema),
-    defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '', regime_escala: '5X2' },
+    defaultValues: { nome: '', icone: null, hora_abertura: '', hora_fechamento: '', regime_escala: '5X2', piso_operacional: 1 },
   })
 
   // ─── Data from store (reactive) ──────────────────────────────────────
@@ -1589,6 +1590,7 @@ export function SetorDetalhe() {
         hora_abertura: setor.hora_abertura,
         hora_fechamento: setor.hora_fechamento,
         regime_escala: setor.regime_escala,
+        piso_operacional: setor.piso_operacional ?? 1,
       })
     }
   }, [setor, setorForm])
@@ -1727,6 +1729,7 @@ export function SetorDetalhe() {
           hora_abertura: formData.hora_abertura,
           hora_fechamento: formData.hora_fechamento,
           regime_escala: formData.regime_escala,
+          piso_operacional: Number(formData.piso_operacional),
         },
         timeline: draft ? {
           setor_id: setorId,
@@ -2772,7 +2775,7 @@ export function SetorDetalhe() {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                 <FormField
                   control={setorForm.control}
                   name="hora_abertura"
@@ -2830,6 +2833,28 @@ export function SetorDetalhe() {
                           6 dias + 1 folga semanal em rodízio com o domingo. Folga fixa em SEG-SAB = a pessoa trabalha todos os domingos.
                         </p>
                       )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={setorForm.control}
+                  name="piso_operacional"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Piso operacional</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="20"
+                          value={typeof field.value === 'number' ? field.value : ''}
+                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

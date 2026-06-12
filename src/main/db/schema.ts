@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS setores (
     hora_abertura TEXT NOT NULL DEFAULT '08:00',
     hora_fechamento TEXT NOT NULL DEFAULT '22:00',
     regime_escala TEXT NOT NULL DEFAULT '5X2' CHECK (regime_escala IN ('5X2', '6X1')),
+    piso_operacional INTEGER NOT NULL DEFAULT 1,
     ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -656,6 +657,7 @@ async function migrateSchema(): Promise<void> {
   await addColumnIfMissing('setores', 'demanda_padrao_hora_abertura', 'TEXT')
   await addColumnIfMissing('setores', 'demanda_padrao_hora_fechamento', 'TEXT')
   await addColumnIfMissing('setores', 'demanda_padrao_segmentos_json', 'TEXT')
+  await addColumnIfMissing('setores', 'piso_operacional', 'INTEGER NOT NULL DEFAULT 1')
 
   // --- v3.1: Alocacao columns ---
   await addColumnIfMissing('alocacoes', 'hora_almoco_inicio', 'TEXT')

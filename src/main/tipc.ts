@@ -627,13 +627,14 @@ const setoresBuscar = t.procedure
   })
 
 const setoresCriar = t.procedure
-  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; regime_escala?: '5X2' | '6X1'; icone?: string | null }>()
+  .input<{ nome: string; hora_abertura: string; hora_fechamento: string; regime_escala?: '5X2' | '6X1'; icone?: string | null; piso_operacional?: number }>()
   .action(async ({ input }) => {
     const regimeEscala = input.regime_escala ?? '5X2'
+    const pisoOperacional = Math.max(0, Math.floor(input.piso_operacional ?? 1))
     const id = await insertReturningId(`
-      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, regime_escala)
-      VALUES (?, ?, ?, ?, ?)
-    `, input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento, regimeEscala)
+      INSERT INTO setores (nome, icone, hora_abertura, hora_fechamento, regime_escala, piso_operacional)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, input.nome, input.icone ?? null, input.hora_abertura, input.hora_fechamento, regimeEscala, pisoOperacional)
 
     const result = await queryOne('SELECT * FROM setores WHERE id = ?', id)
     broadcastInvalidation(['setores'])
@@ -641,7 +642,7 @@ const setoresCriar = t.procedure
   })
 
 const setoresAtualizar = t.procedure
-  .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; regime_escala?: '5X2' | '6X1'; ativo?: boolean }>()
+  .input<{ id: number; nome?: string; icone?: string | null; hora_abertura?: string; hora_fechamento?: string; regime_escala?: '5X2' | '6X1'; piso_operacional?: number; ativo?: boolean }>()
   .action(async ({ input }) => {
     const fields: string[] = []
     const values: unknown[] = []
@@ -651,6 +652,10 @@ const setoresAtualizar = t.procedure
     if (input.hora_abertura !== undefined) { fields.push('hora_abertura = ?'); values.push(input.hora_abertura) }
     if (input.hora_fechamento !== undefined) { fields.push('hora_fechamento = ?'); values.push(input.hora_fechamento) }
     if (input.regime_escala !== undefined) { fields.push('regime_escala = ?'); values.push(input.regime_escala) }
+    if (input.piso_operacional !== undefined) {
+      fields.push('piso_operacional = ?')
+      values.push(Math.max(0, Math.floor(input.piso_operacional)))
+    }
     if (input.ativo !== undefined) { fields.push('ativo = ?'); values.push(input.ativo) }
 
     if (fields.length > 0) {
@@ -2260,6 +2265,7 @@ const setoresSalvarCompleto = t.procedure
       hora_abertura: string
       hora_fechamento: string
       regime_escala: '5X2' | '6X1'
+      piso_operacional?: number
     }
     timeline: {
       padrao: {
@@ -2307,10 +2313,11 @@ const setoresSalvarCompleto = t.procedure
 
       await transaction(async () => {
         // 1. Atualiza dados basicos do setor
+        const pisoOperacional = Math.max(0, Math.floor(input.setor.piso_operacional ?? 1))
         await execute(
-          `UPDATE setores SET nome = ?, icone = ?, hora_abertura = ?, hora_fechamento = ?, regime_escala = ? WHERE id = ?`,
+          `UPDATE setores SET nome = ?, icone = ?, hora_abertura = ?, hora_fechamento = ?, regime_escala = ?, piso_operacional = ? WHERE id = ?`,
           input.setor.nome.trim(), input.setor.icone, input.setor.hora_abertura,
-          input.setor.hora_fechamento, input.setor.regime_escala, input.setor_id,
+          input.setor.hora_fechamento, input.setor.regime_escala, pisoOperacional, input.setor_id,
         )
 
         // 2. Atualiza demanda padrao do setor

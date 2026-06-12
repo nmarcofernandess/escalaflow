@@ -559,6 +559,37 @@ def add_demand_soft(
     return deficit, weighted_terms, slot_zero
 
 
+def add_operational_floor_hard(
+    model: cp_model.CpModel,
+    work: SlotGrid,
+    demand_by_slot: DaySlotDemand,
+    blocked_days: Dict[int, set],
+    C: int, D: int, S: int,
+    piso_operacional: int = 1,
+) -> None:
+    """Operational floor: never let an open demanded slot fall below the sector floor.
+
+    The required floor is clamped by target and by collaborators not physically
+    blocked that day. This keeps the constraint hard without turning structural
+    absence into a silent INFEASIBLE.
+    """
+    piso = max(0, int(piso_operacional or 0))
+    if piso <= 0:
+        return
+
+    for d in range(D):
+        available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+        if not available_c:
+            continue
+        for s in range(S):
+            target = demand_by_slot.get((d, s), 0)
+            if target <= 0:
+                continue
+            required = min(piso, target, len(available_c))
+            if required > 0:
+                model.add(sum(work[c, d, s] for c in available_c) >= required)
+
+
 # ===================================================================
 # CAMADA 3 — SOFT: ANTIPATTERN PENALTIES
 # ===================================================================

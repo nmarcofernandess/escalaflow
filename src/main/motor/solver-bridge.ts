@@ -323,6 +323,7 @@ export async function buildSolverInput(
     hora_abertura: string
     hora_fechamento: string
     regime_escala: '5X2' | '6X1'
+    piso_operacional: number | null
   }>('SELECT * FROM setores WHERE id = ?', setorId)
   if (!setor) throw new Error(`Setor ${setorId} nao encontrado`)
 
@@ -758,6 +759,7 @@ export async function buildSolverInput(
     setor_id: setorId,
     data_inicio: dataInicio,
     data_fim: dataFim,
+    piso_operacional: setor.piso_operacional ?? 1,
     empresa: {
       tolerancia_semanal_min: emp?.tolerancia_semanal_min ?? 0,
       hora_abertura: setor.hora_abertura,
