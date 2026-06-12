@@ -64,8 +64,8 @@ export function buildPreviewAvisos({
       id: 'preview_intermitentes',
       nivel: 'info',
       titulo: `${foraDoPreview} participante(s) intermitente(s) ficaram fora do ciclo do preview.`,
-      descricao: 'Intermitente nao entra no rodizio automatico de folgas, mas continua abatendo cobertura nos dias em que estiver habilitado.',
-      contexto_ia: 'Participantes intermitentes ficaram fora das linhas do ciclo, mas ainda contam para cobertura nos dias ativos.',
+      descricao: 'Intermitente nao entra no ciclo de folgas; ele so conta nos dias em que ha convocação.',
+      contexto_ia: 'Participantes intermitentes ficaram fora das linhas do ciclo; eles so contam para cobertura nos dias com convocação.',
     })
   }
 
@@ -96,7 +96,7 @@ export function buildPreviewAvisos({
         nivel: diagnostic.severity === 'error' ? 'error' : diagnostic.severity === 'warning' ? 'warning' : 'info',
         titulo: diagnostic.title,
         descricao: diagnostic.detail,
-        contexto_ia: `Diagnostico do advisory solver: ${diagnostic.title}. ${diagnostic.detail}`,
+        contexto_ia: `Diagnostico da verificação prévia: ${diagnostic.title}. ${diagnostic.detail}`,
       })
     }
   }

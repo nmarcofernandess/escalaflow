@@ -196,6 +196,14 @@ async function buildEscalaPreflight(
   }
 }
 
+function limparMensagemTecnicaGeracao(mensagem: string): string {
+  return mensagem
+    .replace(/^INFEASIBLE:\s*/i, '')
+    .replace(/^solver retornou infeasible:\s*/i, '')
+    .replace(/^solver retornou\s+/i, '')
+    .trim()
+}
+
 async function buildInfeasibleMessage(
   setorId: number,
   dataInicio: string,
@@ -207,22 +215,22 @@ async function buildInfeasibleMessage(
   const diag = await buildEscalaPreflight(setorId, dataInicio, dataFim, regimesOverride)
   const blocker = diag.blockers[0]
   if (blocker) {
-    return `INFEASIBLE: ${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`
+    return `${blocker.mensagem}${blocker.detalhe ? ` (${blocker.detalhe})` : ''}`
   }
 
   const sugestao = (solverSugestoes ?? []).find((s) => typeof s === 'string' && s.trim().length > 0)
   if (sugestao) {
-    return `INFEASIBLE: ${sugestao}`
+    return limparMensagemTecnicaGeracao(sugestao)
   }
 
   if (solverMensagem && solverMensagem.trim().length > 0) {
-    const sanitized = solverMensagem.replace(/^solver retornou infeasible:\s*/i, '').trim()
+    const sanitized = limparMensagemTecnicaGeracao(solverMensagem)
     if (sanitized.length > 0) {
-      return `INFEASIBLE: ${sanitized}`
+      return sanitized
     }
   }
 
-  return 'INFEASIBLE: Nao foi possivel gerar uma escala viavel com as regras e a equipe atuais. Revise demanda, excecoes, contratos e periodo.'
+  return 'Nao foi possivel montar uma escala com a equipe, demandas e regras atuais. Revise demanda, excecoes, contratos e periodo.'
 }
 
 type AutoFolgaAlocacao = {
@@ -1387,7 +1395,7 @@ const escalasAjustar = t.procedure
           tipo: 'INFEASIBLE',
           mensagem: msg,
           diagnostico_resumido: solverResult.diagnostico?.motivo_infeasible ?? undefined,
-          sugestoes: solverResult.erro?.sugestoes ?? undefined,
+          sugestoes: solverResult.erro?.sugestoes?.map(limparMensagemTecnicaGeracao).filter(Boolean) ?? undefined,
           capacidade_ratio: solverResult.diagnostico?.capacidade_vs_demanda?.ratio_cobertura_max ?? undefined,
         }
         throw new Error(JSON.stringify(infeasibleError))
@@ -1485,7 +1493,7 @@ const escalasGerar = t.procedure
           tipo: 'INFEASIBLE',
           mensagem: msg,
           diagnostico_resumido: solverResult.diagnostico?.motivo_infeasible ?? undefined,
-          sugestoes: solverResult.erro?.sugestoes ?? undefined,
+          sugestoes: solverResult.erro?.sugestoes?.map(limparMensagemTecnicaGeracao).filter(Boolean) ?? undefined,
           capacidade_ratio: solverResult.diagnostico?.capacidade_vs_demanda?.ratio_cobertura_max ?? undefined,
         }
         throw new Error(JSON.stringify(infeasibleError))

@@ -1960,7 +1960,8 @@ export function SetorDetalhe() {
       setAvisosOperacao(previewAvisosOperacao)
 
       if (previewGate === 'BLOCK') {
-        toastInfeasible(previewDiagnostics[0]?.title ?? 'Preview bloqueou a geracao.', () => useIaStore.getState().setAberto(true))
+        const firstBlocker = previewDiagnostics.find((diagnostic) => diagnostic.severity === 'error')
+        toastInfeasible(firstBlocker?.title ?? 'Há um problema antes de gerar a escala.', () => useIaStore.getState().setAberto(true))
         return
       }
 
@@ -1995,7 +1996,7 @@ export function SetorDetalhe() {
           origem: 'operacao' as const,
         }))
         setAvisosOperacao(blockerAvisos)
-        const msg = preflight.blockers.map((b) => b.mensagem).join(' | ') || 'Preflight bloqueou a geracao'
+        const msg = preflight.blockers.map((b) => b.mensagem).join(' | ') || 'A verificação prévia encontrou um impedimento.'
         toastInfeasible(msg, () => useIaStore.getState().setAberto(true))
         return
       }
@@ -2042,7 +2043,8 @@ export function SetorDetalhe() {
         result.diagnostico?.generation_mode,
       )
       if (relaxacoesTexto) {
-        toast.warning(relaxacoesTexto, {
+        toast.success('Escala gerada', {
+          description: relaxacoesTexto,
           duration: 8000,
           action: {
             label: 'Ver detalhes',
@@ -2073,7 +2075,7 @@ export function SetorDetalhe() {
         if (parsed.sugestoes?.length) {
           parsed.sugestoes.forEach((s, i) => solverAvisos.push({
             id: `solver_sugestao_${i}`,
-            nivel: 'aviso' as const,
+            nivel: 'info' as const,
             titulo: s,
             origem: 'operacao' as const,
           }))
@@ -2841,7 +2843,7 @@ export function SetorDetalhe() {
                       </Select>
                       {field.value === '6X1' && (
                         <p className="text-[0.75rem] text-muted-foreground">
-                          6 dias + 1 folga semanal em rodízio com o domingo. Folga fixa em SEG-SAB = a pessoa trabalha todos os domingos.
+                          6 dias + 1 folga semanal, alternando quem folga no domingo. Folga fixa em SEG-SAB = a pessoa trabalha todos os domingos.
                         </p>
                       )}
                       <FormMessage />
@@ -3546,7 +3548,7 @@ export function SetorDetalhe() {
                       {regimeEfetivo === '6X1' && simulacaoPreview.resultado.stats.h1_violacoes > 0 && (
                         <div className="flex items-center gap-1.5 rounded bg-sky-50 px-2 py-1 text-xs text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
                           <Info className="size-3.5 shrink-0" />
-                          Transição 6x1: {simulacaoPreview.resultado.stats.h1_violacoes} folga(s) extra(s) foram inseridas para impedir 7 dias corridos.
+                          Transição 6x1: {simulacaoPreview.resultado.stats.h1_violacoes} folga(s) extra(s) foram inseridas para respeitar o limite legal de 6 dias seguidos.
                         </div>
                       )}
                       <AvisosSection
@@ -3691,7 +3693,7 @@ export function SetorDetalhe() {
                     {solverLogs.length === 0 ? (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Loader2 className="size-3 animate-spin" />
-                        Iniciando motor...
+                        Preparando a geração...
                       </div>
                     ) : (
                       solverLogs.map((line, i) => (

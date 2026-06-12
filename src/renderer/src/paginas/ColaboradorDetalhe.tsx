@@ -1163,7 +1163,7 @@ export function ColaboradorDetalhe() {
                           </Select>
                           <p className="text-[0.7rem] text-muted-foreground">
                             {regimeEfetivo === '6X1'
-                              ? 'Em 6x1: folga sempre neste dia e trabalha TODOS os domingos (sai do rodízio)'
+                              ? 'Em 6x1: folga sempre neste dia e trabalha TODOS os domingos'
                               : 'Sempre folga neste dia'}
                           </p>
                         </div>

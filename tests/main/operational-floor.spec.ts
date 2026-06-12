@@ -127,7 +127,7 @@ assert solver.Value(work[(0, 0, 0)]) == 1
 
     expect(warnings.some((warning) => warning.codigo === 'PISO_OPERACIONAL_IMPOSSIVEL')).toBe(true)
     expect(warnings.find((warning) => warning.codigo === 'PISO_OPERACIONAL_IMPOSSIVEL')?.mensagem)
-      .toContain('piso 2, disponiveis 1')
+      .toContain('precisa de 2, ha 1 pessoa')
   })
 
   it('warns when the floor is impossible for a specific time slot even with day availability', () => {
@@ -139,8 +139,8 @@ assert solver.Value(work[(0, 0, 0)]) == 1
     const warning = warnings.find((item) => item.codigo === 'PISO_OPERACIONAL_SLOT_IMPOSSIVEL')
     expect(warning).toBeDefined()
     expect(warning?.mensagem).toContain('2026-03-02')
-    expect(warning?.mensagem).toContain('08:00-08:30')
-    expect(warning?.mensagem).toContain('piso 1, disponiveis 0')
+    expect(warning?.mensagem).toContain('08:00 as 08:30')
+    expect(warning?.mensagem).toContain('precisa de 1, ha 0 pessoa')
     expect(warning?.detalhe).toContain('CLT Unica (12:00-16:00)')
   })
 })

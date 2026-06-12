@@ -45,7 +45,7 @@ describe('buildPreviewAvisos with advisoryDiagnostics', () => {
     expect(result.find((a) => a.id === 'advisory_C')?.nivel).toBe('info')
   })
 
-  it('populates contexto_ia with advisory solver prefix', () => {
+  it('populates contexto_ia without technical advisory solver jargon', () => {
     const advisoryDiagnostics: PreviewDiagnostic[] = [
       {
         code: 'X',
@@ -58,9 +58,18 @@ describe('buildPreviewAvisos with advisoryDiagnostics', () => {
     ]
     const result = buildPreviewAvisos({ ...baseParams, advisoryDiagnostics })
     const aviso = result.find((a) => a.id === 'advisory_X')
-    expect(aviso?.contexto_ia).toContain('advisory solver')
+    expect(aviso?.contexto_ia).toContain('verificação prévia')
+    expect(aviso?.contexto_ia).not.toMatch(/advisory|solver/i)
     expect(aviso?.contexto_ia).toContain('Test')
     expect(aviso?.contexto_ia).toContain('Detail')
+  })
+
+  it('explains intermitentes without rodizio or coverage jargon', () => {
+    const result = buildPreviewAvisos({ ...baseParams, foraDoPreview: 1 })
+    const aviso = result.find((a) => a.id === 'preview_intermitentes')
+    expect(aviso?.descricao).toContain('ciclo de folgas')
+    expect(aviso?.descricao).toContain('convocação')
+    expect(aviso?.descricao).not.toMatch(/rod[ií]zio|abatendo cobertura/i)
   })
 
   it('deduplicates advisory with same code', () => {

@@ -49,10 +49,10 @@ export const NOMES_HUMANOS_REGRAS: Record<string, string> = {
   MIN_DIARIO: 'jornada mínima diária',
   TIME_WINDOW: 'horário de entrada/saída',
   FOLGA_FIXA: 'folga fixa semanal',
-  FOLGA_VARIAVEL: 'rodízio de folga/domingo',
+  FOLGA_VARIAVEL: 'folga alternada de domingo',
   H6: 'intervalo de almoço',
   H10: 'meta de horas semanais',
-  H1: 'máximo 6 dias consecutivos',
+  H1: 'limite legal de 6 dias seguidos',
 }
 
 /**
@@ -74,7 +74,7 @@ export function textoResumoRelaxacoes(
     : 'algumas regras de horário'
 
   if (pass_usado === 3 || generation_mode === 'EXPLORATORY') {
-    return `Escala com limitações — o sistema precisou ajustar: ${nomes}. Revise com atenção.`
+    return `Escala gerada para análise. Para fechar o período, o sistema flexibilizou: ${nomes}. Faça revisão cuidadosa antes de oficializar.`
   }
-  return `Escala gerada com ajustes: ${nomes} foram ajustados para que a escala funcionasse.`
+  return `Escala gerada. Para fechar o período, o sistema flexibilizou: ${nomes}. Ver detalhes antes de oficializar.`
 }

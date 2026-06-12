@@ -53,7 +53,7 @@ export const REGRAS_TEXTO: Record<string, string> = {
   // HARD rules (6) - Violam legislacao trabalhista (CLT)
   MAX_DIAS_CONSECUTIVOS: 'Trabalhou mais de 6 dias seguidos sem folga',
   DESCANSO_ENTRE_JORNADAS: 'Intervalo entre jornadas menor que 11 horas',
-  RODIZIO_DOMINGO: 'Rodizio de domingo nao respeitado',
+  RODIZIO_DOMINGO: 'Alternancia de domingos nao respeitada',
   ESTAGIARIO_DOMINGO: 'Estagiario nao pode trabalhar no domingo',
   CONTRATO_MAX_DIA: 'Jornada diaria excede o limite do contrato',
   MAX_JORNADA_DIARIA: 'Jornada diaria excede o limite de 10 horas (CLT)',

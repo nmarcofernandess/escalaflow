@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Target,
   Star,
+  Info,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -540,7 +541,6 @@ export function EscalaPagina() {
 
       {escalaCompleta?.diagnostico && (() => {
         const pass = escalaCompleta.diagnostico.pass_usado ?? 1
-        const isEmergency = pass === 3
         const texto = textoResumoRelaxacoes(
           pass,
           escalaCompleta.diagnostico.regras_relaxadas ?? [],
@@ -548,16 +548,9 @@ export function EscalaPagina() {
         )
         if (!texto) return null
         return (
-          <div className={cn(
-            'mx-6 mt-4 rounded-lg border-2 p-3',
-            isEmergency
-              ? 'border-destructive/40 bg-destructive/5'
-              : 'border-warning/40 bg-warning/5',
-          )}>
+          <div className="mx-6 mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
             <div className="flex items-center gap-2">
-              <AlertTriangle className={cn('size-4 shrink-0',
-                isEmergency ? 'text-destructive' : 'text-warning',
-              )} />
+              <Info className="size-4 shrink-0 text-sky-600 dark:text-sky-300" />
               <p className="text-sm font-medium">{texto}</p>
             </div>
           </div>
@@ -765,7 +758,11 @@ export function EscalaPagina() {
                               {ind.violacoes_hard === 1 ? 'Problema' : 'Problemas'}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {ind.violacoes_hard === 0 ? 'Pode oficializar' : 'Impede oficializar'}
+                              {ind.violacoes_hard === 0
+                                ? ind.violacoes_soft > 0
+                                  ? `Pode oficializar — ${ind.violacoes_soft} aviso${ind.violacoes_soft === 1 ? '' : 's'} de preferência`
+                                  : 'Pode oficializar'
+                                : 'Impede oficializar'}
                             </p>
                           </div>
                         </CardContent>

@@ -41,7 +41,7 @@ export function humanizarTexto(text: string): string {
     .replace(/disponiveis=(\d+),?\s*minimo requerido=(\d+)/g,
       '$1 pessoas disponíveis, mas a demanda pede $2')
     .replace(/\bINFEASIBLE\b/g, 'inviável')
-    .replace(/\bpreflight\b/gi, 'pré-validação')
+    .replace(/\bpreflight\b/gi, 'verificação prévia')
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ const TIPO_CONFIG: Record<OperationFeedback['type'], { titulo: string; nivel: Av
     nivel: 'error',
   },
   PREFLIGHT_WARNING: {
-    titulo: 'Atenção antes de gerar',
+    titulo: 'Revise antes de gerar',
     nivel: 'warning',
   },
   GENERATE_ERROR: {

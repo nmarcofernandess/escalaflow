@@ -195,7 +195,7 @@ export function SimulaCicloPagina() {
             <p className="mt-3 text-xs text-muted-foreground">
               {is6x1
                 ? '6x1: 1 folga por semana. Ate 6 dias consecutivos e cobertura diaria N-1 pessoas sao comportamento normal no 6x1.'
-                : '5x2: 2 folgas por semana. O simulador preserva o rodizio de domingos sem dois domingos trabalhados seguidos.'}
+                : '5x2: 2 folgas por semana. O simulador preserva a alternância de domingos sem dois domingos trabalhados seguidos.'}
             </p>
           </CardContent>
         </Card>
