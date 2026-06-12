@@ -2043,8 +2043,9 @@ export function SetorDetalhe() {
         result.diagnostico?.generation_mode,
       )
       if (relaxacoesTexto) {
+        const relaxacoesDescricao = relaxacoesTexto.replace(/^Escala gerada(?: para análise)?\.\s*/i, '')
         toast.success('Escala gerada', {
-          description: relaxacoesTexto,
+          description: relaxacoesDescricao,
           duration: 8000,
           action: {
             label: 'Ver detalhes',
