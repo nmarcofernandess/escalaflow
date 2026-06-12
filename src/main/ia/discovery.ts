@@ -1,6 +1,6 @@
 import { queryOne, queryAll } from '../db/query'
 import { derivarTipoTrabalhador } from '../../shared/tipo-trabalhador'
-import { resolverRegimeEscala } from '../../shared/regime-escala'
+import { resolverRegimeEscalaAgregado } from '../../shared/regime-escala'
 import { buildSolverInput, computeSolverScenarioHash } from '../motor/solver-bridge'
 import { searchKnowledge } from '../knowledge/search'
 import { gerarCicloFase1 } from '../../shared/simula-ciclo'
@@ -1129,10 +1129,12 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
 
         // 6. Montar folgas_forcadas por pessoa (apenas titulares + intermitentes B na ordem)
         const pool = [...titulares, ...intermediosB]
-        const regime = resolverRegimeEscala({
+        const regimeAgregado = resolverRegimeEscalaAgregado({
             setor: setor?.regime_escala,
-            contrato: pool[0]?.contrato_regime_escala,
-            dias_trabalho: pool[0]?.contrato_dias_trabalho,
+            contratos: pool.map((c) => ({
+                regime_escala: c.contrato_regime_escala,
+                dias_trabalho: c.contrato_dias_trabalho,
+            })),
         })
         const folgas_forcadas = pool.map(c => ({
             folga_fixa_dia: c.folga_fixa_dia_semana ? (DIA_PARA_IDX[c.folga_fixa_dia_semana] ?? null) : null,
@@ -1144,7 +1146,7 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
         const resultado = gerarCicloFase1({
             num_postos: N,
             trabalham_domingo: Math.min(K, N),
-            regime,
+            regime: regimeAgregado.regime,
             folgas_forcadas,
             demanda_por_dia,
         })
@@ -1188,6 +1190,9 @@ async function _buildPreview(setor_id: number): Promise<SetorPreview | null> {
 
         // Warnings
         const warnings: string[] = []
+        if (regimeAgregado.observacao) {
+            warnings.push(regimeAgregado.observacao)
+        }
         if (resultado.folga_warnings && resultado.folga_warnings.length > 0) {
             for (const w of resultado.folga_warnings) {
                 const tipo = w.tipo === 'FF_CONFLITO' ? 'Conflito folga fixa' : 'Conflito folga variável'

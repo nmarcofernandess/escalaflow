@@ -6,7 +6,7 @@ import { initDb, closeDb } from '../../src/main/db/pglite'
 import { createTables } from '../../src/main/db/schema'
 import { seedCoreData } from '../../src/main/db/seed'
 import { execute, insertReturningId, queryOne } from '../../src/main/db/query'
-import { buildContextBundle } from '../../src/main/ia/discovery'
+import { buildContextBundle, renderContextBriefing, type ContextBundle } from '../../src/main/ia/discovery'
 
 const DIAS = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM'] as const
 
@@ -80,4 +80,34 @@ describe.sequential('discovery preview regime', () => {
     expect(segunda!.demanda).toBe(4)
     expect(segunda!.cobertura).toBeGreaterThan(4)
   }, 30_000)
+
+  it('repassa observacao de regime agregado no briefing da IA', () => {
+    const bundle: ContextBundle = {
+      rota: '/setores/1',
+      global: { setores: 1, colaboradores: 2, rascunhos: 0, oficiais: 0 },
+      feriados_proximos: [],
+      regras_custom: [],
+      setores_lista: [],
+      setor: {
+        info: '### Setor Teste',
+        preview: {
+          ciclo_semanas: 2,
+          cobertura_media: 1,
+          cobertura_por_dia: [{ dia: 'SEG', cobertura: 2, demanda: 2 }],
+          deficit_max: 0,
+          ff_distribuicao: {},
+          warnings: [
+            'Empate no regime agregado entre 5x2 e 6x1; usando 6x1 como cenário conservador de cobertura.',
+          ],
+        },
+        contratos_relevantes: [],
+      },
+      knowledge_catalogo: { total_fontes: 0, total_chunks: 0, titulos_top: [] },
+      dica_pagina: '',
+    }
+
+    expect(renderContextBriefing(bundle)).toContain(
+      'AVISO: Empate no regime agregado entre 5x2 e 6x1',
+    )
+  })
 })

@@ -284,7 +284,7 @@ C ||--o{ E : historico imutavel
 
 1. **`tipo_trabalhador` vira coluna de `tipos_contrato`** (a "classe legal" do contrato). Seed preenche os 6 de fábrica; contratos custom escolhem a classe ao criar o contrato — uma vez, por quem entende, e não a cada colaborador.
 2. **Colaborador não escolhe mais nada além do contrato.** O select "Tipo Trabalhador" sai da criação; nos dois formulários entra um **badge read-only** ("Classe: Intermitente — definida pelo contrato"), atualizando ao vivo quando troca o contrato no dropdown.
-3. A coluna `colaboradores.tipo_trabalhador` vira cache: preenchida server-side (tipc) na criação/edição a partir do contrato — cobre IA tools, import e lote. A heurística por nome morre.
+3. A coluna `colaboradores.tipo_trabalhador` vira cache: preenchida server-side (tipc) na criação/edição a partir do contrato — cobre IA tools, import e lote. A heurística por nome fica apenas como fallback de migração/contrato legado, nunca como fonte preferencial.
 4. **Dropdown único, agrupado e legível**: `CLT — 44h (6x1)`, `CLT — 36h (6x1)`, `Estagiário — 20h`, `Intermitente`. O usuário enxerga classe e carga numa escolha só — resolve o "CLT 44, CLT 36 e CLT apenas?" da tua pergunta: "CLT" sozinho deixa de existir como opção; só existem contratos concretos com classe visível.
 
 **Migração:** `ALTER TABLE tipos_contrato ADD COLUMN tipo_trabalhador` + backfill pela heurística atual (uma única vez, auditável) + ajuste dos 3 pontos de escrita (criação, edição, tipc/IA). Snapshots históricos intocados.
@@ -301,7 +301,7 @@ C ||--o{ E : historico imutavel
 > Parecer Codex: concordância em todos os itens, com ajustes incorporados abaixo.
 > Claims dele verificadas no código antes de aceitar: validador.ts:238 lê coluna crua ✓;
 > spread a 800/min ⇒ 15min de spread (12.000) custa mais que 1 pessoa-slot de déficit (10.000) ✓;
-> tools.ts:602 permite escrita livre de tipo_trabalhador ✓.
+> tools.ts:602 permitia escrita livre de tipo_trabalhador no momento do parecer ✓; após o item 0, `tipo_trabalhador` saiu da whitelist de escrita de `colaboradores` e permanece só em consulta/contrato.
 
 | # | Item | Esforço | Impacto |
 |---|---|---|---|

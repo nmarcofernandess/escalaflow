@@ -234,7 +234,7 @@ Suportados ponta a ponta. Cascata de resolução (`solver-bridge.ts`): override 
 
 Seed de fábrica inclui CLT 44h/36h em **ambos** os regimes (`CLT 44h 6x1`, `CLT 36h 6x1`); em bancos existentes os contratos 6x1 são adicionados no próximo boot (gate idempotente por regime+horas+protegido — imune a rename). Regressão: `tests/main/solver-6x1.spec.ts`.
 
-**Preview Nível 1 e advisory também suportam 6x1** (`simula-ciclo.ts` recebe `regime`). Semântica 6x1: folga única — DOM nas semanas de folga-domingo, dia variável (`pickBestFolgaDay` ou forçado) nas semanas de trabalho-domingo. A transição T-DOM→F-DOM pode injetar uma folga extra na semana (repair do H1 max 6 dias corridos) — mesmo comportamento do solver (pass 2 relaxa DIAS_TRABALHO). Folga fixa em 6x1 = dia forçado toda semana (rodízio desativado). Specs: `tests/shared/simula-ciclo.spec.ts` (describe 6X1). E2E: setor `Mercearia 6x1` no `seed-e2e.ts` + assert no `electron-smoke.spec.ts`.
+**Preview Nível 1 e advisory também suportam 6x1** (`simula-ciclo.ts` recebe `regime`). Semântica 6x1: folga única — DOM nas semanas de folga-domingo, dia variável (`pickBestFolgaDay` ou forçado) nas semanas de trabalho-domingo. A transição T-DOM→F-DOM pode injetar uma folga extra na semana (repair do H1 max 6 dias corridos) — mesmo comportamento do solver (pass 2 relaxa DIAS_TRABALHO). Folga fixa em 6x1 = dia forçado toda semana (rodízio desativado). Advisory agregado resolve regime por setor; sem regime no setor, usa maioria dos contratos do pool e desempata em 6x1 com aviso. Specs: `tests/shared/simula-ciclo.spec.ts` (describe 6X1) e `tests/shared/regime-escala.spec.ts`. E2E: setor `Mercearia 6x1` no `seed-e2e.ts` + assert no `electron-smoke.spec.ts`.
 
 **RAG auto-upgrade:** `seedKnowledgeBase` re-seeda docs por hash sha256 (`metadata->>'hash'`) — doc editado → DELETE source antigo (CASCADE) + re-ingest + enrichment; `importGraphSeed` re-importa quando o seed cresce (origem `usuario` intocada). Banco existente atualiza sozinho no próximo boot.
 
@@ -738,7 +738,7 @@ Se mudar a logica de quem entra no pool (CLT + intermitente Tipo B; intermitente
 5. `solver_ortools.py:_compute_cycle_weeks_fast` — output diagnostico
 6. `ciclo-grid-converters.ts:escalaParaCicloGrid` — grid escala oficial
 
-O advisory da IA tambem chama `gerarCicloFase1`; ele deve resolver o regime pela cascata setor → contrato → `dias_trabalho` antes de montar o preview, para nao simular setor 6x1 como 5x2.
+O advisory da IA tambem chama `gerarCicloFase1`; ele deve resolver o regime pela cascata agregada setor → maioria dos contratos do pool → empate conservador em 6x1 → fallback contrato/`dias_trabalho`, para nao simular setor 6x1 como 5x2 nem depender da ordem da query em pool misto.
 
 ### Pipeline de geracao — doc canonico
 

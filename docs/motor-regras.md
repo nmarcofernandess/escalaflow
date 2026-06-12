@@ -991,6 +991,11 @@ Preview mostra em tempo real:
 - "Slots criticos: SAB 11:00-13:00 (3p pedidas, max possivel: 2p)."
 Calcula conforme RH edita a timeline.
 
+Regime no preview/advisory: quando o setor tem `regime_escala`, esse valor e
+autoritativo. Em legado sem regime no setor, a simulacao agregada usa a maioria
+dos contratos do pool; empate 5x2/6x1 cai em 6x1 e emite aviso, porque 6x1 e o
+cenario mais conservador de cobertura.
+
 ---
 
 ## 12. MIGRACAO
