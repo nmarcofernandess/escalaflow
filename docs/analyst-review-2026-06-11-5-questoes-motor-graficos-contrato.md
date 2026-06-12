@@ -315,7 +315,10 @@ C ||--o{ E : historico imutavel
 **Riscos monitorados (do parecer, aceitos):**
 
 - **Spread (peso 800/min)**: risco invertido — pode competir DEMAIS com cobertura (igualar totais > cobrir um slot). Dado empírico da escala #37: capacidade estava 100% esgotada (todas as CLTs no teto da banda H10), então o spread não roubou cobertura *neste* caso. Vigiar: se aparecer escala sacrificando slot para igualar 15min de total, baixar o peso ou tornar o spread critério secundário pós-déficit.
-- **Sunday headcount removido do Pass 2**: mitigado por S_DEFICIT, mas o DOM 28/06 (1/3) mostra o custo. Evolução planejada: **slack quasi-hard** no Pass 2 (peso entre override 40000 e déficit 10000) em vez de remoção total — entra junto com a Q1 camada 1.
+- **Sunday headcount removido do Pass 2**: resolvido na execução pós-v2 como **slack quasi-hard em todos os passes**. Como demanda é SOFT, o headcount derivado não pode ser HARD.
+- **Pass 1 da Padaria continua genuinamente INFEASIBLE**: prova pós-fix em mini-SAT de dias, sem horarios/almoço/H10/pins. Com `piso_operacional=1`, H3 feminino, H1 e `DIAS_TRABALHO == 6`, o modelo já é INFEASIBLE. Razão: em 6x1 exato, trabalhar domingo na semana N exige uma folga antes do sábado seguinte para respeitar H1; se H3 feminino força folga no domingo N+1, a semana N+1 precisa de duas folgas. Logo o Pass 2 relaxando `DIAS_TRABALHO` não é migué, é o repair legal necessário.
+- **Janela de almoço relógio-fixo 11:00-14:00**: corrigida para semântica relativa ao turno. H6 continua exigindo intervalo em jornada >6h, gap 1-2h, blocos mínimos e 2h antes/depois; 11:00-14:00 fica como preferência/antipattern diurno, não como constraint HARD para turno de tarde/noite.
+- **Convenção de dias `horario_por_dia`**: auditada em 2026-06-11. Bridge envia chaves 0=DOM..6=SAB; Python usa `(date.weekday() + 1) % 7`, convertendo `weekday()` 0=SEG..6=DOM para a mesma convenção. Dump real: 2026-06-15 SEG -> chave 1; 2026-06-21 DOM -> chave 0. Sem bug encontrado.
 - **`ESCALAFLOW_AI_DEVTOOLS=true` ainda força DevTools em app empacotado** — aceito como escape hatch de debug explícito.
 
 ## DISCLAIMERS CRÍTICOS

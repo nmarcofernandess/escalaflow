@@ -1070,44 +1070,22 @@ def build_model(
     block_starts = make_block_starts(model, work, C, D, S)
 
     # ---------------------------------------------------------------
-    # Minimum headcount per Sunday (from demand peak)
-    # Relaxed in Pass 2+ (same gate as FOLGA_FIXA/FOLGA_VARIAVEL)
-    # to avoid false INFEASIBLE on long periods where H1/H2/folga_fixa
-    # make it impossible to guarantee headcount every single Sunday.
-    # S_DEFICIT (SOFT) already penalizes under-coverage per slot.
+    # Minimum headcount per Sunday (from demand peak), quasi-hard.
+    # Demand is a SOFT business target in this solver; a derived Sunday
+    # headcount cannot be harder than the demand it came from. Keeping it
+    # as slack avoids false INFEASIBLE with H1 + 6x1 + female Sunday limit,
+    # while still charging a high penalty when Sunday peak is missed.
     # ---------------------------------------------------------------
-    # DIAS_TRABALHO esta presente nos relax sets de TODOS os passes 2+ — e o
-    # marcador correto de "Pass 2+" prometido no comentario acima. Sem ele, o
-    # headcount HARD de domingo sobrevivia ao Pass 2 e colidia com H10+H3
-    # (ex: pool 100% feminino + intermitente de DOM com recorrencia => false
-    # INFEASIBLE provado em ~0.2s; deficit de domingo ja e penalizado por S_DEFICIT).
     sunday_headcount_slacks = []
-    _skip_sunday_headcount = (
-        "ALL_PRODUCT_RULES" in relax
-        or "DIAS_TRABALHO" in relax
-        or "FOLGA_FIXA" in relax
-        or "FOLGA_VARIAVEL" in relax
-    )
-    if not _skip_sunday_headcount:
-        for d in sunday_indices:
-            peak = 0
-            for s in range(S):
-                target = demand_by_slot.get((d, s), 0)
-                if target > peak:
-                    peak = target
-            if peak > 0:
-                available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
-                if len(available_c) >= peak:
-                    model.add(sum(works_day[c, d] for c in available_c) >= peak)
-    elif "DIAS_TRABALHO" in relax and "ALL_PRODUCT_RULES" not in relax:
-        for d in sunday_indices:
-            peak = 0
-            for s in range(S):
-                target = demand_by_slot.get((d, s), 0)
-                if target > peak:
-                    peak = target
-            if peak > 0:
-                available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+    for d in sunday_indices:
+        peak = 0
+        for s in range(S):
+            target = demand_by_slot.get((d, s), 0)
+            if target > peak:
+                peak = target
+        if peak > 0:
+            available_c = [c for c in range(C) if d not in blocked_days.get(c, set())]
+            if available_c:
                 slack = model.new_int_var(0, peak, f"sunday_headcount_slack_{d}")
                 model.add(sum(works_day[c, d] for c in available_c) + slack >= peak)
                 sunday_headcount_slacks.append(slack)
@@ -1248,6 +1226,8 @@ def build_model(
         grid_min=grid_min,
         lunch_window_start_hour=11,
         lunch_window_end_hour=14,
+        min_gap_slots=min_lunch_slots,
+        max_gap_slots=max_gap_slots,
         min_work_before_lunch_slots=120 // grid_min,   # 2h before lunch
         min_work_after_lunch_slots=120 // grid_min,     # 2h after lunch
     )

@@ -172,8 +172,8 @@ def add_human_blocks(
     max_gap_slots: int = 4,       # max 2h gap
     min_work_slots: int = 4,      # blocos de trabalho >= 2h (proíbe micro-blocos)
     max_work_slots: int = 12,     # nunca trabalhar > 6h seguidas sem pausa
-    lunch_window_start_hour: int = 11,  # almoço não inicia antes das 11:00
-    lunch_window_end_hour: int = 14,    # almoço termina até as 14:00
+    lunch_window_start_hour: int = 11,  # compat: janela fixa legada nao e mais usada
+    lunch_window_end_hour: int = 14,    # compat: janela fixa legada nao e mais usada
 ) -> None:
     """H6 + H7b + H9 + H9b + H20 Unificado.
 
@@ -181,18 +181,13 @@ def add_human_blocks(
     - Shift <= 6h -> exato 1 bloco contíguo (sem gaps/splits).
     - Shift > 6h  -> exatos 2 blocos (1 gap = almoço).
     - Gap (almoço) entre [min_gap_slots, max_gap_slots] (1h-2h).
-    - Gap obrigatoriamente dentro da janela [11:00-14:00].
+    - Gap em posicao relativa ao turno, nao preso ao relogio [11:00-14:00].
     - Blocos de trabalho >= 2h (sem micro-blocos picotados).
     - Nunca > 6h seguidas sem pausa.
 
-    Nota: a janela de almoço (WHERE) é TAMBÉM enforçada por
-    add_lunch_window_always_hard() que roda independente do status de H6.
-    Aqui é redundante mas garante consistência quando H6 é HARD.
+    Nota: a posicao relativa do intervalo tambem e protegida por
+    add_lunch_window_always_hard() quando H6 esta SOFT.
     """
-    # Convert lunch window hours to slot indices
-    lunch_win_start = max(0, ((lunch_window_start_hour * 60) - (base_h * 60)) // grid_min)
-    lunch_win_end = min(S, ((lunch_window_end_hour * 60) - (base_h * 60)) // grid_min)
-
     for c_idx in range(C):
         for d in range(D):
             day_total = sum(work[c_idx, d, s] for s in range(S))
@@ -206,27 +201,12 @@ def add_human_blocks(
             model.add(b_starts <= 1).only_enforce_if(is_long.negated())
             model.add(b_starts == 2).only_enforce_if(is_long)
 
-            # --- 2) Gap dentro da janela de almoço (dias longos) ---
-            # Para dias longos: antes da janela de almoço -> sem gap (work é não-decrescente)
-            # Depois da janela -> sem gap (work é não-crescente)  
-            # Isso força o gap a cair DENTRO de [lunch_win_start, lunch_win_end]
-            for s in range(min(lunch_win_start, S) - 1):
-                # Antes das 11h: se tá trabalhando, não pode parar (não-decrescente)
-                model.add(
-                    work[c_idx, d, s + 1] >= work[c_idx, d, s]
-                ).only_enforce_if(is_long)
-
-            for s in range(lunch_win_end, S - 1):
-                # Depois das 15h: se parou, não volta (não-crescente)
-                model.add(
-                    work[c_idx, d, s + 1] <= work[c_idx, d, s]
-                ).only_enforce_if(is_long)
-
-            # --- Otimização: Gaps só ocorrem dentro da janela de almoço ---
-            # Devido à Seção 2, para dias longos, o gap é restrito a [lunch_win_start, lunch_win_end].
-            # Para dias curtos, não há gaps. Portanto, podemos restringir a busca O(S^2) a esta janela.
-            search_start = max(0, lunch_win_start - 1)
-            search_end = min(S, lunch_win_end + 1)
+            # --- 2) Gap relativo ao turno ---
+            # A CLT exige intervalo intrajornada para turno >6h, mas nao exige
+            # que ele caia em 11:00-14:00. Turnos de tarde/noite precisam poder
+            # posicionar a pausa entre blocos reais do proprio turno.
+            search_start = 0
+            search_end = S
 
             # --- 3) Min Gap Size (proibir gaps < 1h) ---
             for gap_len in range(1, min_gap_slots):
@@ -1433,27 +1413,24 @@ def add_lunch_window_always_hard(
     grid_min: int = 15,
     lunch_window_start_hour: int = 11,
     lunch_window_end_hour: int = 14,
+    min_gap_slots: int = 4,              # 1h on 15min grid
+    max_gap_slots: int = 8,              # 2h on 15min grid
     min_work_before_lunch_slots: int = 8,  # 2h = 8 slots of 15min
     min_work_after_lunch_slots: int = 8,   # 2h = 8 slots of 15min
 ) -> None:
-    """ALWAYS-HARD: If a day has a lunch gap, constrain WHERE it can be.
+    """ALWAYS-HARD: If a day has a lunch gap, keep it relative to the shift.
 
     This runs regardless of H6 status. H6 controls WHETHER lunch is mandatory.
-    This controls WHERE lunch goes IF it exists.
+    This controls WHERE lunch goes IF it exists, without anchoring it to 11-14.
 
     Rules enforced:
-    1. Gaps only within [11:00, 14:00] window — no lunch at 06:30 or 18:00.
-    2. At least 2h of work BEFORE the gap start.
-    3. At least 2h of work AFTER the gap end.
+    1. Gap duration between min/max lunch interval.
+    2. At least 2h of work BEFORE any work->rest transition.
+    3. At least 2h of work AFTER any rest->work transition.
 
-    Implementation:
-    - If a day has 2+ blocks (gap exists), the non-decreasing/non-increasing
-      envelope forces the gap into the lunch window.
-    - The min-work-before/after is enforced by requiring the first block to start
-      early enough and the last block to end late enough relative to the gap.
+    lunch_window_* params are kept for backward call compatibility only.
     """
-    lunch_win_start = max(0, ((lunch_window_start_hour * 60) - (base_h * 60)) // grid_min)
-    lunch_win_end = min(S, ((lunch_window_end_hour * 60) - (base_h * 60)) // grid_min)
+    del lunch_window_start_hour, lunch_window_end_hour, base_h, grid_min
 
     for c in range(C):
         for d in range(D):
@@ -1463,32 +1440,28 @@ def add_lunch_window_always_hard(
             model.add(sum(b_starts) >= 2).only_enforce_if(has_gap)
             model.add(sum(b_starts) <= 1).only_enforce_if(has_gap.negated())
 
-            # Rule 1: Before lunch window -> non-decreasing (can't stop working)
-            for s in range(min(lunch_win_start, S) - 1):
-                model.add(
-                    work[c, d, s + 1] >= work[c, d, s]
-                ).only_enforce_if(has_gap)
+            # Gap shorter than lunch minimum is not a lunch.
+            for gap_len in range(1, min_gap_slots):
+                for s in range(S - gap_len - 1):
+                    clause = [work[c, d, s].negated(), work[c, d, s + gap_len + 1].negated()]
+                    clause.extend(work[c, d, s + k] for k in range(1, gap_len + 1))
+                    model.add_bool_or(clause).only_enforce_if(has_gap)
 
-            # Rule 1: After lunch window -> non-increasing (can't start working again)
-            for s in range(lunch_win_end, S - 1):
-                model.add(
-                    work[c, d, s + 1] <= work[c, d, s]
-                ).only_enforce_if(has_gap)
+            # Gap longer than lunch maximum is a broken split shift.
+            for s1 in range(S):
+                for s2 in range(s1 + max_gap_slots + 2, S):
+                    model.add(
+                        sum(work[c, d, k] for k in range(s1 + 1, s2)) >= 1
+                    ).only_enforce_if([has_gap, work[c, d, s1], work[c, d, s2]])
 
-            # Rule 2: At least min_work_before_lunch_slots of work before the gap
-            # If has_gap, the first block must have started by (lunch_win_start - min_work_before)
-            # i.e., enough work slots before the earliest possible gap start
-            earliest_gap = lunch_win_start
-            min_start = max(0, earliest_gap - min_work_before_lunch_slots)
-            if min_start < earliest_gap:
+            # Work -> rest transition: lunch cannot start before 2h worked.
+            for s in range(S - 1):
                 model.add(
-                    sum(work[c, d, s] for s in range(min_start, earliest_gap)) >= min_work_before_lunch_slots
-                ).only_enforce_if(has_gap)
+                    sum(work[c, d, k] for k in range(0, s + 1)) >= min_work_before_lunch_slots
+                ).only_enforce_if([has_gap, work[c, d, s], work[c, d, s + 1].negated()])
 
-            # Rule 3: At least min_work_after_lunch_slots of work after the gap
-            # If has_gap, enough work must happen after lunch_win_end
-            max_end = min(S, lunch_win_end + min_work_after_lunch_slots)
-            if lunch_win_end < max_end:
+            # Rest -> work transition: lunch cannot end without 2h work remaining.
+            for s in range(S - 1):
                 model.add(
-                    sum(work[c, d, s] for s in range(lunch_win_end, max_end)) >= min_work_after_lunch_slots
-                ).only_enforce_if(has_gap)
+                    sum(work[c, d, k] for k in range(s + 1, S)) >= min_work_after_lunch_slots
+                ).only_enforce_if([has_gap, work[c, d, s].negated(), work[c, d, s + 1]])

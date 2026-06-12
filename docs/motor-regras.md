@@ -241,6 +241,11 @@ GERAR CANDIDATOS de posicao do almoco (grid 30min):
   2. hora_almoco_inicio <= hora_fim - almoco_duracao - 120min (min 2h depois)
   3. Exemplo: turno 08:00-17:00, almoco 1h → almoco entre 10:00 e 14:00
 
+NOTA DE SOLVER:
+  - A constraint HARD de almoco e relativa ao turno, nao fixa no relogio 11:00-14:00.
+  - 11:00-14:00 pode ser preferencia/antipattern para turno diurno, mas nao pode
+    tornar inviavel um turno legitimo de tarde/noite.
+
 SCORING:
   - Preferir meio da jornada (natural)
   - Maximizar cobertura: se slot 12:00-14:00 precisa gente,

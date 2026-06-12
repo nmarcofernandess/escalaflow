@@ -2116,14 +2116,13 @@ export function checkS5_ConsistenciaHorario(
 /**
  * H20 — ALMOCO_POSICAO
  * Regras de posicionamento do almoço:
- * 1. Janela: almoço deve INICIAR entre 11:00 e 14:00 (nunca às 06:30 ou 18:00)
- * 2. Min 2h (120min) de trabalho ANTES do início do almoço (TST 5ª Turma)
- * 3. Min 2h (120min) de trabalho DEPOIS do fim do almoço (TST 5ª Turma)
+ * 1. Min 2h (120min) de trabalho ANTES do início do almoço (TST 5ª Turma)
+ * 2. Min 2h (120min) de trabalho DEPOIS do fim do almoço (TST 5ª Turma)
+ *
+ * Paridade com o solver: a janela HARD é relativa ao turno, não fixa em
+ * 11:00-14:00. O horário ideal continua como antipattern AP8, não HARD.
  * Só aplica quando há almoço definido (hora_almoco_inicio != null).
  */
-const LUNCH_WINDOW_START = 11 * 60  // 11:00
-const LUNCH_WINDOW_END = 14 * 60    // 14:00
-
 export function checkH20(
   cel: CelulaMotor,
   c: ColabMotor,
@@ -2139,28 +2138,6 @@ export function checkH20(
   const almocoFimMin = timeToMin(cel.hora_almoco_fim)
 
   const violacoes: Violacao[] = []
-
-  // Janela: almoço deve iniciar >= 11:00 e terminar <= 14:00
-  if (almocoInicioMin < LUNCH_WINDOW_START) {
-    violacoes.push({
-      severidade: 'HARD',
-      regra: 'H20_ALMOCO_POSICAO',
-      colaborador_id: c.id,
-      colaborador_nome: c.nome,
-      mensagem: `${c.nome} tem almoço às ${cel.hora_almoco_inicio} em ${data} — almoço deve iniciar a partir das 11:00`,
-      data,
-    })
-  }
-  if (almocoFimMin > LUNCH_WINDOW_END) {
-    violacoes.push({
-      severidade: 'HARD',
-      regra: 'H20_ALMOCO_POSICAO',
-      colaborador_id: c.id,
-      colaborador_nome: c.nome,
-      mensagem: `${c.nome} tem almoço até ${cel.hora_almoco_fim} em ${data} — almoço deve terminar até as 14:00`,
-      data,
-    })
-  }
 
   // Min 2h (120min) de trabalho ANTES do almoço
   const trabalhoAntes = almocoInicioMin - inicioMin
