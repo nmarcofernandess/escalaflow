@@ -35,6 +35,8 @@ describe('SimulaCicloPagina', () => {
 
     expect(screen.getByText(/1 folga por semana/i)).toBeInTheDocument()
     expect(screen.getByText(/normal no 6x1/i)).toBeInTheDocument()
+    expect(screen.getByText(/Transição sem 7º dia/i)).toBeInTheDocument()
+    expect(screen.getByText(/folgas extras/i)).toBeInTheDocument()
     expect(screen.getAllByText(/N-1 pessoas/i).length).toBeGreaterThan(0)
   })
 })

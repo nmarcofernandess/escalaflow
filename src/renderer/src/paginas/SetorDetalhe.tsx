@@ -34,6 +34,7 @@ import {
   Save,
   Check,
   AlertTriangle,
+  Info,
   ShieldCheck,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -3530,6 +3531,12 @@ export function SetorDetalhe() {
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
                           <span className="text-blue-500">&#8635;</span>
                           O sistema ajustou {simulacaoPreview.resultado.redistribuicoes.length} folga(s) automatica(s) para melhorar a cobertura
+                        </div>
+                      )}
+                      {regimeEfetivo === '6X1' && simulacaoPreview.resultado.stats.h1_violacoes > 0 && (
+                        <div className="flex items-center gap-1.5 rounded bg-sky-50 px-2 py-1 text-xs text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+                          <Info className="size-3.5 shrink-0" />
+                          Transição 6x1: {simulacaoPreview.resultado.stats.h1_violacoes} folga(s) extra(s) foram inseridas para impedir 7 dias corridos.
                         </div>
                       )}
                       <AvisosSection

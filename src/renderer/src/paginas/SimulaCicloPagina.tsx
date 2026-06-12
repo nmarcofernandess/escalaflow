@@ -253,13 +253,13 @@ export function SimulaCicloPagina() {
                   resultado.stats.sem_H1_violation
                     ? 'border-emerald-500/30'
                     : is6x1
-                      ? 'border-amber-500/30'
+                      ? 'border-sky-500/30'
                       : 'border-red-500/30',
                 )}
               >
                 <p className="text-xs text-muted-foreground">
                   {is6x1 && resultado.stats.h1_violacoes > 0
-                    ? 'Reparos de transicao'
+                    ? 'Transição sem 7º dia'
                     : is6x1
                       ? 'Dias consecutivos normais'
                       : 'Dias consecutivos'}
@@ -270,14 +270,14 @@ export function SimulaCicloPagina() {
                     resultado.stats.sem_H1_violation
                       ? 'text-emerald-600 dark:text-emerald-500'
                       : is6x1
-                        ? 'text-amber-600 dark:text-amber-500'
+                        ? 'text-sky-600 dark:text-sky-500'
                         : 'text-red-600 dark:text-red-500',
                   )}
                 >
                   {resultado.stats.h1_violacoes === 0
                     ? (is6x1 ? 'Até 6 (normal no 6x1)' : 'Até 6')
                     : is6x1
-                      ? `${resultado.stats.h1_violacoes} ajustes`
+                      ? `${resultado.stats.h1_violacoes} folgas extras`
                       : `${resultado.stats.h1_violacoes} reparos`}
                 </p>
               </div>
