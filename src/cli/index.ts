@@ -253,9 +253,8 @@ program
 // -- chat ------------------------------------------------------------------
 
 program
-  .command('chat')
+  .command('chat [message]')
   .description('Conversa com a IA do EscalaFlow pelo app aberto')
-  .argument('[message]', 'Mensagem unica. Sem mensagem, abre REPL.')
   .option('--attach', 'Alias semantico para conectar ao app aberto')
   .action(async (message?: string) => {
     await ensureChatReady()
@@ -302,9 +301,8 @@ program
 // -- search ----------------------------------------------------------------
 
 program
-  .command('search')
+  .command('search <term>')
   .description('Busca detalhada com scores e fontes')
-  .argument('<term>', 'Termo de busca')
   .action(async (term: string) => {
     const data = await callTool('buscar_conhecimento', { consulta: term })
     formatSearchResults(data as ToolResponse, term)
@@ -313,9 +311,8 @@ program
 // -- import ----------------------------------------------------------------
 
 program
-  .command('import')
+  .command('import <file>')
   .description('Importa arquivo para o knowledge base')
-  .argument('<file>', 'Caminho do arquivo para importar')
   .action(async (file: string) => {
     let conteudo: string
     try {
@@ -399,9 +396,8 @@ program
   })
 
 program
-  .command('tool')
+  .command('tool <name>')
   .description('Executa uma tool do app')
-  .argument('<name>', 'Nome da tool')
   .option('--json <json>', 'Argumentos da tool em JSON')
   .action(async (name: string, options: { json?: string }) => {
     const args = parseJsonArg(options.json)
@@ -412,18 +408,16 @@ program
 const rag = program.command('rag').description('Comandos de RAG')
 
 rag
-  .command('search')
+  .command('search <query>')
   .description('Busca na base RAG')
-  .argument('<query>', 'Consulta')
   .action(async (query: string) => {
     const data = await callTool('buscar_conhecimento', { consulta: query })
     formatSearchResults(data as ToolResponse, query)
   })
 
 rag
-  .command('import')
+  .command('import <path>')
   .description('Importa arquivo ou pasta para o RAG')
-  .argument('<path>', 'Arquivo ou pasta')
   .option('--group <name>', 'Nome do grupo')
   .option('--recursive', 'Inclui subpastas', true)
   .option('--no-recursive', 'Nao inclui subpastas')
@@ -500,19 +494,19 @@ rag.command('jobs').description('Lista jobs persistentes de importacao RAG').act
   printJson(await fetchJson(`${TOOL_SERVER}/rag/jobs`))
 })
 
-rag.command('job').description('Mostra progresso e arquivos de um job RAG').argument('<id>').action(async (id: string) => {
+rag.command('job <id>').description('Mostra progresso e arquivos de um job RAG').action(async (id: string) => {
   printJson(await fetchJson(`${TOOL_SERVER}/rag/jobs/${encodeURIComponent(id)}`))
 })
 
-rag.command('cancel').description('Cancela um job RAG persistente').argument('<id>').action(async (id: string) => {
+rag.command('cancel <id>').description('Cancela um job RAG persistente').action(async (id: string) => {
   printJson(await postJson(`/rag/jobs/${encodeURIComponent(id)}/cancel`, {}))
 })
 
-rag.command('pause').description('Pausa um job RAG persistente').argument('<id>').action(async (id: string) => {
+rag.command('pause <id>').description('Pausa um job RAG persistente').action(async (id: string) => {
   printJson(await postJson(`/rag/jobs/${encodeURIComponent(id)}/pause`, {}))
 })
 
-rag.command('resume').description('Retoma um job RAG persistente').argument('<id>').action(async (id: string) => {
+rag.command('resume <id>').description('Retoma um job RAG persistente').action(async (id: string) => {
   printJson(await postJson(`/rag/jobs/${encodeURIComponent(id)}/resume`, {}))
 })
 
@@ -537,24 +531,23 @@ jobs.command('list').action(async () => {
   printJson(await fetchJson(`${TOOL_SERVER}/jobs`))
 })
 
-jobs.command('cancel').argument('<id>').action(async (id: string) => {
+jobs.command('cancel <id>').action(async (id: string) => {
   printJson(await postJson(`/jobs/${encodeURIComponent(id)}/cancel`, {}))
 })
 
-jobs.command('pause').argument('<id>').action(async (id: string) => {
+jobs.command('pause <id>').action(async (id: string) => {
   printJson(await postJson(`/jobs/${encodeURIComponent(id)}/pause`, {}))
 })
 
-jobs.command('resume').argument('<id>').action(async (id: string) => {
+jobs.command('resume <id>').action(async (id: string) => {
   printJson(await postJson(`/jobs/${encodeURIComponent(id)}/resume`, {}))
 })
 
 const terminal = program.command('terminal').description('Harness local de terminal e arquivos')
 
 terminal
-  .command('exec')
+  .command('exec <command...>')
   .description('Executa comando no computador local via app aberto')
-  .argument('<command...>', 'Comando shell')
   .option('--cwd <path>', 'Diretorio de trabalho')
   .option('--timeout <ms>', 'Timeout em ms', (value) => Number(value))
   .option('--wait', 'Aguarda resultado em vez de criar job')
@@ -607,9 +600,8 @@ terminal
   })
 
 terminal
-  .command('read')
+  .command('read <file>')
   .description('Le arquivo local via app aberto')
-  .argument('<file>', 'Arquivo')
   .option('--max-bytes <n>', 'Limite de leitura', (value) => Number(value))
   .action(async (file: string, options: { maxBytes?: number }) => {
     const data = await postJson('/terminal/read-file', {
@@ -624,9 +616,8 @@ terminal
   })
 
 terminal
-  .command('write')
+  .command('write <file>')
   .description('Escreve arquivo local via app aberto')
-  .argument('<file>', 'Arquivo')
   .option('--content <text>', 'Conteudo literal')
   .option('--stdin', 'Le conteudo do stdin')
   .action(async (file: string, options: { content?: string; stdin?: boolean }) => {

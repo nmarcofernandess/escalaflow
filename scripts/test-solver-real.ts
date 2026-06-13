@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { buildSolverInput, runSolver } from '../src/main/motor/solver-bridge'
 import { initDb, closeDb } from '../src/main/db/pglite'
 import { createTables } from '../src/main/db/schema'
+import { seedCoreData } from '../src/main/db/seed'
+import { CI_SETOR_5X2_NOME, seedCiData } from '../src/main/db/seed-ci'
 import { queryOne } from '../src/main/db/query'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -16,31 +18,53 @@ async function main() {
   const args = process.argv.slice(2)
   console.log('[test-solver] Iniciando smoke test end-to-end do motor via bridge TypeScript')
 
-  const setorId = args[0] ? parseInt(args[0], 10) : 1
-  const dataInicio = args[1] ?? '2026-03-02'
-  const dataFim = args[2] ?? '2026-05-31'
+  const setorArg = args[0]
+  const setorIdArg = setorArg && /^\d+$/.test(setorArg) ? parseInt(setorArg, 10) : null
+  const dataInicio = args[1] ?? '2026-06-15'
+  const dataFim = args[2] ?? '2026-06-21'
   const solveMode: 'rapido' | 'otimizado' = 'rapido'
   const rigorLevel: 'ALTO' | 'MEDIO' | 'BAIXO' = 'ALTO'
 
   console.log(`[test-solver] DB Path: ${process.env.ESCALAFLOW_DB_PATH}`)
-  console.log(`[test-solver] Setor: ${setorId} | Periodo: ${dataInicio} a ${dataFim}`)
+  console.log(`[test-solver] Setor: ${setorArg ?? CI_SETOR_5X2_NOME} | Periodo: ${dataInicio} a ${dataFim}`)
   console.log(`[test-solver] Mode: ${solveMode} | Rigor: ${rigorLevel}`)
 
   try {
     await initDb()
     await createTables()
 
-    const setor = await queryOne<{ id: number; nome: string }>(
-      'SELECT id, nome FROM setores WHERE id = $1 AND ativo = TRUE LIMIT 1',
-      setorId,
-    )
+    let setor = setorIdArg
+      ? await queryOne<{ id: number; nome: string }>(
+        'SELECT id, nome FROM setores WHERE id = $1 AND ativo = TRUE LIMIT 1',
+        setorIdArg,
+      )
+      : await queryOne<{ id: number; nome: string }>(
+        'SELECT id, nome FROM setores WHERE nome = $1 AND ativo = TRUE LIMIT 1',
+        setorArg ?? CI_SETOR_5X2_NOME,
+      )
+
     if (!setor) {
-      console.error(`[test-solver] ERRO: Setor ${setorId} nao encontrado/ativo no banco.`)
-      process.exit(1)
+      console.warn('[test-solver] Banco sem setor de smoke; aplicando seed core + CI descartavel...')
+      await seedCoreData()
+      await seedCiData()
+      setor = setorIdArg
+        ? await queryOne<{ id: number; nome: string }>(
+          'SELECT id, nome FROM setores WHERE id = $1 AND ativo = TRUE LIMIT 1',
+          setorIdArg,
+        )
+        : await queryOne<{ id: number; nome: string }>(
+          'SELECT id, nome FROM setores WHERE nome = $1 AND ativo = TRUE LIMIT 1',
+          setorArg ?? CI_SETOR_5X2_NOME,
+        )
+
+      if (!setor) {
+        console.error(`[test-solver] ERRO: Setor ${setorArg ?? CI_SETOR_5X2_NOME} nao encontrado/ativo no banco apos seed.`)
+        process.exit(1)
+      }
     }
 
     const t0 = performance.now()
-    const payload = await buildSolverInput(setorId, dataInicio, dataFim, [], {
+    const payload = await buildSolverInput(setor.id, dataInicio, dataFim, [], {
       solveMode,
       nivelRigor: rigorLevel,
     })
@@ -52,7 +76,7 @@ async function main() {
     )
 
     if (process.env.SOLVER_DUMP_INPUT === '1') {
-      const dumpPath = path.join(rootDir, 'tmp', `solver-input-setor-${setorId}.json`)
+      const dumpPath = path.join(rootDir, 'tmp', `solver-input-setor-${setor.id}.json`)
       fs.mkdirSync(path.dirname(dumpPath), { recursive: true })
       fs.writeFileSync(dumpPath, JSON.stringify(payload, null, 2), 'utf-8')
       console.log(`[test-solver] Input salvo em: ${dumpPath}`)
