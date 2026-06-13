@@ -24,12 +24,27 @@
 | IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local via node-llama-cpp (Qwen 3.5) — 30 tools |
 | Knowledge | RAG local: embeddings ONNX (multilingual-e5-small) + pgvector + Knowledge Graph |
 
+### Ditado local / STT
+
+O microfone usa arquitetura **transcript-first**:
+
+1. Renderer pede permissao de microfone e grava audio localmente.
+2. Audio e convertido para WAV mono 16 kHz PCM16.
+3. Main process chama o sidecar local `stt-bin/escalaflow-stt`.
+4. O sidecar transcreve com Parakeet V3 int8 por padrao.
+5. O chat recebe apenas texto no campo de mensagem.
+
+Audio de microfone **nao** e enviado para Gemini/OpenRouter/local LLM por padrao. Isso evita amarrar o uso do microfone a modelos multimodais. O fluxo de anexar audio continua separado para o caso explicito "analise este audio".
+
+Parakeet e ASR: faz transcricao, pontuacao e capitalizacao. Ele nao e Wispr Flow sozinho: organizacao contextual, reescrita, traducao orientada e limpeza de prompt sao uma etapa opcional de texto com IA, nunca uma exigencia do STT.
+
 ### Fluxo macro
 
 ``` 
 Usuario (React) → IPC (tipc.ts) → Main Process (Node.js)
                                     ├── Database (PGlite — Postgres WASM)
                                     ├── Motor Python (solver-bridge.ts → spawn solver)
+                                    ├── STT local (stt-bridge.ts → spawn stt-bin/escalaflow-stt)
                                     └── IA (cliente.ts → Gemini/OpenRouter/Local)
 ```
 

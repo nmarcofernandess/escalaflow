@@ -3596,11 +3596,8 @@ const iaSttStatus = t.procedure
 
 const iaSttModels = t.procedure
   .action(async () => {
-    const { listSttModels, isSttModelDownloaded } = await import('./stt/catalog')
-    return listSttModels().map((model) => ({
-      ...model,
-      baixado: isSttModelDownloaded(model.id),
-    }))
+    const { getSttStatus } = await import('./stt/download')
+    return getSttStatus()
   })
 
 const iaSttDownload = t.procedure
@@ -3628,6 +3625,7 @@ const iaSttTranscribe = t.procedure
     post_process?: boolean
     mode?: import('@shared/index').SttPostProcessOptions['mode']
     domain_terms?: string[]
+    post_process_mode?: 'clean_prompt' | 'formal_message' | 'rh_note'
   }>()
   .action(async ({ input }) => {
     const { transcribeWavBase64 } = await import('./stt/download')

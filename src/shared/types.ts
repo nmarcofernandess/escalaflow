@@ -990,43 +990,56 @@ export interface IaLocalStatus {
   tokens_por_segundo?: number
 }
 
-export type SttModelId = 'parakeet-v3-int8' | 'whisper-small-q5' | 'whisper-medium-q5'
+export type SttModelId = 'parakeet-v3-int8'
 
 export interface SttModelCatalogItem {
   id: SttModelId
   label: string
-  engine: 'parakeet' | 'whisper'
-  format: 'sherpa-onnx' | 'whisper-ggml'
+  engine: 'parakeet'
+  format: 'sherpa-onnx'
   description: string
   url: string
   filename: string
   size_bytes: number
-  storage: 'directory' | 'file'
+  storage: 'directory'
+  ram_minima_gb: number
   languages: string[]
   supports_pt: boolean
+  supports_translation: boolean
+  supports_language_hint: boolean
   asr_only: boolean
   recommended: boolean
+  notes: string
 }
 
 export interface SttModelStatus {
   id: SttModelId
+  label: string
   baixado: boolean
+  path: string
   caminho: string
+  size_bytes: number
   tamanho_bytes: number
   tamanho_atual_bytes?: number
+  notes: string
 }
 
 export interface SttStatus {
+  disponivel: boolean
+  active_model_id: SttModelId
   default_model_id: SttModelId
   modelos: Record<SttModelId, SttModelStatus>
   sidecar_path: string
   sidecar_disponivel: boolean
+  reason?: 'download_stt_model' | 'missing_sidecar'
   download_em_andamento?: SttModelId
 }
 
 export interface SttTranscriptSegment {
-  start: number
-  end: number
+  start?: number
+  end?: number
+  start_ms?: number
+  end_ms?: number
   text: string
 }
 
@@ -1034,6 +1047,8 @@ export interface SttTranscriptResult {
   text: string
   language?: string
   duration_seconds?: number
+  duration_ms?: number
+  audio_duration_ms?: number
   segments?: SttTranscriptSegment[]
   model_id: SttModelId
   post_processed: boolean
@@ -1043,8 +1058,10 @@ export interface SttTranscriptResult {
 
 export interface SttPostProcessOptions {
   post_process?: boolean
-  mode?: 'clean_transcript' | 'rh_notes' | 'scale_command'
+  enabled?: boolean
+  mode?: 'none' | 'clean_transcript' | 'rh_notes' | 'scale_command' | 'clean_prompt' | 'formal_message' | 'rh_note'
   domain_terms?: string[]
+  provider?: 'configured_ia' | 'local_only'
 }
 
 export interface IaModelCatalogItem {

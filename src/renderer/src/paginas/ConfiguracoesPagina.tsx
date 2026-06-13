@@ -28,6 +28,7 @@ import {
   Copy,
   ClipboardCheck,
   History,
+  Mic,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -48,6 +49,7 @@ import { useAppVersion } from '@/hooks/useAppVersion'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { servicoIaLocal } from '@/servicos/iaLocal'
+import { servicoStt } from '@/servicos/stt'
 import { Progress } from '@/components/ui/progress'
 import { IaModelPill } from '@/componentes/IaModelPill'
 
@@ -58,6 +60,8 @@ import type {
   IaModelCatalogItem,
   IaModelCatalogResult,
   IaOpenRouterFreeModelsTestResult,
+  SttModelId,
+  SttStatus,
 } from '@shared/types'
 import { IaModelCatalogPicker } from '@/componentes/IaModelCatalogPicker'
 import { TimeMachineModal } from '@/componentes/TimeMachineModal'
@@ -428,6 +432,48 @@ export function ConfiguracoesPagina() {
       reloadIaConfig()
     } catch (err: any) {
       toast.error(err.message || 'Erro ao remover modelo')
+    }
+  }
+
+  // Ditado local — audio vira texto antes de chegar na IA
+  const [sttStatus, setSttStatus] = useState<SttStatus | null>(null)
+  const [sttBusyModel, setSttBusyModel] = useState<SttModelId | null>(null)
+
+  const refreshSttStatus = async () => {
+    try {
+      setSttStatus(await servicoStt.status())
+    } catch {
+      setSttStatus(null)
+    }
+  }
+
+  useEffect(() => {
+    void refreshSttStatus()
+  }, [])
+
+  const handleSttDownload = async (modelId: SttModelId) => {
+    setSttBusyModel(modelId)
+    try {
+      await servicoStt.download(modelId)
+      toast.success('Modelo de ditado baixado')
+      await refreshSttStatus()
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao baixar modelo de ditado')
+    } finally {
+      setSttBusyModel(null)
+    }
+  }
+
+  const handleSttDelete = async (modelId: SttModelId) => {
+    setSttBusyModel(modelId)
+    try {
+      await servicoStt.deleteModel(modelId)
+      toast.success('Modelo de ditado removido')
+      await refreshSttStatus()
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao remover modelo de ditado')
+    } finally {
+      setSttBusyModel(null)
     }
   }
 
@@ -1335,6 +1381,86 @@ export function ConfiguracoesPagina() {
                 </div>
               </form>
             </Form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Mic className="size-4" />
+              Ditado local
+            </CardTitle>
+            <CardDescription>
+              O microfone vira texto no computador antes de chegar no chat. O audio nao e enviado para a IA.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {sttStatus ? (
+              Object.values(sttStatus.modelos).map((model) => {
+                const isBusy = sttBusyModel === model.id
+                const sizeLabel = model.size_bytes ? `${(model.size_bytes / 1e9).toFixed(1)} GB` : 'modelo local'
+                const catalogModel = sttStatus.active_model_id === model.id
+                return (
+                  <div key={model.id} className={cn('rounded-lg border p-3', model.baixado && 'border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20')}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="text-sm font-medium">{model.id === 'parakeet-v3-int8' ? 'Parakeet V3 int8' : model.id}</p>
+                          {catalogModel && (
+                            <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                              Padrao
+                            </span>
+                          )}
+                          {model.baixado && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                              <CheckCircle2 className="size-3" />
+                              Instalado
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          ASR local com pontuacao. Para texto estilo Wispr Flow, use polimento de texto com IA.
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-1.5">
+                        {model.baixado ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-destructive hover:text-destructive"
+                            disabled={isBusy}
+                            onClick={() => { void handleSttDelete(model.id) }}
+                          >
+                            {isBusy ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                            Remover
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            disabled={!!sttBusyModel}
+                            onClick={() => { void handleSttDownload(model.id) }}
+                          >
+                            {isBusy ? <Loader2 className="animate-spin" /> : <Download />}
+                            Baixar {sizeLabel}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            ) : (
+              <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                Ditado local indisponivel nesta sessao. Reabra o app apos atualizar.
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              O botao de microfone no Chat RH insere a transcricao no campo de mensagem. Anexar audio continua separado para analise explicita de arquivo.
+            </p>
           </CardContent>
         </Card>
 

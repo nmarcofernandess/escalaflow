@@ -18,4 +18,15 @@ describe('stt post-processing prompt', () => {
     expect(prompt.toLowerCase()).not.toContain('wav')
     expect(prompt.toLowerCase()).not.toContain('arquivo de audio')
   })
+
+  it('supports clean_prompt mode used by the microphone UI', () => {
+    const prompt = buildSttPostProcessPrompt({
+      transcript: 'cria uma escala seis por um para o acougue',
+      mode: 'clean_prompt',
+      domainTerms: ['6x1', 'Acougue'],
+    })
+
+    expect(prompt).toContain('assistente de RH')
+    expect(prompt).toContain('cria uma escala seis por um')
+  })
 })

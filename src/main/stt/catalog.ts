@@ -1,5 +1,5 @@
-import path from 'node:path'
 import fs from 'node:fs'
+import path from 'node:path'
 import { createRequire } from 'node:module'
 import type { SttModelCatalogItem, SttModelId } from '../../shared/types'
 
@@ -10,56 +10,31 @@ export const DEFAULT_STT_MODEL_ID: SttModelId = 'parakeet-v3-int8'
 export const STT_MODELS: Record<SttModelId, SttModelCatalogItem> = {
   'parakeet-v3-int8': {
     id: 'parakeet-v3-int8',
-    label: 'Parakeet TDT 0.6B v3 INT8',
+    label: 'Parakeet V3 int8',
     engine: 'parakeet',
     format: 'sherpa-onnx',
-    description: 'Modelo ASR local multilingue recomendado para transcricao offline.',
-    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2',
-    filename: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
-    size_bytes: 670_000_000,
+    description: 'ASR local rapido com pontuacao/capitalizacao. Nao faz reescrita contextual.',
+    filename: 'parakeet-tdt-0.6b-v3-int8',
+    url: 'https://blob.handy.computer/parakeet-v3-int8.tar.gz',
+    size_bytes: 478_000_000,
     storage: 'directory',
-    languages: [
-      'bg', 'hr', 'cs', 'da', 'nl', 'en', 'et', 'fi', 'fr', 'de',
-      'el', 'hu', 'it', 'lv', 'lt', 'mt', 'pl', 'pt', 'ro', 'sk',
-      'sl', 'es', 'sv', 'ru', 'uk',
-    ],
+    ram_minima_gb: 2,
+    languages: ['pt', 'en', 'es', 'fr', 'de', 'it', 'nl', 'sv', 'ru', 'uk', 'pl', 'ro', 'cs', 'el', 'hu', 'bg', 'da', 'fi', 'sk', 'hr', 'lt', 'sl', 'lv', 'et', 'mt'],
     supports_pt: true,
+    supports_translation: false,
+    supports_language_hint: false,
     asr_only: true,
     recommended: true,
-  },
-  'whisper-small-q5': {
-    id: 'whisper-small-q5',
-    label: 'Whisper Small Q5',
-    engine: 'whisper',
-    format: 'whisper-ggml',
-    description: 'Fallback local menor para ambientes onde Parakeet nao estiver disponivel.',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin',
-    filename: 'ggml-small-q5_1.bin',
-    size_bytes: 190_000_000,
-    storage: 'file',
-    languages: ['multilingual', 'pt'],
-    supports_pt: true,
-    asr_only: true,
-    recommended: false,
-  },
-  'whisper-medium-q5': {
-    id: 'whisper-medium-q5',
-    label: 'Whisper Medium Q5',
-    engine: 'whisper',
-    format: 'whisper-ggml',
-    description: 'Fallback local com maior qualidade e custo de memoria.',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin',
-    filename: 'ggml-medium-q5_0.bin',
-    size_bytes: 540_000_000,
-    storage: 'file',
-    languages: ['multilingual', 'pt'],
-    supports_pt: true,
-    asr_only: true,
-    recommended: false,
+    notes: 'ASR local para ditado. O audio vira texto antes de chegar ao chat.',
   },
 }
 
-export function getSttModelsBaseDir(): string {
+const PARAKEET_REQUIRED_FILE_SETS = [
+  ['encoder-model.int8.onnx', 'decoder_joint-model.int8.onnx'],
+  ['encoder.int8.onnx', 'decoder.int8.onnx'],
+]
+
+export function getUserSttModelBaseDir(): string {
   if (process.env.ESCALAFLOW_STT_MODELS_DIR) {
     return process.env.ESCALAFLOW_STT_MODELS_DIR
   }
@@ -71,15 +46,37 @@ export function getSttModelsBaseDir(): string {
       return path.join(app.getPath('userData'), 'models', 'stt')
     }
   } catch {
-    // fallback below
+    // dev fallback below
   }
 
   return path.join(process.cwd(), 'data', 'models', 'stt')
 }
 
+export function getBundledSttModelBaseDir(): string | null {
+  const candidates = [
+    process.resourcesPath ? path.join(process.resourcesPath, 'models', 'stt') : null,
+    path.join(process.cwd(), 'models', 'stt'),
+  ].filter(Boolean) as string[]
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null
+}
+
+export function getSttModelBaseDir(): string {
+  const bundled = getBundledSttModelBaseDir()
+  if (bundled) return bundled
+  return getUserSttModelBaseDir()
+}
+
+export function getSttModelsBaseDir(): string {
+  return getUserSttModelBaseDir()
+}
+
 export function getSttModelPath(modelId: SttModelId): string {
-  const model = STT_MODELS[modelId]
-  return path.join(getSttModelsBaseDir(), model.filename)
+  return path.join(getSttModelBaseDir(), STT_MODELS[modelId].filename)
+}
+
+export function getSttModelInstallPath(modelId: SttModelId): string {
+  return path.join(getUserSttModelBaseDir(), STT_MODELS[modelId].filename)
 }
 
 function hasNonEmptyFile(filePath: string): boolean {
@@ -88,17 +85,15 @@ function hasNonEmptyFile(filePath: string): boolean {
   return stat.isFile() && stat.size > 0
 }
 
+export function isValidParakeetModelDir(modelPath: string): boolean {
+  if (!fs.existsSync(modelPath) || !fs.statSync(modelPath).isDirectory()) return false
+  return PARAKEET_REQUIRED_FILE_SETS.some((requiredFiles) =>
+    requiredFiles.every((filename) => hasNonEmptyFile(path.join(modelPath, filename))),
+  )
+}
+
 export function isSttModelDownloaded(modelId: SttModelId): boolean {
-  const model = STT_MODELS[modelId]
-  const modelPath = getSttModelPath(modelId)
-
-  if (model.storage === 'directory') {
-    if (!fs.existsSync(modelPath) || !fs.statSync(modelPath).isDirectory()) return false
-    return hasNonEmptyFile(path.join(modelPath, 'encoder.int8.onnx'))
-      && hasNonEmptyFile(path.join(modelPath, 'decoder.int8.onnx'))
-  }
-
-  return hasNonEmptyFile(modelPath)
+  return isValidParakeetModelDir(getSttModelPath(modelId))
 }
 
 export function listSttModels(): SttModelCatalogItem[] {

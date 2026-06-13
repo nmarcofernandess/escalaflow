@@ -51,6 +51,8 @@ __pycache__/
 
 # Solver build artifacts
 solver-bin/
+stt-bin/
+stt/target/
 
 # MCP server build artifacts
 mcp-bin/
@@ -59,6 +61,9 @@ solver/dist/
 
 # Embedding model (binário ~118MB, baixado via npm run model:download)
 models/embeddings/
+
+# STT model (binário ~640MB, baixado via npm run stt:model)
+models/stt/
 
 # Knowledge seed manifest (gerado por knowledge:seed)
 knowledge/.manifest.json
