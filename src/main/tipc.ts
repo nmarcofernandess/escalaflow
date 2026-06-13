@@ -3588,6 +3588,52 @@ const iaLocalUnload = t.procedure
     return { sucesso: true }
   })
 
+const iaSttStatus = t.procedure
+  .action(async () => {
+    const { getSttStatus } = await import('./stt/download')
+    return getSttStatus()
+  })
+
+const iaSttModels = t.procedure
+  .action(async () => {
+    const { listSttModels, isSttModelDownloaded } = await import('./stt/catalog')
+    return listSttModels().map((model) => ({
+      ...model,
+      baixado: isSttModelDownloaded(model.id),
+    }))
+  })
+
+const iaSttDownload = t.procedure
+  .input<{ model_id: import('@shared/index').SttModelId }>()
+  .action(async ({ input }) => {
+    const { downloadSttModel } = await import('./stt/download')
+    return await downloadSttModel(input.model_id, (downloaded, total) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('ia:stt:download-progress', { model_id: input.model_id, downloaded, total })
+      }
+    })
+  })
+
+const iaSttDeleteModel = t.procedure
+  .input<{ model_id: import('@shared/index').SttModelId }>()
+  .action(async ({ input }) => {
+    const { deleteSttModel } = await import('./stt/download')
+    return await deleteSttModel(input.model_id)
+  })
+
+const iaSttTranscribe = t.procedure
+  .input<{
+    wav_base64: string
+    model_id?: import('@shared/index').SttModelId
+    post_process?: boolean
+    mode?: import('@shared/index').SttPostProcessOptions['mode']
+    domain_terms?: string[]
+  }>()
+  .action(async ({ input }) => {
+    const { transcribeWavBase64 } = await import('./stt/download')
+    return await transcribeWavBase64(input)
+  })
+
 const iaChatLerArquivo = t.procedure
   .input<{ conversa_id: string }>()
   .action(async ({ input }) => {
@@ -4847,6 +4893,11 @@ export const router = {
   'ia.local.cancelDownload': iaLocalCancelDownload,
   'ia.local.deleteModel': iaLocalDeleteModel,
   'ia.local.unload': iaLocalUnload,
+  'ia.stt.status': iaSttStatus,
+  'ia.stt.models': iaSttModels,
+  'ia.stt.download': iaSttDownload,
+  'ia.stt.deleteModel': iaSttDeleteModel,
+  'ia.stt.transcribe': iaSttTranscribe,
   'ia.configuracao.obter': iaConfiguracaoObter,
   'ia.capabilities.obter': iaCapabilitiesObter,
   'ia.configuracao.salvar': iaConfiguracaoSalvar,

@@ -990,6 +990,63 @@ export interface IaLocalStatus {
   tokens_por_segundo?: number
 }
 
+export type SttModelId = 'parakeet-v3-int8' | 'whisper-small-q5' | 'whisper-medium-q5'
+
+export interface SttModelCatalogItem {
+  id: SttModelId
+  label: string
+  engine: 'parakeet' | 'whisper'
+  format: 'sherpa-onnx' | 'whisper-ggml'
+  description: string
+  url: string
+  filename: string
+  size_bytes: number
+  storage: 'directory' | 'file'
+  languages: string[]
+  supports_pt: boolean
+  asr_only: boolean
+  recommended: boolean
+}
+
+export interface SttModelStatus {
+  id: SttModelId
+  baixado: boolean
+  caminho: string
+  tamanho_bytes: number
+  tamanho_atual_bytes?: number
+}
+
+export interface SttStatus {
+  default_model_id: SttModelId
+  modelos: Record<SttModelId, SttModelStatus>
+  sidecar_path: string
+  sidecar_disponivel: boolean
+  download_em_andamento?: SttModelId
+}
+
+export interface SttTranscriptSegment {
+  start: number
+  end: number
+  text: string
+}
+
+export interface SttTranscriptResult {
+  text: string
+  language?: string
+  duration_seconds?: number
+  segments?: SttTranscriptSegment[]
+  model_id: SttModelId
+  post_processed: boolean
+  raw_text?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface SttPostProcessOptions {
+  post_process?: boolean
+  mode?: 'clean_transcript' | 'rh_notes' | 'scale_command'
+  domain_terms?: string[]
+}
+
 export interface IaModelCatalogItem {
   id: string
   label: string
