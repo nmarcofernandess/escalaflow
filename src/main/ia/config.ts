@@ -3,10 +3,12 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { IaConfiguracao } from '../../shared/types'
 
 export const PROVIDER_DEFAULTS: Record<'gemini' | 'openrouter' | 'local', string> = {
-    gemini: 'gemini-3-flash-preview',
+    gemini: 'gemini-3.1-flash-lite',
     openrouter: 'openrouter/free',
     local: 'gemma-4-e2b-it-q4',
 }
+
+export const GEMINI_MODEL_IDS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash'] as const
 
 /**
  * Resolve o model ID correto para o provider ativo.
@@ -47,11 +49,10 @@ export function isValidModelForProvider(modelo: string, provider: 'gemini' | 'op
     if (!modelo) return false
     if (provider === 'local') return modelo === PROVIDER_DEFAULTS.local
     if (provider === 'openrouter') {
-        // OpenRouter exige 'namespace/model' (ex: 'anthropic/claude-sonnet-4', 'google/gemini-2.5-flash')
+        // OpenRouter exige 'namespace/model' (ex: 'anthropic/claude-sonnet-4')
         return modelo.includes('/')
     }
-    // Gemini: não deve ter namespace (não pode ser 'google/algo')
-    return !modelo.includes('/')
+    return (GEMINI_MODEL_IDS as readonly string[]).includes(modelo)
 }
 
 /**

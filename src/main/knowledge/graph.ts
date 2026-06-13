@@ -2,6 +2,7 @@ import { generateObject } from 'ai'
 import { z } from 'zod'
 import { queryAll, queryOne, execute, insertReturningId } from '../db/query'
 import { generateQueryEmbedding } from './embeddings'
+import { syncKnowledgeGraphSequences } from './graph-sequences'
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -132,6 +133,7 @@ async function persistGraph(
   origem: 'sistema' | 'usuario' = 'usuario',
 ): Promise<{ entities_count: number; relations_count: number }> {
   // Mapa nome→id pra resolver FKs das relações
+  await syncKnowledgeGraphSequences()
   const entityIdMap = new Map<string, number>()
 
   for (const e of entities) {

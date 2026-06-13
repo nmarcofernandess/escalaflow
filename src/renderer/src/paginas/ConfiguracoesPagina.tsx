@@ -54,6 +54,7 @@ import { servicoStt } from '@/servicos/stt'
 import { servicoConhecimento } from '@/servicos/conhecimento'
 import { Progress } from '@/components/ui/progress'
 import { IaModelPill } from '@/componentes/IaModelPill'
+import { getLocalModelAvailability, getLocalModelCardState } from '@/lib/ia-local-status'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 
@@ -90,8 +91,8 @@ const IA_PROVIDER_LABELS: Record<IaProviderId, string> = {
 
 const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: string }>> = {
   gemini: [
-    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
-    { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite (Preview)' },
+    { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+    { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
   ],
   openrouter: [
     { value: 'openrouter/free', label: 'Free Models Router' },
@@ -489,7 +490,25 @@ export function ConfiguracoesPagina() {
   }
 
   // IA Local — download state
-  type LocalModelInfo = { id: string; label: string; filename: string; size_bytes: number; ram_minima_gb: number; descricao: string; baixado: boolean }
+  type LocalModelInfo = {
+    id: string
+    label: string
+    filename: string
+    size_bytes: number
+    ram_minima_gb: number
+    descricao: string
+    baixado: boolean
+    tamanho_atual_bytes?: number
+    usable?: boolean
+    requires_validation?: boolean
+    load_error?: string
+    validated_at?: string
+    download_status?: 'idle' | 'downloading' | 'cancelled' | 'failed' | 'done'
+    download_progresso?: number
+    download_bytes_total?: number
+    download_bytes_feitos?: number
+    download_error?: string
+  }
   const [localModels, setLocalModels] = useState<LocalModelInfo[]>([])
   const [localDownloading, setLocalDownloading] = useState<string | null>(null)
   const [localProgress, setLocalProgress] = useState<{ downloaded: number; total: number } | null>(null)
@@ -499,6 +518,17 @@ export function ConfiguracoesPagina() {
     try {
       const models = await servicoIaLocal.models()
       setLocalModels(models)
+      const activeDownload = models.find((model) => model.download_status === 'downloading')
+      if (activeDownload) {
+        setLocalDownloading(activeDownload.id)
+        setLocalProgress({
+          downloaded: activeDownload.download_bytes_feitos ?? 0,
+          total: activeDownload.download_bytes_total ?? activeDownload.size_bytes,
+        })
+      } else {
+        setLocalDownloading(null)
+        setLocalProgress(null)
+      }
       const status = await servicoIaLocal.status()
       setLocalGpu(status.gpu_detectada || 'cpu')
     } catch { /* não fatal */ }
@@ -653,7 +683,9 @@ export function ConfiguracoesPagina() {
   const selectedProviderConfig = (providerConfigs?.[iaProvider] || {}) as IaProviderConfigForm
   const remoteCatalog = modelCatalogByProvider[iaProvider]
   const openrouterFavoritos = providerConfigs?.openrouter?.favoritos ?? []
-  const installedLocalSet = new Set(localModels.filter(m => m.baixado).map(m => m.id))
+  const currentModelValue = iaForm.watch('modelo')
+  const localAvailability = getLocalModelAvailability(localModels, currentModelValue)
+  const installedLocalSet = localAvailability.installedIds
   const providerAvailability: Record<IaProviderId, { available: boolean; reason?: string }> = {
     gemini: {
       available: Boolean((providerConfigs?.gemini?.token || '').trim()),
@@ -664,13 +696,16 @@ export function ConfiguracoesPagina() {
       reason: (providerConfigs?.openrouter?.token || '').trim() ? undefined : 'API key não configurada.',
     },
     local: {
-      available: installedLocalSet.size > 0,
-      reason: installedLocalSet.size > 0 ? undefined : 'Nenhum modelo local instalado.',
+      available: localAvailability.selectedUsable,
+      reason: localAvailability.reason,
     },
   }
   const hasAnyProviderAvailable = Object.values(providerAvailability).some((provider) => provider.available)
   const selectedProviderAvailability = providerAvailability[iaProvider]
-  const iaStatusBadge = hasAnyProviderAvailable
+  const selectedProviderConfigured = iaProvider === 'local'
+    ? localAvailability.selectedInstalled
+    : Boolean((selectedProviderConfig?.token || (iaProvider === 'gemini' ? providerConfigs?.gemini?.token : '') || '').trim())
+  const iaStatusBadge = hasAnyProviderAvailable || selectedProviderConfigured
     ? selectedProviderAvailability.available
       ? {
         label: 'Ativa',
@@ -721,12 +756,11 @@ export function ConfiguracoesPagina() {
     }
     return remoteCatalog.models.map((m) => ({ value: m.id, label: m.label }))
   })()
-  const currentModelValue = iaForm.watch('modelo')
   const providerStoredModel = (selectedProviderConfig?.modelo || '').trim()
   const providerDefaultModel = currentModelOptions[0]?.value || IA_PROVIDER_MODELS[iaProvider][0].value
   const selectorModelOptions = (() => {
     if (iaProvider === 'local') {
-      if (selectedProviderAvailability.available) {
+      if (localAvailability.hasInstalled) {
         return IA_PROVIDER_MODELS.local
           .filter((model) => installedLocalSet.has(model.value))
           .map((model) => ({ id: model.value, label: model.label, disabled: false }))
@@ -928,6 +962,8 @@ export function ConfiguracoesPagina() {
       const res = await window.electron.ipcRenderer.invoke('ia.configuracao.testar', payload)
       if (res.sucesso) {
         toast.success(res.mensagem || 'Conectado com sucesso!')
+        await refreshLocalModels()
+        reloadIaConfig()
       }
     } catch (err: any) {
       toast.error(err.message || 'Erro ao testar conexao.')
@@ -1276,7 +1312,7 @@ export function ConfiguracoesPagina() {
                   modelo={resolvedCurrentModelValue}
                   modeloLabel={selectorModelLabel}
                   modelOptions={selectorModelOptions}
-                  modelSelectDisabled={!selectedProviderAvailability.available}
+                  modelSelectDisabled={iaProvider === 'local' ? !localAvailability.hasInstalled : !selectedProviderAvailability.available}
                   onProviderChange={async (next) => {
                     const nextProvider = next as IaProviderId
                     const nextCfg = iaForm.getValues(`provider_configs.${nextProvider}` as any) as IaProviderConfigForm | undefined
@@ -1313,15 +1349,29 @@ export function ConfiguracoesPagina() {
                       )}
                     </div>
                     {localModels.map((model) => {
-                      const isDownloading = localDownloading === model.id
-                      const progressPct = isDownloading && localProgress
-                        ? Math.round((localProgress.downloaded / localProgress.total) * 100)
+                      const backendDownloading = model.download_status === 'downloading'
+                      const isDownloading = localDownloading === model.id || backendDownloading
+                      const progressDownloaded = localDownloading === model.id && localProgress
+                        ? localProgress.downloaded
+                        : model.download_bytes_feitos ?? 0
+                      const progressTotal = localDownloading === model.id && localProgress
+                        ? localProgress.total
+                        : model.download_bytes_total ?? model.size_bytes
+                      const progressPct = isDownloading && progressTotal > 0
+                        ? Math.round((progressDownloaded / progressTotal) * 100)
                         : 0
                       const sizeLabel = (model.size_bytes / 1e9).toFixed(1) + ' GB'
                       const isRecommended = model.id === 'gemma-4-e2b-it-q4'
+                      const cardState = getLocalModelCardState(model)
+                      const shouldShowStateBadge = model.baixado || isDownloading || model.download_status === 'failed'
 
                       return (
-                        <div key={model.id} className={cn('rounded-lg border p-3', model.baixado && 'border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20')}>
+                        <div key={model.id} className={cn(
+                          'rounded-lg border p-3',
+                          cardState.tone === 'ready' && 'border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20',
+                          cardState.tone === 'warning' && 'border-amber-200 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/20',
+                          cardState.tone === 'error' && 'border-destructive/40 bg-destructive/5',
+                        )}>
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-1.5">
@@ -1331,10 +1381,16 @@ export function ConfiguracoesPagina() {
                                     Recomendado
                                   </span>
                                 )}
-                                {model.baixado && (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                    <CheckCircle2 className="size-3" />
-                                    Instalado
+                                {shouldShowStateBadge && (
+                                  <span className={cn(
+                                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                    cardState.tone === 'ready' && 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                                    cardState.tone === 'warning' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                                    cardState.tone === 'error' && 'bg-destructive/10 text-destructive',
+                                    cardState.tone === 'installed' && 'bg-muted text-muted-foreground',
+                                  )}>
+                                    {cardState.tone === 'ready' ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
+                                    {cardState.label}
                                   </span>
                                 )}
                               </div>
@@ -1342,6 +1398,11 @@ export function ConfiguracoesPagina() {
                                 {sizeLabel} · {model.ram_minima_gb}GB+ RAM
                                 {isRecommended ? ' · Padrão local' : ''}
                               </p>
+                              {cardState.detail && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {cardState.detail}
+                                </p>
+                              )}
                             </div>
                             <div className="flex shrink-0 gap-1.5">
                               {model.baixado ? (
@@ -1374,11 +1435,11 @@ export function ConfiguracoesPagina() {
                               )}
                             </div>
                           </div>
-                          {isDownloading && localProgress && (
+                          {isDownloading && (
                             <div className="mt-2 flex flex-col gap-1">
                               <Progress value={progressPct} className="h-1.5" />
                               <p className="text-xs text-muted-foreground">
-                                {progressPct}% — {(localProgress.downloaded / 1e9).toFixed(1)} / {(localProgress.total / 1e9).toFixed(1)} GB
+                                {progressPct}% — {(progressDownloaded / 1e9).toFixed(1)} / {(progressTotal / 1e9).toFixed(1)} GB
                               </p>
                             </div>
                           )}
@@ -1485,7 +1546,13 @@ export function ConfiguracoesPagina() {
                   >
                     Cancelar
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={onTestarIa} disabled={testandoIa || !selectedProviderAvailability.available}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={onTestarIa}
+                    disabled={testandoIa || (iaProvider === 'local' ? !localAvailability.selectedInstalled : !selectedProviderAvailability.available)}
+                  >
                     {testandoIa ? <Loader2 className="animate-spin" /> : null}
                     Testar conexao
                   </Button>

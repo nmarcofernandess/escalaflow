@@ -39,7 +39,7 @@ export async function launchEscalaflowElectron(
 }
 
 export async function firstWindowReady(app: ElectronApplication): Promise<Page> {
-  const page = await app.firstWindow()
+  const page = app.windows()[0] ?? (await app.waitForEvent('window', { timeout: 60_000 }))
   await page.waitForLoadState('domcontentloaded')
   await page.locator('#root').waitFor({ state: 'attached', timeout: 60_000 })
   // Evita overlay do tour (z-50) bloqueando cliques nos testes

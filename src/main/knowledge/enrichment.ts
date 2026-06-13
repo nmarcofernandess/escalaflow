@@ -2,6 +2,7 @@ import { generateObject } from 'ai'
 import { z } from 'zod'
 import { queryAll, execute, queryOne, insertReturningId } from '../db/query'
 import { generatePassageEmbedding } from './embeddings'
+import { syncKnowledgeGraphSequences } from './graph-sequences'
 
 // =============================================================================
 // SCHEMA — o que o LLM retorna pra cada chunk no batch
@@ -260,6 +261,7 @@ async function persistEnrichmentGraph(
   }
 
   // Persist entities with embeddings
+  await syncKnowledgeGraphSequences()
   const entityIdMap = new Map<string, number>()
   for (const e of entityMap.values()) {
     const embedding = await generatePassageEmbedding(e.nome)

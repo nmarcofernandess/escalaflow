@@ -191,4 +191,23 @@ describe('IA chat readiness', () => {
       reason: 'configure_cloud_token',
     })
   })
+
+  it('normalizes removed Gemini preview models before reporting readiness', async () => {
+    state.config = iaConfig({
+      provider: 'gemini',
+      api_key: 'gemini-key',
+      modelo: 'gemini-3-flash-preview',
+      provider_configs_json: JSON.stringify({
+        gemini: { token: 'gemini-key', modelo: 'gemini-3-flash-preview' },
+      }),
+    })
+    const { getIaChatReadiness } = await import('../../../src/main/ia/readiness')
+
+    await expect(getIaChatReadiness()).resolves.toMatchObject({
+      ok: true,
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-lite',
+      reason: 'ready',
+    })
+  })
 })

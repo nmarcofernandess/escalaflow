@@ -38,7 +38,7 @@ function getEvalConfig() {
   const limit = Number(process.env.ESCALAFLOW_EVAL_LIMIT ?? '0') || undefined
 
   const model = process.env.ESCALAFLOW_EVAL_MODEL?.trim()
-    || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash')
+    || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-3.1-flash-lite')
 
   const apiKey = provider === 'openrouter'
     ? (process.env.OPENROUTER_API_KEY?.trim() || process.env.ESCALAFLOW_OPENROUTER_API_KEY?.trim())

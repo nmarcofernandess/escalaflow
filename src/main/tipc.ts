@@ -12,6 +12,7 @@ import { runAdvisory } from './motor/advisory-controller'
 import { inferGenerationModeForOverrides } from './motor/rule-policy'
 import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
+import { GEMINI_MODEL_IDS, PROVIDER_DEFAULTS, isValidModelForProvider } from './ia/config'
 import { assertIaCanChat } from './ia/readiness'
 import { normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
 import { persistirAjusteResult, persistirResumoAutoritativoEscala } from './tipc/escalas-utils'
@@ -2874,13 +2875,12 @@ function getProviderToken(config: any, provider: IaProviderKey): string {
 function getProviderModel(config: any, provider: IaProviderKey): string {
   const providerConfigs = parseIaProviderConfigs(config?.provider_configs_json ?? config?.provider_configs)
   const configured = providerConfigs?.[provider]?.modelo?.trim()
-  if (configured) return configured
+  if (configured && isValidModelForProvider(configured, provider)) return configured
   if (provider === config?.provider && typeof config?.modelo === 'string' && config.modelo.trim()) {
-    return config.modelo.trim()
+    const globalModel = config.modelo.trim()
+    if (isValidModelForProvider(globalModel, provider)) return globalModel
   }
-  if (provider === 'openrouter') return 'openrouter/free'
-  if (provider === 'local') return 'gemma-4-e2b-it-q4'
-  return 'gemini-3-flash-preview'
+  return PROVIDER_DEFAULTS[provider]
 }
 
 function dedupeCapabilityModels(models: import('@shared/index').IaCapabilityModel[]) {
@@ -3031,7 +3031,17 @@ async function getIaCapabilities(rawConfig?: any): Promise<import('@shared/index
     })
   )
   const localAvailable = localModels.some((model) => model.available)
-  const localReason = localAvailable ? undefined : 'Nenhum modelo local instalado.'
+  const localDownloaded = Object.keys(LOCAL_MODELS).some((modelId) => Boolean(localStatus.modelos[modelId]?.baixado))
+  const localLoadError = Object.keys(LOCAL_MODELS)
+    .map((modelId) => localStatus.modelos[modelId]?.load_error)
+    .find(Boolean)
+  const localReason = localAvailable
+    ? undefined
+    : localLoadError
+      ? `Modelo local falhou ao carregar: ${localLoadError}`
+      : localDownloaded
+        ? 'Modelo local baixado, mas precisa passar em Testar conexão.'
+        : 'Nenhum modelo local instalado.'
 
   const providers: import('@shared/index').IaCapabilityProvider[] = [
     {
@@ -3064,8 +3074,13 @@ async function getIaCapabilities(rawConfig?: any): Promise<import('@shared/index
   const activeProviderEntry = providers.find((provider) => provider.provider === activeProvider) ?? null
   const hasAnyAvailableProvider = providers.some((provider) => provider.available)
   const activeProviderAvailable = Boolean(activeProviderEntry?.available)
+  const activeProviderConfigured = activeProvider === 'local'
+    ? localDownloaded
+    : activeProvider
+      ? Boolean(getProviderToken(config, activeProvider))
+      : false
   const activeReason = activeProviderEntry?.reason
-  const showUnconfiguredState = !hasAnyAvailableProvider
+  const showUnconfiguredState = !hasAnyAvailableProvider && !activeProviderConfigured
   const status = inferCapabilityStatus(activeProvider, activeProviderAvailable)
 
   let reason: import('@shared/index').IaCapabilities['reason'] | undefined
@@ -3092,7 +3107,7 @@ async function getIaCapabilities(rawConfig?: any): Promise<import('@shared/index
     show_unconfigured_state: showUnconfiguredState,
     providers,
     can_chat: activeProviderAvailable,
-    can_test_connection: activeProviderAvailable,
+    can_test_connection: activeProvider === 'local' ? localDownloaded : activeProviderAvailable,
     can_load_remote_catalog: activeProvider === 'gemini' || activeProvider === 'openrouter',
     can_use_cloud_llm_features: activeProviderAvailable && activeProvider !== 'local',
     reason,
@@ -3209,8 +3224,8 @@ function mapOpenRouterModels(data: { data?: any[]; models?: any[] }): IaModelCat
 
 function staticGeminiCatalog(): IaModelCatalogResult {
   const models: IaModelCatalogItem[] = [
-    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash'] },
-    { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite (Preview)', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash', 'lite'] },
+    { id: GEMINI_MODEL_IDS[0], label: 'Gemini 3.1 Flash Lite', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash', 'lite'] },
+    { id: GEMINI_MODEL_IDS[1], label: 'Gemini 3.5 Flash', provider: 'gemini', source: 'static', is_agentic: true, supports_tools: true, context_length: 1_048_576, tags: ['flash'] },
   ]
   return {
     provider: 'gemini',
@@ -3479,6 +3494,7 @@ const iaLocalModels = t.procedure
     const { LOCAL_MODELS, getLocalStatus } = await import('./ia/local-llm')
     const status = getLocalStatus()
     return Object.entries(LOCAL_MODELS).map(([id, m]) => ({
+      ...(status.modelos[id] ?? {}),
       id,
       label: m.label,
       filename: m.filename,

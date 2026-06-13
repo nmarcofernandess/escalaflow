@@ -48,9 +48,9 @@ async function renderInput(props?: Record<string, unknown>) {
       conversaId="conv-1"
       provider="gemini"
       providerOptions={[{ provider: 'gemini', label: 'Gemini', disabled: false }]}
-      modelo="gemini-3.1-flash-lite-preview"
+      modelo="gemini-3.1-flash-lite"
       modeloLabel="Gemini"
-      modelOptions={[{ id: 'gemini-3.1-flash-lite-preview', label: 'Gemini', disabled: false }]}
+      modelOptions={[{ id: 'gemini-3.1-flash-lite', label: 'Gemini', disabled: false }]}
       onProviderChange={vi.fn()}
       onModeloChange={vi.fn()}
       tokensEstimados={0}

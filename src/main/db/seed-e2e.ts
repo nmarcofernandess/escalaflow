@@ -227,7 +227,7 @@ async function applyE2eIaConfigFromEnv(): Promise<void> {
       )
     } else {
       await execute(
-        `INSERT INTO configuracao_ia (id, provider, api_key, modelo, provider_configs_json, ativo) VALUES (1, 'gemini', ?, 'gemini-3-flash-preview', '{}', TRUE)`,
+        `INSERT INTO configuracao_ia (id, provider, api_key, modelo, provider_configs_json, ativo) VALUES (1, 'gemini', ?, 'gemini-3.1-flash-lite', '{}', TRUE)`,
         gemini,
       )
     }
@@ -241,7 +241,7 @@ async function applyE2eIaConfigFromEnv(): Promise<void> {
       )
     } else {
       await execute(
-        `INSERT INTO configuracao_ia (id, provider, api_key, modelo, provider_configs_json, ativo) VALUES (1, 'openrouter', ?, 'google/gemini-2.0-flash-001', '{}', TRUE)`,
+        `INSERT INTO configuracao_ia (id, provider, api_key, modelo, provider_configs_json, ativo) VALUES (1, 'openrouter', ?, 'anthropic/claude-sonnet-4', '{}', TRUE)`,
         openrouter,
       )
     }

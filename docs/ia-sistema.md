@@ -1554,7 +1554,7 @@ Alguns modelos (Gemini em particular) executam tools mas nao geram texto ao fina
 
 | Provider | Factory | Modelo default | Pacote | Requer internet? |
 |----------|---------|----------------|--------|------------------|
-| `gemini` | `createGoogleGenerativeAI({ apiKey })` | `gemini-3-flash-preview` | `@ai-sdk/google` | Sim |
+| `gemini` | `createGoogleGenerativeAI({ apiKey })` | `gemini-3.1-flash-lite` | `@ai-sdk/google` | Sim |
 | `openrouter` | `createOpenRouter({ apiKey })` | `anthropic/claude-sonnet-4` | `@openrouter/ai-sdk-provider` | Sim |
 | `local` | `llama-server` local | `gemma-4-e2b-it-q4` | `llama.cpp` runtime externo | **Nao** |
 

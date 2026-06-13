@@ -1,4 +1,5 @@
 import path from 'node:path'
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -15,22 +16,50 @@ const require = createRequire(import.meta.url)
 
 let _extractor: any = null
 
-function resolveModelPath(): string {
+export function resolveEmbeddingModelPath(input: {
+  cwd: string
+  runtimeDir?: string
+  envDir?: string
+  isPackaged?: boolean
+  resourcesPath?: string
+}): string {
+  if (input.envDir?.trim()) return input.envDir.trim()
+
+  if (input.isPackaged && input.resourcesPath) {
+    return path.join(input.resourcesPath, 'models', 'embeddings')
+  }
+
+  const projectRootPath = path.join(input.cwd, 'models', 'embeddings')
+  if (fs.existsSync(projectRootPath)) return projectRootPath
+
+  if (input.runtimeDir) {
+    const candidates = [
+      path.resolve(input.runtimeDir, '../../../models/embeddings'),
+      path.resolve(input.runtimeDir, '../../models/embeddings'),
+    ]
+    const existing = candidates.find((candidate) => fs.existsSync(candidate))
+    if (existing) return existing
+  }
+
+  return projectRootPath
+}
+
+export function resolveEmbeddingModelPathForRuntime(): string {
+  let isPackaged = false
   try {
     const electron = require('electron') as { app?: { isPackaged?: boolean } }
-    if (electron.app?.isPackaged) {
-      return path.join(process.resourcesPath, 'models', 'embeddings')
-    }
+    isPackaged = Boolean(electron.app?.isPackaged)
   } catch {
     // fallback para modo Node (test runner, scripts)
   }
-  // App dev (electron-vite injeta __dirname) e vitest (CJS interop) têm
-  // __dirname; tsx/ESM puro não — usa o cwd do projeto, onde os scripts
-  // npm sempre rodam.
-  if (typeof __dirname !== 'undefined') {
-    return path.join(__dirname, '../../models/embeddings')
-  }
-  return path.join(process.cwd(), 'models', 'embeddings')
+
+  return resolveEmbeddingModelPath({
+    cwd: process.cwd(),
+    runtimeDir: typeof __dirname !== 'undefined' ? __dirname : undefined,
+    envDir: process.env.ESCALAFLOW_EMBEDDINGS_DIR,
+    isPackaged,
+    resourcesPath: process.resourcesPath,
+  })
 }
 
 async function getExtractor(): Promise<any> {
@@ -38,7 +67,7 @@ async function getExtractor(): Promise<any> {
 
   const { pipeline, env } = await import('@huggingface/transformers')
 
-  const modelPath = resolveModelPath()
+  const modelPath = resolveEmbeddingModelPathForRuntime()
   env.localModelPath = modelPath
   env.allowRemoteModels = false
 

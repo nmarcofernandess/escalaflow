@@ -62,7 +62,7 @@ function getApiKey(provider: Provider): string {
 }
 
 function createModel(provider: Provider, apiKey: string) {
-  const modelName = provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-2.5-flash'
+  const modelName = provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-3.1-flash-lite'
   const model = provider === 'openrouter'
     ? createOpenRouter({ apiKey })(modelName)
     : createGoogleGenerativeAI({ apiKey })(modelName)

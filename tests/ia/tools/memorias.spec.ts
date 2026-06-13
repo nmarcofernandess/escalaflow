@@ -16,6 +16,9 @@ vi.mock('../../../src/main/knowledge/search', () => ({
 vi.mock('../../../src/main/knowledge/ingest', () => ({
   ingestKnowledge: vi.fn().mockResolvedValue({ chunks_count: 0 }),
 }))
+vi.mock('../../../src/main/knowledge/embeddings', () => ({
+  generateQueryEmbedding: vi.fn().mockResolvedValue(null),
+}))
 
 import { executeTool } from '../../../src/main/ia/tools'
 

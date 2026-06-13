@@ -144,6 +144,7 @@ async function getHealthPayload() {
     ia = {
       ...ia,
       ativo: readiness.ok,
+      modelo: readiness.model,
       readiness,
     }
   } catch (error) {

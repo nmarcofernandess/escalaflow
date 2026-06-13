@@ -41,7 +41,7 @@ interface IaModelConfig {
 }
 
 const DEFAULTS: Record<IaProviderId, string> = {
-  gemini: 'gemini-3-flash-preview',
+  gemini: 'gemini-3.1-flash-lite',
   openrouter: 'openrouter/free',
   local: 'gemma-4-e2b-it-q4',
 }

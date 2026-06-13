@@ -15,6 +15,16 @@ export const servicoIaLocal = {
       ram_minima_gb: number
       descricao: string
       baixado: boolean
+      tamanho_atual_bytes?: number
+      usable?: boolean
+      requires_validation?: boolean
+      load_error?: string
+      validated_at?: string
+      download_status?: 'idle' | 'downloading' | 'cancelled' | 'failed' | 'done'
+      download_progresso?: number
+      download_bytes_total?: number
+      download_bytes_feitos?: number
+      download_error?: string
     }>>,
 
   download: (model_id: string) =>
