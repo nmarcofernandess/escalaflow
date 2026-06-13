@@ -1,47 +1,108 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
+import { readFileSync } from 'node:fs'
+import { basename, resolve } from 'node:path'
+import { resolveToolServerUrl } from '../shared/tool-server-url'
+import { isTerminalExecSuccess } from '../shared/types'
 
-const TOOL_SERVER = process.env.ESCALAFLOW_TOOL_SERVER || 'http://127.0.0.1:17380'
-const NOT_RUNNING_MSG = 'EscalaFlow nao esta rodando. Abra o app primeiro.'
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+const TOOL_SERVER = resolveToolServerUrl()
+
+const NOT_RUNNING_MSG =
+  'EscalaFlow nao esta rodando. Abra o app primeiro.'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+interface ServerErrorPayload {
+  status?: string
+  message?: string
+  readiness?: {
+    ok?: boolean
+    provider?: string | null
+    model?: string | null
+    reason?: string
+    message?: string
+    action?: string
+  }
+}
+
+function formatServerError(status: number, text: string): string {
+  try {
+    const parsed = JSON.parse(text) as ServerErrorPayload
+    const readiness = parsed.readiness
+    const message = readiness?.message || parsed.message || text
+    const action = readiness?.action
+    const provider = readiness?.provider ? `\nProvider: ${readiness.provider}` : ''
+    const model = readiness?.model ? `\nModelo: ${readiness.model}` : ''
+    const actionLine = action ? `\nAcao: ${action}` : ''
+    return `Erro do EscalaFlow (${status}): ${message}${provider}${model}${actionLine}`
+  } catch {
+    return `Erro do EscalaFlow (${status}): ${text}`
+  }
+}
+
+async function checkHealth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${TOOL_SERVER}/health`)
+    if (!res.ok) return false
+    return true
+  } catch (err: unknown) {
+    if (isConnectionRefused(err)) {
+      console.error(NOT_RUNNING_MSG)
+    } else {
+      console.error('Erro ao verificar saude do servidor:', (err as Error).message)
+    }
+    return false
+  }
+}
+
+async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  try {
+    const res = await fetch(`${TOOL_SERVER}/tool`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, args })
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      console.error(formatServerError(res.status, text))
+      process.exit(1)
+    }
+
+    return await res.json()
+  } catch (err: unknown) {
+    if (isConnectionRefused(err)) {
+      console.error(NOT_RUNNING_MSG)
+    } else {
+      console.error('Erro de conexao:', (err as Error).message)
+    }
+    process.exit(1)
+  }
+}
 
 async function fetchJson(url: string): Promise<unknown> {
   try {
     const res = await fetch(url)
     if (!res.ok) {
       const text = await res.text()
-      console.error(`Erro do servidor (${res.status}):`, text)
+      console.error(formatServerError(res.status, text))
       process.exit(1)
     }
     return await res.json()
   } catch (err: unknown) {
-    if (isConnectionRefused(err)) console.error(NOT_RUNNING_MSG)
-    else console.error('Erro de conexao:', (err as Error).message)
-    process.exit(1)
-  }
-}
-
-async function postJson(pathname: string, body: Record<string, unknown>): Promise<unknown> {
-  try {
-    const res = await fetch(`${TOOL_SERVER}${pathname}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      const text = await res.text()
-      console.error(`Erro do servidor (${res.status}):`, text)
-      process.exit(1)
+    if (isConnectionRefused(err)) {
+      console.error(NOT_RUNNING_MSG)
+    } else {
+      console.error('Erro de conexao:', (err as Error).message)
     }
-    return await res.json()
-  } catch (err: unknown) {
-    if (isConnectionRefused(err)) console.error(NOT_RUNNING_MSG)
-    else console.error('Erro de conexao:', (err as Error).message)
     process.exit(1)
   }
-}
-
-async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-  return postJson('/tool', { name, args })
 }
 
 function parseJsonArg(raw: string | undefined): Record<string, unknown> {
@@ -58,8 +119,36 @@ function parseJsonArg(raw: string | undefined): Record<string, unknown> {
   }
 }
 
+async function postJson(pathname: string, body: Record<string, unknown>): Promise<unknown> {
+  try {
+    const res = await fetch(`${TOOL_SERVER}${pathname}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      console.error(formatServerError(res.status, text))
+      process.exit(1)
+    }
+    return await res.json()
+  } catch (err: unknown) {
+    if (isConnectionRefused(err)) console.error(NOT_RUNNING_MSG)
+    else console.error('Erro de conexao:', (err as Error).message)
+    process.exit(1)
+  }
+}
+
 function printJson(data: unknown): void {
   console.log(JSON.stringify(data, null, 2))
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks).toString('utf-8')
 }
 
 function isConnectionRefused(err: unknown): boolean {
@@ -72,57 +161,86 @@ function isConnectionRefused(err: unknown): boolean {
   return false
 }
 
+async function ensureChatReady(): Promise<void> {
+  try {
+    const res = await fetch(`${TOOL_SERVER}/chat/preflight`)
+    const text = await res.text()
+    if (res.ok) return
+
+    console.error(formatServerError(res.status, text))
+    process.exit(1)
+  } catch (err: unknown) {
+    if (isConnectionRefused(err)) console.error(NOT_RUNNING_MSG)
+    else console.error('Erro ao verificar chat:', (err as Error).message)
+    process.exit(1)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Formatters
+// ---------------------------------------------------------------------------
+
+// Tool server returns flat objects from toolOk():
+// { status, summary, total?, melhor_score?, context_for_llm?, _meta?, ... }
+interface ToolResponse {
+  status: string
+  summary?: string
+  total?: number
+  melhor_score?: number
+  context_for_llm?: string
+  sugestao_refinamento?: string | null
+  _meta?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+function formatChatResults(data: ToolResponse, query: string): void {
+  if (!data.total || data.total === 0) {
+    console.log(`Nenhum resultado encontrado para: ${query}`)
+    if (data.sugestao_refinamento) console.log(`  Dica: ${data.sugestao_refinamento}`)
+    return
+  }
+
+  console.log(`\n  ${data.summary ?? `${data.total} resultado(s)`}\n`)
+  if (data.context_for_llm) {
+    // Show first 500 chars of context as preview
+    const preview = data.context_for_llm.slice(0, 500).replace(/\n{3,}/g, '\n\n')
+    console.log(preview)
+    if (data.context_for_llm.length > 500) console.log('  ...(truncado)')
+  }
+  console.log()
+}
+
+function formatSearchResults(data: ToolResponse, term: string): void {
+  if (!data.total || data.total === 0) {
+    console.log(`Nenhum resultado encontrado para: ${term}`)
+    if (data.sugestao_refinamento) console.log(`  Dica: ${data.sugestao_refinamento}`)
+    return
+  }
+
+  console.log(`\n  ${data.total} resultado(s) para "${term}"`)
+  console.log(`  Melhor score: ${data.melhor_score != null ? (data.melhor_score * 100).toFixed(1) + '%' : 'n/a'}`)
+  console.log('  ' + '-'.repeat(60))
+
+  if (data.context_for_llm) {
+    console.log(data.context_for_llm.slice(0, 1000).replace(/\n{3,}/g, '\n\n'))
+    if (data.context_for_llm.length > 1000) console.log('  ...(truncado)')
+  }
+  console.log('  ' + '-'.repeat(60))
+  console.log()
+}
+
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
 const program = new Command()
 
 program
   .name('escalaflow')
-  .description('EscalaFlow CLI - chat, tools and schedule solver control')
+  .description('EscalaFlow CLI — chat, search and manage your knowledge base')
   .version('1.0.0')
 
-program
-  .command('status')
-  .description('Status do EscalaFlow e do tool server local')
-  .action(async () => {
-    const health = await fetchJson(`${TOOL_SERVER}/health`) as {
-      app?: string
-      version?: string
-      tools?: number
-      ia?: { provider?: string | null; modelo?: string | null }
-    }
-    console.log(`\n  ${health.app ?? 'EscalaFlow'} v${health.version ?? '?'}  (${health.tools ?? '?'} tools)`)
-    if (health.ia) {
-      console.log(`  IA: ${health.ia.provider ?? 'n/a'} / ${health.ia.modelo ?? 'n/a'}`)
-    }
-    console.log()
-  })
-
-program
-  .command('tools')
-  .description('Lista tools disponiveis no servidor')
-  .action(async () => {
-    const tools = await fetchJson(`${TOOL_SERVER}/tools`) as Array<{ name: string; description?: string }>
-    if (!Array.isArray(tools) || tools.length === 0) {
-      console.log('Nenhuma tool disponivel.')
-      return
-    }
-
-    console.log(`\n  ${tools.length} tool(s) disponiveis:\n`)
-    for (const tool of tools) {
-      console.log(`  - ${tool.name}`)
-      if (tool.description) console.log(`    ${tool.description}`)
-    }
-    console.log()
-  })
-
-program
-  .command('tool')
-  .description('Executa uma tool do app')
-  .argument('<name>', 'Nome da tool')
-  .option('--json <json>', 'Argumentos da tool em JSON')
-  .action(async (name: string, options: { json?: string }) => {
-    const args = parseJsonArg(options.json)
-    printJson(await callTool(name, args))
-  })
+// -- chat ------------------------------------------------------------------
 
 program
   .command('chat')
@@ -130,6 +248,8 @@ program
   .argument('[message]', 'Mensagem unica. Sem mensagem, abre REPL.')
   .option('--attach', 'Alias semantico para conectar ao app aberto')
   .action(async (message?: string) => {
+    await ensureChatReady()
+
     if (message && message.trim()) {
       const data = await postJson('/chat', {
         message,
@@ -145,7 +265,7 @@ program
     const { stdin, stdout } = await import('node:process')
     const rl = readline.createInterface({ input: stdin, output: stdout })
     const history: Array<{ id: string; papel: 'usuario' | 'assistente'; conteudo: string; timestamp: string }> = []
-    console.log('EscalaFlow chat conectado. Digite "sair" para encerrar.')
+    console.log('EscalaFlow chat conectado e IA validada. Digite "sair" para encerrar.')
 
     while (true) {
       const input = await rl.question('Voce > ')
@@ -167,6 +287,334 @@ program
     }
 
     rl.close()
+  })
+
+// -- search ----------------------------------------------------------------
+
+program
+  .command('search')
+  .description('Busca detalhada com scores e fontes')
+  .argument('<term>', 'Termo de busca')
+  .action(async (term: string) => {
+    const data = await callTool('buscar_conhecimento', { consulta: term })
+    formatSearchResults(data as ToolResponse, term)
+  })
+
+// -- import ----------------------------------------------------------------
+
+program
+  .command('import')
+  .description('Importa arquivo para o knowledge base')
+  .argument('<file>', 'Caminho do arquivo para importar')
+  .action(async (file: string) => {
+    let conteudo: string
+    try {
+      conteudo = readFileSync(file, 'utf-8')
+    } catch (err: unknown) {
+      console.error(`Erro ao ler arquivo: ${(err as Error).message}`)
+      process.exit(1)
+    }
+
+    const filename = basename(file)
+    const bytes = Buffer.byteLength(conteudo, 'utf-8')
+
+    await callTool('salvar_conhecimento', { titulo: filename, conteudo })
+    console.log(`Importado: ${filename} (${bytes} bytes)`)
+  })
+
+// -- status ----------------------------------------------------------------
+
+program
+  .command('status')
+  .description('Status do EscalaFlow e estatisticas do knowledge base')
+  .action(async () => {
+    const healthy = await checkHealth()
+    if (!healthy) {
+      process.exit(1)
+    }
+
+    const health = (await fetchJson(`${TOOL_SERVER}/health`)) as {
+      app?: string
+      version?: string
+      tools?: number
+      db?: { connected?: boolean; error?: string }
+      ia?: {
+        provider?: string | null
+        modelo?: string | null
+        ativo?: boolean
+        readiness?: { ok?: boolean; message?: string; action?: string }
+      }
+      status?: string
+      issues?: string[]
+    }
+
+    console.log(`\n  ${health.app ?? 'EscalaFlow'} v${health.version ?? '?'}  (${health.tools ?? '?'} tools)`)
+    console.log(`  Server: ${health.status ?? 'ok'}`)
+    console.log(`  DB:     ${health.db?.connected ? 'conectado' : `degradado${health.db?.error ? ` (${health.db.error})` : ''}`}`)
+    if (health.ia) {
+      console.log(`  IA:     ${health.ia.provider ?? 'n/a'} / ${health.ia.modelo ?? 'n/a'}`)
+      if (health.ia.readiness?.message) {
+        console.log(`  Chat:   ${health.ia.readiness.ok ? 'pronto' : 'bloqueado'} - ${health.ia.readiness.message}`)
+        if (health.ia.readiness.action) console.log(`  Acao:   ${health.ia.readiness.action}`)
+      }
+    }
+    if (health.issues?.length) console.log(`  Issues: ${health.issues.join('; ')}`)
+    console.log()
+  })
+
+// -- tools -----------------------------------------------------------------
+
+program
+  .command('tools')
+  .description('Lista tools disponiveis no servidor')
+  .action(async () => {
+    const tools = (await fetchJson(`${TOOL_SERVER}/tools`)) as Array<{
+      name: string
+      description?: string
+    }>
+
+    if (!Array.isArray(tools) || tools.length === 0) {
+      console.log('Nenhuma tool disponivel.')
+      return
+    }
+
+    console.log(`\n  ${tools.length} tool(s) disponiveis:\n`)
+    for (const t of tools) {
+      console.log(`  - ${t.name}`)
+      if (t.description) {
+        console.log(`    ${t.description}`)
+      }
+    }
+    console.log()
+  })
+
+program
+  .command('tool')
+  .description('Executa uma tool do app')
+  .argument('<name>', 'Nome da tool')
+  .option('--json <json>', 'Argumentos da tool em JSON')
+  .action(async (name: string, options: { json?: string }) => {
+    const args = parseJsonArg(options.json)
+    const data = await callTool(name, args)
+    printJson(data)
+  })
+
+const rag = program.command('rag').description('Comandos de RAG')
+
+rag
+  .command('search')
+  .description('Busca na base RAG')
+  .argument('<query>', 'Consulta')
+  .action(async (query: string) => {
+    const data = await callTool('buscar_conhecimento', { consulta: query })
+    formatSearchResults(data as ToolResponse, query)
+  })
+
+rag
+  .command('import')
+  .description('Importa arquivo ou pasta para o RAG')
+  .argument('<path>', 'Arquivo ou pasta')
+  .option('--group <name>', 'Nome do grupo')
+  .option('--recursive', 'Inclui subpastas', true)
+  .option('--no-recursive', 'Nao inclui subpastas')
+  .option('--wait', 'Aguarda o job terminar e imprime o resultado final')
+  .option('--enrich', 'Forca enrichment automatico ao fim da importacao')
+  .option('--no-enrich', 'Desativa enrichment automatico para este import')
+  .action(async (targetPath: string, options: { group?: string; recursive?: boolean; wait?: boolean; enrich?: boolean }) => {
+    const resolvedPath = resolve(targetPath)
+    const groupName = options.group?.trim() || basename(resolvedPath)
+    const data = await postJson('/rag/import', {
+      path: resolvedPath,
+      group_name: groupName,
+      recursive: options.recursive !== false,
+      ...(typeof options.enrich === 'boolean' ? { auto_enrich: options.enrich } : {}),
+    }) as { job?: { id: string; status: string } }
+
+    if (!data.job?.id) {
+      console.error('Servidor nao retornou job de importacao.')
+      process.exit(1)
+    }
+
+    console.log(`Job iniciado: ${data.job.id} (${data.job.status})`)
+
+    if (!options.wait) {
+      console.log(`Use: escalaflow jobs list  ou  escalaflow jobs cancel ${data.job.id}`)
+      return
+    }
+
+    while (true) {
+      const current = await fetchJson(`${TOOL_SERVER}/jobs/${encodeURIComponent(data.job.id)}`) as {
+        job?: {
+          status: string
+          progress?: { done: number; total: number }
+          metadata?: Record<string, unknown>
+          error_message?: string | null
+        }
+      }
+      const job = current.job
+      if (!job) {
+        console.error(`Job "${data.job.id}" nao encontrado.`)
+        process.exit(1)
+      }
+
+      const done = job.progress?.done ?? 0
+      const total = job.progress?.total ?? 0
+      process.stdout.write(`\r${job.status} ${done}/${total}`)
+
+      if (['done', 'failed', 'cancelled'].includes(job.status)) {
+        process.stdout.write('\n')
+        printJson(job)
+        if (job.status === 'failed') process.exit(1)
+        return
+      }
+
+      await new Promise((resolvePoll) => setTimeout(resolvePoll, 1000))
+    }
+  })
+
+rag.command('jobs').description('Lista jobs persistentes de importacao RAG').action(async () => {
+  printJson(await fetchJson(`${TOOL_SERVER}/rag/jobs`))
+})
+
+rag.command('job').description('Mostra progresso e arquivos de um job RAG').argument('<id>').action(async (id: string) => {
+  printJson(await fetchJson(`${TOOL_SERVER}/rag/jobs/${encodeURIComponent(id)}`))
+})
+
+rag.command('cancel').description('Cancela um job RAG persistente').argument('<id>').action(async (id: string) => {
+  printJson(await postJson(`/rag/jobs/${encodeURIComponent(id)}/cancel`, {}))
+})
+
+rag.command('pause').description('Pausa um job RAG persistente').argument('<id>').action(async (id: string) => {
+  printJson(await postJson(`/rag/jobs/${encodeURIComponent(id)}/pause`, {}))
+})
+
+rag.command('resume').description('Retoma um job RAG persistente').argument('<id>').action(async (id: string) => {
+  printJson(await postJson(`/rag/jobs/${encodeURIComponent(id)}/resume`, {}))
+})
+
+rag
+  .command('enrich')
+  .description('Enriquece chunks de um grupo RAG')
+  .requiredOption('--group <id>', 'ID numerico do grupo RAG')
+  .option('--provider <provider>', 'auto, local, gemini ou openrouter')
+  .option('--model <model>', 'Modelo a usar')
+  .option('--force-all', 'Reprocessa chunks ja enriquecidos')
+  .action(async (options: { group: string; provider?: string; model?: string; forceAll?: boolean }) => {
+    printJson(await postJson(`/rag/groups/${encodeURIComponent(options.group)}/enrich`, {
+      provider: options.provider,
+      modelo: options.model,
+      force_all: Boolean(options.forceAll),
+    }))
+  })
+
+const jobs = program.command('jobs').description('Jobs locais')
+
+jobs.command('list').action(async () => {
+  printJson(await fetchJson(`${TOOL_SERVER}/jobs`))
+})
+
+jobs.command('cancel').argument('<id>').action(async (id: string) => {
+  printJson(await postJson(`/jobs/${encodeURIComponent(id)}/cancel`, {}))
+})
+
+jobs.command('pause').argument('<id>').action(async (id: string) => {
+  printJson(await postJson(`/jobs/${encodeURIComponent(id)}/pause`, {}))
+})
+
+jobs.command('resume').argument('<id>').action(async (id: string) => {
+  printJson(await postJson(`/jobs/${encodeURIComponent(id)}/resume`, {}))
+})
+
+const terminal = program.command('terminal').description('Harness local de terminal e arquivos')
+
+terminal
+  .command('exec')
+  .description('Executa comando no computador local via app aberto')
+  .argument('<command...>', 'Comando shell')
+  .option('--cwd <path>', 'Diretorio de trabalho')
+  .option('--timeout <ms>', 'Timeout em ms', (value) => Number(value))
+  .option('--wait', 'Aguarda resultado em vez de criar job')
+  .action(async (commandParts: string[], options: { cwd?: string; timeout?: number; wait?: boolean }) => {
+    const command = commandParts.join(' ')
+    const data = await postJson('/terminal/exec', {
+      command,
+      cwd: options.cwd,
+      timeout_ms: options.timeout,
+      wait: Boolean(options.wait),
+    }) as {
+      status: string
+      job?: { id: string; status: string }
+      result?: { stdout: string; stderr: string; exit_code: number | null; timed_out: boolean; signal: string | null }
+      message?: string
+      command?: string
+      cwd?: string
+    }
+
+    if (data.status === 'pending_approval') {
+      console.log(`Pendente de aprovacao: ${data.command}`)
+      if (data.cwd) console.log(`cwd: ${data.cwd}`)
+      if (data.message) console.log(data.message)
+      return
+    }
+
+    if (!options.wait) {
+      console.log(`Job iniciado: ${data.job?.id} (${data.job?.status})`)
+      return
+    }
+
+    if (data.result?.stdout) process.stdout.write(data.result.stdout)
+    if (data.result?.stderr) process.stderr.write(data.result.stderr)
+    if (data.result && !isTerminalExecSuccess(data.result)) {
+      if (data.result.timed_out) process.stderr.write('\n[timeout]\n')
+      process.exit(data.result.exit_code ?? 1)
+    }
+  })
+
+terminal
+  .command('open-cli')
+  .description('Abre o EscalaFlow CLI no Terminal do sistema')
+  .option('--command <command>', 'Comando a abrir', 'npm run cli -- chat --attach')
+  .option('--cwd <path>', 'Diretorio de trabalho')
+  .action(async (options: { command?: string; cwd?: string }) => {
+    printJson(await postJson('/terminal/open-cli', {
+      command: options.command,
+      cwd: options.cwd ? resolve(options.cwd) : undefined,
+    }))
+  })
+
+terminal
+  .command('read')
+  .description('Le arquivo local via app aberto')
+  .argument('<file>', 'Arquivo')
+  .option('--max-bytes <n>', 'Limite de leitura', (value) => Number(value))
+  .action(async (file: string, options: { maxBytes?: number }) => {
+    const data = await postJson('/terminal/read-file', {
+      path: resolve(file),
+      max_bytes: options.maxBytes,
+    }) as { file?: { content: string; truncated: boolean } }
+
+    process.stdout.write(data.file?.content ?? '')
+    if (data.file?.truncated) {
+      process.stderr.write('\n[truncated]\n')
+    }
+  })
+
+terminal
+  .command('write')
+  .description('Escreve arquivo local via app aberto')
+  .argument('<file>', 'Arquivo')
+  .option('--content <text>', 'Conteudo literal')
+  .option('--stdin', 'Le conteudo do stdin')
+  .action(async (file: string, options: { content?: string; stdin?: boolean }) => {
+    const content = options.stdin ? await readStdin() : options.content
+    if (content === undefined) {
+      console.error('Use --content <text> ou --stdin.')
+      process.exit(1)
+    }
+    printJson(await postJson('/terminal/write-file', {
+      path: resolve(file),
+      content,
+    }))
   })
 
 const solver = program.command('solver').description('Comandos do motor de escalas')
@@ -206,16 +654,6 @@ solver
     }))
   })
 
-const jobs = program.command('jobs').description('Jobs locais')
-
-jobs.command('list').action(async () => {
-  printJson(await fetchJson(`${TOOL_SERVER}/jobs`))
-})
-
-jobs.command('cancel').argument('<id>').action(async (id: string) => {
-  printJson(await postJson(`/jobs/${encodeURIComponent(id)}/cancel`, {}))
-})
-
 program
   .command('mcp')
   .description('Utilitarios MCP')
@@ -228,9 +666,16 @@ program
           command: 'npm',
           args: ['run', 'mcp:dev'],
           cwd: process.cwd(),
+          env: {
+            ESCALAFLOW_TOOL_SERVER: TOOL_SERVER,
+          },
         },
       },
     })
   })
+
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
 
 program.parse()

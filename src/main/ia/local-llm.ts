@@ -1,5 +1,5 @@
 // =============================================================================
-// LOCAL LLM — node-llama-cpp (Qwen 3.5)
+// LOCAL LLM — Gemma 4 via llama-server; node-llama-cpp fallback for compatible models
 // Download, lifecycle, chat com tool calling
 // =============================================================================
 
@@ -7,11 +7,19 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import type { IaMensagem, IaContexto, IaAnexo, ToolCall, IaLocalStatus, IaStreamEvent } from '../../shared/types'
+import {
+  getLocalLlamaServerStatus,
+  localLlamaServerChat,
+  localLlamaServerGenerateJson,
+  stopLocalLlamaServer,
+  validateLocalLlamaServerModel,
+} from './llama-server-runtime'
 
 const _require = createRequire(import.meta.url)
 const { BrowserWindow: _BW } = _require('electron') as typeof import('electron')
 
 function broadcastToRenderer(channel: string, data: unknown): void {
+  if (!_BW?.getAllWindows) return
   for (const win of _BW.getAllWindows()) {
     win.webContents.send(channel, data)
   }
@@ -26,37 +34,13 @@ function emitStream(event: IaStreamEvent): void {
 // ---------------------------------------------------------------------------
 
 export const LOCAL_MODELS = {
-  'qwen3.5-9b': {
-    label: 'Qwen 3.5 9B',
-    filename: 'Qwen3.5-9B-Q4_K_M.gguf',
-    url: 'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf',
-    size_bytes: 5_680_000_000,
-    ram_minima_gb: 8,
-    descricao: 'Melhor qualidade de respostas e tool calling. Recomendado para 8GB+ RAM.',
-  },
-  'qwen3.5-4b': {
-    label: 'Qwen 3.5 4B',
-    filename: 'Qwen3.5-4B-Q4_K_M.gguf',
-    url: 'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
-    size_bytes: 2_800_000_000,
+  'gemma-4-e2b-it-q4': {
+    label: 'Gemma 4 E2B IT',
+    filename: 'gemma-4-E2B-it-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf',
+    size_bytes: 3_110_000_000,
     ram_minima_gb: 4,
-    descricao: 'Equilíbrio entre qualidade e velocidade. Para 4GB+ RAM.',
-  },
-  'qwen3.5-2b': {
-    label: 'Qwen 3.5 2B',
-    filename: 'Qwen3.5-2B-Q4_K_M.gguf',
-    url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
-    size_bytes: 1_500_000_000,
-    ram_minima_gb: 3,
-    descricao: 'Leve e rápido. Bom para enrichment com grammar enforcement.',
-  },
-  'qwen3.5-0.8b': {
-    label: 'Qwen 3.5 0.8B',
-    filename: 'Qwen3.5-0.8B-Q4_K_M.gguf',
-    url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
-    size_bytes: 580_000_000,
-    ram_minima_gb: 2,
-    descricao: 'Ultra-leve (~580MB). Para tarefas simples e máquinas com pouca RAM.',
+    descricao: 'Gemma 4 Effective 2B instruction tuned, Q4_K_M GGUF. Padrão local para chat, tools e enrichment.',
   },
 } as const
 
@@ -67,6 +51,10 @@ export type LocalModelId = keyof typeof LOCAL_MODELS
 // ---------------------------------------------------------------------------
 
 function getModelDir(): string {
+  if (process.env.ESCALAFLOW_LOCAL_MODELS_DIR) {
+    return process.env.ESCALAFLOW_LOCAL_MODELS_DIR
+  }
+
   try {
     const electron = _require('electron') as { app?: { getPath?: (name: string) => string } }
     const app = electron.app
@@ -75,10 +63,13 @@ function getModelDir(): string {
       return path.join(app.getPath('userData'), 'models')
     }
   } catch { /* fallback */ }
+  if (process.platform === 'darwin' && process.env.HOME) {
+    return path.join(process.env.HOME, 'Library/Application Support/EscalaFlow/models')
+  }
   return path.join(__dirname, '../../data/models')
 }
 
-function getModelPath(modelId: LocalModelId): string {
+export function getModelPath(modelId: LocalModelId): string {
   return path.join(getModelDir(), LOCAL_MODELS[modelId].filename)
 }
 
@@ -89,13 +80,31 @@ function isModelDownloaded(modelId: LocalModelId): boolean {
   return stat.size > LOCAL_MODELS[modelId].size_bytes * 0.95
 }
 
-function getActiveLocalModelId(): LocalModelId {
-  // Prefere o maior disponível: 9B > 4B > 2B > 0.8B
-  if (isModelDownloaded('qwen3.5-9b')) return 'qwen3.5-9b'
-  if (isModelDownloaded('qwen3.5-4b')) return 'qwen3.5-4b'
-  if (isModelDownloaded('qwen3.5-2b')) return 'qwen3.5-2b'
-  if (isModelDownloaded('qwen3.5-0.8b')) return 'qwen3.5-0.8b'
+function getActiveLocalModelId(preferredModelId?: LocalModelId): LocalModelId {
+  if (preferredModelId) {
+    if (isModelDownloaded(preferredModelId)) return preferredModelId
+    throw new Error(`Modelo local "${preferredModelId}" nao baixado. Baixe em Configurações > IA Local.`)
+  }
+
+  if (isModelDownloaded('gemma-4-e2b-it-q4')) return 'gemma-4-e2b-it-q4'
   throw new Error('Nenhum modelo local baixado. Baixe um modelo em Configurações > IA Local.')
+}
+
+function shouldUseLlamaServerRuntime(modelId: LocalModelId): boolean {
+  // Gemma 4 usa arquitetura "gemma4"; node-llama-cpp 3.18.1 ainda falha com
+  // "unknown model architecture: 'gemma4'". llama-server recente carrega e
+  // emite tool_calls estruturados.
+  return modelId === 'gemma-4-e2b-it-q4'
+}
+
+function isLocalRuntimeLoadFailure(message: string): boolean {
+  const lower = message.toLowerCase()
+  return lower.includes('runtime local compatível')
+    || lower.includes('encerrou durante o boot')
+    || lower.includes('failed to load model')
+    || lower.includes('failed to open gguf')
+    || lower.includes('model loading error')
+    || lower.includes('unknown model architecture')
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +113,29 @@ function getActiveLocalModelId(): LocalModelId {
 
 let _downloadAbort: AbortController | null = null
 let _downloadInProgress: LocalModelId | null = null
+let _downloadState: {
+  modelId: LocalModelId
+  downloaded: number
+  total: number
+  status: 'idle' | 'downloading' | 'cancelled' | 'failed' | 'done'
+  error?: string
+} | null = null
+const _modelValidation = new Map<LocalModelId, {
+  usable: boolean
+  error?: string
+  validatedAt?: string
+}>()
+
+function broadcastLocalStatus(): void {
+  broadcastToRenderer('ia:local:status-changed', getLocalStatus())
+}
+
+function setModelValidation(modelId: LocalModelId, value: { usable: boolean; error?: string }): void {
+  _modelValidation.set(modelId, {
+    ...value,
+    validatedAt: new Date().toISOString(),
+  })
+}
 
 export async function downloadModel(modelId: LocalModelId, onProgress: (downloaded: number, total: number) => void): Promise<void> {
   if (_downloadInProgress) {
@@ -125,6 +157,13 @@ export async function downloadModel(modelId: LocalModelId, onProgress: (download
 
   _downloadAbort = new AbortController()
   _downloadInProgress = modelId
+  _downloadState = {
+    modelId,
+    downloaded: existingBytes,
+    total: model.size_bytes,
+    status: 'downloading',
+  }
+  broadcastLocalStatus()
 
   try {
     const headers: Record<string, string> = {}
@@ -152,6 +191,9 @@ export async function downloadModel(modelId: LocalModelId, onProgress: (download
     const fileStream = fs.createWriteStream(partPath, { flags: isResume ? 'a' : 'w' })
     const reader = body.getReader()
     let downloaded = existingBytes
+    _downloadState = { modelId, downloaded, total, status: 'downloading' }
+    onProgress(downloaded, total)
+    broadcastLocalStatus()
 
     try {
       while (true) {
@@ -159,7 +201,9 @@ export async function downloadModel(modelId: LocalModelId, onProgress: (download
         if (done) break
         fileStream.write(Buffer.from(value))
         downloaded += value.byteLength
+        _downloadState = { modelId, downloaded, total, status: 'downloading' }
         onProgress(downloaded, total)
+        broadcastLocalStatus()
       }
     } finally {
       fileStream.end()
@@ -168,16 +212,35 @@ export async function downloadModel(modelId: LocalModelId, onProgress: (download
 
     // Renomear .part → .gguf
     fs.renameSync(partPath, finalPath)
+    _modelValidation.delete(modelId)
+    _downloadState = { modelId, downloaded, total, status: 'done' }
+    broadcastLocalStatus()
     console.log(`[LOCAL-LLM] Download concluído: ${modelId} (${(downloaded / 1e9).toFixed(1)} GB)`)
   } catch (err: any) {
     if (err.name === 'AbortError') {
+      _downloadState = {
+        modelId,
+        downloaded: fs.existsSync(partPath) ? fs.statSync(partPath).size : existingBytes,
+        total: _downloadState?.total ?? model.size_bytes,
+        status: 'cancelled',
+      }
+      broadcastLocalStatus()
       console.log(`[LOCAL-LLM] Download cancelado: ${modelId}`)
       return
     }
+    _downloadState = {
+      modelId,
+      downloaded: fs.existsSync(partPath) ? fs.statSync(partPath).size : existingBytes,
+      total: _downloadState?.total ?? model.size_bytes,
+      status: 'failed',
+      error: err?.message || String(err),
+    }
+    broadcastLocalStatus()
     throw err
   } finally {
     _downloadAbort = null
     _downloadInProgress = null
+    broadcastLocalStatus()
   }
 }
 
@@ -187,6 +250,7 @@ export function cancelDownload(): void {
     _downloadAbort = null
     _downloadInProgress = null
   }
+  broadcastLocalStatus()
 }
 
 export function deleteModel(modelId: LocalModelId): void {
@@ -194,6 +258,9 @@ export function deleteModel(modelId: LocalModelId): void {
   const partPath = modelPath + '.part'
   if (fs.existsSync(modelPath)) fs.unlinkSync(modelPath)
   if (fs.existsSync(partPath)) fs.unlinkSync(partPath)
+  _modelValidation.delete(modelId)
+  if (_downloadState?.modelId === modelId) _downloadState = null
+  broadcastLocalStatus()
   console.log(`[LOCAL-LLM] Modelo deletado: ${modelId}`)
 }
 
@@ -220,9 +287,9 @@ async function getLlamaCpp(): Promise<LlamaTypes> {
   return await import('node-llama-cpp')
 }
 
-export async function ensureModelLoaded(): Promise<{ model: any; context: any }> {
+export async function ensureModelLoaded(preferredModelId?: LocalModelId): Promise<{ model: any; context: any }> {
   resetIdleTimer()
-  const targetModelId = getActiveLocalModelId()
+  const targetModelId = getActiveLocalModelId(preferredModelId)
 
   // Se já está carregado com o mesmo modelo, retorna
   if (_model && _context && _loadedModelId === targetModelId) {
@@ -245,9 +312,21 @@ export async function ensureModelLoaded(): Promise<{ model: any; context: any }>
   }
 
   const modelPath = getModelPath(targetModelId)
-  _model = await _llama.loadModel({ modelPath })
-  _context = await _model.createContext()
-  _loadedModelId = targetModelId
+  try {
+    _model = await _llama.loadModel({ modelPath })
+    _context = await _model.createContext()
+    _loadedModelId = targetModelId
+    setModelValidation(targetModelId, { usable: true })
+    broadcastLocalStatus()
+  } catch (err: any) {
+    const message = err?.message || String(err)
+    setModelValidation(targetModelId, { usable: false, error: message })
+    _model = null
+    _context = null
+    _loadedModelId = null
+    broadcastLocalStatus()
+    throw err
+  }
 
   const elapsed = ((Date.now() - startMs) / 1000).toFixed(1)
   console.log(`[LOCAL-LLM] Modelo carregado em ${elapsed}s`)
@@ -255,8 +334,29 @@ export async function ensureModelLoaded(): Promise<{ model: any; context: any }>
   return { model: _model, context: _context }
 }
 
+export async function validateLocalModel(modelId: LocalModelId): Promise<IaLocalStatus['modelos'][string]> {
+  if (shouldUseLlamaServerRuntime(modelId)) {
+    resetIdleTimer()
+    try {
+      await validateLocalLlamaServerModel({ modelId, modelPath: getModelPath(modelId) })
+      setModelValidation(modelId, { usable: true })
+      broadcastLocalStatus()
+      return getLocalStatus().modelos[modelId]
+    } catch (err: any) {
+      const message = err?.message || String(err)
+      setModelValidation(modelId, { usable: false, error: message })
+      broadcastLocalStatus()
+      throw err
+    }
+  }
+
+  await ensureModelLoaded(modelId)
+  return getLocalStatus().modelos[modelId]
+}
+
 export async function unloadModel(): Promise<void> {
   clearIdleTimer()
+  await stopLocalLlamaServer()
 
   if (_context) {
     await _context.dispose?.()
@@ -269,6 +369,50 @@ export async function unloadModel(): Promise<void> {
   _loadedModelId = null
   _lastTps = 0
   console.log('[LOCAL-LLM] Modelo descarregado')
+}
+
+export async function localLlmGenerateJson(
+  prompt: string,
+  options?: { modelId?: LocalModelId; maxTokens?: number },
+): Promise<string> {
+  const modelId = getActiveLocalModelId(options?.modelId)
+  if (shouldUseLlamaServerRuntime(modelId)) {
+    resetIdleTimer()
+    try {
+      const response = await localLlamaServerGenerateJson({
+        modelId,
+        modelPath: getModelPath(modelId),
+        prompt,
+        maxTokens: options?.maxTokens,
+      })
+      setModelValidation(modelId, { usable: true })
+      broadcastLocalStatus()
+      return response
+    } catch (err: any) {
+      const message = err?.message || String(err)
+      setModelValidation(modelId, { usable: false, error: message })
+      broadcastLocalStatus()
+      throw err
+    }
+  }
+
+  const { context } = await ensureModelLoaded(options?.modelId)
+  resetIdleTimer()
+
+  const { LlamaChatSession } = await getLlamaCpp()
+  const session = new LlamaChatSession({
+    contextSequence: context.getSequence(),
+    systemPrompt: 'Responda somente JSON valido, sem markdown, sem comentarios e sem texto fora do objeto JSON.',
+  })
+
+  try {
+    const response = await session.prompt(prompt, {
+      maxTokens: options?.maxTokens ?? 4096,
+    })
+    return String(response ?? '')
+  } finally {
+    session.dispose?.()
+  }
 }
 
 function resetIdleTimer(): void {
@@ -292,11 +436,18 @@ function clearIdleTimer(): void {
 
 export function getLocalStatus(): IaLocalStatus {
   const modelos: IaLocalStatus['modelos'] = {}
+  const serverStatus = getLocalLlamaServerStatus()
 
   for (const [id, m] of Object.entries(LOCAL_MODELS)) {
     const modelPath = getModelPath(id as LocalModelId)
     const partPath = modelPath + '.part'
     const baixado = isModelDownloaded(id as LocalModelId)
+    const modelId = id as LocalModelId
+    const validation = _modelValidation.get(modelId)
+    const isActiveLoaded = _loadedModelId === modelId && !!_model && !!_context
+    const isServerLoaded = serverStatus.running && serverStatus.modelId === modelId
+    const hasLoadError = Boolean(validation?.error)
+    const downloadForModel = _downloadState?.modelId === modelId ? _downloadState : null
     let tamanho_atual_bytes: number | undefined
 
     if (!baixado && fs.existsSync(partPath)) {
@@ -309,15 +460,29 @@ export function getLocalStatus(): IaLocalStatus {
       baixado,
       tamanho_bytes: m.size_bytes,
       ...(tamanho_atual_bytes !== undefined ? { tamanho_atual_bytes } : {}),
+      usable: baixado && !hasLoadError && (isActiveLoaded || isServerLoaded || validation?.usable === true),
+      requires_validation: baixado && !hasLoadError && !isActiveLoaded && !isServerLoaded && validation?.usable !== true,
+      ...(validation?.error ? { load_error: validation.error } : {}),
+      ...(validation?.validatedAt ? { validated_at: validation.validatedAt } : {}),
+      download_status: downloadForModel?.status ?? 'idle',
+      ...(downloadForModel ? {
+        download_progresso: downloadForModel.total > 0 ? downloadForModel.downloaded / downloadForModel.total : 0,
+        download_bytes_total: downloadForModel.total,
+        download_bytes_feitos: downloadForModel.downloaded,
+        ...(downloadForModel.error ? { download_error: downloadForModel.error } : {}),
+      } : {}),
     }
   }
 
   return {
     modelos,
-    modelo_ativo: _loadedModelId ?? undefined,
-    modelo_carregado: !!_model && !!_context,
+    modelo_ativo: _loadedModelId ?? serverStatus.modelId ?? undefined,
+    modelo_carregado: (!!_model && !!_context) || serverStatus.running,
     ..._downloadInProgress ? {
       download_em_andamento: _downloadInProgress,
+      download_progresso: _downloadState && _downloadState.total > 0 ? _downloadState.downloaded / _downloadState.total : undefined,
+      download_bytes_total: _downloadState?.total,
+      download_bytes_feitos: _downloadState?.downloaded,
     } : {},
     gpu_detectada: _llama?.gpu ?? undefined,
     tokens_por_segundo: _lastTps || undefined,
@@ -336,6 +501,50 @@ export async function localLlmChat(
   conversa_id?: string,
   _anexos?: IaAnexo[],
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
+  let targetModelId: LocalModelId
+  try {
+    targetModelId = getActiveLocalModelId()
+  } catch (err: any) {
+    const msg = err?.message || String(err)
+    emitStream({ type: 'error', stream_id: streamId, message: msg })
+    throw new Error(msg)
+  }
+
+  if (shouldUseLlamaServerRuntime(targetModelId)) {
+    resetIdleTimer()
+    try {
+      const result = await localLlamaServerChat({
+        modelId: targetModelId,
+        modelPath: getModelPath(targetModelId),
+        currentMsg,
+        historico,
+        streamId,
+        contexto,
+        streamSink: emitStream,
+      })
+      if (result.tokensPerSecond && result.tokensPerSecond > 0) {
+        _lastTps = Math.round(result.tokensPerSecond)
+      }
+      setModelValidation(targetModelId, { usable: true })
+      broadcastLocalStatus()
+      return { resposta: result.resposta, acoes: result.acoes }
+    } catch (err: any) {
+      const message = err?.message || String(err)
+      const isLoadFailure = isLocalRuntimeLoadFailure(message)
+      if (isLoadFailure) {
+        setModelValidation(targetModelId, { usable: false, error: message })
+      } else {
+        setModelValidation(targetModelId, { usable: true })
+      }
+      broadcastLocalStatus()
+      const msg = isLoadFailure
+        ? `Erro ao carregar modelo local: ${message}`
+        : `Erro ao executar IA local: ${message}`
+      emitStream({ type: 'error', stream_id: streamId, message: msg })
+      throw new Error(msg)
+    }
+  }
+
   let loaded: { model: any; context: any }
   try {
     loaded = await ensureModelLoaded()
@@ -385,9 +594,7 @@ export async function localLlmChat(
       params: jsonSchema as any,
       handler: async (params: any) => {
         const callId = `local_${++toolCallCounter}`
-        const est = t.name === 'executar_acao' && params?.acao === 'gerar_escala' ? 90
-          : t.name === 'executar_acao' && (params?.acao === 'preflight') ? 10
-          : undefined
+        const est: number | undefined = undefined
         emitStream({ type: 'tool-call-start', stream_id: streamId, tool_call_id: callId, tool_name: t.name, args: params, estimated_seconds: est })
 
         try {

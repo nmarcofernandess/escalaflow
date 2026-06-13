@@ -32,6 +32,7 @@ import type {
   SalvarDetalheFuncaoRequest,
   SnapshotTrigger,
   InfeasibleError,
+  TerminalHarnessConfig,
 } from '../shared'
 import {
   derivarTipoTrabalhador,
@@ -4226,11 +4227,43 @@ const knowledgeEscolherArquivo = t.procedure.action(async () => {
   const win = BrowserWindow.getFocusedWindow()
   const opts = {
     properties: ['openFile' as const],
-    filters: [{ name: 'Documentos', extensions: ['md', 'txt', 'pdf'] }],
+    filters: [{ name: 'Documentos', extensions: ['md', 'markdown', 'txt', 'pdf', 'json', 'jsonl', 'zip', 'html', 'htm', 'csv'] }],
   }
   const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
   if (result.canceled || !result.filePaths.length) return null
   return result.filePaths[0]
+})
+
+const knowledgeEscolherPasta = t.procedure.action(async () => {
+  const win = BrowserWindow.getFocusedWindow()
+  const opts = { properties: ['openDirectory' as const] }
+  const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+  if (result.canceled || !result.filePaths.length) return null
+  return result.filePaths[0]
+})
+
+const knowledgeBulkImportStart = t.procedure
+  .input<{ path: string; group_name: string; auto_enrich?: boolean; recursive?: boolean; filters?: string[] }>()
+  .action(async ({ input }) => {
+    const { startBulkRagImport } = await import('./knowledge/bulk-import')
+    return startBulkRagImport(input)
+  })
+
+const knowledgeEnrichmentConfigGet = t.procedure.action(async () => {
+  const { getKnowledgeEnrichmentConfig } = await import('./knowledge/enrichment-config')
+  return await getKnowledgeEnrichmentConfig()
+})
+
+const knowledgeEnrichmentConfigSave = t.procedure
+  .input<Partial<import('../shared').KnowledgeEnrichmentConfig>>()
+  .action(async ({ input }) => {
+    const { saveKnowledgeEnrichmentConfig } = await import('./knowledge/enrichment-config')
+    return await saveKnowledgeEnrichmentConfig(input)
+  })
+
+const knowledgeEnrichmentModelsList = t.procedure.action(async () => {
+  const { listKnowledgeEnrichmentModelOptions } = await import('./knowledge/enrichment-config')
+  return await listKnowledgeEnrichmentModelOptions()
 })
 
 const knowledgeImportar = t.procedure
@@ -4664,6 +4697,106 @@ const mcpConfigJson = t.procedure.action(async () => {
 })
 
 // =============================================================================
+// JOBS
+// =============================================================================
+
+const jobsList = t.procedure.action(async () => {
+  const { listJobs } = await import('./jobs')
+  return { jobs: listJobs() }
+})
+
+const jobsGet = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { getJob } = await import('./jobs')
+    return { job: getJob(input.id) }
+  })
+
+const jobsCancel = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { cancelJob } = await import('./jobs')
+    return { job: cancelJob(input.id) }
+  })
+
+const jobsPause = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { pauseJob } = await import('./jobs')
+    return { job: pauseJob(input.id) }
+  })
+
+const jobsResume = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { resumeJob } = await import('./jobs')
+    return { job: resumeJob(input.id) }
+  })
+
+// =============================================================================
+// TERMINAL HARNESS
+// =============================================================================
+
+const terminalConfigGet = t.procedure.action(async () => {
+  const { getTerminalHarnessConfig } = await import('./terminal/config')
+  return await getTerminalHarnessConfig()
+})
+
+const terminalConfigSave = t.procedure
+  .input<Partial<TerminalHarnessConfig>>()
+  .action(async ({ input }) => {
+    const { saveTerminalHarnessConfig } = await import('./terminal/config')
+    return await saveTerminalHarnessConfig(input)
+  })
+
+const terminalOpenCli = t.procedure
+  .input<{ command?: string; cwd?: string } | undefined>()
+  .action(async ({ input }) => {
+    const { openCliInSystemTerminal } = await import('./terminal/harness')
+    return await openCliInSystemTerminal(input ?? {})
+  })
+
+const terminalSessionsList = t.procedure.action(async () => {
+  const { listTerminalSessions } = await import('./terminal/sessions')
+  return { sessions: listTerminalSessions() }
+})
+
+const terminalSessionsStart = t.procedure
+  .input<{ cwd?: string } | undefined>()
+  .action(async ({ input }) => {
+    const { startTerminalSession } = await import('./terminal/sessions')
+    return { session: startTerminalSession(input ?? {}) }
+  })
+
+const terminalSessionsGet = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { getTerminalSession } = await import('./terminal/sessions')
+    return { session: getTerminalSession(input.id) }
+  })
+
+const terminalSessionsWrite = t.procedure
+  .input<{ id: string; data: string }>()
+  .action(async ({ input }) => {
+    const { writeTerminalSession } = await import('./terminal/sessions')
+    return { session: writeTerminalSession(input.id, input.data) }
+  })
+
+const terminalSessionsResize = t.procedure
+  .input<{ id: string; cols: number; rows: number }>()
+  .action(async ({ input }) => {
+    const { resizeTerminalSession } = await import('./terminal/sessions')
+    return { session: resizeTerminalSession(input.id, input.cols, input.rows) }
+  })
+
+const terminalSessionsKill = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { killTerminalSession } = await import('./terminal/sessions')
+    return { session: killTerminalSession(input.id) }
+  })
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -4808,13 +4941,18 @@ export const router = {
   'knowledge.listarFontes': knowledgeListarFontes,
   'knowledge.stats': knowledgeStats,
   'knowledge.escolherArquivo': knowledgeEscolherArquivo,
+  'knowledge.escolherPasta': knowledgeEscolherPasta,
   'knowledge.importar': knowledgeImportar,
+  'knowledge.bulkImport.start': knowledgeBulkImportStart,
   'knowledge.removerFonte': knowledgeRemoverFonte,
   'knowledge.toggleAtivo': knowledgeToggleAtivo,
   'knowledge.obterTextoOriginal': knowledgeObterTextoOriginal,
   'knowledge.extrairTexto': knowledgeExtrairTexto,
   'knowledge.gerarMetadataIa': knowledgeGerarMetadataIa,
   'knowledge.importarCompleto': knowledgeImportarCompleto,
+  'knowledge.enrichmentConfig.get': knowledgeEnrichmentConfigGet,
+  'knowledge.enrichmentConfig.save': knowledgeEnrichmentConfigSave,
+  'knowledge.enrichmentModels.list': knowledgeEnrichmentModelsList,
   'knowledge.enrich': knowledgeEnrich,
   'knowledge.rebuildGraph': knowledgeRebuildGraph,
   'knowledge.graphStats': knowledgeGraphStats,
@@ -4834,10 +4972,26 @@ export const router = {
   'backup.snapshots.restaurarPreRestore': backupSnapshotsRestaurarPreRestore,
   'backup.snapshots.deletar': backupSnapshotsDeletar,
   'backup.pasta.escolher': backupPastaEscolher,
+  // Jobs
+  'jobs.list': jobsList,
+  'jobs.get': jobsGet,
+  'jobs.cancel': jobsCancel,
+  'jobs.pause': jobsPause,
+  'jobs.resume': jobsResume,
   // MCP
   'mcp.path': mcpPath,
   'mcp.connectClaudeCode': mcpConnectClaudeCode,
   'mcp.configJson': mcpConfigJson,
+  // Terminal
+  'terminal.config.get': terminalConfigGet,
+  'terminal.config.save': terminalConfigSave,
+  'terminal.openCli': terminalOpenCli,
+  'terminal.sessions.list': terminalSessionsList,
+  'terminal.sessions.start': terminalSessionsStart,
+  'terminal.sessions.get': terminalSessionsGet,
+  'terminal.sessions.write': terminalSessionsWrite,
+  'terminal.sessions.resize': terminalSessionsResize,
+  'terminal.sessions.kill': terminalSessionsKill,
 }
 
 export type Router = typeof router

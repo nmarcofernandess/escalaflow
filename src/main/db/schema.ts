@@ -5,6 +5,11 @@ import { queryOne, queryAll, execute, execDDL, transaction } from './query'
 // ============================================================================
 
 const DDL = `
+CREATE TABLE IF NOT EXISTS config (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS empresa (
     id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
@@ -333,12 +338,23 @@ CREATE TABLE IF NOT EXISTS ia_memorias (
 // ============================================================================
 
 const DDL_V7_KNOWLEDGE = `
+CREATE TABLE IF NOT EXISTS knowledge_groups (
+  id SERIAL PRIMARY KEY,
+  nome TEXT NOT NULL,
+  descricao TEXT,
+  origem TEXT NOT NULL DEFAULT 'usuario',
+  metadata JSONB DEFAULT '{}',
+  criada_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  atualizada_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_sources (
   id SERIAL PRIMARY KEY,
   tipo TEXT NOT NULL DEFAULT 'manual'
-    CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario')),
+    CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario', 'importacao_conversa', 'session')),
   titulo TEXT NOT NULL,
   conteudo_original TEXT NOT NULL,
+  group_id INTEGER REFERENCES knowledge_groups(id) ON DELETE SET NULL,
   metadata JSONB DEFAULT '{}',
   importance TEXT NOT NULL DEFAULT 'high'
     CHECK (importance IN ('high', 'low')),
@@ -361,6 +377,39 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_tsv ON knowledge_chunks USING gin(search_tsv);
 CREATE INDEX IF NOT EXISTS idx_chunks_trgm ON knowledge_chunks USING gin(conteudo gin_trgm_ops);
+
+CREATE TABLE IF NOT EXISTS knowledge_import_jobs (
+  id SERIAL PRIMARY KEY,
+  group_id INTEGER NOT NULL REFERENCES knowledge_groups(id) ON DELETE CASCADE,
+  root_path TEXT NOT NULL,
+  recursive BOOLEAN NOT NULL DEFAULT TRUE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'scanning', 'importing', 'embedding', 'enriching', 'paused', 'done', 'failed', 'cancelled')),
+  total_files INTEGER NOT NULL DEFAULT 0,
+  processed_files INTEGER NOT NULL DEFAULT 0,
+  failed_files INTEGER NOT NULL DEFAULT 0,
+  total_bytes BIGINT NOT NULL DEFAULT 0,
+  processed_bytes BIGINT NOT NULL DEFAULT 0,
+  chunks_created INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT,
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_import_files (
+  id SERIAL PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES knowledge_import_jobs(id) ON DELETE CASCADE,
+  source_id INTEGER REFERENCES knowledge_sources(id) ON DELETE SET NULL,
+  path TEXT NOT NULL,
+  relative_path TEXT NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  mtime_ms BIGINT NOT NULL DEFAULT 0,
+  sha256 TEXT,
+  mime_type TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'reading', 'chunking', 'embedding', 'done', 'failed', 'skipped')),
+  error_message TEXT
+);
 
 CREATE TABLE IF NOT EXISTS knowledge_entities (
   id SERIAL PRIMARY KEY,
@@ -385,6 +434,22 @@ CREATE TABLE IF NOT EXISTS knowledge_relations (
 );
 CREATE INDEX IF NOT EXISTS idx_relations_from ON knowledge_relations(entity_from_id);
 CREATE INDEX IF NOT EXISTS idx_relations_to ON knowledge_relations(entity_to_id);
+`
+
+const DDL_TERMINAL_HARNESS = `
+CREATE TABLE IF NOT EXISTS terminal_command_log (
+  id SERIAL PRIMARY KEY,
+  source TEXT NOT NULL DEFAULT 'api',
+  command TEXT NOT NULL,
+  cwd TEXT NOT NULL,
+  status TEXT NOT NULL
+    CHECK (status IN ('executed', 'failed')),
+  exit_code INTEGER,
+  timed_out BOOLEAN NOT NULL DEFAULT FALSE,
+  output_preview TEXT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
 `
 
 // ============================================================================
@@ -944,6 +1009,7 @@ async function migrateSchema(): Promise<void> {
   await execute(`DELETE FROM regra_definicao WHERE codigo = 'H3_DOM_MAX_CONSEC'`)
 
   // --- v28: enrichment tracking + metadata ---
+  await addColumnIfMissing('knowledge_sources', 'group_id', 'INTEGER REFERENCES knowledge_groups(id) ON DELETE SET NULL')
   await addColumnIfMissing('knowledge_chunks', 'enriched_at', 'TIMESTAMPTZ')
   await addColumnIfMissing('knowledge_chunks', 'enrichment_json', 'TEXT')
 
@@ -960,7 +1026,7 @@ async function migrateSchema(): Promise<void> {
   try {
     await execDDL(`ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_tipo_check`)
     await execDDL(`ALTER TABLE knowledge_sources ADD CONSTRAINT knowledge_sources_tipo_check
-      CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario', 'session'))`)
+      CHECK (tipo IN ('manual', 'auto_capture', 'sistema', 'importacao_usuario', 'importacao_conversa', 'session'))`)
   } catch {
     // safe to ignore
   }
@@ -1001,6 +1067,7 @@ export async function createTables(): Promise<void> {
   await execDDL(DDL_V6_REGRAS)
   await execDDL(DDL_V8_MEMORIAS)
   await execDDL(DDL_V7_KNOWLEDGE)
+  await execDDL(DDL_TERMINAL_HARNESS)
   await execDDL(DDL_CONFIGURACAO_BACKUP)
   await migrateSchema()
   console.log('[DB] Tabelas criadas com sucesso (v29)')

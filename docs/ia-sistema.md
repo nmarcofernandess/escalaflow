@@ -6,6 +6,9 @@
 
 ---
 
+> Fluxo operacional de IA, readiness, RAG em massa, enrichment, CLI e Terminal:
+> [`docs/ia-rag-cli-terminal.md`](./ia-rag-cli-terminal.md).
+
 ## 1. Visao Geral
 
 **EscalaFlow** e um app desktop offline (Electron 34) para geracao automatica de escalas de trabalho em supermercados. Desenvolvido para gestores de RH — usuarios nao tecnicos.
@@ -21,7 +24,7 @@
 | Database | PGlite (Postgres 17 WASM, pgvector, FTS portugues, pg_trgm) |
 | Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) — multi-pass legal-first com modos OFFICIAL/EXPLORATORY |
 | Frontend | React 19 + Vite + Tailwind + shadcn/ui + Zustand + recharts |
-| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local via node-llama-cpp (Qwen 3.5) — 30 tools |
+| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local Gemma 4 via `llama-server`/fallback node-llama-cpp — 30 tools |
 | Knowledge | RAG local: embeddings ONNX (multilingual-e5-small) + pgvector + Knowledge Graph |
 
 ### Fluxo macro

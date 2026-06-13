@@ -1,7 +1,30 @@
 import { request } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { IA_TOOLS } from '../../src/main/ia/tools'
 import { startToolServer, stopToolServer } from '../../src/main/tool-server'
+
+let baseUrl = ''
+let toolPort = 0
+
+vi.mock('../../src/main/db/query', () => ({
+  queryOne: vi.fn(async () => ({
+    provider: 'local',
+    modelo: 'gemma-4-e2b-it-q4',
+    ativo: true,
+  })),
+  execute: vi.fn(async () => undefined),
+}))
+
+vi.mock('../../src/main/ia/readiness', () => ({
+  getIaChatReadiness: vi.fn(async () => ({
+    ok: true,
+    provider: 'local',
+    model: 'gemma-4-e2b-it-q4',
+    reason: 'ready',
+    message: 'IA local pronta.',
+  })),
+}))
 
 vi.mock('../../src/main/ia/cliente', () => ({
   iaEnviarMensagem: vi.fn(async (message: string) => ({
@@ -39,13 +62,22 @@ vi.mock('../../src/main/motor/solver-bridge', () => ({
   })),
 }))
 
-const BASE = 'http://127.0.0.1:17380'
+async function startIsolatedToolServer(): Promise<void> {
+  const server = startToolServer({ port: 0 })
+  await new Promise<void>((resolve, reject) => {
+    server.once('listening', resolve)
+    server.once('error', reject)
+  })
+  const address = server.address() as AddressInfo
+  toolPort = address.port
+  baseUrl = `http://127.0.0.1:${toolPort}`
+}
 
 async function waitForHealth(): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < 3000) {
     try {
-      const res = await fetch(`${BASE}/health`)
+      const res = await fetch(`${baseUrl}/health`)
       if (res.ok) return
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 50))
@@ -58,7 +90,7 @@ async function requestWithHost(pathname: string, host: string): Promise<{ status
   return new Promise((resolve, reject) => {
     const req = request({
       host: '127.0.0.1',
-      port: 17380,
+      port: toolPort,
       path: pathname,
       method: 'GET',
       headers: { Host: host },
@@ -80,14 +112,16 @@ async function requestWithHost(pathname: string, host: string): Promise<{ status
 describe('EscalaFlow tool server contract', () => {
   afterEach(() => {
     stopToolServer()
+    baseUrl = ''
+    toolPort = 0
     vi.clearAllMocks()
   })
 
   it('returns expanded health', async () => {
-    startToolServer()
+    await startIsolatedToolServer()
     await waitForHealth()
 
-    const res = await fetch(`${BASE}/health`)
+    const res = await fetch(`${baseUrl}/health`)
     const body = await res.json()
 
     expect(res.status).toBe(200)
@@ -102,7 +136,7 @@ describe('EscalaFlow tool server contract', () => {
   })
 
   it('rejects non-loopback Host headers', async () => {
-    startToolServer()
+    await startIsolatedToolServer()
     await waitForHealth()
 
     const { status, body } = await requestWithHost('/health', 'evil.example.com')
@@ -112,10 +146,10 @@ describe('EscalaFlow tool server contract', () => {
   })
 
   it('runs chat endpoint', async () => {
-    startToolServer()
+    await startIsolatedToolServer()
     await waitForHealth()
 
-    const res = await fetch(`${BASE}/chat`, {
+    const res = await fetch(`${baseUrl}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'oi', stream: false }),
@@ -127,10 +161,10 @@ describe('EscalaFlow tool server contract', () => {
   })
 
   it('runs solver preflight endpoint', async () => {
-    startToolServer()
+    await startIsolatedToolServer()
     await waitForHealth()
 
-    const res = await fetch(`${BASE}/solver/preflight`, {
+    const res = await fetch(`${baseUrl}/solver/preflight`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ setor_id: 2, data_inicio: '2026-07-01', data_fim: '2026-07-31' }),
@@ -142,10 +176,10 @@ describe('EscalaFlow tool server contract', () => {
   })
 
   it('runs solver generate endpoint in summary mode', async () => {
-    startToolServer()
+    await startIsolatedToolServer()
     await waitForHealth()
 
-    const res = await fetch(`${BASE}/solver/generate`, {
+    const res = await fetch(`${baseUrl}/solver/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ setor_id: 2, data_inicio: '2026-07-01', data_fim: '2026-07-31', summary: true }),

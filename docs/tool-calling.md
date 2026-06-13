@@ -2,6 +2,9 @@
 
 ---
 
+Para o fluxo operacional completo de readiness, CLI, RAG em massa, enrichment e
+Terminal Harness, veja [`docs/ia-rag-cli-terminal.md`](./ia-rag-cli-terminal.md).
+
 ## Por que fizemos isso
 
 A IA do EscalaFlow tinha **30 tools atomicas** expostas ao LLM. Cada tool era 1:1 com uma operacao de banco: `criar`, `atualizar`, `deletar`, `salvar_posto_setor`, `salvar_regra_horario_colaborador`, etc.

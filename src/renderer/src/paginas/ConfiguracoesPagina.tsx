@@ -28,6 +28,7 @@ import {
   Copy,
   ClipboardCheck,
   History,
+  Database,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -48,6 +49,7 @@ import { useAppVersion } from '@/hooks/useAppVersion'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { servicoIaLocal } from '@/servicos/iaLocal'
+import { servicoConhecimento } from '@/servicos/conhecimento'
 import { Progress } from '@/components/ui/progress'
 import { IaModelPill } from '@/componentes/IaModelPill'
 
@@ -58,6 +60,8 @@ import type {
   IaModelCatalogItem,
   IaModelCatalogResult,
   IaOpenRouterFreeModelsTestResult,
+  KnowledgeEnrichmentConfig,
+  KnowledgeEnrichmentModelOption,
 } from '@shared/types'
 import { IaModelCatalogPicker } from '@/componentes/IaModelCatalogPicker'
 import { TimeMachineModal } from '@/componentes/TimeMachineModal'
@@ -222,6 +226,120 @@ function McpCard() {
         {status && (
           <p className="text-sm text-muted-foreground">{status}</p>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function KnowledgeEnrichmentCard() {
+  const [config, setConfig] = useState<KnowledgeEnrichmentConfig | null>(null)
+  const [models, setModels] = useState<KnowledgeEnrichmentModelOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  async function reload() {
+    setLoading(true)
+    try {
+      const [nextConfig, nextModels] = await Promise.all([
+        servicoConhecimento.enrichmentConfig(),
+        servicoConhecimento.listarEnrichmentModels(),
+      ])
+      setConfig(nextConfig)
+      setModels(nextModels)
+    } catch (err: any) {
+      toast.error('Erro ao carregar enrichment do RAG', { description: err?.message })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void reload()
+  }, [])
+
+  async function savePatch(patch: Partial<KnowledgeEnrichmentConfig>) {
+    if (!config) return
+    setSaving(true)
+    try {
+      const saved = await servicoConhecimento.salvarEnrichmentConfig({ ...config, ...patch })
+      setConfig(saved)
+      toast.success('Configuração de enrichment salva.')
+    } catch (err: any) {
+      toast.error('Erro ao salvar enrichment', { description: err?.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const selected = config ? `${config.provider}:${config.modelo}` : 'auto:auto'
+  const unavailable = models.filter((model) => !model.available)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Database className="h-5 w-5" />
+          Enriquecimento do RAG
+        </CardTitle>
+        <CardDescription>
+          Escolha se importações em massa devem enriquecer chunks automaticamente e qual IA deve fazer isso.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div>
+            <p className="text-sm font-medium">Enriquecer após importação</p>
+            <p className="text-xs text-muted-foreground">Quando desligado, você ainda pode enriquecer manualmente na Memória.</p>
+          </div>
+          <Switch
+            checked={Boolean(config?.auto_enrich_after_import)}
+            disabled={!config || loading || saving}
+            onCheckedChange={(checked) => savePatch({ auto_enrich_after_import: checked })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Modelo de enrichment</Label>
+          <select
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={selected}
+            disabled={!config || loading || saving}
+            onChange={(event) => {
+              const [provider, modelo] = event.target.value.split(':')
+              if (provider === 'auto') {
+                void savePatch({ provider: 'auto', modelo: 'auto' })
+              } else {
+                void savePatch({
+                  provider: provider as KnowledgeEnrichmentConfig['provider'],
+                  modelo,
+                })
+              }
+            }}
+          >
+            <option value="auto:auto">Automático: priorizar IA local disponível</option>
+            {models.map((model) => (
+              <option key={`${model.provider}:${model.modelo}`} value={`${model.provider}:${model.modelo}`}>
+                {model.provider} / {model.label}{model.available ? '' : ' (indisponível)'}
+              </option>
+            ))}
+          </select>
+          {unavailable.length > 0 && (
+            <div className="space-y-1 text-xs text-muted-foreground">
+              {unavailable.slice(0, 3).map((model) => (
+                <p key={`${model.provider}:${model.modelo}`}>
+                  {model.provider}/{model.label}: {model.reason}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={reload} disabled={loading || saving}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Atualizar modelos
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
@@ -1081,6 +1199,8 @@ export function ConfiguracoesPagina() {
 
         {/* Claude Code MCP */}
         <McpCard />
+
+        <KnowledgeEnrichmentCard />
 
         {/* Assistente IA e IA Local — sempre visíveis */}
         <Card>

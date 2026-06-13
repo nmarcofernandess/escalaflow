@@ -932,6 +932,7 @@ export interface KnowledgeSource {
   tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario' | 'session'
   titulo: string
   conteudo_original: string
+  group_id?: number | null
   metadata: Record<string, unknown>
   importance: 'high' | 'low'
   ativo: boolean
@@ -973,11 +974,120 @@ export interface KnowledgeRelation {
 
 export type IaProviderId = 'gemini' | 'openrouter' | 'local'
 
+export type KnowledgeEnrichmentProvider = 'auto' | 'local' | 'gemini' | 'openrouter'
+
+export interface KnowledgeEnrichmentConfig {
+  auto_enrich_after_import: boolean
+  provider: KnowledgeEnrichmentProvider
+  modelo: string
+  force_all_default: boolean
+}
+
+export interface KnowledgeEnrichmentModelOption {
+  provider: Exclude<KnowledgeEnrichmentProvider, 'auto'>
+  modelo: string
+  label: string
+  available: boolean
+  reason?: string
+}
+
+export interface BulkRagImportInput {
+  path: string
+  group_name: string
+  auto_enrich?: boolean
+  recursive?: boolean
+  filters?: string[]
+}
+
+export interface BulkRagImportSummary {
+  group_id: number
+  import_job_id: number
+  group_name: string
+  root_path: string
+  scanned_files: number
+  imported_files: number
+  skipped_files: number
+  failed_files: number
+  chunks_count: number
+  conversations_count: number
+  errors: Array<{ path: string; message: string }>
+}
+
+export interface KnowledgeGroup {
+  id: number
+  nome: string
+  descricao: string | null
+  origem: string
+  metadata: Record<string, unknown>
+  criada_em: string
+  atualizada_em: string
+}
+
+export type KnowledgeImportJobStatus =
+  | 'pending'
+  | 'scanning'
+  | 'importing'
+  | 'embedding'
+  | 'enriching'
+  | 'paused'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+
+export interface KnowledgeImportJob {
+  id: number
+  group_id: number
+  root_path: string
+  recursive: boolean
+  status: KnowledgeImportJobStatus
+  total_files: number
+  processed_files: number
+  failed_files: number
+  total_bytes: number
+  processed_bytes: number
+  chunks_created: number
+  error_message: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+
+export type KnowledgeImportFileStatus =
+  | 'pending'
+  | 'reading'
+  | 'chunking'
+  | 'embedding'
+  | 'done'
+  | 'failed'
+  | 'skipped'
+
+export interface KnowledgeImportFile {
+  id: number
+  job_id: number
+  source_id: number | null
+  path: string
+  relative_path: string
+  size_bytes: number
+  mtime_ms: number
+  sha256: string | null
+  mime_type: string | null
+  status: KnowledgeImportFileStatus
+  error_message: string | null
+}
+
 export interface IaLocalStatus {
   modelos: Record<string, {
     baixado: boolean
     tamanho_bytes: number
     tamanho_atual_bytes?: number
+    usable?: boolean
+    requires_validation?: boolean
+    load_error?: string
+    validated_at?: string
+    download_status?: 'idle' | 'downloading' | 'cancelled' | 'failed' | 'done'
+    download_progresso?: number
+    download_bytes_total?: number
+    download_bytes_feitos?: number
+    download_error?: string
   }>
   modelo_ativo?: string
   modelo_carregado: boolean
@@ -1032,6 +1142,8 @@ export type IaCapabilityStatus =
   | 'ready_local'
   | 'missing_cloud_token'
   | 'missing_local_model'
+  | 'local_model_needs_validation'
+  | 'local_model_error'
 
 export interface IaCapabilityModel {
   id: string
@@ -1062,8 +1174,92 @@ export interface IaCapabilities {
   can_test_connection: boolean
   can_load_remote_catalog: boolean
   can_use_cloud_llm_features: boolean
-  reason?: 'configure_provider' | 'configure_cloud_token' | 'download_local_model'
+  gemini_cloud_api_enabled?: boolean
+  reason?: 'configure_provider' | 'configure_cloud_token' | 'download_local_model' | 'validate_local_model' | 'local_model_error'
   message: string
+}
+
+// ============================================================================
+// JOBS LOCAIS
+// ============================================================================
+
+export type JobStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled'
+
+export interface AppJob {
+  id: string
+  type: string
+  label: string
+  status: JobStatus
+  progress: {
+    total: number
+    done: number
+  }
+  metadata: Record<string, unknown>
+  error_message: string | null
+  created_at: string
+  updated_at: string
+  finished_at: string | null
+}
+
+// ============================================================================
+// TERMINAL HARNESS
+// ============================================================================
+
+export interface TerminalExecInput {
+  command: string
+  cwd?: string
+  timeout_ms?: number
+  max_output_chars?: number
+  env?: Record<string, string>
+}
+
+export interface TerminalExecResult {
+  command: string
+  cwd: string
+  exit_code: number | null
+  signal: string | null
+  stdout: string
+  stderr: string
+  duration_ms: number
+  timed_out: boolean
+  truncated?: boolean
+}
+
+export function isTerminalExecSuccess(result: Pick<TerminalExecResult, 'exit_code' | 'timed_out'>): boolean {
+  return result.exit_code === 0 && !result.timed_out
+}
+
+export interface TerminalHarnessConfig {
+  default_cwd: string
+  max_timeout_ms: number
+  max_output_chars: number
+}
+
+export type TerminalExecConfiguredResult = {
+  status: 'ok' | 'error'
+  result: TerminalExecResult
+  config: TerminalHarnessConfig
+}
+
+export interface TerminalOpenCliResult {
+  opened: boolean
+  command: string
+  cwd: string
+}
+
+export interface TerminalSessionInfo {
+  id: string
+  cwd: string
+  shell: string
+  status: 'running' | 'exited'
+  created_at: string
+  updated_at: string
+  exit_code?: number | null
+}
+
+export interface TerminalSessionSnapshot extends TerminalSessionInfo {
+  output: string
+  truncated: boolean
 }
 
 // ─── Backup / Maquina do Tempo ────────────────────────────────
