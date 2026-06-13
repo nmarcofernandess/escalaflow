@@ -2,6 +2,7 @@ import { client } from './client'
 import type {
   AppJob,
   BulkRagImportInput,
+  BulkRagImportStartResult,
   KnowledgeEnrichmentConfig,
   KnowledgeEnrichmentModelOption,
 } from '@shared/types'
@@ -35,7 +36,7 @@ export const servicoConhecimento = {
     client['knowledge.importar']({ caminho_arquivo }) as Promise<{ source_id: number; chunks_count: number; entities_count: number }>,
 
   iniciarBulkImport: (input: BulkRagImportInput) =>
-    client['knowledge.bulkImport.start'](input) as Promise<AppJob>,
+    client['knowledge.bulkImport.start'](input) as Promise<BulkRagImportStartResult>,
 
   listarJobs: () => client['jobs.list']() as Promise<{ jobs: AppJob[] }>,
 

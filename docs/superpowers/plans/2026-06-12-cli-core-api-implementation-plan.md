@@ -6,7 +6,7 @@
 
 **Architecture:** Implement FlowKit first as the pilot because it already has `src/cli/index.ts`, `src/main/tool-server.ts`, and `src/mcp/*`. Keep the desktop app as the API owner: the CLI calls the running app on `127.0.0.1`, and the app reuses its existing DB, IA config, discovery, tools, RAG, and local LLM lifecycle. Port the same contract to EscalaFlow after FlowKit passes tests, then add EscalaFlow-only solver endpoints and commands.
 
-**Tech Stack:** Electron main process, Node HTTP server, Commander CLI, Vitest, MCP SDK, PGlite, Vercel AI SDK, local `node-llama-cpp`, EscalaFlow OR-Tools bridge.
+**Tech Stack:** Electron main process, Node HTTP server, Commander CLI, Vitest, MCP SDK, PGlite, Vercel AI SDK, local Gemma 4 via `llama-server`, EscalaFlow OR-Tools bridge.
 
 ---
 

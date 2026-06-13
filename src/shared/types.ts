@@ -929,7 +929,7 @@ export interface IaMemoria {
 
 export interface KnowledgeSource {
   id: number
-  tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario' | 'session'
+  tipo: 'manual' | 'auto_capture' | 'sistema' | 'importacao_usuario' | 'importacao_conversa' | 'session'
   titulo: string
   conteudo_original: string
   group_id?: number | null
@@ -1011,6 +1011,11 @@ export interface BulkRagImportSummary {
   chunks_count: number
   conversations_count: number
   errors: Array<{ path: string; message: string }>
+}
+
+export interface BulkRagImportStartResult {
+  app_job: AppJob
+  import_job: KnowledgeImportJob
 }
 
 export interface KnowledgeGroup {

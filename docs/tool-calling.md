@@ -73,7 +73,10 @@ routeFamilyTool() mapeia para 'salvar_regra_horario_colaborador'
 executeTool('salvar_regra_horario_colaborador', args)  // mesmo handler de antes
 ```
 
-Se der merda, reverter = trocar 1 import em `cliente.ts`.
+Rollback completo exige trocar a surface em todos os pontos que falam com LLM:
+`cliente.ts`, `local-llm.ts`, `llama-server-runtime.ts`, system prompt e specs de
+tool routing. Trocar apenas 1 import em `cliente.ts` deixa o provider local em
+contrato diferente do cloud.
 
 ---
 
@@ -112,7 +115,7 @@ Os handlers dessas tools continuam no codigo para uso interno.
                     ┌────────────▼──────────────┐
                     │         LLM               │
                     │  Gemini / OpenRouter /     │
-                    │  Local (node-llama-cpp)    │
+                    │  Local (llama-server)      │
                     └────────────┬──────────────┘
                                  │
               ┌──────────────────┼──────────────────┐

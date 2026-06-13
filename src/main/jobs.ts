@@ -59,6 +59,7 @@ export function updateJob(id: string, patch: {
   const job = jobs.get(id)
   if (!job) throw new Error(`Job "${id}" nao encontrado.`)
   const currentIsTerminal = isTerminalStatus(job.status)
+  if (currentIsTerminal) return job
   const nextStatus = currentIsTerminal && patch.status && patch.status !== job.status
     ? job.status
     : (patch.status ?? job.status)

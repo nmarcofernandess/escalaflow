@@ -1,15 +1,29 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+import {
+  DEFAULT_TOOL_SERVER_URL,
+  parseMcpToolCatalogResponse,
+  resolveMcpToolServerUrl,
+} from '../../mcp-server/tool-server-client'
 
 describe('EscalaFlow MCP contract', () => {
-  it('keeps MCP as a proxy to the local tool server', () => {
-    const source = readFileSync(path.resolve(root, 'mcp-server/index.ts'), 'utf-8')
-    expect(source).toContain("const TOOL_URL = process.env.ESCALAFLOW_URL || 'http://127.0.0.1:17380'")
-    expect(source).toContain('fetch(`${TOOL_URL}/tools`)')
-    expect(source).toContain('fetch(`${TOOL_URL}/tool`')
+  it('resolves the local tool server URL with the new env taking precedence over the legacy one', () => {
+    expect(resolveMcpToolServerUrl({})).toBe(DEFAULT_TOOL_SERVER_URL)
+    expect(resolveMcpToolServerUrl({
+      ESCALAFLOW_URL: 'http://127.0.0.1:1111',
+    })).toBe('http://127.0.0.1:1111')
+    expect(resolveMcpToolServerUrl({
+      ESCALAFLOW_URL: 'http://127.0.0.1:1111',
+      ESCALAFLOW_TOOL_SERVER: 'http://127.0.0.1:2222',
+    })).toBe('http://127.0.0.1:2222')
+  })
+
+  it('accepts only a successful array catalog for /tools', () => {
+    const catalog = [{ name: 'consultar', description: 'Consulta', parameters: {} }]
+
+    expect(parseMcpToolCatalogResponse(catalog, 200)).toBe(catalog)
+    expect(() => parseMcpToolCatalogResponse({ status: 'error', message: 'token invalido' }, 401))
+      .toThrow('Falha ao carregar tools (HTTP 401): token invalido')
+    expect(() => parseMcpToolCatalogResponse({ tools: catalog }, 200))
+      .toThrow('Catalogo de tools invalido recebido do EscalaFlow.')
   })
 })

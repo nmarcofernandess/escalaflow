@@ -12,11 +12,13 @@ import { runAdvisory } from './motor/advisory-controller'
 import { inferGenerationModeForOverrides } from './motor/rule-policy'
 import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
+import { assertIaCanChat } from './ia/readiness'
 import { normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
 import { persistirAjusteResult, persistirResumoAutoritativoEscala } from './tipc/escalas-utils'
 import { atualizarEscalaEquipeSnapshot } from './escala-equipe-snapshot'
 import { deletarFuncao, salvarDetalheFuncao } from './funcoes-service'
 import { resolveMcpPath, isMcpSource } from './mcp-path'
+import { getOrCreateToolServerToken } from '../node/tool-server-auth'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
@@ -2877,7 +2879,7 @@ function getProviderModel(config: any, provider: IaProviderKey): string {
     return config.modelo.trim()
   }
   if (provider === 'openrouter') return 'openrouter/free'
-  if (provider === 'local') return 'qwen3.5-9b'
+  if (provider === 'local') return 'gemma-4-e2b-it-q4'
   return 'gemini-3-flash-preview'
 }
 
@@ -3009,13 +3011,22 @@ async function getIaCapabilities(rawConfig?: any): Promise<import('@shared/index
 
   const localModels = dedupeCapabilityModels(
     (Object.entries(LOCAL_MODELS) as Array<[string, typeof LOCAL_MODELS[keyof typeof LOCAL_MODELS]]>).map(([modelId, model]) => {
-      const downloaded = Boolean(localStatus.modelos[modelId]?.baixado)
+      const status = localStatus.modelos[modelId]
+      const downloaded = Boolean(status?.baixado)
+      const usable = Boolean(status?.usable)
+      const loadError = status?.load_error
       return {
         id: modelId,
         label: model.label,
-        available: downloaded,
-        disabled: !downloaded,
-        reason: downloaded ? undefined : 'Modelo não instalado.',
+        available: usable,
+        disabled: !usable,
+        reason: usable
+          ? undefined
+          : loadError
+            ? `Modelo falhou ao carregar: ${loadError}`
+            : downloaded
+              ? 'Modelo baixado, mas precisa passar em Testar conexão.'
+              : 'Modelo não instalado.',
       }
     })
   )
@@ -3269,8 +3280,7 @@ async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProvi
       provider: 'local',
       source: 'static' as const,
       models: [
-        { id: 'qwen3.5-9b', label: 'Qwen 3.5 9B', provider: 'local' as const, source: 'static' as const, description: 'Melhor qualidade de respostas e tool calling. 8GB+ RAM.', supports_tools: true },
-        { id: 'qwen3.5-4b', label: 'Qwen 3.5 4B', provider: 'local' as const, source: 'static' as const, description: 'Mais rápido e leve. 4GB+ RAM.', supports_tools: true },
+        { id: 'gemma-4-e2b-it-q4', label: 'Gemma 4 E2B IT', provider: 'local' as const, source: 'static' as const, description: 'Modelo local padrão para chat, tool calling e enrichment. Requer validação com llama-server compatível.', supports_tools: true },
       ],
       fetched_at: new Date().toISOString(),
       cached: false,
@@ -3347,13 +3357,14 @@ const iaConfiguracaoTestar = t.procedure
   .action(async ({ input }) => {
     try {
       if (input.provider === 'local') {
-        const { getLocalStatus } = await import('./ia/local-llm')
-        const status = getLocalStatus()
-        const algumBaixado = Object.values(status.modelos).some(m => m.baixado)
-        if (!algumBaixado) {
-          throw new Error('Nenhum modelo local baixado. Baixe um modelo em Configurações > IA Local.')
+        const { validateLocalModel, LOCAL_MODELS, getLocalStatus } = await import('./ia/local-llm')
+        const modelId = input.modelo as keyof typeof LOCAL_MODELS
+        if (!LOCAL_MODELS[modelId]) {
+          throw new Error(`Modelo local "${input.modelo}" não existe no catálogo local.`)
         }
-        return { sucesso: true, mensagem: `Modelo local disponível. GPU: ${status.gpu_detectada || 'cpu'}` }
+        await validateLocalModel(modelId)
+        const status = getLocalStatus()
+        return { sucesso: true, mensagem: `Modelo local validado: ${LOCAL_MODELS[modelId].label}. GPU: ${status.gpu_detectada || 'cpu'}` }
       }
 
       if (input.provider === 'openrouter') {
@@ -3578,6 +3589,7 @@ const iaChatLerAnexoPreview = t.procedure
 const iaChatEnviar = t.procedure
   .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[]; contexto?: import('@shared/index').IaContexto; stream_id?: string; conversa_id?: string; anexos?: import('@shared/index').IaAnexo[] }>()
   .action(async ({ input }) => {
+    await assertIaCanChat()
     if (input.stream_id) {
       return await iaEnviarMensagemStream(input.mensagem, input.historico, input.stream_id, input.contexto, input.conversa_id, input.anexos)
     }
@@ -4246,7 +4258,7 @@ const knowledgeBulkImportStart = t.procedure
   .input<{ path: string; group_name: string; auto_enrich?: boolean; recursive?: boolean; filters?: string[] }>()
   .action(async ({ input }) => {
     const { startBulkRagImport } = await import('./knowledge/bulk-import')
-    return startBulkRagImport(input)
+    return await startBulkRagImport(input)
   })
 
 const knowledgeEnrichmentConfigGet = t.procedure.action(async () => {
@@ -4659,8 +4671,22 @@ const mcpConnectClaudeCode = t.procedure.action(async () => {
   try {
     const resolved = resolveMcpPath()
     const isSource = isMcpSource(resolved)
+    const token = getOrCreateToolServerToken()
 
-    const args = ['mcp', 'add', 'escalaflow', '--transport', 'stdio', '--scope', 'user', '--']
+    const args = [
+      'mcp',
+      'add',
+      'escalaflow',
+      '--transport',
+      'stdio',
+      '--scope',
+      'user',
+      '-e',
+      `ESCALAFLOW_TOOL_SERVER_TOKEN=${token}`,
+      '-e',
+      'ESCALAFLOW_TOOL_SERVER=http://127.0.0.1:17380',
+      '--',
+    ]
     if (isSource) {
       args.push('npx', 'tsx', resolved)
     } else {
@@ -4686,8 +4712,21 @@ const mcpConfigJson = t.procedure.action(async () => {
     const config: Record<string, unknown> = {
       mcpServers: {
         escalaflow: isSource
-          ? { command: 'npx', args: ['tsx', resolved] }
-          : { command: resolved }
+          ? {
+              command: 'npx',
+              args: ['tsx', resolved],
+              env: {
+                ESCALAFLOW_TOOL_SERVER: 'http://127.0.0.1:17380',
+                ESCALAFLOW_TOOL_SERVER_TOKEN: getOrCreateToolServerToken(),
+              },
+            }
+          : {
+              command: resolved,
+              env: {
+                ESCALAFLOW_TOOL_SERVER: 'http://127.0.0.1:17380',
+                ESCALAFLOW_TOOL_SERVER_TOKEN: getOrCreateToolServerToken(),
+              },
+            }
       }
     }
     return { json: JSON.stringify(config, null, 2) }

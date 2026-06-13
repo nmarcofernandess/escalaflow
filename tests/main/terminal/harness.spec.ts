@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +7,7 @@ import {
   readHarnessFile,
   buildOpenCliShellCommand,
   runTerminalCommand,
+  runTerminalCommandWithConfig,
   startTerminalCommand,
   writeHarnessFile,
 } from '../../../src/main/terminal/harness'
@@ -21,6 +22,7 @@ import { cancelJob, getJob, resetJobsForTests } from '../../../src/main/jobs'
 
 vi.mock('../../../src/main/db/query', () => ({
   execute: vi.fn(async () => undefined),
+  queryOne: vi.fn(async () => undefined),
 }))
 
 describe('terminal harness', () => {
@@ -111,6 +113,33 @@ describe('terminal harness', () => {
     throw new Error('terminal job did not finish')
   })
 
+  it('organizes local files into a folder and records the audit row', async () => {
+    await writeFile(path.join(tmpDir, 'nota.txt'), 'nota')
+    await writeFile(path.join(tmpDir, 'print.png'), 'png')
+    await writeFile(path.join(tmpDir, 'agenda.pdf'), 'pdf')
+
+    const result = await runTerminalCommandWithConfig({
+      command: 'mkdir -p Organizados && mv nota.txt print.png agenda.pdf Organizados/ && find Organizados -maxdepth 1 -type f -exec basename {} \\; | sort',
+      cwd: tmpDir,
+      timeout_ms: 5_000,
+    }, 'test')
+
+    expect(result.status).toBe('ok')
+    expect(result.result.exit_code).toBe(0)
+    expect(result.result.stdout.trim().split('\n')).toEqual(['agenda.pdf', 'nota.txt', 'print.png'])
+    await expect(readdir(path.join(tmpDir, 'Organizados')).then((files) => files.sort())).resolves.toEqual(['agenda.pdf', 'nota.txt', 'print.png'])
+    expect(vi.mocked(execute)).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO terminal_command_log'),
+      'test',
+      expect.stringContaining('mkdir -p Organizados'),
+      tmpDir,
+      'executed',
+      0,
+      false,
+      expect.stringContaining('agenda.pdf'),
+    )
+  })
+
   it('marks failed async terminal jobs as failed', async () => {
     const job = startTerminalCommand({
       command: 'printf erro >&2; exit 42',
@@ -163,5 +192,9 @@ describe('terminal harness', () => {
     }
 
     throw new Error('terminal session did not capture pwd')
+  })
+
+  it('rejects interactive terminal sessions with invalid cwd before reporting running', () => {
+    expect(() => startTerminalSession({ cwd: path.join(tmpDir, 'missing') })).toThrow('Diretorio nao encontrado')
   })
 })

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { resolveToolServerUrl } from '../shared/tool-server-url'
 import { isTerminalExecSuccess } from '../shared/types'
+import { buildToolServerAuthHeaders } from '../node/tool-server-auth'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -13,6 +14,15 @@ const TOOL_SERVER = resolveToolServerUrl()
 
 const NOT_RUNNING_MSG =
   'EscalaFlow nao esta rodando. Abra o app primeiro.'
+
+function authHeaders(): Record<string, string> {
+  return buildToolServerAuthHeaders()
+}
+
+function authTokenForEnv(): string | null {
+  const authorization = authHeaders().Authorization
+  return authorization ? authorization.replace(/^Bearer\s+/i, '') : null
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,7 +58,7 @@ function formatServerError(status: number, text: string): string {
 
 async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${TOOL_SERVER}/health`)
+    const res = await fetch(`${TOOL_SERVER}/health`, { headers: authHeaders() })
     if (!res.ok) return false
     return true
   } catch (err: unknown) {
@@ -65,7 +75,7 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
   try {
     const res = await fetch(`${TOOL_SERVER}/tool`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ name, args })
     })
 
@@ -88,7 +98,7 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
 
 async function fetchJson(url: string): Promise<unknown> {
   try {
-    const res = await fetch(url)
+    const res = await fetch(url, { headers: authHeaders() })
     if (!res.ok) {
       const text = await res.text()
       console.error(formatServerError(res.status, text))
@@ -123,7 +133,7 @@ async function postJson(pathname: string, body: Record<string, unknown>): Promis
   try {
     const res = await fetch(`${TOOL_SERVER}${pathname}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
     })
     if (!res.ok) {
@@ -163,7 +173,7 @@ function isConnectionRefused(err: unknown): boolean {
 
 async function ensureChatReady(): Promise<void> {
   try {
-    const res = await fetch(`${TOOL_SERVER}/chat/preflight`)
+    const res = await fetch(`${TOOL_SERVER}/chat/preflight`, { headers: authHeaders() })
     const text = await res.text()
     if (res.ok) return
 
@@ -428,37 +438,51 @@ rag
       group_name: groupName,
       recursive: options.recursive !== false,
       ...(typeof options.enrich === 'boolean' ? { auto_enrich: options.enrich } : {}),
-    }) as { job?: { id: string; status: string } }
+    }) as {
+      app_job?: { id: string; status: string }
+      import_job?: {
+        id: number
+        status: string
+        processed_files?: number
+        total_files?: number
+        error_message?: string | null
+      }
+      job?: { id: string; status: string }
+    }
 
-    if (!data.job?.id) {
+    const appJob = data.app_job ?? data.job
+    const importJob = data.import_job
+    if (!appJob?.id || !importJob?.id) {
       console.error('Servidor nao retornou job de importacao.')
       process.exit(1)
     }
 
-    console.log(`Job iniciado: ${data.job.id} (${data.job.status})`)
+    console.log(`Job iniciado: app=${appJob.id} rag=${importJob.id} (${appJob.status})`)
 
     if (!options.wait) {
-      console.log(`Use: escalaflow jobs list  ou  escalaflow jobs cancel ${data.job.id}`)
+      console.log(`Use: escalaflow rag job ${importJob.id}  ou  escalaflow rag cancel ${importJob.id}`)
       return
     }
 
     while (true) {
-      const current = await fetchJson(`${TOOL_SERVER}/jobs/${encodeURIComponent(data.job.id)}`) as {
+      const current = await fetchJson(`${TOOL_SERVER}/rag/jobs/${encodeURIComponent(String(importJob.id))}`) as {
         job?: {
           status: string
-          progress?: { done: number; total: number }
-          metadata?: Record<string, unknown>
+          processed_files?: number
+          total_files?: number
+          chunks_created?: number
+          failed_files?: number
           error_message?: string | null
         }
       }
       const job = current.job
       if (!job) {
-        console.error(`Job "${data.job.id}" nao encontrado.`)
+        console.error(`Job RAG "${importJob.id}" nao encontrado.`)
         process.exit(1)
       }
 
-      const done = job.progress?.done ?? 0
-      const total = job.progress?.total ?? 0
+      const done = job.processed_files ?? 0
+      const total = job.total_files ?? 0
       process.stdout.write(`\r${job.status} ${done}/${total}`)
 
       if (['done', 'failed', 'cancelled'].includes(job.status)) {
@@ -660,6 +684,7 @@ program
   .command('config')
   .description('Imprime configuracao MCP local')
   .action(() => {
+    const token = authTokenForEnv()
     printJson({
       mcpServers: {
         escalaflow: {
@@ -668,6 +693,7 @@ program
           cwd: process.cwd(),
           env: {
             ESCALAFLOW_TOOL_SERVER: TOOL_SERVER,
+            ...(token ? { ESCALAFLOW_TOOL_SERVER_TOKEN: token } : {}),
           },
         },
       },

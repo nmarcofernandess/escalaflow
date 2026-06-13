@@ -93,7 +93,17 @@ export function findLlamaServerBinary(): string | null {
   ].filter(Boolean) as string[]
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate
+    try {
+      if (process.platform === 'win32') {
+        if (fs.existsSync(candidate)) return candidate
+      } else {
+        fs.accessSync(candidate, fs.constants.X_OK)
+        return candidate
+      }
+    } catch {
+      // Keep searching. A stale/non-executable candidate should surface as
+      // local_model_error readiness, not crash the main process during spawn.
+    }
   }
 
   return null
@@ -197,13 +207,20 @@ async function startRuntime(modelId: string, modelPath: string): Promise<Runtime
 
     child.stdout?.on('data', chunk => appendLog(state, chunk))
     child.stderr?.on('data', chunk => appendLog(state, chunk))
+    const spawnError = new Promise<never>((_, reject) => {
+      child.once('error', (error) => {
+        if (runtimeState === state) runtimeState = null
+        appendLog(state, Buffer.from(`spawn error: ${error.message}`))
+        reject(new Error(`llama-server nao iniciou: ${error.message}`))
+      })
+    })
     child.once('exit', (code, signal) => {
       if (runtimeState === state) runtimeState = null
       state.lastLogs.push(`process exited code=${code ?? 'null'} signal=${signal ?? 'null'}`)
     })
 
     runtimeState = state
-    await waitForHealth(state)
+    await Promise.race([waitForHealth(state), spawnError])
     return state
   })()
 

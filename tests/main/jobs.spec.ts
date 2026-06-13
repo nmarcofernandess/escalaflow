@@ -76,7 +76,7 @@ describe('jobs registry', () => {
     expect(failed.metadata.failed_files).toBe(1)
   })
 
-  it('keeps terminal job states terminal and invokes cancel handlers', () => {
+  it('keeps terminal job states immutable and invokes cancel handlers', () => {
     resetJobsForTests()
 
     const job = createJob({ type: 'test', label: 'Cancelable job', total: 1 })
@@ -99,7 +99,8 @@ describe('jobs registry', () => {
     expect(finishedAfterCancel.status).toBe('cancelled')
     expect(failedAfterCancel.status).toBe('cancelled')
     expect(patchedAfterCancel.status).toBe('cancelled')
-    expect(patchedAfterCancel.metadata.result).toBe('late metadata only')
+    expect(patchedAfterCancel.metadata.result).toBeUndefined()
+    expect(getJob(job.id)?.progress.done).toBe(0)
   })
 
   it('throws a direct error for missing jobs', () => {

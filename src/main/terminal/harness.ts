@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
-import { promises as fs, statSync } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import { execute } from '../db/query'
 import { createJob, failJob, finishJob, getJob, registerJobCancelHandler, updateJob } from '../jobs'
 import { getTerminalHarnessConfig } from './config'
+import { resolveExistingDirectory } from './paths'
 import { isTerminalExecSuccess } from '../../shared/types'
 import type {
   AppJob,
@@ -50,13 +51,6 @@ function shellArgs(command: string): { shell: string; args: string[] } {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
-}
-
-function validateDirectory(cwd: string): string {
-  const resolved = path.resolve(cwd)
-  const stat = statSync(resolved)
-  if (!stat.isDirectory()) throw new Error(`Diretorio nao encontrado: ${resolved}`)
-  return resolved
 }
 
 function normalizeInput(input: TerminalExecInput): TerminalExecInput & { cwd: string; timeout_ms: number } {
@@ -301,7 +295,7 @@ export function startTerminalCommand(input: TerminalExecInput, source = 'api'): 
 }
 
 export function buildOpenCliCommand(input?: { command?: string; cwd?: string }): TerminalOpenCliResult {
-  const cwd = validateDirectory(input?.cwd || process.cwd())
+  const cwd = resolveExistingDirectory(input?.cwd || process.cwd())
   const command = input?.command?.trim() || 'npm run cli -- chat --attach'
   return { opened: false, command, cwd }
 }
@@ -311,13 +305,42 @@ export function buildOpenCliShellCommand(input?: { command?: string; cwd?: strin
   return `cd ${shellQuote(base.cwd)} && ${base.command}`
 }
 
+async function spawnDetachedChecked(command: string, args: string[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'ignore', detached: true })
+    let settled = false
+    const settle = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      fn()
+    }
+    const timer = setTimeout(() => {
+      child.unref()
+      settle(resolve)
+    }, 700)
+
+    child.once('error', (error) => {
+      clearTimeout(timer)
+      settle(() => reject(error))
+    })
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer)
+      if (code === 0) {
+        settle(resolve)
+        return
+      }
+      settle(() => reject(new Error(`${command} encerrou antes de abrir o terminal (code=${code ?? 'null'}, signal=${signal ?? 'null'}).`)))
+    })
+  })
+}
+
 export async function openCliInSystemTerminal(input?: { command?: string; cwd?: string }): Promise<TerminalOpenCliResult> {
   const base = buildOpenCliCommand(input)
   const shellCommand = buildOpenCliShellCommand(base)
 
   if (process.platform === 'darwin') {
     const script = `tell application "Terminal" to do script ${JSON.stringify(shellCommand)}`
-    spawn('osascript', ['-e', script], { stdio: 'ignore', detached: true }).unref()
+    await spawnDetachedChecked('osascript', ['-e', script])
     return { ...base, opened: true }
   }
 
@@ -325,7 +348,7 @@ export async function openCliInSystemTerminal(input?: { command?: string; cwd?: 
   const args = process.platform === 'win32'
     ? ['/c', 'start', 'cmd.exe', '/k', shellCommand]
     : ['-e', shellCommand]
-  spawn(terminal, args, { stdio: 'ignore', detached: true }).unref()
+  await spawnDetachedChecked(terminal, args)
   return { ...base, opened: true }
 }
 

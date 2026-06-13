@@ -441,8 +441,18 @@ export async function enrichAllChunksWithModel(
   // 5. Processar batches
   let totalEnriched = 0
   let batchesFailed = 0
-  const allEntities: Array<{ nome: string; tipo: string }> = []
-  const allRelations: Array<{ from: string; to: string; tipo_relacao: string; peso: number }> = []
+  const graphByOrigem = new Map<'sistema' | 'usuario', {
+    entities: Array<{ nome: string; tipo: string }>
+    relations: Array<{ from: string; to: string; tipo_relacao: string; peso: number }>
+  }>()
+  const graphBucketFor = (sourceTipo: string) => {
+    const origem = sourceTipo === 'sistema' ? 'sistema' as const : 'usuario' as const
+    const existing = graphByOrigem.get(origem)
+    if (existing) return existing
+    const bucket = { entities: [], relations: [] }
+    graphByOrigem.set(origem, bucket)
+    return bucket
+  }
 
   for (let b = 0; b < batches.length; b++) {
     const batch = batches[b]
@@ -474,8 +484,9 @@ export async function enrichAllChunksWithModel(
       totalEnriched++
 
       // Acumular graph data
-      allEntities.push(...enriched.entidades)
-      allRelations.push(...enriched.relacoes)
+      const bucket = graphBucketFor(batch.sourceTipo)
+      bucket.entities.push(...enriched.entidades)
+      bucket.relations.push(...enriched.relacoes)
 
       // Adicionar novas entidades ao contexto pra próximos batches
       for (const e of enriched.entidades) {
@@ -488,13 +499,19 @@ export async function enrichAllChunksWithModel(
 
   // 7. Persistir graph acumulado
   onProgress?.({ fase: 'graph' })
-  console.log(`[enrichment] persistindo graph: ${allEntities.length} entidades, ${allRelations.length} relações`)
+  const totalGraphEntities = [...graphByOrigem.values()].reduce((sum, bucket) => sum + bucket.entities.length, 0)
+  const totalGraphRelations = [...graphByOrigem.values()].reduce((sum, bucket) => sum + bucket.relations.length, 0)
+  console.log(`[enrichment] persistindo graph: ${totalGraphEntities} entidades, ${totalGraphRelations} relações`)
 
-  // Determinar origem do graph pelo tipo mais comum
-  const origem = batches[0]?.sourceTipo === 'sistema' ? 'sistema' as const : 'usuario' as const
-  const graphResult = allEntities.length > 0
-    ? await persistEnrichmentGraph(allEntities, allRelations, origem)
-    : { entities_count: 0, relations_count: 0 }
+  let graphResult = { entities_count: 0, relations_count: 0 }
+  for (const [origem, bucket] of graphByOrigem) {
+    if (bucket.entities.length === 0) continue
+    const partial = await persistEnrichmentGraph(bucket.entities, bucket.relations, origem)
+    graphResult = {
+      entities_count: graphResult.entities_count + partial.entities_count,
+      relations_count: graphResult.relations_count + partial.relations_count,
+    }
+  }
 
   onProgress?.({
     fase: 'concluido',

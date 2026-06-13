@@ -43,7 +43,7 @@ interface IaModelConfig {
 const DEFAULTS: Record<IaProviderId, string> = {
   gemini: 'gemini-3-flash-preview',
   openrouter: 'openrouter/free',
-  local: 'qwen3.5-9b',
+  local: 'gemma-4-e2b-it-q4',
 }
 
 const MULTIMODAL_PATTERNS = ['claude-3', 'claude-sonnet-4', 'claude-opus-4', 'gpt-4o', 'gpt-4-turbo', 'gemini']

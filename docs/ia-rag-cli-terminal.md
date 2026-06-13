@@ -86,11 +86,13 @@ Parametros atuais:
 | `configure_cloud_token` | nao | informar API key/token |
 | `download_local_model` | nao | baixar modelo local |
 | `validate_local_model` | nao | testar conexao antes de usar |
+| `invalid_local_model_config` | nao | escolher um modelo do catalogo atual |
 | `local_model_error` | nao | remover/baixar novamente ou trocar provider |
 | `ready` | sim | provider/modelo pronto |
 
-O CLI e o chat app devem passar por readiness antes de aceitar mensagem. O
-`/health` tambem expõe esse estado para scripts e smoke tests.
+O CLI, o endpoint HTTP `/chat` e o IPC `ia.chat.enviar` passam por readiness
+antes de aceitar mensagem. O `/health` tambem expoe esse estado para scripts e
+smoke tests.
 
 ## RAG bulk import
 
@@ -248,7 +250,9 @@ Campos de auditoria:
 - `started_at`
 - `finished_at`
 
-Quando o LLM usa terminal, `source` deve ser `ia_tool`.
+Hoje o terminal harness e exposto para HTTP/CLI; esses comandos gravam
+`source = api` (ou o source explicito usado em testes internos). Nao existe
+tool publica de IA executando terminal diretamente neste pacote.
 
 ## Terminal nao e chat
 

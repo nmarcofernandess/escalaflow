@@ -9,6 +9,7 @@ export type IaChatReadinessReason =
   | 'download_local_model'
   | 'validate_local_model'
   | 'local_model_error'
+  | 'invalid_local_model_config'
   | 'ready'
 
 export interface IaChatReadiness {
@@ -37,6 +38,23 @@ function fail(
   }
 }
 
+function configuredLocalModelCandidates(config: IaConfiguracao): string[] {
+  const candidates = new Set<string>()
+  if (config.provider === 'local' && config.modelo?.trim()) candidates.add(config.modelo.trim())
+  if (config.provider_configs_json) {
+    try {
+      const parsed = typeof config.provider_configs_json === 'string'
+        ? JSON.parse(config.provider_configs_json)
+        : config.provider_configs_json
+      const localModel = parsed?.local?.modelo
+      if (typeof localModel === 'string' && localModel.trim()) candidates.add(localModel.trim())
+    } catch {
+      // resolveModel will still apply the safe default below.
+    }
+  }
+  return [...candidates]
+}
+
 export async function getIaChatReadiness(options: { validateLocal?: boolean } = {}): Promise<IaChatReadiness> {
   const config = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
 
@@ -52,7 +70,27 @@ export async function getIaChatReadiness(options: { validateLocal?: boolean } = 
 
   if (config.provider === 'local') {
     const { getLocalStatus, validateLocalModel, LOCAL_MODELS } = await import('./local-llm')
+    const staleLocalModel = configuredLocalModelCandidates(config)
+      .find((candidate) => !(candidate in LOCAL_MODELS))
+    if (staleLocalModel) {
+      return fail(
+        'local',
+        staleLocalModel,
+        'invalid_local_model_config',
+        `Modelo local configurado "${staleLocalModel}" não existe no catálogo atual.`,
+        `Escolha ${Object.values(LOCAL_MODELS).map((m) => m.label).join(', ')} em Configurações > Assistente IA e salve novamente.`,
+      )
+    }
     const model = resolveModel(config, 'local')
+    if (!(model in LOCAL_MODELS)) {
+      return fail(
+        'local',
+        model,
+        'invalid_local_model_config',
+        `Modelo local configurado "${model}" não existe no catálogo atual.`,
+        `Escolha ${Object.values(LOCAL_MODELS).map((m) => m.label).join(', ')} em Configurações > Assistente IA e salve novamente.`,
+      )
+    }
     const modelId = model as keyof typeof LOCAL_MODELS
     const status = getLocalStatus().modelos[modelId]
 

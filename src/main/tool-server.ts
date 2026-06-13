@@ -3,12 +3,14 @@ import { executeTool, IA_TOOLS } from './ia/tools'
 import { buildContextBriefing } from './ia/discovery'
 import { cancelJob, getJob, listJobs, pauseJob, resumeJob } from './jobs'
 import { DEFAULT_TOOL_SERVER_HOST, DEFAULT_TOOL_SERVER_PORT, resolveToolServerPort } from '../shared/tool-server-url'
+import { getOrCreateToolServerToken } from '../node/tool-server-auth'
 import type { SimulacaoRegimeOverride } from './preflight-capacity'
 import type { IaContexto, IaMensagem } from '../shared/types'
 
 let httpServer: ReturnType<typeof createServer> | null = null
 let activePort = DEFAULT_TOOL_SERVER_PORT
 let activeHost = DEFAULT_TOOL_SERVER_HOST
+let activeAuthToken = ''
 
 function json(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -31,6 +33,48 @@ function isLoopbackHost(hostHeader: string | undefined): boolean {
     return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
   } catch {
     return false
+  }
+}
+
+function isLoopbackOrigin(originHeader: string | undefined): boolean {
+  if (!originHeader) return true
+  try {
+    const host = new URL(originHeader).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+  } catch {
+    return false
+  }
+}
+
+function isBrowserCrossSite(req: IncomingMessage): boolean {
+  if (!isLoopbackOrigin(req.headers.origin)) return true
+  const secFetchSite = req.headers['sec-fetch-site']
+  if (typeof secFetchSite !== 'string') return false
+  return secFetchSite === 'cross-site' || secFetchSite === 'same-site'
+}
+
+function authHeaderToken(req: IncomingMessage): string | null {
+  const header = req.headers.authorization
+  if (!header) return null
+  const match = /^Bearer\s+(.+)$/i.exec(header)
+  return match?.[1]?.trim() || null
+}
+
+function requiresAuth(pathname: string): boolean {
+  return pathname !== '/health'
+}
+
+async function respondBulkRagControl(
+  res: ServerResponse,
+  action: () => Promise<object>,
+): Promise<void> {
+  try {
+    return json(res, { status: 'ok', ...(await action()) })
+  } catch (err) {
+    const statusCode = typeof (err as { statusCode?: unknown }).statusCode === 'number'
+      ? (err as { statusCode: number }).statusCode
+      : 500
+    return json(res, { status: 'error', message: err instanceof Error ? err.message : String(err) }, statusCode)
   }
 }
 
@@ -126,6 +170,7 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
   if (httpServer) stopToolServer()
   activePort = options.port ?? resolveToolServerPort()
   activeHost = options.host ?? DEFAULT_TOOL_SERVER_HOST
+  activeAuthToken = getOrCreateToolServerToken()
   httpServer = createServer(async (req, res) => {
     try {
       if (!isLoopbackHost(req.headers.host)) {
@@ -134,6 +179,14 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
 
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
       const pathname = url.pathname
+      if (requiresAuth(pathname)) {
+        if (isBrowserCrossSite(req)) {
+          return json(res, { status: 'error', message: 'Origem de navegador nao autorizada.' }, 403)
+        }
+        if (authHeaderToken(req) !== activeAuthToken) {
+          return json(res, { status: 'error', message: 'Token local do EscalaFlow ausente ou invalido.' }, 401)
+        }
+      }
 
       if (req.method === 'GET' && pathname === '/health') {
         return json(res, await getHealthPayload())
@@ -205,14 +258,14 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
         }
 
         const { startBulkRagImport } = await import('./knowledge/bulk-import')
-        const job = startBulkRagImport({
+        const result = await startBulkRagImport({
           path: body.path,
           group_name: body.group_name,
           auto_enrich: body.auto_enrich,
           recursive: body.recursive,
           filters: body.filters,
         })
-        return json(res, { status: 'ok', job })
+        return json(res, { status: 'ok', ...result })
       }
       if (req.method === 'GET' && pathname === '/rag/jobs') {
         const { listKnowledgeImportJobs } = await import('./knowledge/bulk-persistence')
@@ -235,34 +288,13 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
           resumeBulkRagImportJob,
         } = await import('./knowledge/bulk-import')
         if (action === 'pause') {
-          try {
-            return json(res, { status: 'ok', ...(await pauseBulkRagImportJob(id)) })
-          } catch (err) {
-            const statusCode = typeof (err as { statusCode?: unknown }).statusCode === 'number'
-              ? (err as { statusCode: number }).statusCode
-              : 500
-            return json(res, { status: 'error', message: err instanceof Error ? err.message : String(err) }, statusCode)
-          }
+          return respondBulkRagControl(res, () => pauseBulkRagImportJob(id))
         }
         if (action === 'resume') {
-          try {
-            return json(res, { status: 'ok', ...(await resumeBulkRagImportJob(id)) })
-          } catch (err) {
-            const statusCode = typeof (err as { statusCode?: unknown }).statusCode === 'number'
-              ? (err as { statusCode: number }).statusCode
-              : 500
-            return json(res, { status: 'error', message: err instanceof Error ? err.message : String(err) }, statusCode)
-          }
+          return respondBulkRagControl(res, () => resumeBulkRagImportJob(id))
         }
         if (action === 'cancel') {
-          try {
-            return json(res, { status: 'ok', ...(await cancelBulkRagImportJob(id)) })
-          } catch (err) {
-            const statusCode = typeof (err as { statusCode?: unknown }).statusCode === 'number'
-              ? (err as { statusCode: number }).statusCode
-              : 500
-            return json(res, { status: 'error', message: err instanceof Error ? err.message : String(err) }, statusCode)
-          }
+          return respondBulkRagControl(res, () => cancelBulkRagImportJob(id))
         }
       }
       const ragEnrichMatch = pathname.match(/^\/rag\/groups\/(\d+)\/enrich$/)

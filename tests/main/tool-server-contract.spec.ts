@@ -1,11 +1,13 @@
 import { request } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IA_TOOLS } from '../../src/main/ia/tools'
 import { startToolServer, stopToolServer } from '../../src/main/tool-server'
 
 let baseUrl = ''
 let toolPort = 0
+const AUTH_TOKEN = 'tool-server-test-token'
+const AUTH_HEADERS = { Authorization: `Bearer ${AUTH_TOKEN}` }
 
 vi.mock('../../src/main/db/query', () => ({
   queryOne: vi.fn(async () => ({
@@ -86,14 +88,14 @@ async function waitForHealth(): Promise<void> {
   throw new Error('tool server did not start')
 }
 
-async function requestWithHost(pathname: string, host: string): Promise<{ status: number, body: any }> {
+async function requestWithHost(pathname: string, host: string, headers?: Record<string, string>): Promise<{ status: number, body: any }> {
   return new Promise((resolve, reject) => {
     const req = request({
       host: '127.0.0.1',
       port: toolPort,
       path: pathname,
       method: 'GET',
-      headers: { Host: host },
+      headers: { Host: host, ...(headers ?? {}) },
     }, (res) => {
       const chunks: Buffer[] = []
       res.on('data', (chunk) => chunks.push(chunk))
@@ -110,10 +112,15 @@ async function requestWithHost(pathname: string, host: string): Promise<{ status
 }
 
 describe('EscalaFlow tool server contract', () => {
+  beforeEach(() => {
+    process.env.ESCALAFLOW_TOOL_SERVER_TOKEN = AUTH_TOKEN
+  })
+
   afterEach(() => {
     stopToolServer()
     baseUrl = ''
     toolPort = 0
+    delete process.env.ESCALAFLOW_TOOL_SERVER_TOKEN
     vi.clearAllMocks()
   })
 
@@ -135,14 +142,44 @@ describe('EscalaFlow tool server contract', () => {
     expect(body.ia).toHaveProperty('local_model')
   })
 
+  it('requires bearer auth for non-health endpoints', async () => {
+    await startIsolatedToolServer()
+    await waitForHealth()
+
+    const unauthenticated = await fetch(`${baseUrl}/tools`)
+    const authenticated = await fetch(`${baseUrl}/tools`, { headers: AUTH_HEADERS })
+
+    expect(unauthenticated.status).toBe(401)
+    expect((await unauthenticated.json()).message).toBe('Token local do EscalaFlow ausente ou invalido.')
+    expect(authenticated.status).toBe(200)
+    expect(await authenticated.json()).toHaveLength(IA_TOOLS.length)
+  })
+
   it('rejects non-loopback Host headers', async () => {
     await startIsolatedToolServer()
     await waitForHealth()
 
-    const { status, body } = await requestWithHost('/health', 'evil.example.com')
+    const { status, body } = await requestWithHost('/health', 'evil.example.com', AUTH_HEADERS)
 
     expect(status).toBe(403)
     expect(body.message).toBe('Acesso permitido apenas via loopback local.')
+  })
+
+  it('rejects browser cross-site requests even with the local token', async () => {
+    await startIsolatedToolServer()
+    await waitForHealth()
+
+    const res = await fetch(`${baseUrl}/tools`, {
+      headers: {
+        ...AUTH_HEADERS,
+        Origin: 'https://evil.example.com',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(body.message).toBe('Origem de navegador nao autorizada.')
   })
 
   it('runs chat endpoint', async () => {
@@ -151,13 +188,13 @@ describe('EscalaFlow tool server contract', () => {
 
     const res = await fetch(`${baseUrl}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'oi', stream: false }),
+      headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
+      body: JSON.stringify({ message: 'Me conta uma piada de padeiro.', stream: false }),
     })
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body.response).toBe('eco: oi')
+    expect(body.response).toBe('eco: Me conta uma piada de padeiro.')
   })
 
   it('runs solver preflight endpoint', async () => {
@@ -166,7 +203,7 @@ describe('EscalaFlow tool server contract', () => {
 
     const res = await fetch(`${baseUrl}/solver/preflight`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
       body: JSON.stringify({ setor_id: 2, data_inicio: '2026-07-01', data_fim: '2026-07-31' }),
     })
     const body = await res.json()
@@ -181,7 +218,7 @@ describe('EscalaFlow tool server contract', () => {
 
     const res = await fetch(`${baseUrl}/solver/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
       body: JSON.stringify({ setor_id: 2, data_inicio: '2026-07-01', data_fim: '2026-07-31', summary: true }),
     })
     const body = await res.json()

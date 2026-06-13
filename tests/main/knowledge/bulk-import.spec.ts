@@ -102,7 +102,59 @@ describe('bulk RAG import', () => {
     expect(storedJob?.metadata.group_name).toBe('Grupo Teste')
   })
 
-  it('keeps import done when optional enrichment model is unavailable', async () => {
+  it('starts with both volatile app job and durable RAG import job ids', async () => {
+    const { startBulkRagImport } = await import('../../../src/main/knowledge/bulk-import')
+
+    await writeFile(path.join(tmpDir, 'one.md'), 'Documento com conteudo suficiente para gerar chunks pesquisaveis no bulk import.')
+
+    const started = await startBulkRagImport({
+      path: tmpDir,
+      group_name: 'Grupo Start',
+      auto_enrich: false,
+    })
+
+    expect(started.app_job.id).toMatch(/^job_/)
+    expect(started.import_job.id).toEqual(expect.any(Number))
+    expect(started.app_job.metadata.import_job_id).toBe(started.import_job.id)
+    expect(started.app_job.metadata.group_id).toBe(started.import_job.group_id)
+
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < 3000) {
+      const current = getJob(started.app_job.id)
+      if (current && ['done', 'failed', 'cancelled'].includes(current.status)) {
+        expect(current.status).toBe('done')
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    throw new Error('bulk start worker did not finish')
+  })
+
+  it('marks empty files as failed because they create no searchable chunks', async () => {
+    const { runBulkRagImport } = await import('../../../src/main/knowledge/bulk-import')
+
+    await writeFile(path.join(tmpDir, 'empty.txt'), '')
+
+    const job = createJob({ type: 'bulk_rag_import', label: 'Bulk empty file' })
+    const summary = await runBulkRagImport({
+      path: tmpDir,
+      group_name: 'Grupo Vazio',
+      auto_enrich: false,
+    }, job.id)
+
+    expect(summary.imported_files).toBe(0)
+    expect(summary.failed_files).toBe(1)
+    expect(summary.chunks_count).toBe(0)
+    expect(summary.errors[0]?.message).toContain('nao gerou chunks pesquisaveis')
+
+    const storedJob = getJob(job.id)
+    expect(storedJob?.status).toBe('done')
+    expect(vi.mocked(execute).mock.calls.some((call) => (
+      String(call[0]).includes('UPDATE knowledge_sources SET ativo = FALSE')
+    ))).toBe(true)
+  })
+
+  it('marks import failed when requested enrichment model is unavailable', async () => {
     const { runBulkRagImport } = await import('../../../src/main/knowledge/bulk-import')
     const enrichmentConfig = await import('../../../src/main/knowledge/enrichment-config')
 
@@ -121,9 +173,15 @@ describe('bulk RAG import', () => {
     expect(summary.imported_files).toBe(1)
 
     const storedJob = getJob(job.id)
-    expect(storedJob?.status).toBe('done')
-    expect(storedJob?.metadata.phase).toBe('done')
+    expect(storedJob?.status).toBe('failed')
+    expect(storedJob?.metadata.phase).toBe('enrichment_failed')
     expect(storedJob?.metadata.enrichment_error).toBe('Modelo local indisponivel.')
+    expect(storedJob?.error_message).toContain('Importacao concluiu, mas enrichment falhou')
+    expect(vi.mocked(execute).mock.calls.some((call) => (
+      String(call[0]).includes('UPDATE knowledge_import_jobs')
+      && call.includes('failed')
+      && String(call.find((value) => typeof value === 'string' && value.includes('Modelo local indisponivel.'))).includes('Modelo local indisponivel.')
+    ))).toBe(true)
   })
 
   it('controls the live AppJob when persistent RAG job actions are used', async () => {

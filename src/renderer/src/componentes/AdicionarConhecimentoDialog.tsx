@@ -208,12 +208,14 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
 
     setSalvando(true)
     try {
-      const job = await servicoConhecimento.iniciarBulkImport({
+      const result = await servicoConhecimento.iniciarBulkImport({
         path: bulkPath,
         group_name: bulkGroupName.trim(),
       })
-      setBulkJob(job)
-      toast.success('Importação em massa iniciada.')
+      setBulkJob(result.app_job)
+      toast.success('Importação em massa iniciada.', {
+        description: `Job RAG #${result.import_job.id}`,
+      })
     } catch (err: any) {
       toast.error('Erro ao iniciar importação', { description: err?.message })
     } finally {

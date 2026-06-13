@@ -93,8 +93,7 @@ const IA_PROVIDER_MODELS: Record<IaProviderId, Array<{ value: string; label: str
     { value: 'openrouter/free', label: 'Free Models Router' },
   ],
   local: [
-    { value: 'qwen3.5-9b', label: 'Qwen 3.5 9B' },
-    { value: 'qwen3.5-4b', label: 'Qwen 3.5 4B' },
+    { value: 'gemma-4-e2b-it-q4', label: 'Gemma 4 E2B IT' },
   ],
 }
 
@@ -1273,7 +1272,7 @@ export function ConfiguracoesPagina() {
                         ? Math.round((localProgress.downloaded / localProgress.total) * 100)
                         : 0
                       const sizeLabel = (model.size_bytes / 1e9).toFixed(1) + ' GB'
-                      const isRecommended = model.id === 'qwen3.5-9b'
+                      const isRecommended = model.id === 'gemma-4-e2b-it-q4'
 
                       return (
                         <div key={model.id} className={cn('rounded-lg border p-3', model.baixado && 'border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20')}>
@@ -1295,7 +1294,7 @@ export function ConfiguracoesPagina() {
                               </div>
                               <p className="mt-0.5 text-xs text-muted-foreground">
                                 {sizeLabel} · {model.ram_minima_gb}GB+ RAM
-                                {isRecommended ? ' · Melhor qualidade' : ' · Mais leve e rapido'}
+                                {isRecommended ? ' · Padrão local' : ''}
                               </p>
                             </div>
                             <div className="flex shrink-0 gap-1.5">

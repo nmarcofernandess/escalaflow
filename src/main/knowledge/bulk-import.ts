@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import { cancelJob, createJob, failJob, finishJob, getJob, isJobCancelled, isJobPaused, pauseJob, resumeJob, updateJob } from '../jobs'
+import { execute } from '../db/query'
 import { ingestFromFile } from './ingest'
 import {
   createKnowledgeGroup,
@@ -12,7 +13,14 @@ import {
 } from './bulk-persistence'
 import { buildKnowledgeEnrichmentModel, getKnowledgeEnrichmentConfig } from './enrichment-config'
 import { enrichAllChunksWithModel } from './enrichment'
-import type { AppJob, BulkRagImportInput, BulkRagImportSummary } from '../../shared/types'
+import type {
+  AppJob,
+  BulkRagImportInput,
+  BulkRagImportStartResult,
+  BulkRagImportSummary,
+  KnowledgeGroup,
+  KnowledgeImportJob,
+} from '../../shared/types'
 
 const SUPPORTED_EXTENSIONS = new Set([
   '.md',
@@ -125,6 +133,71 @@ export function unbindLiveBulkRagImportJob(importJobId: number, appJobId?: strin
 
 export function resetBulkRagImportRuntimeForTests(): void {
   liveImportJobsByPersistentId.clear()
+}
+
+function scanTotals(scan: {
+  file_entries: ScannedImportFile[]
+  skipped_entries: ScannedSkippedFile[]
+}): { totalFiles: number; totalBytes: number } {
+  const totalFiles = scan.file_entries.length + scan.skipped_entries.length
+  const totalBytes = [...scan.file_entries, ...scan.skipped_entries]
+    .reduce((sum, entry) => sum + entry.size_bytes, 0)
+  return { totalFiles, totalBytes }
+}
+
+type PreparedBulkRagImport = {
+  groupName: string
+  recursive: boolean
+  filters: string[]
+  scan: Awaited<ReturnType<typeof scanBulkImportPath>>
+  totalFiles: number
+  totalBytes: number
+  group: KnowledgeGroup
+  importJob: KnowledgeImportJob
+}
+
+async function prepareBulkRagImport(
+  input: BulkRagImportInput,
+  preloaded?: {
+    group: KnowledgeGroup
+    importJob: KnowledgeImportJob
+    scan: Awaited<ReturnType<typeof scanBulkImportPath>>
+  },
+): Promise<PreparedBulkRagImport> {
+  const groupName = normalizeGroupName(input.group_name)
+  const recursive = input.recursive ?? true
+  const filters = normalizeFilters(input.filters)
+  const scan = preloaded?.scan ?? await scanBulkImportPath(input.path, { recursive, filters })
+  const { totalFiles, totalBytes } = scanTotals(scan)
+  const group = preloaded?.group ?? await createKnowledgeGroup({
+    nome: groupName,
+    origem: 'usuario',
+    metadata: {
+      root_path: scan.root_path,
+      recursive,
+      filters,
+      created_by: 'bulk_rag_import',
+    },
+  })
+  const importJob = preloaded?.importJob ?? await createKnowledgeImportJob({
+    group_id: group.id,
+    root_path: scan.root_path,
+    recursive,
+    status: 'importing',
+    total_files: totalFiles,
+    total_bytes: totalBytes,
+  })
+
+  return {
+    groupName,
+    recursive,
+    filters,
+    scan,
+    totalFiles,
+    totalBytes,
+    group,
+    importJob,
+  }
 }
 
 async function isImportCancelled(importJobId: number, appJobId?: string): Promise<boolean> {
@@ -300,32 +373,39 @@ export async function scanBulkImportPath(inputPath: string, options?: { recursiv
   }
 }
 
-export function startBulkRagImport(input: BulkRagImportInput): AppJob {
-  const groupName = normalizeGroupName(input.group_name)
+export async function startBulkRagImport(input: BulkRagImportInput): Promise<BulkRagImportStartResult> {
+  const prepared = await prepareBulkRagImport(input)
   const job = createJob({
     type: 'bulk_rag_import',
-    label: `Importar RAG: ${groupName}`,
+    label: `Importar RAG: ${prepared.groupName}`,
+    total: prepared.totalFiles,
     metadata: {
       path: input.path,
-      group_name: groupName,
+      group_name: prepared.groupName,
       auto_enrich: input.auto_enrich,
+      group_id: prepared.group.id,
+      import_job_id: prepared.importJob.id,
     },
   })
+  bindLiveBulkRagImportJob(prepared.importJob.id, job.id)
 
-  void runBulkRagImport({ ...input, group_name: groupName }, job.id).catch((error) => {
+  void runBulkRagImport({ ...input, group_name: prepared.groupName }, job.id, prepared).catch((error) => {
     if (getJob(job.id)?.status !== 'failed') failJob(job.id, error)
   })
 
-  return job
+  return { app_job: job, import_job: prepared.importJob }
 }
 
 export async function runBulkRagImport(
   input: BulkRagImportInput,
   jobId?: string,
+  preloaded?: {
+    group: KnowledgeGroup
+    importJob: KnowledgeImportJob
+    scan: Awaited<ReturnType<typeof scanBulkImportPath>>
+  },
 ): Promise<BulkRagImportSummary> {
   const groupName = normalizeGroupName(input.group_name)
-  const recursive = input.recursive ?? true
-  const filters = normalizeFilters(input.filters)
 
   if (jobId) {
     updateJob(jobId, {
@@ -334,29 +414,8 @@ export async function runBulkRagImport(
     })
   }
 
-  const scan = await scanBulkImportPath(input.path, { recursive, filters })
-  const totalFiles = scan.file_entries.length + scan.skipped_entries.length
-  const totalBytes = [...scan.file_entries, ...scan.skipped_entries]
-    .reduce((sum, entry) => sum + entry.size_bytes, 0)
-
-  const group = await createKnowledgeGroup({
-    nome: groupName,
-    origem: 'usuario',
-    metadata: {
-      root_path: scan.root_path,
-      recursive,
-      filters,
-      created_by: 'bulk_rag_import',
-    },
-  })
-  const importJob = await createKnowledgeImportJob({
-    group_id: group.id,
-    root_path: scan.root_path,
-    recursive,
-    status: 'importing',
-    total_files: totalFiles,
-    total_bytes: totalBytes,
-  })
+  const prepared = await prepareBulkRagImport(input, preloaded)
+  const { scan, totalFiles, group, importJob } = prepared
   bindLiveBulkRagImportJob(importJob.id, jobId)
 
   const summary: BulkRagImportSummary = {
@@ -440,6 +499,13 @@ export async function runBulkRagImport(
           imported_at: nowIso(),
         })
 
+        if (!result.source_id || result.chunks_count <= 0) {
+          if (result.source_id) {
+            await execute('UPDATE knowledge_sources SET ativo = FALSE WHERE id = $1', result.source_id)
+          }
+          throw new Error(`Arquivo "${entry.relative_path}" nao gerou chunks pesquisaveis.`)
+        }
+
         summary.imported_files++
         summary.chunks_count += result.chunks_count
         summary.conversations_count += result.conversations_count ?? 0
@@ -517,21 +583,31 @@ export async function runBulkRagImport(
     }
 
     const cancelled = await isImportCancelled(importJob.id, jobId)
+    const enrichmentFailure = shouldEnrich && enrichmentError
+      ? `Importacao concluiu, mas enrichment falhou: ${enrichmentError}`
+      : null
     if (jobId && !cancelled) {
-      finishJob(jobId, {
-        ...summary,
-        phase: 'done',
-        ...(enrichmentError ? { enrichment_error: enrichmentError } : {}),
-      })
+      if (enrichmentFailure) {
+        failJob(jobId, new Error(enrichmentFailure), {
+          ...summary,
+          phase: 'enrichment_failed',
+          enrichment_error: enrichmentError,
+        })
+      } else {
+        finishJob(jobId, {
+          ...summary,
+          phase: 'done',
+        })
+      }
     }
     await updateKnowledgeImportJob(importJob.id, {
-      status: cancelled ? 'cancelled' : 'done',
+      status: cancelled ? 'cancelled' : enrichmentFailure ? 'failed' : 'done',
       failed_files: summary.failed_files,
       chunks_created: summary.chunks_count,
-      error_message: summary.failed_files > 0
-        ? `${summary.failed_files} arquivo(s) com erro; importacao concluida com avisos.`
-        : enrichmentError
-          ? `Importacao concluida; enrichment nao executado: ${enrichmentError}`
+      error_message: enrichmentFailure
+        ? enrichmentFailure
+        : summary.failed_files > 0
+          ? `${summary.failed_files} arquivo(s) com erro; importacao concluida com avisos.`
           : null,
       finished: true,
     })

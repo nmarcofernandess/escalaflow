@@ -4,15 +4,18 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
+import { buildToolServerAuthHeaders } from '../src/node/tool-server-auth'
+import { parseMcpToolCatalogResponse, resolveMcpToolServerUrl } from './tool-server-client'
 
-const TOOL_URL = process.env.ESCALAFLOW_URL || 'http://127.0.0.1:17380'
+const TOOL_URL = resolveMcpToolServerUrl()
 const TOOL_TIMEOUT = 300_000  // 5min — solver Python pode demorar em periodos longos
+const AUTH_HEADERS = buildToolServerAuthHeaders()
 
 // ==================== BOOT ====================
 
 // Health check — garante que o Electron ta rodando
 try {
-  const health = await fetch(`${TOOL_URL}/health`, { signal: AbortSignal.timeout(5000) })
+  const health = await fetch(`${TOOL_URL}/health`, { headers: AUTH_HEADERS, signal: AbortSignal.timeout(5000) })
   if (!health.ok) throw new Error(`HTTP ${health.status}`)
   const info = await health.json() as { status: string; tools: number; version?: string; app?: string }
   console.error(`[escalaflow-mcp] Conectado ao ${info.app ?? 'EscalaFlow'} (${info.tools} tools, v${info.version ?? '?'})`)
@@ -22,19 +25,23 @@ try {
 }
 
 // Busca catalogo de tools do Electron (JSON Schema raw — ja convertido de Zod no app)
-const toolsRes = await fetch(`${TOOL_URL}/tools`)
-const tools = await toolsRes.json() as Array<{
-  name: string
-  description: string
-  parameters: Record<string, unknown>
-}>
+const toolsRes = await fetch(`${TOOL_URL}/tools`, { headers: AUTH_HEADERS })
+const toolsPayload = await toolsRes.json() as unknown
+let tools: ReturnType<typeof parseMcpToolCatalogResponse>
+try {
+  tools = parseMcpToolCatalogResponse(toolsPayload, toolsRes.status)
+} catch (error) {
+  console.error(`[escalaflow-mcp] ${error instanceof Error ? error.message : String(error)}`)
+  console.error('[escalaflow-mcp] Refaça a conexao MCP pelo EscalaFlow ou configure ESCALAFLOW_TOOL_SERVER_TOKEN.')
+  process.exit(1)
+}
 
 console.error(`[escalaflow-mcp] ${tools.length} tools registradas`)
 
 // Busca instructions de dominio (CLT, motor, entidades, workflows)
 let instructions = ''
 try {
-  const instrRes = await fetch(`${TOOL_URL}/instructions`)
+  const instrRes = await fetch(`${TOOL_URL}/instructions`, { headers: AUTH_HEADERS })
   const data = await instrRes.json() as { instructions: string }
   instructions = data.instructions
   console.error(`[escalaflow-mcp] Instructions carregadas (${instructions.length} chars)`)
@@ -65,7 +72,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const res = await fetch(`${TOOL_URL}/tool`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
       body: JSON.stringify({ name, args: args ?? {} }),
       signal: AbortSignal.timeout(TOOL_TIMEOUT),
     })

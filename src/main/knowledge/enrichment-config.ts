@@ -47,11 +47,14 @@ function normalizeConfig(input: Partial<KnowledgeEnrichmentConfig> | null | unde
   const provider = input?.provider && ['auto', 'local', 'gemini', 'openrouter'].includes(input.provider)
     ? input.provider
     : DEFAULT_KNOWLEDGE_ENRICHMENT_CONFIG.provider
+  const modelo = provider === 'auto'
+    ? 'auto'
+    : String(input?.modelo || PROVIDER_DEFAULTS[provider as IaProviderId] || DEFAULT_KNOWLEDGE_ENRICHMENT_CONFIG.modelo)
 
   return {
     auto_enrich_after_import: Boolean(input?.auto_enrich_after_import ?? DEFAULT_KNOWLEDGE_ENRICHMENT_CONFIG.auto_enrich_after_import),
     provider: provider as KnowledgeEnrichmentProvider,
-    modelo: String(input?.modelo || DEFAULT_KNOWLEDGE_ENRICHMENT_CONFIG.modelo),
+    modelo,
     force_all_default: Boolean(input?.force_all_default ?? DEFAULT_KNOWLEDGE_ENRICHMENT_CONFIG.force_all_default),
   }
 }
@@ -87,6 +90,7 @@ export async function getKnowledgeEnrichmentConfig(): Promise<KnowledgeEnrichmen
 export async function saveKnowledgeEnrichmentConfig(input: Partial<KnowledgeEnrichmentConfig>): Promise<KnowledgeEnrichmentConfig> {
   const current = await getKnowledgeEnrichmentConfig()
   const next = normalizeConfig({ ...current, ...input })
+  await assertValidConcreteConfig(next)
   await execute(
     `INSERT INTO config (key, value) VALUES ($1, $2::jsonb)
      ON CONFLICT (key) DO UPDATE SET value = $2::jsonb`,
@@ -94,6 +98,18 @@ export async function saveKnowledgeEnrichmentConfig(input: Partial<KnowledgeEnri
     JSON.stringify(next),
   )
   return next
+}
+
+async function assertValidConcreteConfig(config: KnowledgeEnrichmentConfig): Promise<void> {
+  if (config.provider === 'auto') return
+  const options = await listKnowledgeEnrichmentModelOptions()
+  const match = options.find((option) => option.provider === config.provider && option.modelo === config.modelo)
+  if (!match) {
+    throw new Error(`Modelo de enrichment inválido: ${config.provider}/${config.modelo}.`)
+  }
+  if (!match.available) {
+    throw new Error(match.reason || `Modelo de enrichment indisponível: ${config.provider}/${config.modelo}.`)
+  }
 }
 
 export async function listKnowledgeEnrichmentModelOptions(): Promise<KnowledgeEnrichmentModelOption[]> {
@@ -189,6 +205,7 @@ export async function buildKnowledgeEnrichmentModel(
     : baseConfig
 
   if (!resolvedConfig) return null
+  await assertValidConcreteConfig(resolvedConfig)
 
   if (resolvedConfig.provider === 'local') {
     const options = await listKnowledgeEnrichmentModelOptions()

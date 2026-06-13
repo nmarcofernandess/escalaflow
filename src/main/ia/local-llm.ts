@@ -1,5 +1,5 @@
 // =============================================================================
-// LOCAL LLM — Gemma 4 via llama-server; node-llama-cpp fallback for compatible models
+// LOCAL LLM — Gemma 4 via llama-server
 // Download, lifecycle, chat com tool calling
 // =============================================================================
 
@@ -80,6 +80,29 @@ function isModelDownloaded(modelId: LocalModelId): boolean {
   return stat.size > LOCAL_MODELS[modelId].size_bytes * 0.95
 }
 
+export function validateDownloadedModelArtifact(modelId: LocalModelId, filePath: string): void {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Arquivo baixado nao encontrado: ${filePath}`)
+  }
+
+  const stat = fs.statSync(filePath)
+  const minimumSize = LOCAL_MODELS[modelId].size_bytes * 0.95
+  if (stat.size < minimumSize) {
+    throw new Error(`Download incompleto: esperado ao menos ${(minimumSize / 1e9).toFixed(2)} GB, recebido ${(stat.size / 1e9).toFixed(2)} GB.`)
+  }
+
+  const fd = fs.openSync(filePath, 'r')
+  try {
+    const magic = Buffer.alloc(4)
+    fs.readSync(fd, magic, 0, magic.length, 0)
+    if (magic.toString('ascii') !== 'GGUF') {
+      throw new Error('Arquivo baixado nao parece ser um GGUF valido.')
+    }
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 function getActiveLocalModelId(preferredModelId?: LocalModelId): LocalModelId {
   if (preferredModelId) {
     if (isModelDownloaded(preferredModelId)) return preferredModelId
@@ -135,6 +158,11 @@ function setModelValidation(modelId: LocalModelId, value: { usable: boolean; err
     ...value,
     validatedAt: new Date().toISOString(),
   })
+}
+
+function markModelValidation(modelId: LocalModelId, value: { usable: boolean; error?: string }): void {
+  setModelValidation(modelId, value)
+  broadcastLocalStatus()
 }
 
 export async function downloadModel(modelId: LocalModelId, onProgress: (downloaded: number, total: number) => void): Promise<void> {
@@ -209,6 +237,8 @@ export async function downloadModel(modelId: LocalModelId, onProgress: (download
       fileStream.end()
       await new Promise<void>((resolve) => fileStream.on('finish', resolve))
     }
+
+    validateDownloadedModelArtifact(modelId, partPath)
 
     // Renomear .part → .gguf
     fs.renameSync(partPath, finalPath)
@@ -316,15 +346,13 @@ export async function ensureModelLoaded(preferredModelId?: LocalModelId): Promis
     _model = await _llama.loadModel({ modelPath })
     _context = await _model.createContext()
     _loadedModelId = targetModelId
-    setModelValidation(targetModelId, { usable: true })
-    broadcastLocalStatus()
+    markModelValidation(targetModelId, { usable: true })
   } catch (err: any) {
     const message = err?.message || String(err)
-    setModelValidation(targetModelId, { usable: false, error: message })
+    markModelValidation(targetModelId, { usable: false, error: message })
     _model = null
     _context = null
     _loadedModelId = null
-    broadcastLocalStatus()
     throw err
   }
 
@@ -339,13 +367,12 @@ export async function validateLocalModel(modelId: LocalModelId): Promise<IaLocal
     resetIdleTimer()
     try {
       await validateLocalLlamaServerModel({ modelId, modelPath: getModelPath(modelId) })
-      setModelValidation(modelId, { usable: true })
-      broadcastLocalStatus()
+      markModelValidation(modelId, { usable: true })
       return getLocalStatus().modelos[modelId]
     } catch (err: any) {
       const message = err?.message || String(err)
-      setModelValidation(modelId, { usable: false, error: message })
-      broadcastLocalStatus()
+      markModelValidation(modelId, { usable: false, error: message })
+      clearIdleTimer()
       throw err
     }
   }
@@ -385,13 +412,12 @@ export async function localLlmGenerateJson(
         prompt,
         maxTokens: options?.maxTokens,
       })
-      setModelValidation(modelId, { usable: true })
-      broadcastLocalStatus()
+      markModelValidation(modelId, { usable: true })
       return response
     } catch (err: any) {
       const message = err?.message || String(err)
-      setModelValidation(modelId, { usable: false, error: message })
-      broadcastLocalStatus()
+      markModelValidation(modelId, { usable: false, error: message })
+      clearIdleTimer()
       throw err
     }
   }
@@ -525,18 +551,17 @@ export async function localLlmChat(
       if (result.tokensPerSecond && result.tokensPerSecond > 0) {
         _lastTps = Math.round(result.tokensPerSecond)
       }
-      setModelValidation(targetModelId, { usable: true })
-      broadcastLocalStatus()
+      markModelValidation(targetModelId, { usable: true })
       return { resposta: result.resposta, acoes: result.acoes }
     } catch (err: any) {
       const message = err?.message || String(err)
       const isLoadFailure = isLocalRuntimeLoadFailure(message)
       if (isLoadFailure) {
-        setModelValidation(targetModelId, { usable: false, error: message })
+        markModelValidation(targetModelId, { usable: false, error: message })
+        clearIdleTimer()
       } else {
-        setModelValidation(targetModelId, { usable: true })
+        markModelValidation(targetModelId, { usable: true })
       }
-      broadcastLocalStatus()
       const msg = isLoadFailure
         ? `Erro ao carregar modelo local: ${message}`
         : `Erro ao executar IA local: ${message}`
@@ -550,7 +575,7 @@ export async function localLlmChat(
     loaded = await ensureModelLoaded()
   } catch (err: any) {
     const msg = err.message?.includes('memory') || err.message?.includes('OOM')
-      ? 'Memória insuficiente para carregar o modelo local. Tente o modelo menor (4B) ou use um provider cloud.'
+      ? 'Memória insuficiente para carregar o modelo local. Feche apps pesados, descarregue o modelo local ou use Gemini/OpenRouter.'
       : `Erro ao carregar modelo local: ${err.message}`
     emitStream({ type: 'error', stream_id: streamId, message: msg })
     throw new Error(msg)
@@ -572,7 +597,7 @@ export async function localLlmChat(
     emitStream({ type: 'text-delta', stream_id: streamId, delta: '_Conversa longa — usando contexto recente para IA local._\n\n' })
   }
 
-  // Build tools for node-llama-cpp (3 family tools instead of 30 atomic)
+  // Legacy node-llama-cpp fallback path also uses 3 family tools instead of 30 atomic.
   const { IA_TOOLS_PUBLIC } = await import('./tools')
   const { FAMILY_SCHEMAS, executeFamilyTool } = await import('./tool-families')
   const { defineChatSessionFunction } = await getLlamaCpp()
@@ -585,7 +610,7 @@ export async function localLlmChat(
     const zodSchema = FAMILY_SCHEMAS[t.name]
     if (!zodSchema) continue
 
-    // Convert Zod to JSON Schema for node-llama-cpp
+    // Convert Zod to JSON Schema for the fallback runtime.
     const { zodToJsonSchema } = await import('zod-to-json-schema')
     const jsonSchema = zodToJsonSchema(zodSchema as any, { target: 'openApi3' })
 
@@ -612,7 +637,7 @@ export async function localLlmChat(
     })
   }
 
-  // Build conversation history for node-llama-cpp
+  // Build conversation history for the fallback runtime.
   const chatHistory = buildLlamaChatHistory(historico, systemPrompt)
 
   const session = new LlamaChatSession({

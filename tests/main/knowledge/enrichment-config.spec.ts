@@ -102,7 +102,30 @@ describe('knowledge enrichment config', () => {
 
     expect(saved.auto_enrich_after_import).toBe(true)
     expect(saved.provider).toBe('auto')
-    await expect(getKnowledgeEnrichmentConfig()).resolves.toMatchObject({ provider: 'auto' })
+    expect(saved.modelo).toBe('auto')
+    await expect(getKnowledgeEnrichmentConfig()).resolves.toMatchObject({ provider: 'auto', modelo: 'auto' })
+  })
+
+  it('rejects invalid provider/model pairs before persistence', async () => {
+    const { saveKnowledgeEnrichmentConfig } = await import('../../../src/main/knowledge/enrichment-config')
+
+    await expect(saveKnowledgeEnrichmentConfig({
+      provider: 'gemini',
+      modelo: 'gemma-4-e2b-it-q4',
+    })).rejects.toThrow('Modelo de enrichment inválido: gemini/gemma-4-e2b-it-q4.')
+    expect(dbState.configValue).toBeUndefined()
+  })
+
+  it('rejects unavailable concrete providers before persistence', async () => {
+    dbState.localDownloaded = true
+    dbState.localUsable = false
+    const { saveKnowledgeEnrichmentConfig } = await import('../../../src/main/knowledge/enrichment-config')
+
+    await expect(saveKnowledgeEnrichmentConfig({
+      provider: 'local',
+      modelo: 'gemma-4-e2b-it-q4',
+    })).rejects.toThrow('precisa passar em Testar conexao')
+    expect(dbState.configValue).toBeUndefined()
   })
 
   it('lists local and cloud model availability', async () => {

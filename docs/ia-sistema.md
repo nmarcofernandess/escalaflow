@@ -24,8 +24,8 @@
 | Database | PGlite (Postgres 17 WASM, pgvector, FTS portugues, pg_trgm) |
 | Motor | Python OR-Tools CP-SAT (via child_process stdin/stdout JSON) — multi-pass legal-first com modos OFFICIAL/EXPLORATORY |
 | Frontend | React 19 + Vite + Tailwind + shadcn/ui + Zustand + recharts |
-| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local Gemma 4 via `llama-server`/fallback node-llama-cpp — 30 tools |
-| Knowledge | RAG local: embeddings ONNX (multilingual-e5-small) + pgvector + Knowledge Graph |
+| IA | Gemini/OpenRouter via Vercel AI SDK v6 (`streamText`) + IA Local Gemma 4 via `llama-server` — 3 family tools publicas, 30 handlers internos |
+| Knowledge | RAG local: embeddings ONNX (multilingual-e5-base, 768 dims) + pgvector + Knowledge Graph |
 
 ### Fluxo macro
 
@@ -1452,7 +1452,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
 > - `src/main/ia/system-prompt.ts` (~370 linhas) — prompt com 8 secoes (reescrito, inclui degradacao graciosa)
 > - `src/main/ia/discovery.ts` (~300 linhas) — auto-contexto por pagina + alertas proativos + memorias
 > - `src/main/ia/config.ts` — buildModelFactory (reutilizavel por knowledge graph, session-processor)
-> - `src/main/ia/local-llm.ts` (~450 linhas) — IA Local: download GGUF, lifecycle modelo, chat com tool calling via node-llama-cpp
+> - `src/main/ia/local-llm.ts` + `src/main/ia/llama-server-runtime.ts` — IA Local: download GGUF, validação, lifecycle e chat/tool calling via `llama-server`
 > - `src/main/ia/session-processor.ts` — sanitize transcripts, indexacao, compaction de sessoes longas
 > - `src/main/knowledge/` — embeddings.ts, ingest.ts, search.ts, graph.ts (RAG + Knowledge Graph)
 
@@ -1472,8 +1472,8 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
     |                    buildChatMessages(historico, msg)     |
     |                    = [{role,content}...] com tool_calls  |
     |                          |                              |
-    |                    getVercelAiTools()                    |
-    |                    = 30 tools com Zod + execute()         |
+    |                    getVercelAiFamilyTools()              |
+    |                    = 3 family tools -> 30 handlers        |
     |                          |                              |
     |                    streamText({                          |
     |                      model, system, messages,            |
@@ -1504,7 +1504,7 @@ A IA e autonoma em ~80% das operacoes do sistema. Os gaps restantes sao operacoe
 async function iaEnviarMensagemStream(config, currentMsg, historico, contexto) {
     const fullSystemPrompt = buildFullSystemPrompt(contexto)
     const messages = buildChatMessages(historico, currentMsg)  // inclui tool_calls
-    const tools = getVercelAiTools()                           // 30 tools com Zod
+    const tools = getVercelAiFamilyTools()                     // 3 family tools publicas
     const model = await maybeWrapModelWithDevTools(createModel(modelo))
 
     const result = streamText({
@@ -1541,48 +1541,48 @@ Alguns modelos (Gemini em particular) executam tools mas nao geram texto ao fina
 |----------|---------|----------------|--------|------------------|
 | `gemini` | `createGoogleGenerativeAI({ apiKey })` | `gemini-3-flash-preview` | `@ai-sdk/google` | Sim |
 | `openrouter` | `createOpenRouter({ apiKey })` | `anthropic/claude-sonnet-4` | `@openrouter/ai-sdk-provider` | Sim |
-| `local` | `node-llama-cpp` (in-process) | `qwen3.5-9b` | `node-llama-cpp` | **Nao** |
+| `local` | `llama-server` local | `gemma-4-e2b-it-q4` | `llama.cpp` runtime externo | **Nao** |
 
 **Resolucao de API key (prioridade):**
 1. `config.provider_configs_json[provider].token` — UI multi-provider salva aqui
 2. `config.api_key` — fallback legado
 3. Provider `local`: retorna `'local-no-key'` (pula validacao)
 
-Gemini e OpenRouter usam Vercel AI SDK (`streamText`). Provider Local usa path proprio via `local-llm.ts`.
+Gemini e OpenRouter usam Vercel AI SDK (`streamText`). Provider Local usa path
+proprio via `local-llm.ts` e `llama-server-runtime.ts`.
 
-### 6.2.1 IA Local — Provider Offline (node-llama-cpp)
+### 6.2.1 IA Local — Provider Offline (Gemma 4 + llama-server)
 
-**Arquivo:** `src/main/ia/local-llm.ts` (~450 linhas)
+**Arquivos:** `src/main/ia/local-llm.ts` e `src/main/ia/llama-server-runtime.ts`
 
 **Modelos curados:**
 
 | Modelo | ID | Tamanho | RAM min | Uso |
 |--------|----|---------|---------|-----|
-| Qwen 3.5 9B Q4_K_M | `qwen3.5-9b` | ~5.7 GB | 8GB+ | Padrao — melhor tool calling |
-| Qwen 3.5 4B Q4_K_M | `qwen3.5-4b` | ~2.8 GB | 4GB+ | Leve — maquinas com pouca RAM |
+| Gemma 4 E2B IT Q4_K_M | `gemma-4-e2b-it-q4` | ~3.11 GB | 4GB+ | Padrao local para chat, tool calling e enrichment |
 
 **Download:**
 - GGUF baixado do HuggingFace com progresso via `fetch` + `Range` header (resume)
 - `.part` temporario → rename ao completar
 - Cancelamento via `AbortController`
-- Progresso broadcast via `BrowserWindow.webContents.send('ia:local:download-progress')`
-- Pode ter ambos modelos baixados; usuario escolhe qual usar
+- Progresso broadcast via `BrowserWindow.webContents.send('ia:local:status-changed')`
+- O artefato final e validado por tamanho minimo e assinatura `GGUF` antes de virar modelo baixado
 
 **Lifecycle (singleton lazy):**
-- `ensureModelLoaded()`: `getLlama()` → `loadModel({modelPath})` → `createContext()`
-- GPU auto-detect (Metal no Mac, Vulkan, CUDA, ou CPU fallback)
+- Gemma 4 usa `llama-server` recente porque `node-llama-cpp` atual nao carrega arquitetura `gemma4`
+- Ordem de descoberta: `ESCALAFLOW_LLAMA_SERVER_BIN`, runtime em `userData`, `runtimes/llama.cpp`, build temporario, `process.resourcesPath`
+- Start: porta livre em `127.0.0.1`, contexto `8192`, flags `--jinja --reasoning off`
 - Idle timer: descarrega modelo apos 5 min sem uso
 - Cleanup no `app.on('before-quit')`
 
 **Chat com tool calling:**
-- `localLlmChat()` cria `LlamaChatSession` com system prompt trimado (`LOCAL_SYSTEM_PROMPT`, ~90 linhas)
-- 30 tools convertidas via `defineChatSessionFunction` + `zodToJsonSchema`
-- Reutiliza `executeTool()` existente — mesmos handlers que cloud providers
+- `localLlmChat()` chama `/v1/chat/completions` do `llama-server`
+- O LLM ve as mesmas 3 family tools publicas (`consultar_contexto`, `editar_ficha`, `executar_acao`)
+- O adapter `tool-families.ts` roteia para os 30 handlers internos
 - Emite mesmos `IaStreamEvent` via `broadcastToRenderer('ia:stream')` — UI identica
-- `onTextChunk` para streaming em tempo real
 - Tok/s calculado e exibido no final da resposta
 - Context guard: historico trimado a 20 mensagens para caber no context window
-- Degradacao graceful: se OOM ao carregar, emite erro claro e sugere modelo menor
+- Readiness diferencia: nao baixado, precisa validar, configuracao local antiga/invalida e erro real de runtime/model load
 
 **IPC handlers (6 novos):**
 
@@ -1687,7 +1687,7 @@ O `buildContextBriefing()` e chamado ANTES da requisicao ao LLM e monta uma stri
 
 ### 6.6 As 30 tools — visao geral
 
-Todas as tools sao definidas no array `IA_TOOLS[]` (`tools.ts`) em formato Gemini API e convertidas para formato Vercel AI SDK via `getVercelAiTools()`. Cada tool tem:
+Todas as tools internas sao definidas no array `IA_TOOLS[]` (`tools.ts`). O LLM nao ve essas 30 diretamente; ele ve `IA_TOOLS_PUBLIC` via `getVercelAiFamilyTools()`, e `tool-families.ts` roteia para os handlers internos. Cada handler interno tem:
 - Schema Zod para validacao runtime
 - Funcao `execute()` que chama `executeTool(name, args)`
 - Descricao detalhada com exemplos (para o LLM)
@@ -1879,7 +1879,7 @@ Se `ESCALAFLOW_AI_DEVTOOLS=1`, ou em desenvolvimento local quando o app nao esta
 ### 6.13 Knowledge Layer (RAG + Knowledge Graph)
 
 > **Arquivos fonte:**
-> - `src/main/knowledge/embeddings.ts` — @huggingface/transformers multilingual-e5-small (ONNX local, 384 dims)
+> - `src/main/knowledge/embeddings.ts` — @huggingface/transformers `Xenova/multilingual-e5-base` (ONNX local, 768 dims)
 > - `src/main/knowledge/ingest.ts` — Chunking + ingestao de documentos
 > - `src/main/knowledge/search.ts` — Busca semantica (pgvector cosine) + FTS portugues + knowledge graph CTE
 > - `src/main/knowledge/graph.ts` — Extracao de entidades/relacoes via LLM + persist com embedding
@@ -1889,7 +1889,7 @@ Se `ESCALAFLOW_AI_DEVTOOLS=1`, ou em desenvolvimento local quando o app nao esta
 Documento importado
     │
     ├─ [1] ingest.ts: chunking (markdown-aware, ~500 tokens/chunk)
-    ├─ [2] embeddings.ts: embed cada chunk (multilingual-e5-small, ONNX local)
+    ├─ [2] embeddings.ts: embed cada chunk (multilingual-e5-base, ONNX local, 768 dims)
     ├─ [3] INSERT knowledge_sources + knowledge_chunks (com embedding vector(768))
     │
     └─ [4] graph.ts (opcional, via "Analisar Relacoes"):
@@ -2310,7 +2310,7 @@ O `iaStore.ts` (217 linhas) gerencia todo o estado do painel IA:
 - Validacao Zod runtime em TODAS as tools com `correction` em 100% dos toolError
 - Seguranca: whitelists por operacao (18 tabelas leitura, 7 criacao, 5 atualizacao, 4 delecao), campos validados, limit de rows
 - Auto-contexto por pagina com alertas proativos (violacoes, hash desatualizado, excecoes expirando)
-- Multi-provider (Gemini + OpenRouter + Local) com mesma logica. Provider Local roda modelo GGUF in-process via node-llama-cpp sem internet.
+- Multi-provider (Gemini + OpenRouter + Local) com mesma logica. Provider Local roda Gemma 4 GGUF via `llama-server` local sem internet.
 - Persistencia de conversas com PGlite + auto-titulo
 - Evals com SAVEPOINT/ROLLBACK protegendo o banco de dados
 - System prompt de 8 secoes com workflows prontos e schema completo
@@ -2338,7 +2338,7 @@ Para cada decisao nao-obvia: o que, por que, e se ainda faz sentido.
 | 7 | **Compensacao 9h45** | CLT 44h = 7h20/dia em 6 dias. Mas supermercados usam jornada 8h48 (5 dias) ou 9h45 (5 dias com sabado alternado). `max_minutos_dia` vem do contrato, nao de calculo fixo. So CLT 44h e 36h — nunca estagiario/intermitente. | Sim. Reflete pratica real. |
 | 8 | **H19 (folga comp domingo) — NOOP no solver, ativo no validador** | No solver: matematicamente redundante com H1 (max 6 dias consecutivos). Emitir causava INFEASIBLE com dias_trabalho + H10. No validador TS: checa Lei 605/1949 (folga compensatoria 7 dias apos domingo trabalhado). Fix v1.4: boundary guard — se nao ha dias apos o domingo no periodo, pula (folga pode estar fora do periodo gerado). (`validacao-compartilhada.ts`) | Sim. NOOP no solver, check no validador com boundary guard. |
 | 9 | **Surplus penalty (peso 5.000)** | Sem surplus, solver empilha colabs em slots ja cobertos (surplus=3) enquanto outros ficam com deficit=2. Deficit sozinho nao distingue ONDE colocar capacidade. Surplus torna excesso CARO, forcando redistribuicao. Math: mover 1 pessoa de surplus pra deficit economiza 15.000 (10k+5k). (`constraints.py:877-912`) | Sim. Sem isso, escalas ficam desequilibradas. |
-| 10 | **Vercel AI SDK (cloud) + node-llama-cpp (local)** | Cloud: Vercel AI SDK abstrai Gemini + OpenRouter. Local: node-llama-cpp roda GGUF in-process com `defineChatSessionFunction` para tool calling. Ambos emitem mesmos `IaStreamEvent` — UI identica. Trade-off local: modelo 9B precisa 8GB+ RAM, tool calling menos preciso que cloud. | Sim. 3 providers com mesma experiencia de chat. |
+| 10 | **Vercel AI SDK (cloud) + llama-server (local)** | Cloud: Vercel AI SDK abstrai Gemini + OpenRouter. Local: `llama-server` roda Gemma 4 GGUF e expoe `/v1/chat/completions` com tool calling. Ambos emitem mesmos `IaStreamEvent` — UI identica. Trade-off local: exige runtime `llama-server` compatível e validação antes do chat. | Sim. 3 providers com mesma experiencia de chat. |
 | 11 | **Auto-contexto (discovery) a cada mensagem** | Injeta setores, colabs, escalas no system prompt sem tool call. Custo: ~200-500 tokens extras. Beneficio: IA responde perguntas simples sem chamar get_context. Discovery condicional por pagina reduz tamanho. | Sim, mas pode cachear com TTL de 30s. |
 | 12 | **Historico COM tool calls** | `buildChatMessages()` envia role user/assistant/tool. Mensagens assistant incluem `tool-call` parts, seguidas de mensagem `tool` com `tool-result` parts (truncados a ~400 chars). Motivo: preserva contexto de descobertas entre turnos — IA sabe o que ja consultou/criou. Trade-off: mais tokens no historico, mas IA nao "esquece" o que fez. | Sim. Melhoria implementada sobre decisao original. Avaliar compressao se conversas ficarem longas. |
 

@@ -159,6 +159,25 @@ describe('IA chat readiness', () => {
     })
   })
 
+  it('flags stale local model configuration instead of asking for an impossible download', async () => {
+    state.config = iaConfig({
+      modelo: 'qwen3.5-9b',
+      provider_configs_json: JSON.stringify({
+        local: { modelo: 'qwen3.5-9b' },
+      }),
+    })
+    const { getIaChatReadiness } = await import('../../../src/main/ia/readiness')
+
+    await expect(getIaChatReadiness()).resolves.toMatchObject({
+      ok: false,
+      provider: 'local',
+      model: 'qwen3.5-9b',
+      reason: 'invalid_local_model_config',
+      message: expect.stringContaining('não existe no catálogo atual'),
+    })
+    expect(state.validateCalls).toBe(0)
+  })
+
   it('requires cloud token for OpenRouter chat', async () => {
     state.config = iaConfig({
       provider: 'openrouter',

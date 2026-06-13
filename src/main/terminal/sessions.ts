@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import path from 'node:path'
+import { resolveExistingDirectory } from './paths'
 import type { TerminalSessionInfo, TerminalSessionSnapshot } from '../../shared/types'
 
 const OUTPUT_LIMIT = 200 * 1024
@@ -50,7 +50,7 @@ function toSnapshot(session: TerminalSessionState): TerminalSessionSnapshot {
 }
 
 export function startTerminalSession(input?: { cwd?: string }): TerminalSessionSnapshot {
-  const cwd = path.resolve(input?.cwd || process.cwd())
+  const cwd = resolveExistingDirectory(input?.cwd || process.cwd())
   const { shell, args } = shellCommand()
   const timestamp = nowIso()
   const child = spawn(shell, args, {
@@ -73,6 +73,11 @@ export function startTerminalSession(input?: { cwd?: string }): TerminalSessionS
 
   child.stdout.on('data', (chunk: Buffer) => appendOutput(session, chunk))
   child.stderr.on('data', (chunk: Buffer) => appendOutput(session, chunk))
+  child.on('error', (error) => {
+    session.status = 'exited'
+    session.exit_code = null
+    appendOutput(session, Buffer.from(`\n[spawn error] ${error.message}\n`))
+  })
   child.on('close', (exitCode) => {
     session.status = 'exited'
     session.exit_code = exitCode
