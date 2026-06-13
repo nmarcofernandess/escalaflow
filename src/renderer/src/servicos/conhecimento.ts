@@ -1,4 +1,11 @@
 import { client } from './client'
+import type {
+  AppJob,
+  BulkRagImportInput,
+  BulkRagImportStartResult,
+  KnowledgeEnrichmentConfig,
+  KnowledgeEnrichmentModelOption,
+} from '@shared/types'
 
 export const servicoConhecimento = {
   stats: () =>
@@ -23,8 +30,23 @@ export const servicoConhecimento = {
 
   escolherArquivo: () => client['knowledge.escolherArquivo']() as Promise<string | null>,
 
+  escolherPasta: () => client['knowledge.escolherPasta']() as Promise<string | null>,
+
   importar: (caminho_arquivo: string) =>
     client['knowledge.importar']({ caminho_arquivo }) as Promise<{ source_id: number; chunks_count: number; entities_count: number }>,
+
+  iniciarBulkImport: (input: BulkRagImportInput) =>
+    client['knowledge.bulkImport.start'](input) as Promise<BulkRagImportStartResult>,
+
+  listarJobs: () => client['jobs.list']() as Promise<{ jobs: AppJob[] }>,
+
+  obterJob: (id: string) => client['jobs.get']({ id }) as Promise<{ job: AppJob | null }>,
+
+  cancelarJob: (id: string) => client['jobs.cancel']({ id }) as Promise<{ job: AppJob }>,
+
+  pausarJob: (id: string) => client['jobs.pause']({ id }) as Promise<{ job: AppJob }>,
+
+  retomarJob: (id: string) => client['jobs.resume']({ id }) as Promise<{ job: AppJob }>,
 
   removerFonte: (id: number) =>
     client['knowledge.removerFonte']({ id }) as Promise<{ ok: boolean }>,
@@ -43,6 +65,15 @@ export const servicoConhecimento = {
 
   importarCompleto: (titulo: string, conteudo: string, quando_consultar: string) =>
     client['knowledge.importarCompleto']({ titulo, conteudo, quando_consultar }) as Promise<{ source_id: number; chunks_count: number; entities_count: number }>,
+
+  enrichmentConfig: () =>
+    client['knowledge.enrichmentConfig.get']() as Promise<KnowledgeEnrichmentConfig>,
+
+  salvarEnrichmentConfig: (config: Partial<KnowledgeEnrichmentConfig>) =>
+    client['knowledge.enrichmentConfig.save'](config) as Promise<KnowledgeEnrichmentConfig>,
+
+  listarEnrichmentModels: () =>
+    client['knowledge.enrichmentModels.list']() as Promise<KnowledgeEnrichmentModelOption[]>,
 
   rebuildGraph: (origem: 'sistema' | 'usuario' = 'usuario') =>
     client['knowledge.rebuildGraph']({ origem }) as Promise<{ entities_count: number; relations_count: number; chunks_processados: number }>,

@@ -7,15 +7,18 @@ import os from 'node:os'
 import { queryOne, queryAll, execute, insertReturningId, transaction, execDDL } from './db/query'
 import { validarEscalaV3 } from './motor/validador'
 import { buildSolverInput, computeSolverScenarioHash, runSolver, persistirSolverResult, cancelSolver } from './motor/solver-bridge'
+import { buildEscalaPreflight } from './motor/preflight-service'
 import { runAdvisory } from './motor/advisory-controller'
 import { inferGenerationModeForOverrides } from './motor/rule-policy'
 import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
-import { enrichPreflightWithCapacityChecks, normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
+import { assertIaCanChat } from './ia/readiness'
+import { normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
 import { persistirAjusteResult, persistirResumoAutoritativoEscala } from './tipc/escalas-utils'
 import { atualizarEscalaEquipeSnapshot } from './escala-equipe-snapshot'
 import { deletarFuncao, salvarDetalheFuncao } from './funcoes-service'
 import { resolveMcpPath, isMcpSource } from './mcp-path'
+import { getOrCreateToolServerToken } from '../node/tool-server-auth'
 import type {
   EscalaCompletaV3,
   EscalaPreflightResult,
@@ -31,6 +34,7 @@ import type {
   SalvarDetalheFuncaoRequest,
   SnapshotTrigger,
   InfeasibleError,
+  TerminalHarnessConfig,
 } from '../shared'
 import {
   derivarTipoTrabalhador,
@@ -120,81 +124,6 @@ async function derivarTipoTrabalhadorPorContratoId(tipoContratoId: number | null
   })
 }
 
-
-async function buildEscalaPreflight(
-  setorId: number,
-  dataInicio: string,
-  dataFim: string,
-  regimesOverride?: SimulacaoRegimeOverride[],
-): Promise<EscalaPreflightResult> {
-  const blockers: EscalaPreflightResult['blockers'] = []
-  const warnings: EscalaPreflightResult['warnings'] = []
-
-  const setor = await queryOne<{ id: number; ativo: boolean }>('SELECT id, ativo FROM setores WHERE id = ?', setorId)
-  if (!setor || !setor.ativo) {
-    blockers.push({
-      codigo: 'SETOR_INVALIDO',
-      severidade: 'BLOCKER',
-      mensagem: `Setor ${setorId} nao encontrado ou inativo.`,
-    })
-  }
-
-  const colabsRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM colaboradores WHERE setor_id = ? AND ativo = TRUE', setorId)
-  const colabsAtivos = colabsRow?.count ?? 0
-  if (colabsAtivos === 0) {
-    blockers.push({
-      codigo: 'SEM_COLABORADORES',
-      severidade: 'BLOCKER',
-      mensagem: 'Setor nao tem colaboradores ativos.',
-      detalhe: 'Cadastre ao menos 1 colaborador para gerar escala.',
-    })
-  }
-
-  const demandasRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM demandas WHERE setor_id = ?', setorId)
-  const demandasCount = demandasRow?.count ?? 0
-  if (demandasCount === 0) {
-    warnings.push({
-      codigo: 'SEM_DEMANDA',
-      severidade: 'WARNING',
-      mensagem: 'Setor sem demanda planejada cadastrada.',
-      detalhe: 'Sem demanda cadastrada, o sistema não terá meta de cobertura para o período.',
-    })
-  }
-
-  const feriadosRow = await queryOne<{ count: number }>('SELECT COUNT(*)::int as count FROM feriados WHERE data BETWEEN ? AND ?', dataInicio, dataFim)
-  const feriadosNoPeriodo = feriadosRow?.count ?? 0
-
-  if (blockers.length === 0) {
-    try {
-      const input = await buildSolverInput(setorId, dataInicio, dataFim, undefined, {
-        regimesOverride: normalizeRegimesOverride(regimesOverride),
-      })
-      enrichPreflightWithCapacityChecks(input, blockers, warnings)
-    } catch (err) {
-      warnings.push({
-        codigo: 'PREFLIGHT_DIAGNOSTICO_INDISPONIVEL',
-        severidade: 'WARNING',
-        mensagem: 'Nao foi possivel rodar a verificação detalhada de capacidade.',
-        detalhe: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  return {
-    ok: blockers.length === 0,
-    blockers,
-    warnings,
-    summary: {
-      setor_id: setorId,
-      data_inicio: dataInicio,
-      data_fim: dataFim,
-      colaboradores_ativos: colabsAtivos,
-      demandas_cadastradas: demandasCount,
-      feriados_no_periodo: feriadosNoPeriodo,
-      demanda_zero_fallback: demandasCount === 0,
-    },
-  }
-}
 
 function limparMensagemTecnicaGeracao(mensagem: string): string {
   return mensagem
@@ -2950,7 +2879,7 @@ function getProviderModel(config: any, provider: IaProviderKey): string {
     return config.modelo.trim()
   }
   if (provider === 'openrouter') return 'openrouter/free'
-  if (provider === 'local') return 'qwen3.5-9b'
+  if (provider === 'local') return 'gemma-4-e2b-it-q4'
   return 'gemini-3-flash-preview'
 }
 
@@ -3082,13 +3011,22 @@ async function getIaCapabilities(rawConfig?: any): Promise<import('@shared/index
 
   const localModels = dedupeCapabilityModels(
     (Object.entries(LOCAL_MODELS) as Array<[string, typeof LOCAL_MODELS[keyof typeof LOCAL_MODELS]]>).map(([modelId, model]) => {
-      const downloaded = Boolean(localStatus.modelos[modelId]?.baixado)
+      const status = localStatus.modelos[modelId]
+      const downloaded = Boolean(status?.baixado)
+      const usable = Boolean(status?.usable)
+      const loadError = status?.load_error
       return {
         id: modelId,
         label: model.label,
-        available: downloaded,
-        disabled: !downloaded,
-        reason: downloaded ? undefined : 'Modelo não instalado.',
+        available: usable,
+        disabled: !usable,
+        reason: usable
+          ? undefined
+          : loadError
+            ? `Modelo falhou ao carregar: ${loadError}`
+            : downloaded
+              ? 'Modelo baixado, mas precisa passar em Testar conexão.'
+              : 'Modelo não instalado.',
       }
     })
   )
@@ -3342,8 +3280,7 @@ async function getIaModelCatalog(provider: IaModelCatalogProvider, cfg?: IaProvi
       provider: 'local',
       source: 'static' as const,
       models: [
-        { id: 'qwen3.5-9b', label: 'Qwen 3.5 9B', provider: 'local' as const, source: 'static' as const, description: 'Melhor qualidade de respostas e tool calling. 8GB+ RAM.', supports_tools: true },
-        { id: 'qwen3.5-4b', label: 'Qwen 3.5 4B', provider: 'local' as const, source: 'static' as const, description: 'Mais rápido e leve. 4GB+ RAM.', supports_tools: true },
+        { id: 'gemma-4-e2b-it-q4', label: 'Gemma 4 E2B IT', provider: 'local' as const, source: 'static' as const, description: 'Modelo local padrão para chat, tool calling e enrichment. Requer validação com llama-server compatível.', supports_tools: true },
       ],
       fetched_at: new Date().toISOString(),
       cached: false,
@@ -3420,13 +3357,14 @@ const iaConfiguracaoTestar = t.procedure
   .action(async ({ input }) => {
     try {
       if (input.provider === 'local') {
-        const { getLocalStatus } = await import('./ia/local-llm')
-        const status = getLocalStatus()
-        const algumBaixado = Object.values(status.modelos).some(m => m.baixado)
-        if (!algumBaixado) {
-          throw new Error('Nenhum modelo local baixado. Baixe um modelo em Configurações > IA Local.')
+        const { validateLocalModel, LOCAL_MODELS, getLocalStatus } = await import('./ia/local-llm')
+        const modelId = input.modelo as keyof typeof LOCAL_MODELS
+        if (!LOCAL_MODELS[modelId]) {
+          throw new Error(`Modelo local "${input.modelo}" não existe no catálogo local.`)
         }
-        return { sucesso: true, mensagem: `Modelo local disponível. GPU: ${status.gpu_detectada || 'cpu'}` }
+        await validateLocalModel(modelId)
+        const status = getLocalStatus()
+        return { sucesso: true, mensagem: `Modelo local validado: ${LOCAL_MODELS[modelId].label}. GPU: ${status.gpu_detectada || 'cpu'}` }
       }
 
       if (input.provider === 'openrouter') {
@@ -3695,6 +3633,7 @@ const iaChatLerAnexoPreview = t.procedure
 const iaChatEnviar = t.procedure
   .input<{ mensagem: string; historico: import('@shared/index').IaMensagem[]; contexto?: import('@shared/index').IaContexto; stream_id?: string; conversa_id?: string; anexos?: import('@shared/index').IaAnexo[] }>()
   .action(async ({ input }) => {
+    await assertIaCanChat()
     if (input.stream_id) {
       return await iaEnviarMensagemStream(input.mensagem, input.historico, input.stream_id, input.contexto, input.conversa_id, input.anexos)
     }
@@ -4344,11 +4283,43 @@ const knowledgeEscolherArquivo = t.procedure.action(async () => {
   const win = BrowserWindow.getFocusedWindow()
   const opts = {
     properties: ['openFile' as const],
-    filters: [{ name: 'Documentos', extensions: ['md', 'txt', 'pdf'] }],
+    filters: [{ name: 'Documentos', extensions: ['md', 'markdown', 'txt', 'pdf', 'json', 'jsonl', 'zip', 'html', 'htm', 'csv'] }],
   }
   const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
   if (result.canceled || !result.filePaths.length) return null
   return result.filePaths[0]
+})
+
+const knowledgeEscolherPasta = t.procedure.action(async () => {
+  const win = BrowserWindow.getFocusedWindow()
+  const opts = { properties: ['openDirectory' as const] }
+  const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+  if (result.canceled || !result.filePaths.length) return null
+  return result.filePaths[0]
+})
+
+const knowledgeBulkImportStart = t.procedure
+  .input<{ path: string; group_name: string; auto_enrich?: boolean; recursive?: boolean; filters?: string[] }>()
+  .action(async ({ input }) => {
+    const { startBulkRagImport } = await import('./knowledge/bulk-import')
+    return await startBulkRagImport(input)
+  })
+
+const knowledgeEnrichmentConfigGet = t.procedure.action(async () => {
+  const { getKnowledgeEnrichmentConfig } = await import('./knowledge/enrichment-config')
+  return await getKnowledgeEnrichmentConfig()
+})
+
+const knowledgeEnrichmentConfigSave = t.procedure
+  .input<Partial<import('../shared').KnowledgeEnrichmentConfig>>()
+  .action(async ({ input }) => {
+    const { saveKnowledgeEnrichmentConfig } = await import('./knowledge/enrichment-config')
+    return await saveKnowledgeEnrichmentConfig(input)
+  })
+
+const knowledgeEnrichmentModelsList = t.procedure.action(async () => {
+  const { listKnowledgeEnrichmentModelOptions } = await import('./knowledge/enrichment-config')
+  return await listKnowledgeEnrichmentModelOptions()
 })
 
 const knowledgeImportar = t.procedure
@@ -4744,8 +4715,22 @@ const mcpConnectClaudeCode = t.procedure.action(async () => {
   try {
     const resolved = resolveMcpPath()
     const isSource = isMcpSource(resolved)
+    const token = getOrCreateToolServerToken()
 
-    const args = ['mcp', 'add', 'escalaflow', '--transport', 'stdio', '--scope', 'user', '--']
+    const args = [
+      'mcp',
+      'add',
+      'escalaflow',
+      '--transport',
+      'stdio',
+      '--scope',
+      'user',
+      '-e',
+      `ESCALAFLOW_TOOL_SERVER_TOKEN=${token}`,
+      '-e',
+      'ESCALAFLOW_TOOL_SERVER=http://127.0.0.1:17380',
+      '--',
+    ]
     if (isSource) {
       args.push('npx', 'tsx', resolved)
     } else {
@@ -4771,8 +4756,21 @@ const mcpConfigJson = t.procedure.action(async () => {
     const config: Record<string, unknown> = {
       mcpServers: {
         escalaflow: isSource
-          ? { command: 'npx', args: ['tsx', resolved] }
-          : { command: resolved }
+          ? {
+              command: 'npx',
+              args: ['tsx', resolved],
+              env: {
+                ESCALAFLOW_TOOL_SERVER: 'http://127.0.0.1:17380',
+                ESCALAFLOW_TOOL_SERVER_TOKEN: getOrCreateToolServerToken(),
+              },
+            }
+          : {
+              command: resolved,
+              env: {
+                ESCALAFLOW_TOOL_SERVER: 'http://127.0.0.1:17380',
+                ESCALAFLOW_TOOL_SERVER_TOKEN: getOrCreateToolServerToken(),
+              },
+            }
       }
     }
     return { json: JSON.stringify(config, null, 2) }
@@ -4780,6 +4778,106 @@ const mcpConfigJson = t.procedure.action(async () => {
     return { json: null, error: String(err) }
   }
 })
+
+// =============================================================================
+// JOBS
+// =============================================================================
+
+const jobsList = t.procedure.action(async () => {
+  const { listJobs } = await import('./jobs')
+  return { jobs: listJobs() }
+})
+
+const jobsGet = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { getJob } = await import('./jobs')
+    return { job: getJob(input.id) }
+  })
+
+const jobsCancel = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { cancelJob } = await import('./jobs')
+    return { job: cancelJob(input.id) }
+  })
+
+const jobsPause = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { pauseJob } = await import('./jobs')
+    return { job: pauseJob(input.id) }
+  })
+
+const jobsResume = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { resumeJob } = await import('./jobs')
+    return { job: resumeJob(input.id) }
+  })
+
+// =============================================================================
+// TERMINAL HARNESS
+// =============================================================================
+
+const terminalConfigGet = t.procedure.action(async () => {
+  const { getTerminalHarnessConfig } = await import('./terminal/config')
+  return await getTerminalHarnessConfig()
+})
+
+const terminalConfigSave = t.procedure
+  .input<Partial<TerminalHarnessConfig>>()
+  .action(async ({ input }) => {
+    const { saveTerminalHarnessConfig } = await import('./terminal/config')
+    return await saveTerminalHarnessConfig(input)
+  })
+
+const terminalOpenCli = t.procedure
+  .input<{ command?: string; cwd?: string } | undefined>()
+  .action(async ({ input }) => {
+    const { openCliInSystemTerminal } = await import('./terminal/harness')
+    return await openCliInSystemTerminal(input ?? {})
+  })
+
+const terminalSessionsList = t.procedure.action(async () => {
+  const { listTerminalSessions } = await import('./terminal/sessions')
+  return { sessions: listTerminalSessions() }
+})
+
+const terminalSessionsStart = t.procedure
+  .input<{ cwd?: string } | undefined>()
+  .action(async ({ input }) => {
+    const { startTerminalSession } = await import('./terminal/sessions')
+    return { session: startTerminalSession(input ?? {}) }
+  })
+
+const terminalSessionsGet = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { getTerminalSession } = await import('./terminal/sessions')
+    return { session: getTerminalSession(input.id) }
+  })
+
+const terminalSessionsWrite = t.procedure
+  .input<{ id: string; data: string }>()
+  .action(async ({ input }) => {
+    const { writeTerminalSession } = await import('./terminal/sessions')
+    return { session: writeTerminalSession(input.id, input.data) }
+  })
+
+const terminalSessionsResize = t.procedure
+  .input<{ id: string; cols: number; rows: number }>()
+  .action(async ({ input }) => {
+    const { resizeTerminalSession } = await import('./terminal/sessions')
+    return { session: resizeTerminalSession(input.id, input.cols, input.rows) }
+  })
+
+const terminalSessionsKill = t.procedure
+  .input<{ id: string }>()
+  .action(async ({ input }) => {
+    const { killTerminalSession } = await import('./terminal/sessions')
+    return { session: killTerminalSession(input.id) }
+  })
 
 // =============================================================================
 // ROUTER
@@ -4931,13 +5029,18 @@ export const router = {
   'knowledge.listarFontes': knowledgeListarFontes,
   'knowledge.stats': knowledgeStats,
   'knowledge.escolherArquivo': knowledgeEscolherArquivo,
+  'knowledge.escolherPasta': knowledgeEscolherPasta,
   'knowledge.importar': knowledgeImportar,
+  'knowledge.bulkImport.start': knowledgeBulkImportStart,
   'knowledge.removerFonte': knowledgeRemoverFonte,
   'knowledge.toggleAtivo': knowledgeToggleAtivo,
   'knowledge.obterTextoOriginal': knowledgeObterTextoOriginal,
   'knowledge.extrairTexto': knowledgeExtrairTexto,
   'knowledge.gerarMetadataIa': knowledgeGerarMetadataIa,
   'knowledge.importarCompleto': knowledgeImportarCompleto,
+  'knowledge.enrichmentConfig.get': knowledgeEnrichmentConfigGet,
+  'knowledge.enrichmentConfig.save': knowledgeEnrichmentConfigSave,
+  'knowledge.enrichmentModels.list': knowledgeEnrichmentModelsList,
   'knowledge.enrich': knowledgeEnrich,
   'knowledge.rebuildGraph': knowledgeRebuildGraph,
   'knowledge.graphStats': knowledgeGraphStats,
@@ -4957,10 +5060,26 @@ export const router = {
   'backup.snapshots.restaurarPreRestore': backupSnapshotsRestaurarPreRestore,
   'backup.snapshots.deletar': backupSnapshotsDeletar,
   'backup.pasta.escolher': backupPastaEscolher,
+  // Jobs
+  'jobs.list': jobsList,
+  'jobs.get': jobsGet,
+  'jobs.cancel': jobsCancel,
+  'jobs.pause': jobsPause,
+  'jobs.resume': jobsResume,
   // MCP
   'mcp.path': mcpPath,
   'mcp.connectClaudeCode': mcpConnectClaudeCode,
   'mcp.configJson': mcpConfigJson,
+  // Terminal
+  'terminal.config.get': terminalConfigGet,
+  'terminal.config.save': terminalConfigSave,
+  'terminal.openCli': terminalOpenCli,
+  'terminal.sessions.list': terminalSessionsList,
+  'terminal.sessions.start': terminalSessionsStart,
+  'terminal.sessions.get': terminalSessionsGet,
+  'terminal.sessions.write': terminalSessionsWrite,
+  'terminal.sessions.resize': terminalSessionsResize,
+  'terminal.sessions.kill': terminalSessionsKill,
 }
 
 export type Router = typeof router

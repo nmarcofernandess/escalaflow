@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from 'react'
-import { ArrowLeft, ChevronDown, Loader2, Sparkles, Upload, FileText } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { ArrowLeft, ChevronDown, FolderOpen, Loader2, Sparkles, Upload, FileText, Pause, Play, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Collapsible,
@@ -21,6 +22,7 @@ import {
 import { servicoConhecimento } from '@/servicos/conhecimento'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import type { AppJob } from '@shared/types'
 
 const MAX_PREVIEW_CHARS = 50_000
 
@@ -41,6 +43,9 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
   const [salvando, setSalvando] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [previewAberto, setPreviewAberto] = useState(false)
+  const [bulkPath, setBulkPath] = useState<string | null>(null)
+  const [bulkGroupName, setBulkGroupName] = useState('')
+  const [bulkJob, setBulkJob] = useState<AppJob | null>(null)
 
   const conteudoCompletoRef = useRef('')
 
@@ -56,6 +61,9 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
     setSalvando(false)
     setDragging(false)
     setPreviewAberto(false)
+    setBulkPath(null)
+    setBulkGroupName('')
+    setBulkJob(null)
     conteudoCompletoRef.current = ''
   }, [])
 
@@ -98,6 +106,15 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
     const caminho = await servicoConhecimento.escolherArquivo()
     if (caminho) await handleExtrairArquivo(caminho)
   }, [handleExtrairArquivo])
+
+  const handleEscolherPasta = useCallback(async () => {
+    const caminho = await servicoConhecimento.escolherPasta()
+    if (!caminho) return
+    const nome = caminho.split(/[\\/]/).filter(Boolean).pop() || 'Importacao RAG'
+    setBulkPath(caminho)
+    setBulkGroupName(nome)
+    setBulkJob(null)
+  }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -183,14 +200,97 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
     }
   }, [titulo, quandoConsultar, conteudo, resetState, onOpenChange, onSaved])
 
+  const handleBulkImport = useCallback(async () => {
+    if (!bulkPath || !bulkGroupName.trim()) {
+      toast.error('Informe a pasta e o nome do grupo.')
+      return
+    }
+
+    setSalvando(true)
+    try {
+      const result = await servicoConhecimento.iniciarBulkImport({
+        path: bulkPath,
+        group_name: bulkGroupName.trim(),
+      })
+      setBulkJob(result.app_job)
+      toast.success('Importação em massa iniciada.', {
+        description: `Job RAG #${result.import_job.id}`,
+      })
+    } catch (err: any) {
+      toast.error('Erro ao iniciar importação', { description: err?.message })
+    } finally {
+      setSalvando(false)
+    }
+  }, [bulkPath, bulkGroupName])
+
+  const handleBulkPause = useCallback(async () => {
+    if (!bulkJob) return
+    try {
+      const result = await servicoConhecimento.pausarJob(bulkJob.id)
+      setBulkJob(result.job)
+    } catch (err: any) {
+      toast.error('Erro ao pausar importação', { description: err?.message })
+    }
+  }, [bulkJob])
+
+  const handleBulkResume = useCallback(async () => {
+    if (!bulkJob) return
+    try {
+      const result = await servicoConhecimento.retomarJob(bulkJob.id)
+      setBulkJob(result.job)
+    } catch (err: any) {
+      toast.error('Erro ao retomar importação', { description: err?.message })
+    }
+  }, [bulkJob])
+
+  const handleBulkCancel = useCallback(async () => {
+    if (!bulkJob) return
+    try {
+      const result = await servicoConhecimento.cancelarJob(bulkJob.id)
+      setBulkJob(result.job)
+    } catch (err: any) {
+      toast.error('Erro ao cancelar importação', { description: err?.message })
+    }
+  }, [bulkJob])
+
+  useEffect(() => {
+    if (!bulkJob || ['done', 'failed', 'cancelled'].includes(bulkJob.status)) return
+
+    const timer = window.setInterval(async () => {
+      try {
+        const result = await servicoConhecimento.obterJob(bulkJob.id)
+        if (!result.job) return
+        setBulkJob(result.job)
+
+        if (result.job.status === 'done') {
+          toast.success('Importação em massa concluída.', {
+            description: `${result.job.metadata.imported_files ?? 0} arquivos · ${result.job.metadata.chunks_count ?? 0} chunks`,
+          })
+          onSaved()
+        } else if (result.job.status === 'failed') {
+          toast.error('Importação em massa falhou', {
+            description: result.job.error_message ?? 'Erro desconhecido',
+          })
+        }
+      } catch {
+        // polling best-effort
+      }
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [bulkJob, onSaved])
+
   const podeSalvar = titulo.trim().length > 0 && quandoConsultar.trim().length > 0 && conteudo.trim().length > 0
   const textoCompleto = conteudoCompletoRef.current || conteudo
   const charCount = textoCompleto.length
+  const bulkProgress = bulkJob && bulkJob.progress.total > 0
+    ? Math.round((bulkJob.progress.done / bulkJob.progress.total) * 100)
+    : 0
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
+        <DialogHeader className="pr-8">
           <DialogTitle>Importar Documento</DialogTitle>
         </DialogHeader>
 
@@ -205,9 +305,71 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
               onClick={handleEscolherArquivo}
             >
               <Upload className="size-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Arraste um arquivo (.md .txt .pdf)</p>
+              <p className="text-sm font-medium">Arraste um arquivo (.md .txt .jsonl .pdf .json .zip)</p>
               <p className="text-xs text-muted-foreground">ou clique para selecionar</p>
             </div>
+
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" size="sm" onClick={handleEscolherPasta}>
+                <FolderOpen className="mr-1.5 size-3.5" />
+                Pasta
+              </Button>
+            </div>
+
+            {bulkPath && (
+              <div className="flex min-w-0 max-w-full flex-col gap-3 overflow-hidden rounded-md border p-3">
+                <div className="flex min-w-0 max-w-full items-center gap-2 text-sm">
+                  <FolderOpen className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="block min-w-0 flex-1 truncate" title={bulkPath}>{bulkPath}</span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="bulk-group">Grupo</Label>
+                  <Input
+                    id="bulk-group"
+                    value={bulkGroupName}
+                    onChange={(e) => setBulkGroupName(e.target.value)}
+                    maxLength={120}
+                  />
+                </div>
+                {bulkJob && (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{bulkJob.status}</span>
+                      <span>{bulkJob.progress.done}/{bulkJob.progress.total}</span>
+                    </div>
+                    <Progress value={bulkProgress} />
+                    {!['done', 'failed', 'cancelled'].includes(bulkJob.status) && (
+                      <div className="flex flex-wrap gap-2">
+                        {bulkJob.status === 'paused' ? (
+                          <Button type="button" size="sm" variant="outline" onClick={handleBulkResume}>
+                            <Play className="mr-1.5 size-3.5" />
+                            Retomar
+                          </Button>
+                        ) : (
+                          <Button type="button" size="sm" variant="outline" onClick={handleBulkPause}>
+                            <Pause className="mr-1.5 size-3.5" />
+                            Pausar
+                          </Button>
+                        )}
+                        <Button type="button" size="sm" variant="outline" onClick={handleBulkCancel}>
+                          <X className="mr-1.5 size-3.5" />
+                          Cancelar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleBulkImport}
+                  disabled={salvando || Boolean(bulkJob && !['done', 'failed', 'cancelled'].includes(bulkJob.status))}
+                >
+                  {salvando && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                  Importar Pasta
+                </Button>
+              </div>
+            )}
 
             <div className="relative flex items-center gap-3">
               <Separator className="flex-1" />
@@ -275,7 +437,7 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
                   id="titulo"
                   value={titulo}
                   onChange={(e) => setTitulo(e.target.value)}
-                  placeholder="Ex: Acordo Coletivo 2026"
+                  placeholder="Ex: Documentacao do Projeto"
                   maxLength={120}
                 />
               )}
@@ -305,7 +467,7 @@ export function AdicionarConhecimentoDialog({ open, onOpenChange, onSaved, iaDis
                   id="quando"
                   value={quandoConsultar}
                   onChange={(e) => setQuandoConsultar(e.target.value)}
-                  placeholder="Ex: Hora extra, banco de horas, adicional noturno"
+                  placeholder="Ex: Arquitetura do sistema, fluxo de deploy, stack tecnologica"
                   maxLength={250}
                 />
               )}

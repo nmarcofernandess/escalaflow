@@ -7,25 +7,25 @@ import { generatePassageEmbedding } from './embeddings'
 // SCHEMA — o que o LLM retorna pra cada chunk no batch
 // =============================================================================
 
-const ChunkEnrichmentSchema = z.object({
+export const ChunkEnrichmentSchema = z.object({
   chunks: z.array(z.object({
     index: z.number().describe('Índice do chunk no batch (0-based)'),
     resumo: z.string().describe('Resumo em 1 frase clara do conteúdo do chunk'),
     tags: z.array(z.string()).describe('5-10 conceitos-chave incluindo sinônimos em português'),
     entidades: z.array(z.object({
       nome: z.string().describe('Nome canônico da entidade'),
-      tipo: z.string().describe('Tipo: pessoa, contrato, setor, regra, feriado, funcao, conceito, legislacao'),
+      tipo: z.string().describe('Tipo da entidade (livre — ex: pessoa, projeto, tecnologia, conceito, documento, lugar, evento, empresa)'),
     })),
     relacoes: z.array(z.object({
       from: z.string().describe('Nome da entidade de origem'),
       to: z.string().describe('Nome da entidade de destino'),
-      tipo_relacao: z.string().describe('Ex: trabalha_em, regido_por, depende_de, aplica_se_a, exige, proibe'),
+      tipo_relacao: z.string().describe('Tipo da relacao (ex: usa, criou, depende_de, relacionado_a, parte_de, trabalha_com, implementa)'),
       peso: z.number().min(0).max(1).describe('1.0 = explícita, 0.5 = inferida'),
     })),
   })),
 })
 
-type ChunkEnrichmentResult = z.infer<typeof ChunkEnrichmentSchema>
+export type ChunkEnrichmentResult = z.infer<typeof ChunkEnrichmentSchema>
 
 // =============================================================================
 // CONFIG
@@ -62,7 +62,7 @@ function buildBatchPrompt(
     `=== CHUNK ${i} (id: ${c.id}) ===\n${c.conteudo}`
   ).join('\n\n')
 
-  return `Você é um especialista em indexação de conhecimento para RH de supermercado.
+  return `Você é um especialista em indexacao de conhecimento para RH, escalas CLT/CCT, varejo e operação de supermercado.
 
 SOURCE: "${sourceTitulo}" (tipo: ${sourceTipo})
 ${entityContext}
@@ -85,28 +85,99 @@ ${chunkBlocks}`
 // ENRICH BATCH — 1 LLM call pra N chunks
 // =============================================================================
 
+export interface EnrichmentModel {
+  provider: 'gemini' | 'openrouter' | 'local'
+  modelo: string
+  generate: (prompt: string) => Promise<ChunkEnrichmentResult>
+}
+
+export interface EnrichmentResult {
+  chunks_enriquecidos: number
+  entities_count: number
+  relations_count: number
+  batches_processados: number
+  batches_failed: number
+  provider: EnrichmentModel['provider']
+  modelo: string
+}
+
+export function createAiSdkEnrichmentModel(
+  createModel: (modelo: string) => any,
+  modelo: string,
+  provider: 'gemini' | 'openrouter' = 'gemini',
+): EnrichmentModel {
+  return {
+    provider,
+    modelo,
+    async generate(prompt: string) {
+      const { object } = await withTimeout(
+        generateObject({
+          model: createModel(modelo),
+          schema: ChunkEnrichmentSchema,
+          prompt,
+        }),
+        TIMEOUT_MS,
+        `enrichment ${modelo}`,
+      )
+      return object
+    },
+  }
+}
+
+function extractJsonObject(raw: string): unknown {
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+
+  try {
+    return JSON.parse(cleaned)
+  } catch {
+    const first = cleaned.indexOf('{')
+    const last = cleaned.lastIndexOf('}')
+    if (first >= 0 && last > first) {
+      return JSON.parse(cleaned.slice(first, last + 1))
+    }
+    throw new Error('Modelo local nao retornou JSON valido.')
+  }
+}
+
+export function createLocalEnrichmentModel(modelo: string): EnrichmentModel {
+  return {
+    provider: 'local',
+    modelo,
+    async generate(prompt: string) {
+      const { localLlmGenerateJson } = await import('../ia/local-llm')
+      const raw = await withTimeout(
+        localLlmGenerateJson(
+          `${prompt}
+
+Responda EXCLUSIVAMENTE com JSON valido neste formato:
+{"chunks":[{"index":0,"resumo":"...","tags":["..."],"entidades":[{"nome":"...","tipo":"..."}],"relacoes":[{"from":"...","to":"...","tipo_relacao":"...","peso":1}]}]}`,
+          { modelId: modelo as import('../ia/local-llm').LocalModelId, maxTokens: 4096 },
+        ),
+        TIMEOUT_MS,
+        `local enrichment ${modelo}`,
+      )
+      return ChunkEnrichmentSchema.parse(extractJsonObject(raw))
+    },
+  }
+}
+
 async function enrichBatch(
   chunks: Array<{ id: number; conteudo: string }>,
   sourceTitulo: string,
   sourceTipo: string,
   existingEntityNames: string[],
-  createModel: (modelo: string) => any,
-  modelo: string,
+  enrichmentModel: EnrichmentModel,
 ): Promise<ChunkEnrichmentResult> {
   try {
     const prompt = buildBatchPrompt(chunks, sourceTitulo, sourceTipo, existingEntityNames)
-    console.log(`[enrichment]   → chamando LLM (${modelo}) com ${prompt.length} chars...`)
-    const { object } = await withTimeout(
-      generateObject({
-        model: createModel(modelo),
-        schema: ChunkEnrichmentSchema,
-        prompt,
-      }),
-      TIMEOUT_MS,
-      `enrichBatch ${chunks.length} chunks`,
-    )
-    console.log(`[enrichment]   ✓ LLM retornou ${object.chunks.length} chunks enriquecidos`)
-    return object
+    console.log(`[enrichment]   → chamando ${enrichmentModel.provider} (${enrichmentModel.modelo}) com ${prompt.length} chars...`)
+    const result = await enrichmentModel.generate(prompt)
+    console.log(`[enrichment]   ✓ LLM retornou ${result.chunks.length} chunks enriquecidos`)
+    return result
   } catch (err) {
     console.error(`[enrichment]   ✗ Batch FALHOU (${chunks.length} chunks):`, (err as Error).message)
     return { chunks: [] }
@@ -258,6 +329,8 @@ export interface EnrichmentProgress {
 export interface EnrichmentOptions {
   /** Filtro por tipo de source: 'sistema', 'manual', 'importacao_usuario', etc. Se omitido, processa todos. */
   sourceTipo?: string
+  /** Filtro por grupo de importacao em massa. */
+  bulkGroupId?: string | number
   /** Se true, re-enriquece chunks já enriquecidos. Default: false (só processa novos). */
   forceAll?: boolean
 }
@@ -267,17 +340,34 @@ export async function enrichAllChunks(
   modelo: string,
   options?: EnrichmentOptions,
   onProgress?: (p: EnrichmentProgress) => void,
-): Promise<{
-  chunks_enriquecidos: number
-  entities_count: number
-  relations_count: number
-  batches_processados: number
-  batches_failed: number
-}> {
+): Promise<EnrichmentResult> {
+  return enrichAllChunksWithModel(createAiSdkEnrichmentModel(createModel, modelo), options, onProgress)
+}
+
+export async function enrichAllChunksWithModel(
+  enrichmentModel: EnrichmentModel,
+  options?: EnrichmentOptions,
+  onProgress?: (p: EnrichmentProgress) => void,
+): Promise<EnrichmentResult> {
   onProgress?.({ fase: 'carregando' })
 
   // 1. Carregar chunks agrupados por source
-  const tipoFilter = options?.sourceTipo ? `AND ks.tipo = '${options.sourceTipo}'` : ''
+  const params: unknown[] = []
+  const tipoFilter = options?.sourceTipo ? `AND ks.tipo = $${params.push(options.sourceTipo)}` : ''
+  let bulkGroupFilter = ''
+  if (options?.bulkGroupId) {
+    const groupValue = String(options.bulkGroupId)
+    const numericGroupId = /^\d+$/.test(groupValue) ? Number(groupValue) : null
+    if (numericGroupId) {
+      params.push(numericGroupId)
+      const groupParam = params.length
+      params.push(groupValue)
+      const metadataParam = params.length
+      bulkGroupFilter = `AND (ks.group_id = $${groupParam} OR ks.metadata->>'bulk_group_id' = $${metadataParam})`
+    } else {
+      bulkGroupFilter = `AND ks.metadata->>'bulk_group_id' = $${params.push(groupValue)}`
+    }
+  }
   const enrichedFilter = options?.forceAll ? '' : 'AND kc.enriched_at IS NULL'
 
   const chunks = await queryAll<{
@@ -292,13 +382,22 @@ export async function enrichAllChunks(
     JOIN knowledge_sources ks ON ks.id = kc.source_id AND ks.ativo = true
     WHERE length(kc.conteudo) > 50
       ${tipoFilter}
+      ${bulkGroupFilter}
       ${enrichedFilter}
     ORDER BY ks.tipo, ks.id, kc.id
-  `)
+  `, ...params)
 
   if (chunks.length === 0) {
     onProgress?.({ fase: 'concluido', chunks_enriquecidos: 0, entities_count: 0, relations_count: 0 })
-    return { chunks_enriquecidos: 0, entities_count: 0, relations_count: 0, batches_processados: 0, batches_failed: 0 }
+    return {
+      chunks_enriquecidos: 0,
+      entities_count: 0,
+      relations_count: 0,
+      batches_processados: 0,
+      batches_failed: 0,
+      provider: enrichmentModel.provider,
+      modelo: enrichmentModel.modelo,
+    }
   }
 
   // 2. Carregar entidades existentes pra contexto do LLM
@@ -335,15 +434,25 @@ export async function enrichAllChunks(
 
   console.log(`[enrichment] ══════════════════════════════════════════════`)
   console.log(`[enrichment] INICIO: ${chunks.length} chunks em ${batches.length} batches (${sourceGroups.size} sources)`)
-  console.log(`[enrichment] Modelo: ${modelo}`)
+  console.log(`[enrichment] Modelo: ${enrichmentModel.provider}/${enrichmentModel.modelo}`)
   console.log(`[enrichment] Entidades existentes no graph: ${existingEntityNames.length}`)
   console.log(`[enrichment] ══════════════════════════════════════════════`)
 
   // 5. Processar batches
   let totalEnriched = 0
   let batchesFailed = 0
-  const allEntities: Array<{ nome: string; tipo: string }> = []
-  const allRelations: Array<{ from: string; to: string; tipo_relacao: string; peso: number }> = []
+  const graphByOrigem = new Map<'sistema' | 'usuario', {
+    entities: Array<{ nome: string; tipo: string }>
+    relations: Array<{ from: string; to: string; tipo_relacao: string; peso: number }>
+  }>()
+  const graphBucketFor = (sourceTipo: string) => {
+    const origem = sourceTipo === 'sistema' ? 'sistema' as const : 'usuario' as const
+    const existing = graphByOrigem.get(origem)
+    if (existing) return existing
+    const bucket = { entities: [], relations: [] }
+    graphByOrigem.set(origem, bucket)
+    return bucket
+  }
 
   for (let b = 0; b < batches.length; b++) {
     const batch = batches[b]
@@ -355,8 +464,7 @@ export async function enrichAllChunks(
       batch.sourceTitulo,
       batch.sourceTipo,
       existingEntityNames,
-      createModel,
-      modelo,
+      enrichmentModel,
     )
 
     if (result.chunks.length === 0) {
@@ -376,8 +484,9 @@ export async function enrichAllChunks(
       totalEnriched++
 
       // Acumular graph data
-      allEntities.push(...enriched.entidades)
-      allRelations.push(...enriched.relacoes)
+      const bucket = graphBucketFor(batch.sourceTipo)
+      bucket.entities.push(...enriched.entidades)
+      bucket.relations.push(...enriched.relacoes)
 
       // Adicionar novas entidades ao contexto pra próximos batches
       for (const e of enriched.entidades) {
@@ -390,13 +499,19 @@ export async function enrichAllChunks(
 
   // 7. Persistir graph acumulado
   onProgress?.({ fase: 'graph' })
-  console.log(`[enrichment] persistindo graph: ${allEntities.length} entidades, ${allRelations.length} relações`)
+  const totalGraphEntities = [...graphByOrigem.values()].reduce((sum, bucket) => sum + bucket.entities.length, 0)
+  const totalGraphRelations = [...graphByOrigem.values()].reduce((sum, bucket) => sum + bucket.relations.length, 0)
+  console.log(`[enrichment] persistindo graph: ${totalGraphEntities} entidades, ${totalGraphRelations} relações`)
 
-  // Determinar origem do graph pelo tipo mais comum
-  const origem = batches[0]?.sourceTipo === 'sistema' ? 'sistema' as const : 'usuario' as const
-  const graphResult = allEntities.length > 0
-    ? await persistEnrichmentGraph(allEntities, allRelations, origem)
-    : { entities_count: 0, relations_count: 0 }
+  let graphResult = { entities_count: 0, relations_count: 0 }
+  for (const [origem, bucket] of graphByOrigem) {
+    if (bucket.entities.length === 0) continue
+    const partial = await persistEnrichmentGraph(bucket.entities, bucket.relations, origem)
+    graphResult = {
+      entities_count: graphResult.entities_count + partial.entities_count,
+      relations_count: graphResult.relations_count + partial.relations_count,
+    }
+  }
 
   onProgress?.({
     fase: 'concluido',
@@ -416,5 +531,7 @@ export async function enrichAllChunks(
     relations_count: graphResult.relations_count,
     batches_processados: batches.length,
     batches_failed: batchesFailed,
+    provider: enrichmentModel.provider,
+    modelo: enrichmentModel.modelo,
   }
 }

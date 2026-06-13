@@ -5,7 +5,7 @@ import type { IaConfiguracao } from '../../shared/types'
 export const PROVIDER_DEFAULTS: Record<'gemini' | 'openrouter' | 'local', string> = {
     gemini: 'gemini-3-flash-preview',
     openrouter: 'openrouter/free',
-    local: 'qwen3.5-9b',
+    local: 'gemma-4-e2b-it-q4',
 }
 
 /**
@@ -45,7 +45,7 @@ export function resolveModel(config: IaConfiguracao, providerLabel: 'gemini' | '
 
 export function isValidModelForProvider(modelo: string, provider: 'gemini' | 'openrouter' | 'local'): boolean {
     if (!modelo) return false
-    if (provider === 'local') return true
+    if (provider === 'local') return modelo === PROVIDER_DEFAULTS.local
     if (provider === 'openrouter') {
         // OpenRouter exige 'namespace/model' (ex: 'anthropic/claude-sonnet-4', 'google/gemini-2.5-flash')
         return modelo.includes('/')

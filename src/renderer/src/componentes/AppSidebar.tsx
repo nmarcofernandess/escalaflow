@@ -21,6 +21,7 @@ import {
   Zap,
   Loader2,
   RotateCcw,
+  SquareTerminal,
 } from 'lucide-react'
 import logoIcon from '@/assets/logo.png'
 import {
@@ -71,6 +72,7 @@ const mainNav = [
   { label: 'Colaboradores', to: '/colaboradores', icon: Users },
   { label: 'Assistente IA', to: '/ia', icon: BrainCircuit },
   { label: 'Memoria', to: '/memoria', icon: Database },
+  { label: 'Terminal', to: '/terminal', icon: SquareTerminal },
 ]
 
 const configNav = [

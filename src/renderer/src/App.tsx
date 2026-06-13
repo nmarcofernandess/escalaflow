@@ -24,6 +24,7 @@ import { RegrasPagina } from './paginas/RegrasPagina'
 import { MemoriaPagina } from './paginas/MemoriaPagina'
 import { IaPagina } from './paginas/IaPagina'
 import { SimulaCicloPagina } from './paginas/SimulaCicloPagina'
+import { TerminalPagina } from './paginas/TerminalPagina'
 import { NaoEncontrado } from './paginas/NaoEncontrado'
 
 function AppLayout() {
@@ -118,6 +119,7 @@ export const router = createHashRouter([
       { path: '/configuracoes', element: <ConfiguracoesPagina /> },
       { path: '/regras', element: <RegrasPagina /> },
       { path: '/memoria', element: <MemoriaPagina /> },
+      { path: '/terminal', element: <TerminalPagina /> },
       { path: '/ia', element: <IaPagina /> },
       { path: '*', element: <NaoEncontrado /> },
     ],
