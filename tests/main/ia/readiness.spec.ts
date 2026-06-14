@@ -122,6 +122,50 @@ describe('IA chat readiness', () => {
     expect(state.validateCalls).toBe(0)
   })
 
+  it('surfaces local model download progress before asking to launch chat', async () => {
+    state.config = iaConfig()
+    state.localStatus = {
+      baixado: false,
+      usable: false,
+      requires_validation: false,
+      load_error: undefined,
+      tamanho_bytes: 3_110_000_000,
+      download_status: 'downloading',
+      download_progresso: 0.42,
+    }
+    const { getIaChatReadiness } = await import('../../../src/main/ia/readiness')
+
+    await expect(getIaChatReadiness()).resolves.toMatchObject({
+      ok: false,
+      provider: 'local',
+      model: 'gemma-4-e2b-it-q4',
+      reason: 'download_local_model_downloading',
+    })
+    expect(state.validateCalls).toBe(0)
+  })
+
+  it('surfaces cancelled local model downloads as a retry state', async () => {
+    state.config = iaConfig()
+    state.localStatus = {
+      baixado: false,
+      usable: false,
+      requires_validation: false,
+      load_error: undefined,
+      tamanho_bytes: 3_110_000_000,
+      download_status: 'cancelled',
+      download_progresso: 0.19,
+    }
+    const { getIaChatReadiness } = await import('../../../src/main/ia/readiness')
+
+    await expect(getIaChatReadiness()).resolves.toMatchObject({
+      ok: false,
+      provider: 'local',
+      model: 'gemma-4-e2b-it-q4',
+      reason: 'download_local_model_cancelled',
+    })
+    expect(state.validateCalls).toBe(0)
+  })
+
   it('can validate a downloaded local model when explicitly requested', async () => {
     state.config = iaConfig()
     state.localStatus = {

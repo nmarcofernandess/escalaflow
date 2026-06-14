@@ -3,8 +3,14 @@ import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import { execute } from '../db/query'
 import { createJob, failJob, finishJob, getJob, registerJobCancelHandler, updateJob } from '../jobs'
+import { getAiTerminalReadiness } from '../ia/runtime-readiness'
+import { getOrCreateToolServerToken } from '../../node/tool-server-auth'
+import { buildAiTerminalCommand } from '../../shared/terminal-launch-contract'
+import { resolveToolServerUrl } from '../../shared/tool-server-url'
 import { getTerminalHarnessConfig } from './config'
+import { openSystemTerminalWithScript } from './open-system-terminal'
 import { resolveExistingDirectory } from './paths'
+import { writeAiTerminalWrapper } from './terminal-wrapper'
 import { isTerminalExecSuccess } from '../../shared/types'
 import type {
   AppJob,
@@ -296,7 +302,7 @@ export function startTerminalCommand(input: TerminalExecInput, source = 'api'): 
 
 export function buildOpenCliCommand(input?: { command?: string; cwd?: string }): TerminalOpenCliResult {
   const cwd = resolveExistingDirectory(input?.cwd || process.cwd())
-  const command = input?.command?.trim() || 'npm run cli -- chat --attach'
+  const command = input?.command?.trim() || buildAiTerminalCommand({ projectCwd: process.cwd() })
   return { opened: false, command, cwd }
 }
 
@@ -350,6 +356,50 @@ export async function openCliInSystemTerminal(input?: { command?: string; cwd?: 
     : ['-e', shellCommand]
   await spawnDetachedChecked(terminal, args)
   return { ...base, opened: true }
+}
+
+export async function openAiTerminalInSystemTerminal(input?: { cwd?: string }): Promise<TerminalOpenCliResult> {
+  const readiness = await getAiTerminalReadiness({ cwd: input?.cwd })
+  const base: TerminalOpenCliResult = {
+    opened: false,
+    command: readiness.command,
+    cwd: readiness.cwd,
+    readiness,
+    status: readiness.ok ? 'dispatched' : 'blocked',
+  }
+
+  if (!readiness.ok || readiness.blocksLaunch) {
+    return {
+      ...base,
+      status: 'blocked',
+      error_message: readiness.message,
+    }
+  }
+
+  try {
+    const wrapper = await writeAiTerminalWrapper({
+      cwd: readiness.cwd,
+      command: readiness.command,
+      env: {
+        ESCALAFLOW_TOOL_SERVER: resolveToolServerUrl(),
+        ESCALAFLOW_TOOL_SERVER_TOKEN: getOrCreateToolServerToken(),
+        ESCALAFLOW_USER_DATA_DIR: process.env.ESCALAFLOW_USER_DATA_DIR,
+      },
+    })
+    openSystemTerminalWithScript(wrapper.path)
+    return {
+      ...base,
+      opened: true,
+      status: 'dispatched',
+      wrapper_path: wrapper.path,
+    }
+  } catch (error) {
+    return {
+      ...base,
+      status: 'failed',
+      error_message: error instanceof Error ? error.message : String(error),
+    }
+  }
 }
 
 export async function readHarnessFile(filePath: string, maxBytes = DEFAULT_READ_BYTES): Promise<{

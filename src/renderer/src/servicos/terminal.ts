@@ -1,5 +1,5 @@
 import { client } from './client'
-import type { TerminalHarnessConfig, TerminalOpenCliResult, TerminalSessionInfo, TerminalSessionSnapshot } from '@shared/types'
+import type { AiTerminalReadiness, TerminalHarnessConfig, TerminalOpenCliResult, TerminalSessionInfo, TerminalSessionSnapshot } from '@shared/index'
 
 export const servicoTerminal = {
   config: () =>
@@ -10,6 +10,12 @@ export const servicoTerminal = {
 
   abrirCli: (input?: { command?: string; cwd?: string }) =>
     client['terminal.openCli'](input) as Promise<TerminalOpenCliResult>,
+
+  statusIa: (input?: { cwd?: string }) =>
+    client['terminal.aiStatus'](input) as Promise<AiTerminalReadiness>,
+
+  abrirIaNoTerminal: (input?: { cwd?: string }) =>
+    client['terminal.openAiTerminal'](input) as Promise<TerminalOpenCliResult>,
 
   listarSessoes: () =>
     client['terminal.sessions.list']() as Promise<{ sessions: TerminalSessionInfo[] }>,

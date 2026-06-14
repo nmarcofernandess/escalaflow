@@ -63,6 +63,7 @@ import { toast } from 'sonner'
 import { TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
 import { useTour } from './Tour'
 import { useAppVersion } from '@/hooks/useAppVersion'
+import { getTerminalIaAccess, TERMINAL_IA_PERSONA_STORAGE_KEY } from '@shared/index'
 
 const mainNav = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard },
@@ -104,6 +105,10 @@ export function AppSidebar() {
   const appVersion = useAppVersion()
   const { active: restorePreviewActive, snapshotLabel, aplicar, sair } = useRestorePreviewStore()
   const [saindo, setSaindo] = useState(false)
+  const terminalIaAccess = getTerminalIaAccess(
+    typeof window !== 'undefined' ? window.localStorage.getItem(TERMINAL_IA_PERSONA_STORAGE_KEY) : null,
+  )
+  const visibleMainNav = mainNav.filter((item) => item.to !== '/terminal' || terminalIaAccess.enabled)
 
   useEffect(() => {
     empresaService
@@ -156,7 +161,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Principal</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNav.map((item) => {
+              {visibleMainNav.map((item) => {
                 const tourId =
                   item.to === '/setores'
                     ? TOUR_STEP_IDS.NAV_SETORES

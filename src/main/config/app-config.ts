@@ -7,9 +7,11 @@
  * 3. Mude productName e appId em electron-builder.yml
  */
 
+import { APP_IDENTITY } from '../../shared/app-identity'
+
 export const APP_CONFIG = {
   /** Nome exibido na sidebar, title bar, wizard */
-  name: 'EscalaFlow',
+  name: APP_IDENTITY.appName,
 
   /** Nome do icone lucide-react pra sidebar header */
   icon: 'Workflow',

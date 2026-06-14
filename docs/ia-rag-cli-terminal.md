@@ -11,7 +11,7 @@ banco ou que o terminal executou de verdade.
 
 ```mermaid
 flowchart TD
-  UI["Renderer: Chat, Memoria, Config, Terminal"] --> IPC["TIPC handlers"]
+  UI["Renderer: Chat, Memoria, Config, Terminal IA"] --> IPC["TIPC handlers"]
   CLI["npm run cli"] --> HTTP["Tool server local"]
   MCP["MCP/agent externo"] --> HTTP
   HTTP --> Readiness["IA readiness"]
@@ -22,7 +22,7 @@ flowchart TD
   RAG --> DB["PGlite: groups, jobs, files, sources, chunks"]
   RAG --> Enrich["Enrichment"]
   Enrich --> DB
-  HTTP --> Terminal["Terminal harness"]
+  HTTP --> Terminal["Terminal harness + launcher"]
   IPC --> Terminal
   Terminal --> Audit["terminal_command_log"]
 ```
@@ -39,8 +39,8 @@ flowchart TD
 | RAG jobs | `src/main/knowledge/bulk-persistence.ts` | grupos, runs, arquivos |
 | Enrichment config | `src/main/knowledge/enrichment-config.ts` | modelo/provider do enrichment |
 | Enrichment | `src/main/knowledge/enrichment.ts` | resumo/tags/graph + re-embedding |
-| Terminal | `src/main/terminal/harness.ts` | exec/read/write/open-cli + auditoria |
-| Terminal sessions | `src/main/terminal/sessions.ts` | shell vivo na UI |
+| Terminal | `src/main/terminal/harness.ts` | exec/read/write + launcher IA no Terminal do sistema |
+| Terminal launcher | `src/main/terminal/open-system-terminal.ts`, `src/main/terminal/terminal-wrapper.ts` | wrapper macOS/Windows/Linux para abrir CLI/chat real |
 | CLI | `src/cli/index.ts` | cliente HTTP para app aberto |
 | Tool server | `src/main/tool-server.ts` | HTTP local `127.0.0.1:17380` |
 
@@ -93,6 +93,26 @@ Parametros atuais:
 O CLI, o endpoint HTTP `/chat` e o IPC `ia.chat.enviar` passam por readiness
 antes de aceitar mensagem. O `/health` tambem expoe esse estado para scripts e
 smoke tests.
+
+O launcher da pagina Terminal IA usa uma matriz propria, derivada desse gate,
+antes de abrir o Terminal do sistema:
+
+| Codigo | Bloqueia abrir? | Origem comum |
+|--------|-----------------|--------------|
+| `configMissing` | sim | sem provider/modelo salvo |
+| `credentialMissing` | sim | cloud sem token/API key |
+| `credentialInvalid` | sim | provider recusou credencial |
+| `providerUnreachable` | sim | provider inacessivel |
+| `rateLimited` | sim | limite do provider |
+| `modelDownloadRequired` | sim | modelo local ausente |
+| `modelDownloading` | sim | download local em andamento |
+| `modelDownloadCanceled` | sim | download local cancelado |
+| `modelLoadingFailed` | sim | modelo baixado falhou ao carregar/validar |
+| `modelCorrupt` | sim | modelo local fora do catalogo/corrompido |
+| `cliMissing` | sim | CLI nao existe no build atual |
+| `toolsUnavailable` | sim | chat sem ferramentas de terminal/arquivo |
+| `osUnsupported` | sim | abertura automatica sem suporte |
+| `ready` | nao | provider, modelo, CLI e tools prontos |
 
 ## RAG bulk import
 
@@ -222,13 +242,14 @@ printf 'conteudo' | npm run cli -- terminal write ~/arquivo.txt --stdin
 
 ## Terminal Harness
 
-Existem tres conceitos separados:
+Existem quatro conceitos separados:
 
 | Conceito | O que e |
 |----------|---------|
 | `terminal_exec` | comando shell pontual, auditado |
-| Terminal session | shell local vivo na UI |
-| `open-cli` | abre o CLI oficial no Terminal do sistema |
+| Terminal session | shell local vivo legado para testes/harness, nao a UX primaria |
+| `open-cli` | abre um comando informado no Terminal do sistema |
+| Terminal IA | launcher sem input in-app que abre `npm run cli -- chat --attach` no Terminal do sistema |
 
 `terminal_exec` roda com as permissoes do usuario local. Ele aplica:
 
@@ -251,19 +272,47 @@ Campos de auditoria:
 - `finished_at`
 
 Hoje o terminal harness e exposto para HTTP/CLI; esses comandos gravam
-`source = api` (ou o source explicito usado em testes internos). Nao existe
-tool publica de IA executando terminal diretamente neste pacote.
+`source = api` (ou o source explicito usado em testes internos).
 
-## Terminal nao e chat
+## Terminal IA nao e shell embutido
 
-A pagina Terminal embutida e shell (`zsh` no macOS), nao chat. Se o usuario
-digita `e ai mano` num shell, o shell tenta executar comando. A UI deve deixar
-isso explicito e direcionar conversa para `Abrir chat CLI`.
+A pagina `/terminal` nao renderiza input interativo de comando nem mensagem.
+Ela mostra:
+
+- status de readiness;
+- provider/modelo resolvido;
+- comando real;
+- botao `Copiar comando`;
+- botao principal `Abrir IA no Terminal do Sistema`;
+- modal de configuracao quando a IA nao esta pronta.
+
+O botao principal sempre roda readiness antes de abrir Terminal. Se faltar
+config, credencial, modelo, CLI ou tools, o app nao abre um Terminal quebrado:
+mostra a mensagem de bloqueio e o comando manual para copiar.
+
+O comando canonico e:
+
+```bash
+npm run cli -- chat --attach
+```
+
+Quando o launcher roda de dentro do app, o comando inclui `npm --prefix <repo>`
+para funcionar mesmo se o Terminal abrir em outro diretorio ou se o path do
+projeto tiver espaco.
+
+Persona de produto:
+
+| Persona | Terminal IA |
+|---------|-------------|
+| `rh_final` | oculto/bloqueado |
+| `admin` | habilitado |
+| `dev` | habilitado |
+| `support` | habilitado |
 
 Abrir chat no Terminal:
 
 ```bash
-npm run cli -- terminal open-cli --command 'npm run cli -- chat --attach'
+npm run cli -- terminal open-cli --command "npm --prefix '$PWD' run cli -- chat --attach"
 ```
 
 Capturar uma chamada fechada:
@@ -285,7 +334,8 @@ que abre pagina.
 | RAG import | job `done` + source/chunks + busca por token unico |
 | Enrichment | provider/modelo + contadores + `enriched_at`/`enrichment_json` |
 | Terminal tool | linha em `terminal_command_log` + efeito no disco/saida |
-| Terminal CLI | `opened: true` + resposta capturada do Terminal |
+| Terminal CLI | `opened: true` + provider/modelo + resposta capturada do Terminal |
+| Persona Terminal IA | RH final sem launcher; admin/dev/support com launcher |
 
 Exemplo de resposta que deve ser copiada no log:
 

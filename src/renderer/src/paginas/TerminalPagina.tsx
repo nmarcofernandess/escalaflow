@@ -1,160 +1,287 @@
-import { useEffect, useRef, useState } from 'react'
-import { Play, Square, SquareTerminal, ExternalLink } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  RefreshCw,
+  Settings,
+  Shield,
+  SquareTerminal,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/componentes/PageHeader'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 import { servicoTerminal } from '@/servicos/terminal'
-import { looksLikeChatMessage } from '@/lib/shell-input'
-import type { TerminalSessionSnapshot } from '@shared/types'
+import {
+  AI_RUNTIME_READINESS_COPY,
+  AI_TERMINAL_COPY,
+  TERMINAL_IA_PERSONA_STORAGE_KEY,
+  buildAiTerminalCommand,
+  getTerminalIaAccess,
+  type AiRuntimeReadinessCode,
+  type AiTerminalReadiness,
+} from '@shared/index'
+
+const MATRIX_CODES = Object.keys(AI_RUNTIME_READINESS_COPY) as AiRuntimeReadinessCode[]
+
+function formatDate(value?: string): string {
+  if (!value) return 'Ainda nao verificado'
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }).format(new Date(value))
+}
+
+function getCurrentAccess() {
+  return getTerminalIaAccess(
+    typeof window !== 'undefined' ? window.localStorage.getItem(TERMINAL_IA_PERSONA_STORAGE_KEY) : null,
+  )
+}
 
 export function TerminalPagina() {
-  const [session, setSession] = useState<TerminalSessionSnapshot | null>(null)
-  const [command, setCommand] = useState('')
-  const [busy, setBusy] = useState(false)
-  const outputRef = useRef<HTMLPreElement>(null)
+  const navigate = useNavigate()
+  const [access] = useState(getCurrentAccess)
+  const [readiness, setReadiness] = useState<AiTerminalReadiness | null>(null)
+  const [loading, setLoading] = useState(access.enabled)
+  const [opening, setOpening] = useState(false)
+  const [configOpen, setConfigOpen] = useState(false)
+
+  const command = readiness?.command || buildAiTerminalCommand()
+  const currentCopy = readiness
+    ? AI_RUNTIME_READINESS_COPY[readiness.code]
+    : AI_RUNTIME_READINESS_COPY.configMissing
+
+  const resolvedModel = useMemo(() => {
+    const provider = readiness?.runtime.provider || 'sem provider'
+    const model = readiness?.runtime.model || 'sem modelo'
+    return `${provider} / ${model}`
+  }, [readiness])
 
   useEffect(() => {
-    if (!session?.id || session.status !== 'running') return
-    const timer = window.setInterval(async () => {
-      try {
-        const current = await servicoTerminal.obterSessao(session.id)
-        if (current.session) setSession(current.session)
-      } catch {
-        // Polling must not spam the UI.
-      }
-    }, 500)
-    return () => window.clearInterval(timer)
-  }, [session?.id, session?.status])
+    if (access.enabled) void refreshStatus()
+  }, [access.enabled])
 
-  useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight
-    }
-  }, [session?.output])
-
-  async function startSession() {
-    setBusy(true)
+  async function refreshStatus() {
+    setLoading(true)
     try {
-      const result = await servicoTerminal.iniciarSessao()
-      setSession(result.session)
+      const status = await servicoTerminal.statusIa()
+      setReadiness(status)
     } catch (err: any) {
-      toast.error('Erro ao iniciar terminal', { description: err?.message })
+      toast.error('Nao foi possivel verificar a IA', { description: err?.message })
     } finally {
-      setBusy(false)
+      setLoading(false)
     }
   }
 
-  async function sendCommand() {
-    const value = command.trim()
-    if (!session || !value) return
-    if (looksLikeChatMessage(value)) {
-      toast.info('Isso parece mensagem para IA, não comando shell.', {
-        description: 'Use Abrir chat IA para conversar pelo Terminal.',
+  async function copyCommand() {
+    await navigator.clipboard.writeText(command)
+    toast.success('Comando copiado.')
+  }
+
+  async function openAiTerminal() {
+    setOpening(true)
+    setConfigOpen(false)
+    try {
+      const result = await servicoTerminal.abrirIaNoTerminal()
+      if (result.readiness) setReadiness(result.readiness)
+
+      if (result.status === 'blocked' || !result.opened) {
+        setConfigOpen(true)
+        toast.error('IA ainda nao esta pronta', {
+          description: result.error_message || result.readiness?.message,
+        })
+        return
+      }
+
+      toast.success('Terminal do sistema aberto.', {
+        description: result.command,
       })
-      return
-    }
-    setCommand('')
-    try {
-      await servicoTerminal.escreverSessao(session.id, `${value}\n`)
-      const current = await servicoTerminal.obterSessao(session.id)
-      if (current.session) setSession(current.session)
     } catch (err: any) {
-      toast.error('Erro ao enviar comando', { description: err?.message })
+      toast.error('Erro ao abrir Terminal do sistema', { description: err?.message })
+    } finally {
+      setOpening(false)
     }
   }
 
-  async function killSession() {
-    if (!session) return
-    try {
-      const result = await servicoTerminal.matarSessao(session.id)
-      setSession(result.session)
-    } catch (err: any) {
-      toast.error('Erro ao encerrar terminal', { description: err?.message })
-    }
-  }
-
-  async function openCli() {
-    try {
-      await servicoTerminal.abrirCli({ command: 'npm run cli -- chat --attach' })
-      toast.success('Chat CLI aberto no Terminal.')
-    } catch (err: any) {
-      toast.error('Erro ao abrir CLI', { description: err?.message })
-    }
+  if (!access.enabled) {
+    return (
+      <div className="flex flex-1 flex-col">
+        <PageHeader
+          breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Terminal IA' }]}
+        />
+        <div className="p-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Shield className="size-4" />
+                Recurso restrito
+              </CardTitle>
+              <CardDescription>
+                O Terminal IA fica oculto para a persona RH final. Perfis admin, dev e suporte podem habilitar o recurso.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="flex flex-1 flex-col">
       <PageHeader
-        breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Terminal' }]}
+        breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Terminal IA' }]}
       />
 
       <div className="flex flex-col gap-6 p-6">
         <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+          <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
               <CardTitle className="flex items-center gap-2 text-base">
                 <SquareTerminal className="size-4" />
-                Shell local
+                {AI_TERMINAL_COPY.title}
               </CardTitle>
               <CardDescription>
-                Comandos do macOS. Para conversar, use o chat IA no Terminal.
+                {AI_TERMINAL_COPY.description}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={session?.status === 'running' ? 'default' : 'outline'}>
-                {session?.status ?? 'sem sessão'}
-              </Badge>
-              <Button size="sm" variant="outline" onClick={openCli}>
-                <ExternalLink />
-                Abrir chat IA
+              <Button variant="outline" onClick={refreshStatus} disabled={loading || opening}>
+                <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+                Verificar
               </Button>
-              {session?.status === 'running' ? (
-                <Button size="sm" variant="outline" onClick={killSession}>
-                  <Square />
-                  Encerrar
-                </Button>
-              ) : (
-                <Button size="sm" onClick={startSession} disabled={busy}>
-                  <Play />
-                  Iniciar
-                </Button>
-              )}
+              <Button onClick={openAiTerminal} disabled={opening || loading}>
+                <ExternalLink className="size-4" />
+                {opening ? 'Abrindo...' : AI_TERMINAL_COPY.primaryAction}
+              </Button>
             </div>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <pre
-              ref={outputRef}
-              className="h-[420px] overflow-auto rounded-md border bg-black p-4 font-mono text-xs leading-5 text-green-100"
-            >
-              {session?.output || 'Nenhuma sessão ativa.'}
-            </pre>
-            <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Esta caixa executa comandos como <span className="font-mono">pwd</span>, <span className="font-mono">ls</span> e <span className="font-mono">npm test</span>. Mensagens para IA devem ir pelo botão <span className="font-medium text-foreground">Abrir chat IA</span>.
+
+          <CardContent className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-md border bg-muted/20 p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <Badge variant={readiness?.ok ? 'default' : 'destructive'}>
+                  {readiness?.code ?? 'verificando'}
+                </Badge>
+                <span className="text-sm font-medium text-foreground">
+                  {currentCopy.label}
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {readiness?.message ?? currentCopy.message}
+              </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-md border bg-background p-3">
+                  <div className="text-xs font-medium uppercase text-muted-foreground">Provider/modelo</div>
+                  <div className="mt-1 break-words font-mono text-sm">{resolvedModel}</div>
+                </div>
+                <div className="rounded-md border bg-background p-3">
+                  <div className="text-xs font-medium uppercase text-muted-foreground">Ultima verificacao</div>
+                  <div className="mt-1 text-sm">{formatDate(readiness?.runtime.validatedAt ?? undefined)}</div>
+                </div>
+                <div className="rounded-md border bg-background p-3 sm:col-span-2">
+                  <div className="text-xs font-medium uppercase text-muted-foreground">Diretorio</div>
+                  <div className="mt-1 break-all font-mono text-sm">{readiness?.cwd ?? 'Aguardando verificacao'}</div>
+                </div>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Input
-                value={command}
-                onChange={(event) => setCommand(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    void sendCommand()
-                  }
-                }}
-                disabled={session?.status !== 'running'}
-                placeholder="Comando shell: pwd, ls, npm test"
-              />
-              <Button onClick={sendCommand} disabled={session?.status !== 'running' || !command.trim()}>
-                <Play />
-                Enviar
-              </Button>
+
+            <div className="rounded-md border bg-background p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-sm font-medium">Comando real</div>
+                <Button variant="outline" size="sm" onClick={copyCommand}>
+                  <Copy className="size-4" />
+                  {AI_TERMINAL_COPY.copyCommandAction}
+                </Button>
+              </div>
+              <pre className="min-h-24 overflow-auto rounded-md border bg-black p-3 font-mono text-xs leading-5 text-green-100">
+                {command}
+              </pre>
+              <div className="mt-3 text-xs text-muted-foreground">
+                Este comando usa a mesma configuracao de IA do chat lateral e do CLI.
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Matriz de readiness</CardTitle>
+            <CardDescription>
+              Cada estado abaixo bloqueia ou libera o launcher antes de abrir o Terminal do sistema.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {MATRIX_CODES.map((code) => {
+                const item = AI_RUNTIME_READINESS_COPY[code]
+                const active = readiness?.code === code
+                return (
+                  <div
+                    key={code}
+                    className={cn(
+                      'flex min-h-20 gap-3 rounded-md border p-3',
+                      active && 'border-primary bg-primary/5',
+                    )}
+                  >
+                    {item.ok ? (
+                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                    ) : (
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="break-words font-mono text-xs font-semibold">{code}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{item.label}</div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>IA ainda nao esta pronta</DialogTitle>
+            <DialogDescription>
+              {readiness?.message ?? currentCopy.message}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border bg-muted/20 p-3">
+            <div className="mb-2 text-xs font-medium uppercase text-muted-foreground">Comando</div>
+            <pre className="overflow-auto rounded-md border bg-black p-3 font-mono text-xs text-green-100">
+              {command}
+            </pre>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={copyCommand}>
+              <Copy className="size-4" />
+              Copiar comando
+            </Button>
+            <Button onClick={() => navigate('/configuracoes')}>
+              <Settings className="size-4" />
+              Abrir Configuracoes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

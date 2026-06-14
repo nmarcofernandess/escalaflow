@@ -1324,6 +1324,10 @@ export interface TerminalOpenCliResult {
   opened: boolean
   command: string
   cwd: string
+  status?: 'dispatched' | 'blocked' | 'failed'
+  readiness?: AiTerminalReadiness
+  error_message?: string
+  wrapper_path?: string
 }
 
 export interface TerminalSessionInfo {
@@ -1378,3 +1382,4 @@ export interface InfeasibleError {
   sugestoes?: string[]
   capacidade_ratio?: number
 }
+import type { AiTerminalReadiness } from './ai-runtime-contract'

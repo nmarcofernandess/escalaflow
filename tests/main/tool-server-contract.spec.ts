@@ -28,6 +28,28 @@ vi.mock('../../src/main/ia/readiness', () => ({
   })),
 }))
 
+vi.mock('../../src/main/ia/runtime-readiness', () => ({
+  getAiTerminalReadiness: vi.fn(async () => ({
+    ok: true,
+    code: 'ready',
+    label: 'IA pronta',
+    message: 'Provider, modelo, CLI e tools estao prontos para abrir no Terminal.',
+    action: 'launchTerminal',
+    blocksLaunch: false,
+    runtime: {
+      provider: 'local',
+      model: 'gemma-4-e2b-it-q4',
+      displayName: 'local:gemma-4-e2b-it-q4',
+      toolsAvailable: true,
+      toolsCount: IA_TOOLS.length,
+      validatedAt: '2026-06-14T00:00:00.000Z',
+      validationTtlMs: 300_000,
+    },
+    command: "npm --prefix '/tmp/Escala Flow' run cli -- chat --attach",
+    cwd: '/tmp/Escala Flow',
+  })),
+}))
+
 vi.mock('../../src/main/ia/cliente', () => ({
   iaEnviarMensagem: vi.fn(async (message: string) => ({
     resposta: `eco: ${message}`,
@@ -195,6 +217,26 @@ describe('EscalaFlow tool server contract', () => {
 
     expect(res.status).toBe(200)
     expect(body.response).toBe('eco: Me conta uma piada de padeiro.')
+  })
+
+  it('exposes AI terminal readiness with resolved provider, model and command', async () => {
+    await startIsolatedToolServer()
+    await waitForHealth()
+
+    const res = await fetch(`${baseUrl}/terminal/ai-status?cwd=${encodeURIComponent('/tmp/Escala Flow')}`, {
+      headers: AUTH_HEADERS,
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.readiness).toMatchObject({
+      code: 'ready',
+      command: "npm --prefix '/tmp/Escala Flow' run cli -- chat --attach",
+      runtime: {
+        provider: 'local',
+        model: 'gemma-4-e2b-it-q4',
+      },
+    })
   })
 
   it('runs solver preflight endpoint', async () => {

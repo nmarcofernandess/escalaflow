@@ -4855,6 +4855,20 @@ const terminalOpenCli = t.procedure
     return await openCliInSystemTerminal(input ?? {})
   })
 
+const terminalAiStatus = t.procedure
+  .input<{ cwd?: string } | undefined>()
+  .action(async ({ input }) => {
+    const { getAiTerminalReadiness } = await import('./ia/runtime-readiness')
+    return await getAiTerminalReadiness(input ?? {})
+  })
+
+const terminalOpenAiTerminal = t.procedure
+  .input<{ cwd?: string } | undefined>()
+  .action(async ({ input }) => {
+    const { openAiTerminalInSystemTerminal } = await import('./terminal/harness')
+    return await openAiTerminalInSystemTerminal(input ?? {})
+  })
+
 const terminalSessionsList = t.procedure.action(async () => {
   const { listTerminalSessions } = await import('./terminal/sessions')
   return { sessions: listTerminalSessions() }
@@ -5090,6 +5104,8 @@ export const router = {
   'terminal.config.get': terminalConfigGet,
   'terminal.config.save': terminalConfigSave,
   'terminal.openCli': terminalOpenCli,
+  'terminal.aiStatus': terminalAiStatus,
+  'terminal.openAiTerminal': terminalOpenAiTerminal,
   'terminal.sessions.list': terminalSessionsList,
   'terminal.sessions.start': terminalSessionsStart,
   'terminal.sessions.get': terminalSessionsGet,

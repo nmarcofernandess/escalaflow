@@ -7,6 +7,8 @@ export type IaChatReadinessReason =
   | 'configure_provider'
   | 'configure_cloud_token'
   | 'download_local_model'
+  | 'download_local_model_downloading'
+  | 'download_local_model_cancelled'
   | 'validate_local_model'
   | 'local_model_error'
   | 'invalid_local_model_config'
@@ -95,6 +97,26 @@ export async function getIaChatReadiness(options: { validateLocal?: boolean } = 
     const status = getLocalStatus().modelos[modelId]
 
     if (!status?.baixado) {
+      if (status?.download_status === 'downloading') {
+        return fail(
+          'local',
+          model,
+          'download_local_model_downloading',
+          `Modelo local "${LOCAL_MODELS[modelId]?.label ?? model}" ainda esta baixando.`,
+          'Aguarde o download terminar em Configurações > Assistente IA.',
+        )
+      }
+
+      if (status?.download_status === 'cancelled') {
+        return fail(
+          'local',
+          model,
+          'download_local_model_cancelled',
+          `Download do modelo local "${LOCAL_MODELS[modelId]?.label ?? model}" foi cancelado.`,
+          'Retome ou reinicie o download em Configurações > Assistente IA.',
+        )
+      }
+
       return fail(
         'local',
         model,

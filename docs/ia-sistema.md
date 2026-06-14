@@ -6,7 +6,8 @@
 
 ---
 
-> Fluxo operacional de IA, readiness, RAG em massa, enrichment, CLI e Terminal:
+> Fluxo operacional de IA, readiness, RAG em massa, enrichment, CLI e Terminal
+> IA por persona:
 > [`docs/ia-rag-cli-terminal.md`](./ia-rag-cli-terminal.md).
 
 ## 1. Visao Geral

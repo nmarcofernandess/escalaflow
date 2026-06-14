@@ -367,6 +367,17 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
         const { openCliInSystemTerminal } = await import('./terminal/harness')
         return json(res, { status: 'ok', result: await openCliInSystemTerminal(body) })
       }
+      if (req.method === 'GET' && pathname === '/terminal/ai-status') {
+        const cwd = url.searchParams.get('cwd') ?? undefined
+        const { getAiTerminalReadiness } = await import('./ia/runtime-readiness')
+        return json(res, { status: 'ok', readiness: await getAiTerminalReadiness({ cwd }) })
+      }
+      if (req.method === 'POST' && pathname === '/terminal/open-ai-terminal') {
+        const body = JSON.parse(await readBody(req) || '{}') as { cwd?: string }
+        const { openAiTerminalInSystemTerminal } = await import('./terminal/harness')
+        const result = await openAiTerminalInSystemTerminal(body)
+        return json(res, { status: result.status === 'blocked' || result.status === 'failed' ? 'error' : 'ok', result }, result.status === 'blocked' ? 409 : 200)
+      }
       if (req.method === 'GET' && pathname === '/terminal/sessions') {
         const { listTerminalSessions } = await import('./terminal/sessions')
         return json(res, { sessions: listTerminalSessions() })
