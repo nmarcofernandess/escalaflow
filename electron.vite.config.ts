@@ -13,6 +13,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
+          cli: resolve('src/cli/index.ts'),
           ...(hasSeedLocal ? { 'seed-local': seedLocalPath } : {}),
         },
         output: {

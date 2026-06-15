@@ -16,7 +16,6 @@ import {
   listSttModels,
 } from './catalog'
 import { getSttSidecarPath, isSttSidecarAvailable, transcribeWithSidecar } from './stt-bridge'
-import { buildSttPostProcessPrompt } from './post-process'
 import type { SttModelId, SttPostProcessOptions, SttStatus, SttTranscriptResult } from '../../shared/types'
 
 const execFileAsync = promisify(execFile)
@@ -227,6 +226,9 @@ function decodeWavBase64(wavBase64: string): Buffer {
 export async function transcribeWavBase64(input: TranscribeWavBase64Input): Promise<SttTranscriptResult> {
   const modelId = input.model_id ?? DEFAULT_STT_MODEL_ID
   if (!STT_MODELS[modelId]) throw new Error(`Modelo STT desconhecido: ${modelId}`)
+  if (input.post_process) {
+    throw new Error('Polimento de texto STT ainda nao esta implementado. O ditado local e transcript-first: desative post_process e envie o texto ao chat para reescrita contextual.')
+  }
   if (input.wav_base64.length > MAX_WAV_BASE64_BYTES) {
     throw new Error('Audio muito longo para ditado local. Grave ate 60 segundos por vez.')
   }
@@ -244,14 +246,6 @@ export async function transcribeWavBase64(input: TranscribeWavBase64Input): Prom
       model_dir: getSttModelPath(modelId),
       audio_path: wavPath,
     })
-
-    if (input.post_process && result.text.trim()) {
-      buildSttPostProcessPrompt({
-        transcript: result.text,
-        mode: input.mode ?? input.post_process_mode,
-        domainTerms: input.domain_terms ?? ['6x1', '5x2', 'CLT', 'folga domingo', 'escala', 'setor', 'colaborador'],
-      })
-    }
 
     return {
       ...result,

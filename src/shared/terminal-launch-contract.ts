@@ -6,11 +6,28 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
+function windowsQuote(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
 export function buildAiTerminalCommand(input?: { projectCwd?: string }): string {
   const cliScript = input?.projectCwd
     ? `npm --prefix ${shellQuote(input.projectCwd)} run cli`
     : APP_IDENTITY.cliNpmScript
   return `${cliScript} -- ${AI_TERMINAL_COMMAND_ARGS.join(' ')}`
+}
+
+export function buildPackagedAiTerminalCommand(input: {
+  executablePath: string
+  cliPath: string
+  platform?: NodeJS.Platform
+}): string {
+  const args = AI_TERMINAL_COMMAND_ARGS.join(' ')
+  if ((input.platform ?? process.platform) === 'win32') {
+    return `set ELECTRON_RUN_AS_NODE=1 && ${windowsQuote(input.executablePath)} ${windowsQuote(input.cliPath)} ${args}`
+  }
+
+  return `ELECTRON_RUN_AS_NODE=1 ${shellQuote(input.executablePath)} ${shellQuote(input.cliPath)} ${args}`
 }
 
 export function buildAiTerminalSingleShotCommand(message: string, input?: { projectCwd?: string }): string {

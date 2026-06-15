@@ -34,7 +34,7 @@ vi.mock('node:fs/promises', async () => {
     ...actual,
     stat: vi.fn(async (target: string | URL) => {
       const value = String(target)
-      if (value.endsWith('src/cli/index.ts') || value.endsWith('out/cli/index.js')) {
+      if (value.endsWith('src/cli/index.ts') || value.endsWith('out/main/cli.js') || value.endsWith('out/cli/index.js')) {
         if (!state.cliAvailable) throw new Error(`ENOENT: ${value}`)
         return {
           isFile: () => true,
@@ -156,6 +156,40 @@ describe('AI terminal runtime readiness', () => {
       code: 'cliMissing',
       blocksLaunch: true,
     })
+  })
+
+  it('builds packaged CLI candidates and commands without requiring npm', async () => {
+    const { buildAiTerminalCliResolutionPlan } = await import('../../../src/main/ia/runtime-readiness')
+
+    const plan = buildAiTerminalCliResolutionPlan({
+      isPackaged: true,
+      executablePath: '/Applications/EscalaFlow.app/Contents/MacOS/EscalaFlow',
+      resourcesPath: '/Applications/EscalaFlow.app/Contents/Resources',
+      projectCwd: '/Users/marcoantonio/escalaflow',
+    })
+
+    expect(plan.candidates).toEqual([
+      '/Applications/EscalaFlow.app/Contents/Resources/app.asar/out/main/cli.js',
+      '/Applications/EscalaFlow.app/Contents/Resources/app.asar.unpacked/out/main/cli.js',
+    ])
+    expect(plan.commandFor(plan.candidates[1])).toContain('ELECTRON_RUN_AS_NODE=1')
+    expect(plan.commandFor(plan.candidates[1])).toContain('app.asar.unpacked/out/main/cli.js')
+    expect(plan.commandFor(plan.candidates[1])).not.toContain('npm --prefix')
+  })
+
+  it('builds dev CLI candidates from the project cwd', async () => {
+    const { buildAiTerminalCliResolutionPlan } = await import('../../../src/main/ia/runtime-readiness')
+
+    const plan = buildAiTerminalCliResolutionPlan({
+      isPackaged: false,
+      executablePath: '/usr/local/bin/node',
+      resourcesPath: null,
+      projectCwd: '/Users/marcoantonio/escalaflow',
+    })
+
+    expect(plan.candidates).toContain('/Users/marcoantonio/escalaflow/src/cli/index.ts')
+    expect(plan.candidates).toContain('/Users/marcoantonio/escalaflow/out/main/cli.js')
+    expect(plan.commandFor()).toContain("npm --prefix '/Users/marcoantonio/escalaflow' run cli")
   })
 
   it('returns ready with provider, model, command and tool count', async () => {

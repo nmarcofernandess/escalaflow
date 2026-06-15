@@ -219,6 +219,25 @@ describe('EscalaFlow tool server contract', () => {
     expect(body.response).toBe('eco: Me conta uma piada de padeiro.')
   })
 
+  it('rejects invalid RAG import payloads before starting a job', async () => {
+    await startIsolatedToolServer()
+    await waitForHealth()
+
+    const res = await fetch(`${baseUrl}/rag/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
+      body: JSON.stringify({
+        path: '/tmp/docs',
+        group_name: 'Docs',
+        filters: ['md', 123],
+      }),
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.message).toBe('Campo "filters" deve ser uma lista de textos.')
+  })
+
   it('exposes AI terminal readiness with resolved provider, model and command', async () => {
     await startIsolatedToolServer()
     await waitForHealth()

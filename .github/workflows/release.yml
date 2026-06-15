@@ -144,7 +144,7 @@ jobs:
         if: matrix.platform == 'mac'
         uses: softprops/action-gh-release@v3
         with:
-          draft: false
+          draft: true
           files: |
             dist/*.dmg
             dist/*.zip
@@ -155,7 +155,7 @@ jobs:
         if: matrix.platform == 'win'
         uses: softprops/action-gh-release@v3
         with:
-          draft: false
+          draft: true
           files: |
             dist/*.exe
             dist/*.blockmap

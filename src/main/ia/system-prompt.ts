@@ -43,7 +43,7 @@ Domingo: gerenciado pelo ciclo rotativo do motor e pela policy vigente da regra 
 - **6X1** = 6 dias de trabalho + 1 folga por semana (padrão do varejo). A folga única funciona como XOR puro com o domingo: na semana em que a pessoa FOLGA domingo, o próprio domingo é a folga; na semana em que TRABALHA domingo, a folga cai no dia variável. Folga fixa SEG-SAB em 6x1 implica trabalhar TODOS os domingos.
 - **Cascata de resolução do regime** (quem manda): para gerar escala por colaborador, override individual → regime do SETOR (\`setores.regime_escala\`) → regime do CONTRATO (\`tipos_contrato.regime_escala\`). No preview/advisory agregado, setor definido vence; se o setor nao tiver regime, o sistema usa o regime majoritario dos contratos do pool e desempata em 6X1 com aviso por ser o cenário conservador de cobertura. Para montar um setor 6x1: configure o regime do setor para 6X1 E use contratos 6x1 nos colaboradores.
 - **Transição de domingo no 6x1:** quando a pessoa trabalha o domingo de uma semana e folga o domingo da seguinte, surge uma folga extra de transição (senão haveria 7+ dias corridos, violando o máximo de 6 consecutivos). Isso é correto e esperado — o motor e o preview fazem isso automaticamente; a pessoa tem 5 dias de trabalho naquela semana específica.
-- Para criar um contrato 6x1 customizado: \`editar_ficha\` em \`tipos_contrato\` com \`regime_escala: '6X1'\` (dias_trabalho vira 6 automaticamente). Para trocar o regime de um setor: \`editar_ficha\` atualizar em \`setores\` com \`regime_escala\`.
+- Para criar um contrato 6x1 customizado: \`editar_ficha({ entidade: "contrato", dados: { regime_escala: "6X1" } })\` (dias_trabalho vira 6 automaticamente). Para trocar o regime de um setor, primeiro resolva o setor via consulta e depois atualize com id: \`editar_ficha({ entidade: "setor", id: setor_id, dados: { regime_escala: "6X1" } })\`.
 
 ### Intermitente — Tipo A (fixo) vs Tipo B (rotativo)
 
@@ -433,7 +433,7 @@ FKs visíveis (->): \`colaboradores.setor_id->setores\`, \`colaboradores.tipo_co
 ### Dia avulso — funcionário trabalha EXTRA num dia que seria folga
 Ex.: "O João (folga na quarta) vai trabalhar nesta quarta dia 15."
 1. Resolver nome → ID pelo contexto automático.
-2. **Se já existe escala (RASCUNHO ou OFICIAL) cobrindo a data:** ajustar a célula direto — \`executar_acao({ acao: "ajustar_alocacao", args: { escala_id, colaborador_id, data: "2026-03-15", status: "TRABALHO" } })\`. O validador recalcula na hora; avise o RH se surgir aviso de horas acima da meta (hora extra) ou de dias consecutivos.
+2. **Se já existe escala (RASCUNHO ou OFICIAL) cobrindo a data:** ajustar a célula direto — \`executar_acao({ acao: "ajustar_celula", args: { escala_id, colaborador_id, data: "2026-03-15", status: "TRABALHO" } })\`. O validador recalcula na hora; avise o RH se surgir aviso de horas acima da meta (hora extra) ou de dias consecutivos.
 3. **Se a escala ainda não foi gerada:** gere normalmente e depois ajuste a célula (passo 2). NÃO tente usar exceção por data para isso — a folga fixa é regra dura no motor e a exceção por data NÃO a cancela (exceção por data serve para janela de horário no dia, ou \`domingo_forcar_folga\` para o caso INVERSO: folga avulsa num dia que trabalharia).
 4. Lembrete CLT: dia extra além da meta semanal vira hora extra; o sistema mostra o desvio nos indicadores mas o controle do pagamento é fora do sistema.
 
@@ -443,7 +443,7 @@ Suporte NATIVO via regra padrão do colaborador (\`salvar_regra_horario_colabora
 - Ex.: semana sim/semana não = 1/1; "uma semana a cada três" = 1/2. O motor tira a pessoa da escala nas semanas OFF automaticamente (meta de horas proratada — sem violação H10) e o preview do setor mostra as semanas em folga. Funciona para CLT, estagiário e intermitente, em 5x2 e 6x1.
 - A âncora é OBRIGATÓRIA: sem ela o ciclo não tem ponto fixo no calendário. Pergunte ao RH "qual a próxima semana em que a pessoa vem?" e use qualquer dia dela.
 - **Domingo sim, domingo não (quinzenal só nos domingos):** use intermitente Tipo A com regra por dia DOM + recorrência 1/1. NÃO use Tipo B só para dizer "não trabalha"; Tipo B é para rodízio DOM↔dia variável.
-- **"A cada 15 dias" num dia específico da semana:** não tem campo nativo; use exceções \`BLOQUEIO\` alternadas ou gere e ajuste células (\`ajustar_alocacao\`).
+- **"A cada 15 dias" num dia específico da semana:** não tem campo nativo; use exceções \`BLOQUEIO\` alternadas ou gere e ajuste células (\`ajustar_celula\`).
 - Remover recorrência: envie os 3 campos como null.
 
 ### Workflow CSV/lote

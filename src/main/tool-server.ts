@@ -244,28 +244,19 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
         }
       }
       if (req.method === 'POST' && pathname === '/rag/import') {
-        const body = JSON.parse(await readBody(req)) as {
-          path?: string
-          group_name?: string
-          auto_enrich?: boolean
-          recursive?: boolean
-          filters?: string[]
+        let body: unknown
+        try {
+          body = JSON.parse(await readBody(req))
+        } catch {
+          return json(res, { status: 'error', message: 'Body JSON invalido.' }, 400)
         }
-        if (!body.path?.trim()) {
-          return json(res, { status: 'error', message: 'Campo "path" é obrigatório.' }, 400)
-        }
-        if (!body.group_name?.trim()) {
-          return json(res, { status: 'error', message: 'Campo "group_name" é obrigatório.' }, 400)
+        const { parseBulkRagImportInput, startBulkRagImport } = await import('./knowledge/bulk-import')
+        const parsed = parseBulkRagImportInput(body)
+        if (!parsed.ok) {
+          return json(res, { status: 'error', message: parsed.message }, 400)
         }
 
-        const { startBulkRagImport } = await import('./knowledge/bulk-import')
-        const result = await startBulkRagImport({
-          path: body.path,
-          group_name: body.group_name,
-          auto_enrich: body.auto_enrich,
-          recursive: body.recursive,
-          filters: body.filters,
-        })
+        const result = await startBulkRagImport(parsed.input)
         return json(res, { status: 'ok', ...result })
       }
       if (req.method === 'GET' && pathname === '/rag/jobs') {
@@ -376,7 +367,8 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
         const body = JSON.parse(await readBody(req) || '{}') as { cwd?: string }
         const { openAiTerminalInSystemTerminal } = await import('./terminal/harness')
         const result = await openAiTerminalInSystemTerminal(body)
-        return json(res, { status: result.status === 'blocked' || result.status === 'failed' ? 'error' : 'ok', result }, result.status === 'blocked' ? 409 : 200)
+        const statusCode = result.status === 'blocked' ? 409 : result.status === 'failed' ? 500 : 200
+        return json(res, { status: result.status === 'blocked' || result.status === 'failed' ? 'error' : 'ok', result }, statusCode)
       }
       if (req.method === 'GET' && pathname === '/terminal/sessions') {
         const { listTerminalSessions } = await import('./terminal/sessions')

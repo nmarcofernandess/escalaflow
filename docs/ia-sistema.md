@@ -40,7 +40,7 @@ O microfone usa arquitetura **transcript-first**:
 
 Audio de microfone **nao** e enviado para Gemini/OpenRouter/local LLM por padrao. Isso evita amarrar o uso do microfone a modelos multimodais. O fluxo de anexar audio continua separado para o caso explicito "analise este audio".
 
-Parakeet e ASR: faz transcricao, pontuacao e capitalizacao. Ele nao e Wispr Flow sozinho: organizacao contextual, reescrita, traducao orientada e limpeza de prompt sao uma etapa opcional de texto com IA, nunca uma exigencia do STT.
+Parakeet e ASR transcript-first: faz transcricao local e devolve texto bruto para o campo do chat. O caminho atual do microfone nao faz polimento contextual, nao usa termos de dominio e nao reescreve como Wispr/Handy; para esse tipo de limpeza, envie o texto transcrito ao chat como uma solicitacao separada.
 
 ### Fluxo macro
 
@@ -379,7 +379,7 @@ UI (EscalaPagina)
   │     └── stdin: JSON (SolverInput)
   │     └── stdout: JSON (SolverOutput)
   │     └── stderr: logs de progresso (streaming via onLog callback)
-  │     └── Timeout wrapper: ate 61min; solver interno usa budgets por solve_mode
+  │     └── Timeout wrapper externo: ate 61min; solve_mode e compatibilidade antiga e nao muda a estrategia
   │
   ├─ [4] Python solver_ortools.py: solve(data) — MULTI-PASS LEGAL-FIRST
   │     ├── _analyze_capacity(data) → analise pre-solve de capacidade vs demanda

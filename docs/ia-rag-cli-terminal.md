@@ -101,9 +101,9 @@ antes de abrir o Terminal do sistema:
 |--------|-----------------|--------------|
 | `configMissing` | sim | sem provider/modelo salvo |
 | `credentialMissing` | sim | cloud sem token/API key |
-| `credentialInvalid` | sim | provider recusou credencial |
-| `providerUnreachable` | sim | provider inacessivel |
-| `rateLimited` | sim | limite do provider |
+| `credentialInvalid` | sim | reservado para validacao futura de credencial recusada |
+| `providerUnreachable` | sim | reservado para validacao futura de reachability |
+| `rateLimited` | sim | reservado para validacao futura de rate limit |
 | `modelDownloadRequired` | sim | modelo local ausente |
 | `modelDownloading` | sim | download local em andamento |
 | `modelDownloadCanceled` | sim | download local cancelado |
@@ -288,7 +288,9 @@ Ela mostra:
 
 O botao principal sempre roda readiness antes de abrir Terminal. Se faltar
 config, credencial, modelo, CLI ou tools, o app nao abre um Terminal quebrado:
-mostra a mensagem de bloqueio e o comando manual para copiar.
+mostra a mensagem de bloqueio e o comando manual para copiar. Se o sistema
+operacional recusar a automacao do Terminal, o retorno fica `failed` e a UI
+mostra erro em vez de sucesso.
 
 O comando canonico e:
 
@@ -296,9 +298,12 @@ O comando canonico e:
 npm run cli -- chat --attach
 ```
 
-Quando o launcher roda de dentro do app, o comando inclui `npm --prefix <repo>`
-para funcionar mesmo se o Terminal abrir em outro diretorio ou se o path do
-projeto tiver espaco.
+Em desenvolvimento, quando o launcher roda de dentro do app, o comando inclui
+`npm --prefix <repo>` para funcionar mesmo se o Terminal abrir em outro
+diretorio ou se o path do projeto tiver espaco. No app empacotado, o comando
+usa o executavel do EscalaFlow com `ELECTRON_RUN_AS_NODE=1` apontando para o
+bundle `app.asar/out/main/cli.js`; o app nao depende de `src/cli/index.ts` nem
+de `npm` existir na maquina do usuario.
 
 Persona de produto:
 

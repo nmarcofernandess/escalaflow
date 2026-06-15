@@ -213,6 +213,10 @@ export function useIaModelConfig(): IaModelConfig {
       setModelSelectDisabled(Boolean(providerCapability && !providerCapability.available))
       setIsLoading(false)
     } catch {
+      setCanSendMessages(false)
+      setShowUnconfiguredState(false)
+      setActiveProviderReason('Nao foi possivel verificar se a IA configurada esta pronta. Abra Configuracoes e teste a conexao.')
+      setModelSelectDisabled(true)
       setIsLoading(false)
     }
   }, [])

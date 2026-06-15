@@ -9,6 +9,16 @@ export interface SystemTerminalLaunchCommand {
   args: string[]
 }
 
+export interface SystemTerminalLaunchOptions {
+  settleTimeoutMs?: number
+}
+
+export interface SpawnDetachedCheckedOptions {
+  settleTimeoutMs?: number
+  captureStderr?: boolean
+  earlyExitMessage?: string
+}
+
 export function buildSystemTerminalLaunchCommand(
   platform: NodeJS.Platform,
   scriptPath: string,
@@ -30,7 +40,63 @@ export function buildSystemTerminalLaunchCommand(
   throw new Error(`Sistema operacional sem suporte para Terminal IA: ${platform}`)
 }
 
-export function openSystemTerminalWithScript(scriptPath: string): void {
+export async function openSystemTerminalWithScript(
+  scriptPath: string,
+  options: SystemTerminalLaunchOptions = {},
+): Promise<void> {
   const command = buildSystemTerminalLaunchCommand(process.platform, scriptPath)
-  spawn(command.file, command.args, { stdio: 'ignore', detached: true }).unref()
+  await spawnDetachedChecked(command.file, command.args, {
+    settleTimeoutMs: options.settleTimeoutMs,
+    captureStderr: true,
+    earlyExitMessage: `${command.file} encerrou antes de abrir o terminal`,
+  })
+}
+
+export async function spawnDetachedChecked(
+  command: string,
+  args: string[],
+  options: SpawnDetachedCheckedOptions = {},
+): Promise<void> {
+  const settleTimeoutMs = options.settleTimeoutMs ?? 700
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'ignore', options.captureStderr ? 'pipe' : 'ignore'],
+      detached: true,
+    })
+    let settled = false
+    let stderr = ''
+
+    const settle = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+
+    const timer = setTimeout(() => {
+      child.unref()
+      settle(resolve)
+    }, settleTimeoutMs)
+
+    if (options.captureStderr) {
+      child.stderr?.setEncoding('utf8')
+      child.stderr?.on('data', (chunk) => {
+        stderr += chunk
+      })
+    }
+
+    child.once('error', (error) => {
+      settle(() => reject(error))
+    })
+    child.once('exit', (code, signal) => {
+      if (code === 0) {
+        settle(resolve)
+        return
+      }
+
+      const details = stderr.trim() || `code=${code ?? 'null'}, signal=${signal ?? 'null'}`
+      const prefix = options.earlyExitMessage ?? `${command} encerrou antes de abrir o terminal`
+      settle(() => reject(new Error(`${prefix}: ${details}`)))
+    })
+  })
 }

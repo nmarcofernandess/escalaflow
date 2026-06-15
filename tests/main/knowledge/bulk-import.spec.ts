@@ -76,6 +76,36 @@ describe('bulk RAG import', () => {
     expect(result.skipped_entries.map((file) => path.basename(file.path))).toEqual(['skip.txt'])
   })
 
+  it('parses and trims bulk import input at the RAG boundary', async () => {
+    const { parseBulkRagImportInput } = await import('../../../src/main/knowledge/bulk-import')
+
+    expect(parseBulkRagImportInput({
+      path: ` ${tmpDir} `,
+      group_name: ' Docs ',
+      auto_enrich: false,
+      recursive: true,
+      filters: ['md', 'txt'],
+    })).toEqual({
+      ok: true,
+      input: {
+        path: tmpDir,
+        group_name: 'Docs',
+        auto_enrich: false,
+        recursive: true,
+        filters: ['md', 'txt'],
+      },
+    })
+
+    expect(parseBulkRagImportInput({
+      path: tmpDir,
+      group_name: 'Docs',
+      filters: ['md', 123],
+    })).toEqual({
+      ok: false,
+      message: 'Campo "filters" deve ser uma lista de textos.',
+    })
+  })
+
 
   it('imports all supported files under one group and finishes the job', async () => {
     const { runBulkRagImport } = await import('../../../src/main/knowledge/bulk-import')

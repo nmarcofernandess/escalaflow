@@ -8,7 +8,7 @@ import { getOrCreateToolServerToken } from '../../node/tool-server-auth'
 import { buildAiTerminalCommand } from '../../shared/terminal-launch-contract'
 import { resolveToolServerUrl } from '../../shared/tool-server-url'
 import { getTerminalHarnessConfig } from './config'
-import { openSystemTerminalWithScript } from './open-system-terminal'
+import { openSystemTerminalWithScript, spawnDetachedChecked } from './open-system-terminal'
 import { resolveExistingDirectory } from './paths'
 import { writeAiTerminalWrapper } from './terminal-wrapper'
 import { isTerminalExecSuccess } from '../../shared/types'
@@ -311,35 +311,6 @@ export function buildOpenCliShellCommand(input?: { command?: string; cwd?: strin
   return `cd ${shellQuote(base.cwd)} && ${base.command}`
 }
 
-async function spawnDetachedChecked(command: string, args: string[]): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'ignore', detached: true })
-    let settled = false
-    const settle = (fn: () => void): void => {
-      if (settled) return
-      settled = true
-      fn()
-    }
-    const timer = setTimeout(() => {
-      child.unref()
-      settle(resolve)
-    }, 700)
-
-    child.once('error', (error) => {
-      clearTimeout(timer)
-      settle(() => reject(error))
-    })
-    child.once('exit', (code, signal) => {
-      clearTimeout(timer)
-      if (code === 0) {
-        settle(resolve)
-        return
-      }
-      settle(() => reject(new Error(`${command} encerrou antes de abrir o terminal (code=${code ?? 'null'}, signal=${signal ?? 'null'}).`)))
-    })
-  })
-}
-
 export async function openCliInSystemTerminal(input?: { command?: string; cwd?: string }): Promise<TerminalOpenCliResult> {
   const base = buildOpenCliCommand(input)
   const shellCommand = buildOpenCliShellCommand(base)
@@ -386,7 +357,7 @@ export async function openAiTerminalInSystemTerminal(input?: { cwd?: string }): 
         ESCALAFLOW_USER_DATA_DIR: process.env.ESCALAFLOW_USER_DATA_DIR,
       },
     })
-    openSystemTerminalWithScript(wrapper.path)
+    await openSystemTerminalWithScript(wrapper.path)
     return {
       ...base,
       opened: true,

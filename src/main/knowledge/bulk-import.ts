@@ -87,6 +87,47 @@ function normalizeFilters(filters?: string[]): string[] {
   return normalized.length > 0 ? [...new Set(normalized)] : [...SUPPORTED_EXTENSIONS]
 }
 
+export type ParseBulkRagImportInputResult =
+  | { ok: true; input: BulkRagImportInput }
+  | { ok: false; message: string }
+
+export function parseBulkRagImportInput(body: unknown): ParseBulkRagImportInputResult {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, message: 'Body JSON deve ser um objeto.' }
+  }
+
+  const value = body as Record<string, unknown>
+  const inputPath = typeof value.path === 'string' ? value.path.trim() : ''
+  if (!inputPath) return { ok: false, message: 'Campo "path" é obrigatório.' }
+
+  const groupName = typeof value.group_name === 'string' ? value.group_name.trim() : ''
+  if (!groupName) return { ok: false, message: 'Campo "group_name" é obrigatório.' }
+
+  if (value.auto_enrich !== undefined && typeof value.auto_enrich !== 'boolean') {
+    return { ok: false, message: 'Campo "auto_enrich" deve ser booleano.' }
+  }
+  if (value.recursive !== undefined && typeof value.recursive !== 'boolean') {
+    return { ok: false, message: 'Campo "recursive" deve ser booleano.' }
+  }
+  if (
+    value.filters !== undefined
+    && (!Array.isArray(value.filters) || value.filters.some((filter) => typeof filter !== 'string'))
+  ) {
+    return { ok: false, message: 'Campo "filters" deve ser uma lista de textos.' }
+  }
+
+  return {
+    ok: true,
+    input: {
+      path: inputPath,
+      group_name: groupName,
+      auto_enrich: value.auto_enrich as boolean | undefined,
+      recursive: value.recursive as boolean | undefined,
+      filters: value.filters as string[] | undefined,
+    },
+  }
+}
+
 function isTerminalImportStatus(status: string): boolean {
   return TERMINAL_IMPORT_STATUSES.has(status)
 }

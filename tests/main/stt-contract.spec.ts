@@ -3,10 +3,10 @@ import type {
   SttModelCatalogItem,
   SttModelId,
   SttModelStatus,
-  SttPostProcessOptions,
   SttStatus,
   SttTranscriptResult,
 } from '../../src/shared/types'
+import { transcribeWavBase64 } from '../../src/main/stt/download'
 
 describe('stt shared contract', () => {
   it('models Parakeet as transcript-first local STT', () => {
@@ -49,11 +49,6 @@ describe('stt shared contract', () => {
       sidecar_disponivel: false,
       reason: 'missing_sidecar',
     }
-    const options: SttPostProcessOptions = {
-      post_process: true,
-      mode: 'clean_prompt',
-      domain_terms: ['folga', '6x1'],
-    }
     const result: SttTranscriptResult = {
       text: 'Preciso cadastrar uma escala seis por um para o setor de acougue.',
       raw_text: 'Preciso cadastrar uma escala seis por um para o setor de acougue.',
@@ -66,8 +61,16 @@ describe('stt shared contract', () => {
 
     expect(catalogItem.id).toBe(modelId)
     expect(status.modelos[modelId].baixado).toBe(false)
-    expect(options.domain_terms).toContain('6x1')
     expect(result.model_id).toBe('parakeet-v3-int8')
     expect(result.post_processed).toBe(false)
+  })
+
+  it('rejects inert post-processing options instead of pretending to polish the transcript', async () => {
+    await expect(transcribeWavBase64({
+      wav_base64: 'UklGRg==',
+      post_process: true,
+      mode: 'clean_prompt',
+      domain_terms: ['folga', '6x1'],
+    })).rejects.toThrow('Polimento de texto STT ainda nao esta implementado')
   })
 })

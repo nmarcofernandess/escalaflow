@@ -1,10 +1,11 @@
 import { stat } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { queryOne } from '../db/query'
 import { IA_TOOLS } from './tools'
 import { getIaChatReadiness } from './readiness'
 import { resolveModel } from './config'
-import { buildAiTerminalCommand } from '../../shared/terminal-launch-contract'
+import { buildAiTerminalCommand, buildPackagedAiTerminalCommand } from '../../shared/terminal-launch-contract'
 import {
   AI_RUNTIME_READINESS_COPY,
   type AiRuntimeReadinessCode,
@@ -14,23 +15,94 @@ import {
 import type { IaConfiguracao } from '../../shared/types'
 
 const VALIDATION_TTL_MS = 5 * 60 * 1000
+const require = createRequire(import.meta.url)
 
-async function cliExists(): Promise<boolean> {
+function getElectronRuntimeInfo(): {
+  isPackaged: boolean
+  executablePath: string
+  resourcesPath: string | null
+} {
+  try {
+    const electron = require('electron') as { app?: { isPackaged?: boolean } }
+    return {
+      isPackaged: Boolean(electron.app?.isPackaged),
+      executablePath: process.execPath,
+      resourcesPath: typeof process.resourcesPath === 'string' ? process.resourcesPath : null,
+    }
+  } catch {
+    return {
+      isPackaged: false,
+      executablePath: process.execPath,
+      resourcesPath: typeof process.resourcesPath === 'string' ? process.resourcesPath : null,
+    }
+  }
+}
+
+export interface AiTerminalCliResolutionPlan {
+  candidates: string[]
+  commandFor: (cliPath?: string | null) => string
+}
+
+export function buildAiTerminalCliResolutionPlan(input: {
+  isPackaged: boolean
+  executablePath: string
+  resourcesPath: string | null
+  projectCwd: string
+}): AiTerminalCliResolutionPlan {
+  if (input.isPackaged && input.resourcesPath) {
+    const candidates = [
+      path.join(input.resourcesPath, 'app.asar', 'out', 'main', 'cli.js'),
+      path.join(input.resourcesPath, 'app.asar.unpacked', 'out', 'main', 'cli.js'),
+    ]
+    return {
+      candidates,
+      commandFor: (cliPath) => buildPackagedAiTerminalCommand({
+        executablePath: input.executablePath,
+        cliPath: cliPath ?? candidates[0],
+      }),
+    }
+  }
+
   const candidates = [
-    path.resolve(process.cwd(), 'src/cli/index.ts'),
-    path.resolve(process.cwd(), 'out/cli/index.js'),
+    path.resolve(input.projectCwd, 'src/cli/index.ts'),
+    path.resolve(input.projectCwd, 'out', 'main', 'cli.js'),
+    path.resolve(input.projectCwd, 'out', 'cli', 'index.js'),
   ]
 
+  return {
+    candidates,
+    commandFor: () => buildAiTerminalCommand({ projectCwd: input.projectCwd }),
+  }
+}
+
+async function findExistingPath(candidates: string[]): Promise<string | null> {
   for (const candidate of candidates) {
     try {
       await stat(candidate)
-      return true
+      return candidate
     } catch {
       // Try next known CLI location.
     }
   }
 
-  return false
+  return null
+}
+
+async function resolveAiTerminalCli(): Promise<{
+  exists: boolean
+  command: string
+}> {
+  const runtime = getElectronRuntimeInfo()
+  const plan = buildAiTerminalCliResolutionPlan({
+    ...runtime,
+    projectCwd: process.cwd(),
+  })
+  const cliPath = await findExistingPath(plan.candidates)
+
+  return {
+    exists: Boolean(cliPath),
+    command: plan.commandFor(cliPath),
+  }
 }
 
 function baseRuntime(config: IaConfiguracao | null, model: string | null): ResolvedAiRuntime {
@@ -73,12 +145,13 @@ function mapChatReason(reason: string): AiRuntimeReadinessCode {
 
 export async function getAiTerminalReadiness(input: { cwd?: string } = {}): Promise<AiTerminalReadiness> {
   const cwd = path.resolve(input.cwd || process.cwd())
-  const command = buildAiTerminalCommand({ projectCwd: process.cwd() })
+  const cli = await resolveAiTerminalCli()
+  const command = cli.command
   const config = (await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')) ?? null
   const model = config ? resolveModel(config, config.provider) : null
   const runtime = baseRuntime(config, model)
 
-  if (!await cliExists()) return fromCode('cliMissing', runtime, command, cwd)
+  if (!cli.exists) return fromCode('cliMissing', runtime, command, cwd)
 
   if (process.platform !== 'darwin' && process.platform !== 'win32' && process.platform !== 'linux') {
     return fromCode('osUnsupported', runtime, command, cwd)

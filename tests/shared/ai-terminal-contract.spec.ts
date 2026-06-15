@@ -6,6 +6,7 @@ import {
   TERMINAL_IA_ENABLED_PERSONAS,
   TERMINAL_IA_PERSONA_STORAGE_KEY,
   buildAiTerminalCommand,
+  buildPackagedAiTerminalCommand,
   getTerminalIaAccess,
   type AiRuntimeReadinessCode,
 } from '../../src/shared'
@@ -50,6 +51,24 @@ describe('AI terminal shared contract', () => {
     )
     expect(AI_TERMINAL_COPY.primaryAction).toBe('Abrir IA no Terminal do Sistema')
     expect(AI_TERMINAL_COPY.copyCommandAction).toBe('Copiar comando')
+  })
+
+  it('builds a packaged CLI command without depending on npm or the source repo', () => {
+    expect(buildPackagedAiTerminalCommand({
+      platform: 'darwin',
+      executablePath: "/Applications/EscalaFlow.app/Contents/MacOS/EscalaFlow",
+      cliPath: "/Applications/EscalaFlow.app/Contents/Resources/app.asar/out/main/cli.js",
+    })).toBe(
+      "ELECTRON_RUN_AS_NODE=1 '/Applications/EscalaFlow.app/Contents/MacOS/EscalaFlow' '/Applications/EscalaFlow.app/Contents/Resources/app.asar/out/main/cli.js' chat --attach",
+    )
+
+    expect(buildPackagedAiTerminalCommand({
+      platform: 'win32',
+      executablePath: 'C:\\Program Files\\EscalaFlow\\EscalaFlow.exe',
+      cliPath: 'C:\\Program Files\\EscalaFlow\\resources\\app.asar\\out\\main\\cli.js',
+    })).toBe(
+      'set ELECTRON_RUN_AS_NODE=1 && "C:\\Program Files\\EscalaFlow\\EscalaFlow.exe" "C:\\Program Files\\EscalaFlow\\resources\\app.asar\\out\\main\\cli.js" chat --attach',
+    )
   })
 
   it('hides Terminal IA for final HR and enables it only for operational personas', () => {

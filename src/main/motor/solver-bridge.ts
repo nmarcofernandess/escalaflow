@@ -920,6 +920,7 @@ export function computeSolverScenarioHash(input: SolverInput): string {
     setor_id: input.setor_id,
     data_inicio: input.data_inicio,
     data_fim: input.data_fim,
+    piso_operacional: input.piso_operacional,
     empresa: {
       tolerancia_semanal_min: input.empresa.tolerancia_semanal_min,
       hora_abertura: input.empresa.hora_abertura,

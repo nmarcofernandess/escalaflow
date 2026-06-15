@@ -112,6 +112,7 @@ logs/security/
 .agents/
 .agent/
 .factory/
+.grok/
 skills/
 skills-lock.json
 .claude/skills/

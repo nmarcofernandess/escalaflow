@@ -3,12 +3,12 @@
  * solver-cli.ts — CLI dev para rodar e inspecionar o motor OR-Tools
  *
  * Uso:
- *   npm run solver:cli -- <setor_id> [data_inicio] [data_fim] [--mode rapido|otimizado] [--json] [--summary] [--dump]
+ *   npm run solver:cli -- <setor_id> [data_inicio] [data_fim] [--json] [--summary] [--dump]
  *
  * Exemplos:
  *   npm run solver:cli -- 2                          # Açougue, 3 meses (padrão)
  *   npm run solver:cli -- 2 2026-03-02 2026-03-08    # Açougue, 1 semana específica
- *   npm run solver:cli -- 1 2026-03-02 2026-05-31 --mode otimizado  # Caixa, 3 meses
+ *   npm run solver:cli -- 1 2026-03-02 2026-05-31  # Caixa, 3 meses
  *   npm run solver:cli -- 2 --json                   # JSON sem comparacao_demanda (~250KB)
  *   npm run solver:cli -- 2 --json-full              # JSON completo (~800KB)
  *   npm run solver:cli -- 2 --summary                # JSON compacto: indicadores + horas (~1KB)
@@ -129,7 +129,7 @@ ${C.bold}Uso:${C.reset}
   npm run solver:cli -- <setor_id> [data_inicio] [data_fim] [flags]
 
 ${C.bold}Flags:${C.reset}
-  --mode rapido|balanceado|otimizado|maximo   Patience do solver (default: rapido=15s)
+  --mode rapido|balanceado|otimizado|maximo   Compatibilidade antiga: aceito, mas ignorado (solver usa estabilizacao fixa)
   --json                    JSON sem comparacao_demanda (~250KB para 3 meses)
   --json-full               JSON completo com comparacao_demanda (~800KB)
   --summary                 JSON compacto: indicadores + horas/colab (~1KB)
@@ -138,7 +138,7 @@ ${C.bold}Flags:${C.reset}
 ${C.bold}Exemplos:${C.reset}
   npm run solver:cli -- 2                          ${C.dim}# Açougue, 3 meses${C.reset}
   npm run solver:cli -- 2 2026-03-02 2026-03-08    ${C.dim}# Período específico${C.reset}
-  npm run solver:cli -- 1 --mode otimizado         ${C.dim}# Caixa, modo otimizado${C.reset}
+  npm run solver:cli -- 1 --summary                ${C.dim}# JSON compacto para scripts${C.reset}
   npm run solver:cli -- 2 --dump                   ${C.dim}# Salva input pra debug${C.reset}
 
 ${C.bold}Listar setores:${C.reset}

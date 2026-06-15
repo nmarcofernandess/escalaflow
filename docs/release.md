@@ -89,7 +89,7 @@ git push && git push --tags
 
 **Opção A: CI automático (recomendado)**
 
-O push da tag dispara `.github/workflows/release.yml` que builda Mac + Windows em paralelo e faz upload como draft.
+O push da tag dispara `.github/workflows/release.yml` que builda Mac + Windows em paralelo e faz upload como draft. O release so vira publico depois da verificacao manual dos assets.
 
 ```bash
 # Acompanhar o CI
@@ -99,6 +99,7 @@ gh run watch --repo nmarcofernandess/escalaflow
 **Opção B: Local (Mac only)**
 
 ```bash
+# O script local tambem gera solver, sidecar STT, modelo STT, MCP e build Electron.
 GH_TOKEN=$(gh auth token) npm run release:mac
 ```
 
@@ -194,7 +195,7 @@ Problemas comuns:
 - **solver build**: Python/PyInstaller precisa estar configurado corretamente no runner
 - **timeout**: build leva ~10-15min, timeout padrão do Actions é 6h (OK)
 
-Se o CI falhar, o release fica como draft incompleto. Opcoes:
+Se o CI falhar, o release fica como draft incompleto ou nao recebe todos os assets. Opcoes:
 1. Corrigir o CI e re-triggerar com nova tag
 2. Build local e upload manual (nao esquecer os YAMLs!)
 
@@ -279,4 +280,3 @@ git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z
 # Acompanhar CI
 gh run watch --repo nmarcofernandess/escalaflow
 ```
-

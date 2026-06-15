@@ -107,10 +107,9 @@ npm run ia:chat          # CLI interativo para testar IA
 
 # Motor — CLI dev (principal ferramenta de debug)
 npm run solver:cli -- list                           # lista setores (usa banco atual)
-npm run solver:cli -- 2                              # roda setor 2 (1 semana, banco atual)
+npm run solver:cli -- 2                              # roda setor 2 (3 meses, banco atual)
 npm run solver:cli -- 2 2026-03-02 2026-03-08        # periodo especifico
 npm run solver:cli -- 1 2026-03-02 2026-04-26        # 8 semanas
-npm run solver:cli -- 2 --mode otimizado             # solver com mais tempo
 npm run solver:cli -- 2 --dump                       # salva input JSON em tmp/
 npm run solver:cli -- 2 --json                       # output JSON raw (pipe)
 
@@ -142,7 +141,7 @@ O `solver:cli` roda o motor OR-Tools direto do terminal, sem precisar abrir o ap
 **Pra que serve:**
 - Testar escalas rapidamente durante desenvolvimento
 - Debugar problemas de cobertura, violacoes e infeasibility
-- Comparar resultados entre modos (rapido vs otimizado)
+- Reproduzir o solver real do produto: estabilizacao de cobertura com patience fixo de 30s
 - Exportar input JSON pra analise manual (`--dump`)
 
 **O que mostra no output:**
@@ -171,7 +170,7 @@ O `solver:cli` roda o motor OR-Tools direto do terminal, sem precisar abrir o ap
 
 | Flag | Descricao |
 |------|-----------|
-| `--mode rapido\|otimizado` | Tempo do solver (default: rapido) |
+| `--mode rapido\|otimizado` | Compatibilidade antiga: aceito, mas ignorado pelo solver atual |
 | `--dump` | Salva input JSON em `tmp/solver-input-setor-N.json` |
 | `--json` | Output JSON raw (usar com `npm run --silent` + `2>/dev/null` pra pipe limpo) |
 
@@ -220,7 +219,7 @@ git add package.json && git commit -m "chore: bump v1.2.1"
 git tag v1.2.1 && git push && git push --tags
 
 # 3. Esperar ~15 min (GitHub Actions compila Mac + Windows)
-# 4. Ir em github.com/nmarcofernandess/escalaflow/releases → Publicar o draft
+# 4. Verificar assets no draft e publicar manualmente
 ```
 
 ### O que acontece no CI
@@ -230,7 +229,7 @@ Tag v* pushada → GitHub Actions
   ├─ macOS runner:  Python 3.12 → PyInstaller → solver nativo → DMG
   └─ Windows runner: Python 3.12 → PyInstaller → solver.exe nativo → NSIS installer
        ↓
-  Draft Release com artefatos prontos para download
+  Draft Release com artefatos prontos para verificacao
 ```
 
 O solver Python é compilado **nativamente em cada OS** — sem cross-compilation, sem binários incompatíveis.

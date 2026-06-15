@@ -10,7 +10,7 @@ import { syncKnowledgeGraphSequences } from './graph-sequences'
 
 export const ChunkEnrichmentSchema = z.object({
   chunks: z.array(z.object({
-    index: z.number().describe('Índice do chunk no batch (0-based)'),
+    index: z.number().int().min(0).describe('Índice do chunk no batch (0-based)'),
     resumo: z.string().describe('Resumo em 1 frase clara do conteúdo do chunk'),
     tags: z.array(z.string()).describe('5-10 conceitos-chave incluindo sinônimos em português'),
     entidades: z.array(z.object({
@@ -27,6 +27,46 @@ export const ChunkEnrichmentSchema = z.object({
 })
 
 export type ChunkEnrichmentResult = z.infer<typeof ChunkEnrichmentSchema>
+
+export interface ChunkEnrichmentBatchValidation {
+  validChunks: ChunkEnrichmentResult['chunks']
+  missingIndexes: number[]
+  duplicateIndexes: number[]
+  outOfRangeIndexes: number[]
+}
+
+export function validateChunkEnrichmentBatch(
+  batchSize: number,
+  result: ChunkEnrichmentResult,
+): ChunkEnrichmentBatchValidation {
+  const seen = new Set<number>()
+  const validChunks: ChunkEnrichmentResult['chunks'] = []
+  const duplicateIndexes: number[] = []
+  const outOfRangeIndexes: number[] = []
+
+  for (const chunk of result.chunks) {
+    if (!Number.isInteger(chunk.index) || chunk.index < 0 || chunk.index >= batchSize) {
+      outOfRangeIndexes.push(chunk.index)
+      continue
+    }
+    if (seen.has(chunk.index)) {
+      duplicateIndexes.push(chunk.index)
+      continue
+    }
+    seen.add(chunk.index)
+    validChunks.push(chunk)
+  }
+
+  const missingIndexes = Array.from({ length: batchSize }, (_, index) => index)
+    .filter((index) => !seen.has(index))
+
+  return {
+    validChunks: validChunks.sort((a, b) => a.index - b.index),
+    missingIndexes,
+    duplicateIndexes,
+    outOfRangeIndexes,
+  }
+}
 
 // =============================================================================
 // CONFIG
@@ -475,10 +515,30 @@ export async function enrichAllChunksWithModel(
       continue
     }
 
+    const validation = validateChunkEnrichmentBatch(batch.chunks.length, result)
+    if (validation.validChunks.length === 0) {
+      batchesFailed++
+      console.warn(`[enrichment]   ⚠ batch ${b + 1} nao retornou nenhum indice valido`)
+      continue
+    }
+    if (
+      validation.missingIndexes.length > 0
+      || validation.duplicateIndexes.length > 0
+      || validation.outOfRangeIndexes.length > 0
+    ) {
+      batchesFailed++
+      console.warn(
+        `[enrichment]   ⚠ batch ${b + 1} parcial/invalido: ` +
+        `missing=[${validation.missingIndexes.join(',')}], ` +
+        `duplicate=[${validation.duplicateIndexes.join(',')}], ` +
+        `out_of_range=[${validation.outOfRangeIndexes.join(',')}]`,
+      )
+    }
+
     // 6. Aplicar enriquecimento chunk a chunk
     onProgress?.({ fase: 'aplicando', batch_atual: b + 1, total_batches: batches.length })
 
-    for (const enriched of result.chunks) {
+    for (const enriched of validation.validChunks) {
       const originalChunk = batch.chunks[enriched.index]
       if (!originalChunk) continue
 
