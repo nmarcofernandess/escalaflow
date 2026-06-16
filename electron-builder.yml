@@ -27,6 +27,10 @@ extraResources:
     to: 'stt-bin/'
     filter:
       - '**/*'
+  - from: 'llama.cpp/'
+    to: 'llama.cpp/'
+    filter:
+      - '**/*'
 asarUnpack:
   - '**/*.node'
   - 'node_modules/node-llama-cpp/**/*'
@@ -34,6 +38,8 @@ mac:
   icon: icon.icns
   category: public.app-category.business
   identity: "-"
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   target:
     - dmg
     - zip
