@@ -93,7 +93,7 @@ describe('knowledge enrichment config', () => {
     const { getKnowledgeEnrichmentConfig } = await import('../../../src/main/knowledge/enrichment-config')
 
     await expect(getKnowledgeEnrichmentConfig()).resolves.toEqual({
-      auto_enrich_after_import: false,
+      auto_enrich_after_import: true,
       provider: 'auto',
       modelo: 'auto',
       force_all_default: false,

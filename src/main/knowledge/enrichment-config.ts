@@ -17,7 +17,12 @@ import type {
 export const KNOWLEDGE_ENRICHMENT_CONFIG_KEY = 'knowledge.enrichment'
 
 export const DEFAULT_KNOWLEDGE_ENRICHMENT_CONFIG: KnowledgeEnrichmentConfig = {
-  auto_enrich_after_import: false,
+  // ON por padrão: o enrichment é o valor central do RAG (resumo, tags, relações).
+  // Quem configurou uma IA espera que os documentos sejam aproveitados sem ter de
+  // descobrir um toggle escondido. Sem IA pronta, buildKnowledgeEnrichmentModel
+  // retorna null e o import degrada gracioso (só texto + FTS). Quem quer economizar
+  // tokens cloud desliga no toggle de Configurações.
+  auto_enrich_after_import: true,
   provider: 'auto',
   modelo: 'auto',
   force_all_default: false,

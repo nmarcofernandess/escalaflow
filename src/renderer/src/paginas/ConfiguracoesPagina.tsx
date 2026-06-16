@@ -287,14 +287,14 @@ function KnowledgeEnrichmentCard() {
           Enriquecimento do RAG
         </CardTitle>
         <CardDescription>
-          Escolha se importações devem enriquecer chunks automaticamente e qual IA deve fazer isso.
+          Quando ligado, a IA analisa cada documento importado — resumo, tags e relações — para as buscas ficarem melhores.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
           <div>
-            <p className="text-sm font-medium">Enriquecer após importação</p>
-            <p className="text-xs text-muted-foreground">Quando desligado, você ainda pode enriquecer manualmente na Memória.</p>
+            <p className="text-sm font-medium">Enriquecer ao importar</p>
+            <p className="text-xs text-muted-foreground">Em provedores pagos isso consome tokens. Desligado, o documento entra só com o texto — dá para enriquecer depois na Memória.</p>
           </div>
           <Switch
             checked={Boolean(config?.auto_enrich_after_import)}
