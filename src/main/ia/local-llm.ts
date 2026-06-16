@@ -77,6 +77,13 @@ export function getModelDir(): string {
     return path.join(process.env.APPDATA, appName, 'models')
   }
 
+  // Linux: $XDG_CONFIG_HOME/<AppName>/models (equivale ao userData do Electron no Linux,
+  // ~/.config/<AppName>). Sem isso o empacotado Linux cairia no fallback dentro do bundle.
+  if (process.platform === 'linux') {
+    const base = process.env.XDG_CONFIG_HOME || (process.env.HOME ? path.join(process.env.HOME, '.config') : null)
+    if (base) return path.join(base, appName, 'models')
+  }
+
   // Fallback (fora do Electron / sem HOME/APPDATA): ao lado do bundle.
   return path.join(__dirname, '../../data/models')
 }
