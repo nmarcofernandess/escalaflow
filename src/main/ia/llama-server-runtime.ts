@@ -95,9 +95,13 @@ export function findLlamaServerBinary(): string | null {
   for (const candidate of candidates) {
     try {
       if (process.platform === 'win32') {
-        if (fs.existsSync(candidate)) return candidate
+        if (fs.existsSync(candidate)) {
+          console.log(`[llama-server] binário resolvido: ${candidate}`)
+          return candidate
+        }
       } else {
         fs.accessSync(candidate, fs.constants.X_OK)
+        console.log(`[llama-server] binário resolvido: ${candidate}`)
         return candidate
       }
     } catch {

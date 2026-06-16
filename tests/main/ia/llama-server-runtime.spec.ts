@@ -76,4 +76,31 @@ describe('llama-server resolver — bundled candidate (contract lock)', () => {
 
     expect(findLlamaServerBinary()).toBe(expected)
   })
+
+  // T3 — debug em producao: o resolver loga qual binario foi escolhido.
+  it('loga o path do binário resolvido quando acha um candidato', async () => {
+    if (process.platform === 'win32') return
+
+    const resourcesPath = '/fake/resources'
+    const bin = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server'
+    const expected = path.join(resourcesPath, 'llama.cpp', `${process.platform}-${process.arch}`, bin)
+
+    delete process.env.ESCALAFLOW_LLAMA_SERVER_BIN
+    delete process.env.ESCALAFLOW_USER_DATA_DIR
+    ;(process as NodeJS.Process & { resourcesPath?: string }).resourcesPath = resourcesPath
+
+    vi.spyOn(fs, 'accessSync').mockImplementation(((p: fs.PathLike) => {
+      if (String(p) === expected) return undefined
+      const err = new Error(`ENOENT: no such file, access '${String(p)}'`) as NodeJS.ErrnoException
+      err.code = 'ENOENT'
+      throw err
+    }) as typeof fs.accessSync)
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const { findLlamaServerBinary } = await import('../../../src/main/ia/llama-server-runtime')
+    findLlamaServerBinary()
+
+    expect(logSpy).toHaveBeenCalledWith(`[llama-server] binário resolvido: ${expected}`)
+  })
 })
