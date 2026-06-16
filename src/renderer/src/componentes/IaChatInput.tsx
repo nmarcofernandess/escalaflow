@@ -214,7 +214,6 @@ export function IaChatInput({
           onChange={onChange}
           onEnviar={onEnviar}
           disabled={disabled}
-          modelLabel={modeloLabel || `${provider}:${modelo}`}
           canAttach={supportsMultimodal && Boolean(conversaId)}
           onAttach={handleAttach}
           hasAttachments={anexos.length > 0}

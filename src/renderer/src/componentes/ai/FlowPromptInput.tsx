@@ -7,14 +7,12 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
 } from '@/components/ai-elements/prompt-input'
-import { Badge } from '@/components/ui/badge'
 
 interface Props {
   value: string
   onChange: (value: string) => void
   onEnviar: () => void
   disabled: boolean
-  modelLabel: string
   canAttach: boolean
   onAttach?: () => void
   speechControl?: React.ReactNode
@@ -28,7 +26,6 @@ export function FlowPromptInput({
   onChange,
   onEnviar,
   disabled,
-  modelLabel,
   canAttach,
   onAttach,
   speechControl,
@@ -36,6 +33,9 @@ export function FlowPromptInput({
   onPaste,
 }: Props) {
   const canSend = !disabled && (value.trim().length > 0 || hasAttachments)
+  // Barra de acao discreta no topo (mic + anexo). So renderiza se houver algo a
+  // mostrar — o modelo agora vive apenas no IaModelPill, abaixo do input.
+  const hasActions = Boolean(speechControl) || canAttach
 
   return (
     <PromptInput
@@ -44,9 +44,8 @@ export function FlowPromptInput({
       }}
       className="rounded-md border bg-muted/30"
     >
-      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <Badge variant={disabled ? 'secondary' : 'outline'}>{modelLabel}</Badge>
-        <div className="flex items-center gap-1">
+      {hasActions ? (
+        <div className="flex items-center justify-end gap-1 border-b px-3 py-2">
           {speechControl}
           {canAttach ? (
             <PromptInputButton type="button" aria-label="Anexar arquivo" onClick={onAttach}>
@@ -54,7 +53,7 @@ export function FlowPromptInput({
             </PromptInputButton>
           ) : null}
         </div>
-      </div>
+      ) : null}
       <PromptInputBody>
         <PromptInputTextarea
           data-testid="ia-chat-input"
