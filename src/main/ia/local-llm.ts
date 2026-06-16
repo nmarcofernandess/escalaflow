@@ -6,6 +6,7 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { APP_CONFIG } from '../config/app-config'
 import type { IaMensagem, IaContexto, IaAnexo, ToolCall, IaLocalStatus, IaStreamEvent } from '../../shared/types'
 import {
   getLocalLlamaServerStatus,
@@ -50,22 +51,33 @@ export type LocalModelId = keyof typeof LOCAL_MODELS
 // Paths
 // ---------------------------------------------------------------------------
 
-function getModelDir(): string {
+/**
+ * Dir dos modelos locais. Ancorado SEMPRE no nome do app (APP_CONFIG.name),
+ * não em `app.getPath('userData')`: em dev o binário se chama "Electron", então
+ * `userData` vira ".../Application Support/Electron/models" e o modelo já
+ * baixado em ".../EscalaFlow/models" não é encontrado. Usar o nome do produto
+ * mantém o mesmo dir em dev e empacotado.
+ *
+ * Exportada para teste (getModelDir/getModelPath são internos ao módulo).
+ */
+export function getModelDir(): string {
   if (process.env.ESCALAFLOW_LOCAL_MODELS_DIR) {
     return process.env.ESCALAFLOW_LOCAL_MODELS_DIR
   }
 
-  try {
-    const electron = _require('electron') as { app?: { getPath?: (name: string) => string } }
-    const app = electron.app
-    if (app?.getPath) {
-      // userData: ~/Library/Application Support/EscalaFlow (Mac) — sobrevive a clean/dev/rebuild
-      return path.join(app.getPath('userData'), 'models')
-    }
-  } catch { /* fallback */ }
+  const appName = APP_CONFIG.name
+
+  // Mac: ~/Library/Application Support/<AppName>/models
   if (process.platform === 'darwin' && process.env.HOME) {
-    return path.join(process.env.HOME, 'Library/Application Support/EscalaFlow/models')
+    return path.join(process.env.HOME, 'Library', 'Application Support', appName, 'models')
   }
+
+  // Windows: %APPDATA%/<AppName>/models
+  if (process.platform === 'win32' && process.env.APPDATA) {
+    return path.join(process.env.APPDATA, appName, 'models')
+  }
+
+  // Fallback (fora do Electron / sem HOME/APPDATA): ao lado do bundle.
   return path.join(__dirname, '../../data/models')
 }
 

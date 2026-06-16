@@ -33,6 +33,7 @@ vi.mock('../../../src/main/db/query', () => ({
 }))
 
 vi.mock('../../../src/main/config/app-config', () => ({
+  APP_CONFIG: { name: 'EscalaFlow' },
   isGeminiCloudApiEnabled: vi.fn(() => state.geminiEnabled),
 }))
 
