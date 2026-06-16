@@ -79,6 +79,15 @@ function getEscalaFlowUserDataDir(): string | null {
   return null
 }
 
+// Log de resolução só uma vez por path: findLlamaServerBinary virou hot path
+// (cada getLocalStatus/poll de capabilities chama), então não polui o stdout.
+let _loggedResolvedBinary: string | null = null
+function logResolvedBinaryOnce(candidate: string): void {
+  if (_loggedResolvedBinary === candidate) return
+  _loggedResolvedBinary = candidate
+  console.log(`[llama-server] binário resolvido: ${candidate}`)
+}
+
 export function findLlamaServerBinary(): string | null {
   const bin = binaryName()
   const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
@@ -96,12 +105,12 @@ export function findLlamaServerBinary(): string | null {
     try {
       if (process.platform === 'win32') {
         if (fs.existsSync(candidate)) {
-          console.log(`[llama-server] binário resolvido: ${candidate}`)
+          logResolvedBinaryOnce(candidate)
           return candidate
         }
       } else {
         fs.accessSync(candidate, fs.constants.X_OK)
-        console.log(`[llama-server] binário resolvido: ${candidate}`)
+        logResolvedBinaryOnce(candidate)
         return candidate
       }
     } catch {

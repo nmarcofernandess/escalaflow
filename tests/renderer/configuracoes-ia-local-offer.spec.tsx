@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { DEFAULT_AI_ROUTING_CONFIG, cloneRoutingConfig } from '../../src/shared'
@@ -31,7 +32,16 @@ function installElectronMock() {
       case 'ia.local.status':
         return makeStatus()
       case 'ia.local.models':
-        return []
+        // Catálogo real: modelo disponível para baixar (baixado:false).
+        return [{
+          id: 'gemma-4-e2b-it-q4',
+          label: 'Gemma 4 E2B IT',
+          filename: 'gemma-4-e2b-it-q4.gguf',
+          size_bytes: 3_000_000_000,
+          ram_minima_gb: 8,
+          descricao: 'Modelo local padrão',
+          baixado: false,
+        }]
       case 'ia.configuracao.obter':
         return null
       case 'backup.config.obter':
@@ -115,5 +125,20 @@ describe('ConfiguracoesPagina — oferta de IA local condicionada ao binário', 
     await waitFor(() =>
       expect(screen.queryByTestId('ia-local-offer')).not.toBeInTheDocument(),
     )
+  })
+
+  it('clicar na oferta revela os cards de download do fluxo local existente', async () => {
+    mocks.serverBinaryAvailable = true
+    await renderConfig()
+
+    const offer = await screen.findByTestId('ia-local-offer')
+    // Antes do clique não há card/botão de baixar do fluxo local.
+    expect(screen.queryByText(/^Baixar \(/i)).not.toBeInTheDocument()
+
+    await userEvent.click(offer)
+
+    // Provider vira local -> card de download existente aparece (com botão Baixar).
+    expect(await screen.findByText(/^Baixar \(/i)).toBeInTheDocument()
+    expect(screen.getAllByText('Gemma 4 E2B IT').length).toBeGreaterThan(0)
   })
 })

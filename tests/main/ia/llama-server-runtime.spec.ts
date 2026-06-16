@@ -98,6 +98,10 @@ describe('llama-server resolver — bundled candidate (contract lock)', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
+    // Módulo fresco: o log de resolução é deduplicado por path (uma vez por
+    // path resolvido), então um teste anterior que já resolveu este path
+    // suprimiria o log aqui sem o reset.
+    vi.resetModules()
     const { findLlamaServerBinary } = await import('../../../src/main/ia/llama-server-runtime')
     findLlamaServerBinary()
 
