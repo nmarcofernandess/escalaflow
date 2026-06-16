@@ -84,8 +84,8 @@ describe('IaChatInput mic dictation', () => {
     const user = userEvent.setup()
     const { onChange, onAnexosChange } = await renderInput()
 
-    await user.click(screen.getByRole('button', { name: /gravar audio/i }))
-    await user.click(screen.getByRole('button', { name: /parar gravacao/i }))
+    await user.click(screen.getByRole('button', { name: /iniciar ditado/i }))
+    await user.click(screen.getByRole('button', { name: /parar ditado/i }))
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith('Criar escala 6x1 para o acougue.')

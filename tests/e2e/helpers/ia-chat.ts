@@ -105,7 +105,9 @@ export async function getToolCallNamesInOrder(page: Page): Promise<string[]> {
   if (!visible) return []
   const open = await panel.locator('[data-state="open"]').count()
   if (open === 0) {
-    await panel.getByRole('button', { name: /ferramenta/i }).first().click().catch(() => {})
+    // AI Elements: cada Tool é um Collapsible; o trigger é o header (botão) da linha.
+    // (data-tool-name é legível mesmo colapsado, mas mantemos a expansão por robustez.)
+    await panel.locator('[data-testid="ia-tool-call"] button').first().click().catch(() => {})
     await page.waitForTimeout(200)
   }
   const rows = page.locator('[data-testid="ia-tool-call"]')

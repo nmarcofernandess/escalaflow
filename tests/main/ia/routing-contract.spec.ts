@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AI_ROUTE_PROVIDER_MODEL_OPTIONS,
   AI_ROUTE_TASKS,
   AI_ROUTE_TASK_LABELS,
   DEFAULT_IA_ROUTING_CONFIG,
   IA_ROUTING_CONFIG_KEY,
   normalizeIaRoutingConfig,
+  type AiRouteProvider,
   type AiRouteTask,
 } from '../../../src/shared/ia-routing-contract'
+import { isValidModelForProvider } from '../../../src/main/ia/config'
 
 describe('ia-routing contract (EscalaFlow)', () => {
   it('lista as 4 tasks reais do EscalaFlow — sem maia_command', () => {
@@ -47,5 +50,18 @@ describe('ia-routing contract (EscalaFlow)', () => {
   it('aceita um JSON string como input (formato do JSONB)', () => {
     const parsed = normalizeIaRoutingConfig(JSON.stringify(DEFAULT_IA_ROUTING_CONFIG))
     expect(parsed).toEqual(DEFAULT_IA_ROUTING_CONFIG)
+  })
+
+  it('toda opção de modelo ofertada no routing passa no validador de runtime (anti-drift)', () => {
+    // Guard contra o drift onde a UI oferece um modelo que checkCloudRoute rejeita
+    // como unsupported_model. Cada (provider, modelo) ofertado tem que ser válido.
+    for (const provider of Object.keys(AI_ROUTE_PROVIDER_MODEL_OPTIONS) as AiRouteProvider[]) {
+      for (const option of AI_ROUTE_PROVIDER_MODEL_OPTIONS[provider]) {
+        expect(
+          isValidModelForProvider(option.value, provider),
+          `${provider}/${option.value} é ofertado no routing mas reprova em isValidModelForProvider`,
+        ).toBe(true)
+      }
+    }
   })
 })

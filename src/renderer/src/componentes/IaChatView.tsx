@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { Bot, Settings, Loader2, FileText, ImageIcon, AlertCircle } from 'lucide-react'
+import { Bot, Settings, FileText, ImageIcon, AlertCircle } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -8,13 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { MessageResponse } from '@/components/ai-elements/message'
 import { useIaStore } from '@/store/iaStore'
 import { useAppDataStore } from '@/store/appDataStore'
 import { useIaModelConfig } from '@/hooks/useIaModelConfig'
 import { IaMensagemBubble } from './IaMensagemBubble'
 import { IaChatInput } from './IaChatInput'
 import { IaToolCallsCollapsible } from './IaToolCallsCollapsible'
-import { toolLabel, toolEstimatedSeconds } from '@/lib/tool-labels'
+import { buildStreamingAssistantUiMessage } from '@/lib/ai-elements-adapters'
 import type { IaMensagem, IaAnexo, IaContexto, ToolCall, IaStreamEvent, IaContextMeta } from '@shared/index'
 import { toast } from 'sonner'
 
@@ -63,31 +63,6 @@ function useIaContexto(): IaContexto {
       store_snapshot: snapshot() ?? undefined,
     }
   }, [location.pathname, snapshot])
-}
-
-// Tool progress pill with countdown
-function ToolProgressPill({ info }: { info: { tool_name: string; estimated_seconds?: number; started_at: number } }) {
-  const [elapsed, setElapsed] = useState(0)
-
-  useEffect(() => {
-    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - info.started_at) / 1000)), 1000)
-    return () => clearInterval(interval)
-  }, [info.started_at])
-
-  const label = toolLabel(info.tool_name)
-  const est = toolEstimatedSeconds(info.tool_name, info.estimated_seconds)
-
-  return (
-    <Badge variant="secondary" className="gap-1.5 text-xs animate-pulse py-1">
-      <Loader2 className="size-3 animate-spin" />
-      <span>{label}</span>
-      {est ? (
-        <span className="text-muted-foreground">({elapsed}s / ~{est}s)</span>
-      ) : elapsed > 0 ? (
-        <span className="text-muted-foreground">({elapsed}s)</span>
-      ) : null}
-    </Badge>
-  )
 }
 
 export function IaChatView() {
@@ -205,6 +180,13 @@ export function IaChatView() {
       || normalized.includes('provider cloud')
   }
 
+  const cleanIpcErrorMessage = (message?: string) => {
+    return (message || 'Erro desconhecido.')
+      .replace(/^Error invoking remote method '[^']+': Error:\s*/i, '')
+      .replace(/^Error:\s*/i, '')
+      .trim()
+  }
+
   const enviar = async (conteudoOverride?: string) => {
     const conteudo = conteudoOverride ?? texto
     if ((!conteudo.trim() && anexos.length === 0) || inputDisabled) return
@@ -262,8 +244,15 @@ export function IaChatView() {
       await adicionarMensagem(mensagemAssistente)
       finalizarStream()
     } catch (err: any) {
+      const friendlyMessage = cleanIpcErrorMessage(err?.message)
       if (isProviderAvailabilityError(err?.message)) {
-        toast.error(err.message)
+        await adicionarMensagem({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          papel: 'assistente',
+          conteudo: `Não consegui iniciar a IA.\n\n${friendlyMessage}\n\nAbra Configurações > Assistente IA para testar o modelo ou escolher outra IA.`,
+        })
+        toast.error(friendlyMessage)
         cancelarStream()
         return
       }
@@ -271,7 +260,7 @@ export function IaChatView() {
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         papel: 'assistente',
-        conteudo: `Erro: ${err.message}`,
+        conteudo: `Erro: ${friendlyMessage}`,
       })
       cancelarStream()
     }
@@ -325,6 +314,17 @@ export function IaChatView() {
   const toolsEmAndamentoEntries = Object.entries(tools_em_andamento)
   const hasStreamingContent = texto_parcial.length > 0 || toolsEmAndamentoEntries.length > 0 || tool_calls_parciais.length > 0
 
+  // Snapshot do turno em streaming como UIMessage do AI SDK (texto + tools).
+  const streamingMessage = stream_id_ativo
+    ? buildStreamingAssistantUiMessage({
+        streamId: stream_id_ativo,
+        text: texto_parcial,
+        runningTools: tools_em_andamento,
+        completedToolCalls: tool_calls_parciais,
+        turnMeta: pendingTurnMetaRef.current ?? undefined,
+      })
+    : null
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
@@ -359,87 +359,91 @@ export function IaChatView() {
 
           {mensagens
             .filter((m) => m.papel !== 'tool_result')
-            .map((m) => (
-              <div key={m.id} className="min-w-0 max-w-full">
-                {editingMsgId === m.id ? (
-                  <div className="flex flex-col gap-2 w-full max-w-[88%] ml-auto">
-                    <Textarea
-                      value={editText}
-                      onChange={e => setEditText(e.target.value)}
-                      className="resize-none text-sm"
-                      rows={3}
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault()
-                          handleConfirmEdit()
-                        }
-                        if (e.key === 'Escape') handleCancelEdit()
-                      }}
-                    />
-                    <div className="flex gap-1 justify-end">
-                      <Button size="sm" variant="ghost" onClick={handleCancelEdit}>Cancelar</Button>
-                      <Button size="sm" onClick={handleConfirmEdit} disabled={!editText.trim()}>Reenviar</Button>
+            .map((m) => {
+              const showAssistantToolCalls = m.papel === 'assistente' && m.tool_calls && m.tool_calls.length > 0
+              return (
+                <div
+                  key={m.id}
+                  data-testid={showAssistantToolCalls ? 'ia-assistant-turn-with-tool' : undefined}
+                  className="min-w-0 max-w-full"
+                >
+                  {showAssistantToolCalls && (
+                    <div className="mb-2 min-w-0 max-w-full">
+                      <IaToolCallsCollapsible toolCalls={m.tool_calls!} />
                     </div>
-                  </div>
-                ) : (
-                  <IaMensagemBubble
-                    msg={m}
-                    onEdit={m.papel === 'usuario' ? handleStartEdit : undefined}
-                    onRegenerate={handleRegenerate}
-                    showActions={!carregando && modelConfig.canSendMessages}
-                    turnMeta={turnMetaMap[m.id]}
-                  />
-                )}
-                {m.papel === 'usuario' && m.anexos && m.anexos.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1 justify-end">
-                    {m.anexos.map(a => (
-                      <Badge key={a.id} variant="secondary" className="text-xs gap-1">
-                        {a.tipo === 'image' ? <ImageIcon className="size-2.5" /> : <FileText className="size-2.5" />}
-                        {a.nome}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                {m.papel === 'assistente' && m.tool_calls && m.tool_calls.length > 0 && (
-                  <div className="mt-2 min-w-0 max-w-full">
-                    <IaToolCallsCollapsible toolCalls={m.tool_calls} />
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                  {editingMsgId === m.id ? (
+                    <div className="flex flex-col gap-2 w-full max-w-[88%] ml-auto">
+                      <Textarea
+                        value={editText}
+                        onChange={e => setEditText(e.target.value)}
+                        className="resize-none text-sm"
+                        rows={3}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            handleConfirmEdit()
+                          }
+                          if (e.key === 'Escape') handleCancelEdit()
+                        }}
+                      />
+                      <div className="flex gap-1 justify-end">
+                        <Button size="sm" variant="ghost" onClick={handleCancelEdit}>Cancelar</Button>
+                        <Button size="sm" onClick={handleConfirmEdit} disabled={!editText.trim()}>Reenviar</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <IaMensagemBubble
+                      msg={m}
+                      onEdit={m.papel === 'usuario' ? handleStartEdit : undefined}
+                      onRegenerate={handleRegenerate}
+                      showActions={!carregando && modelConfig.canSendMessages}
+                      turnMeta={turnMetaMap[m.id]}
+                    />
+                  )}
+                  {m.papel === 'usuario' && m.anexos && m.anexos.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 justify-end">
+                      {m.anexos.map(a => (
+                        <Badge key={a.id} variant="secondary" className="text-xs gap-1">
+                          {a.tipo === 'image' ? <ImageIcon className="size-2.5" /> : <FileText className="size-2.5" />}
+                          {a.nome}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
 
           {carregando && (
             <div className="flex min-w-0 max-w-full flex-col gap-2">
-              {/* Tools em andamento — pills com countdown */}
-              {toolsEmAndamentoEntries.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {toolsEmAndamentoEntries.map(([id, info]) => (
-                    <ToolProgressPill key={id} info={info} />
-                  ))}
-                </div>
-              )}
-
-              {/* Tool calls já concluídas nesse stream */}
-              {tool_calls_parciais.length > 0 && (
+              {/* Tools do stream (em andamento + concluídas) via AI Elements */}
+              {(toolsEmAndamentoEntries.length > 0 || tool_calls_parciais.length > 0) && (
                 <div className="min-w-0 max-w-full">
-                  <IaToolCallsCollapsible toolCalls={tool_calls_parciais} />
+                  <IaToolCallsCollapsible
+                    toolCalls={tool_calls_parciais}
+                    runningTools={tools_em_andamento}
+                  />
                 </div>
               )}
 
-              {/* Texto parcial — mesma aparência do IaMensagemBubble + cursor pulsante */}
-              {texto_parcial.length > 0 && (
-                <div className="max-w-[88%] leading-relaxed text-sm">
-                  <div className="prose prose-sm dark:prose-invert
-                    prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
-                    prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-sm
-                    prose-table:text-xs prose-th:px-2 prose-td:px-2
-                    prose-code:text-xs prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:max-w-full">
-                    <ReactMarkdown>{texto_parcial}</ReactMarkdown>
-                  </div>
-                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse rounded-sm align-text-bottom" />
-                </div>
-              )}
+              {/* Texto parcial — markdown via AI Elements + cursor pulsante */}
+              {streamingMessage?.parts.map((part, index) => {
+                if (part.type === 'text' && part.text) {
+                  return (
+                    <div
+                      key={index}
+                      data-testid="ia-streaming-text"
+                      className="max-w-[88%] leading-relaxed text-sm"
+                    >
+                      <MessageResponse>{part.text}</MessageResponse>
+                      <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse rounded-sm align-text-bottom" />
+                    </div>
+                  )
+                }
+                return null
+              })}
 
               {/* Timeout banner */}
               {showTimeoutBanner && (
@@ -448,13 +452,13 @@ export function IaChatView() {
                 </div>
               )}
 
-              {/* Fallback — bouncing dots quando nenhum indicador está ativo */}
+              {/* Fallback — pulsing dots quando nenhum indicador está ativo */}
               {!hasStreamingContent && !showTimeoutBanner && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-2xl rounded-bl-sm bg-muted border text-muted-foreground text-sm max-w-[70%]">
                   <div className="flex gap-1">
-                    <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:0ms]" />
-                    <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:150ms]" />
-                    <span className="size-1.5 rounded-full bg-current animate-bounce [animation-delay:300ms]" />
+                    <span className="size-1.5 rounded-full bg-current animate-pulse [animation-delay:0ms]" />
+                    <span className="size-1.5 rounded-full bg-current animate-pulse [animation-delay:150ms]" />
+                    <span className="size-1.5 rounded-full bg-current animate-pulse [animation-delay:300ms]" />
                   </div>
                   Pensando...
                 </div>
@@ -474,8 +478,8 @@ export function IaChatView() {
             <AlertDescription className="flex items-center justify-between gap-3 text-xs leading-relaxed">
               <span>
                 {modelConfig.showUnconfiguredState
-                  ? 'Nenhum provider está disponível no momento.'
-                  : `${activeProviderLabel} indisponível: ${modelConfig.activeProviderReason || 'configure o provider ou troque pelo seletor.'}`}
+                  ? 'Nenhuma IA está disponível no momento.'
+                  : `${activeProviderLabel} indisponível: ${modelConfig.activeProviderReason || 'configure esta IA ou escolha outra.'}`}
               </span>
               {modelConfig.showUnconfiguredState ? (
                 <Button size="sm" variant="outline" onClick={() => navigate('/configuracoes')}>

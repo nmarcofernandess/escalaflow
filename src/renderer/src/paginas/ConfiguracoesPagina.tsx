@@ -54,6 +54,7 @@ import { servicoStt } from '@/servicos/stt'
 import { servicoConhecimento } from '@/servicos/conhecimento'
 import { Progress } from '@/components/ui/progress'
 import { IaModelPill } from '@/componentes/IaModelPill'
+import { AiRoutingSection } from '@/componentes/ai/AiRoutingSection'
 import { getLocalModelAvailability, getLocalModelCardState } from '@/lib/ia-local-status'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
@@ -1567,6 +1568,22 @@ export function ConfiguracoesPagina() {
                 </div>
               </form>
             </Form>
+          </CardContent>
+        </Card>
+
+        {/* IA e Modelos — roteamento por tarefa (override sobre a IA ativa acima) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BrainCircuit className="size-4" />
+              IA e Modelos por tarefa
+            </CardTitle>
+            <CardDescription>
+              Cada parte do sistema segue a IA ativa por padrão. Fixe uma IA diferente por tarefa (chat, terminal, leitura do acervo) quando precisar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AiRoutingSection />
           </CardContent>
         </Card>
 

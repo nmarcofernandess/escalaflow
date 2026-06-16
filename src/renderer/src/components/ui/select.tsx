@@ -14,12 +14,18 @@ const SelectValue = SelectPrimitive.Value
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+    // Aditivo: exigido pelos ai-elements vendored (seletor de linguagem em code-block).
+    // Default "default" (h-9 baseline). Prop puramente nova; rendering baseline
+    // inalterado quando `size` é omitido.
+    size?: "sm" | "default"
+  }
+>(({ className, children, size = "default", ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
+    data-size={size}
     className={cn(
-      "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      "flex w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 data-[size=default]:h-9 data-[size=sm]:h-8",
       className
     )}
     {...props}

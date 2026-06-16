@@ -14,6 +14,7 @@ import path from 'node:path'
 import { iaEnviarMensagem, iaEnviarMensagemStream, iaTestarConexao } from './ia/cliente'
 import { GEMINI_MODEL_IDS, PROVIDER_DEFAULTS, isValidModelForProvider } from './ia/config'
 import { assertIaCanChat } from './ia/readiness'
+import { getIaRoutingConfig, resolveAllIaRoutes, resolveIaRoute, saveIaRoutingConfig } from './ia/routing'
 import { normalizeRegimesOverride, parseEscalaSimulacaoConfig, type SimulacaoRegimeOverride } from './preflight-capacity'
 import { persistirAjusteResult, persistirResumoAutoritativoEscala } from './tipc/escalas-utils'
 import { atualizarEscalaEquipeSnapshot } from './escala-equipe-snapshot'
@@ -3341,6 +3342,29 @@ const iaCapabilitiesObter = t.procedure
     return await getIaCapabilities(config)
   })
 
+const iaRoutingObter = t.procedure
+  .action(async () => {
+    return await getIaRoutingConfig()
+  })
+
+const iaRoutingSalvar = t.procedure
+  .input<import('@shared/index').AiRoutingConfig>()
+  .action(async ({ input }) => {
+    return await saveIaRoutingConfig(input)
+  })
+
+const iaRoutingStatus = t.procedure
+  .input<{ task: import('@shared/index').AiRouteTask; validateLocal?: boolean }>()
+  .action(async ({ input }) => {
+    return await resolveIaRoute(input.task, { validateLocal: input.validateLocal === true })
+  })
+
+const iaRoutingStatusAll = t.procedure
+  .input<{ validateLocal?: boolean } | undefined>()
+  .action(async ({ input }) => {
+    return await resolveAllIaRoutes({ validateLocal: input?.validateLocal === true })
+  })
+
 const iaConfiguracaoSalvar = t.procedure
   .input<{ provider: string; api_key: string; modelo: string; provider_configs_json?: string }>()
   .action(async ({ input }) => {
@@ -3651,9 +3675,9 @@ const iaChatEnviar = t.procedure
   .action(async ({ input }) => {
     await assertIaCanChat()
     if (input.stream_id) {
-      return await iaEnviarMensagemStream(input.mensagem, input.historico, input.stream_id, input.contexto, input.conversa_id, input.anexos)
+      return await iaEnviarMensagemStream(input.mensagem, input.historico, input.stream_id, input.contexto, input.conversa_id, input.anexos, { task: 'chat_ui' })
     }
-    return await iaEnviarMensagem(input.mensagem, input.historico, input.contexto, input.conversa_id, input.anexos)
+    return await iaEnviarMensagem(input.mensagem, input.historico, input.contexto, input.conversa_id, input.anexos, { task: 'chat_ui' })
   })
 
 // =============================================================================
@@ -4430,51 +4454,54 @@ const knowledgeExtrairTexto = t.procedure
   return { texto, nome_arquivo }
 })
 
+const metadataIaCache = new Map<string, {
+  expiresAt: number
+  promise: Promise<{ titulo: string; quando_consultar: string }>
+}>()
+const METADATA_IA_CACHE_TTL_MS = 30_000
+
+async function gerarMetadataIaCached(texto: string): Promise<{ titulo: string; quando_consultar: string }> {
+  // Fingerprint da rota resolvida para que trocar provider/modelo invalide o cache
+  // (senão um regenerate dentro do TTL devolveria saída de uma rota já trocada).
+  const { resolveIaRoute } = await import('./ia/routing')
+  const route = await resolveIaRoute('rag_metadata', { validateLocal: false })
+  const routeKey = `${route.provider ?? 'none'}:${route.model ?? 'none'}`
+  const key = `${routeKey}|${texto.length}:${texto.slice(0, 512)}:${texto.slice(-512)}`
+  const now = Date.now()
+  const cached = metadataIaCache.get(key)
+  if (cached && cached.expiresAt > now) return cached.promise
+
+  const promise = import('./ia/metadata-generator')
+    .then(({ generateRagMetadata }) => generateRagMetadata({
+      texto,
+      fileNameFallback: 'Documento importado',
+    }))
+    .then(({ titulo, quando_consultar }) => ({ titulo, quando_consultar }))
+
+  metadataIaCache.set(key, { expiresAt: now + METADATA_IA_CACHE_TTL_MS, promise })
+  promise.catch(() => metadataIaCache.delete(key))
+  setTimeout(() => {
+    if (metadataIaCache.get(key)?.promise === promise) metadataIaCache.delete(key)
+  }, METADATA_IA_CACHE_TTL_MS).unref?.()
+
+  return promise
+}
+
+// rag_metadata: usa o metadata-generator roteado (suporta IA local via assertIaRouteReady),
+// respeitando a escolha por tarefa do AiRoutingSection. Não exige mais provider cloud.
 const knowledgeGerarMetadataIa = t.procedure
   .input<{ texto: string; campo: 'titulo' | 'quando_consultar' | 'texto' }>()
   .action(async ({ input }) => {
-  const { generateText } = await import('ai')
-  const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
-  const { createOpenRouter } = await import('@openrouter/ai-sdk-provider')
-  const { resolveProviderApiKey, resolveModel } = await import('./ia/config')
+    const { generateRagTextCorrection } = await import('./ia/metadata-generator')
 
-  const config = await requireCloudLlmFeature('Gerar metadados com IA') as {
-    provider: 'gemini' | 'openrouter'
-    api_key: string
-    modelo: string
-    provider_configs_json?: string
-  }
+    if (input.campo === 'texto') {
+      const result = await generateRagTextCorrection(input.texto)
+      return { resultado: result.resultado }
+    }
 
-  const apiKey = resolveProviderApiKey(config as any)
-  if (!apiKey) throw new Error('Token do provider cloud não configurado.')
-
-  const modelo = resolveModel(config as any, config.provider)
-
-  let createModel: (m: string) => any
-  if (config.provider === 'gemini') {
-    const google = createGoogleGenerativeAI({ apiKey })
-    createModel = (m) => google(m)
-  } else {
-    const openrouter = createOpenRouter({ apiKey })
-    createModel = (m) => openrouter(m)
-  }
-
-  const prompts: Record<string, string> = {
-    titulo: `Gere um título curto (máximo 80 caracteres) para o seguinte documento. Responda APENAS com o título, sem aspas, sem explicação.\n\n${input.texto.slice(0, 3000)}`,
-    quando_consultar: `Gere uma frase curta (máximo 200 caracteres) descrevendo QUANDO a IA deve consultar este documento. Exemplo: "Quando o usuário perguntar sobre regras de hora extra" ou "Quando precisar de informações sobre o acordo coletivo". Responda APENAS com a frase, sem aspas.\n\n${input.texto.slice(0, 3000)}`,
-    texto: `Corrija a ortografia e gramática do texto abaixo SEM mudar o conteúdo ou significado. Mantenha a formatação original (markdown, listas, etc). Responda APENAS com o texto corrigido.\n\n${input.texto.slice(0, 8000)}`,
-  }
-
-  const prompt = prompts[input.campo]
-  if (!prompt) throw new Error(`Campo inválido: ${input.campo}`)
-
-  const result = await generateText({
-    model: createModel(modelo),
-    prompt,
+    const result = await gerarMetadataIaCached(input.texto)
+    return { resultado: result[input.campo] }
   })
-
-  return { resultado: result.text.trim() }
-})
 
 const knowledgeImportarCompleto = t.procedure
   .input<{ titulo: string; conteudo: string; quando_consultar: string }>()
@@ -5026,6 +5053,10 @@ export const router = {
   'ia.stt.transcribe': iaSttTranscribe,
   'ia.configuracao.obter': iaConfiguracaoObter,
   'ia.capabilities.obter': iaCapabilitiesObter,
+  'ia.routing.obter': iaRoutingObter,
+  'ia.routing.salvar': iaRoutingSalvar,
+  'ia.routing.status': iaRoutingStatus,
+  'ia.routing.statusAll': iaRoutingStatusAll,
   'ia.configuracao.salvar': iaConfiguracaoSalvar,
   'ia.configuracao.testar': iaConfiguracaoTestar,
   'ia.modelos.catalogo': iaModelosCatalogo,

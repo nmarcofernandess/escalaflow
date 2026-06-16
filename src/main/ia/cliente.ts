@@ -8,7 +8,10 @@ import { buildContextBundle, renderContextBriefing, buildContextBriefing } from 
 import { maybeCompact } from './session-processor'
 import { queryOne } from '../db/query'
 import { resolveProviderApiKey, resolveModel, buildModelFactory, PROVIDER_DEFAULTS } from './config'
+import { assertIaRouteReady } from './routing'
+import { assertReadyRoute, buildRouteBackedIaConfig, type ReadyAiRoute } from './route-config'
 import type { IaMensagem, IaAnexo, ToolCall, IaConfiguracao, IaContexto, IaStreamEvent, IaContextMeta } from '../../shared/types'
+import type { AiRouteResolution, AiRouteTask } from '../../shared/ia-routing-contract'
 
 import { createRequire } from 'node:module'
 const _require = createRequire(import.meta.url)
@@ -643,6 +646,20 @@ async function _callWithVercelAiSdkToolsStreaming(
     }
 }
 
+// Opções de roteamento por tarefa. Sem `route`/`task`, o chat assume `chat_ui`.
+// A rota resolve provider + modelo; `configuracao_ia` segue fornecendo os tokens
+// (via buildRouteBackedIaConfig). No default (todas as tarefas em `inherit`), a rota
+// herda o provider ATIVO de configuracao_ia — preserva o comportamento da Fase A.
+export interface IaRouteRuntimeOptions {
+    task?: AiRouteTask
+    route?: AiRouteResolution
+}
+
+async function resolveRuntimeRoute(options?: IaRouteRuntimeOptions): Promise<ReadyAiRoute> {
+    if (options?.route) return assertReadyRoute(options.route)
+    return await assertIaRouteReady(options?.task ?? 'chat_ui', { validateLocal: true })
+}
+
 export async function iaEnviarMensagemStream(
     mensagem: string,
     historico: IaMensagem[],
@@ -650,19 +667,23 @@ export async function iaEnviarMensagemStream(
     contexto?: IaContexto,
     conversa_id?: string,
     anexos?: IaAnexo[],
+    routeOptions?: IaRouteRuntimeOptions,
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const config = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
+    const route = await resolveRuntimeRoute(routeOptions)
 
-    if (!config) {
-        throw new Error('Assistente IA não configurado.')
-    }
-
-    const apiKey = resolveProviderApiKey(config)
-
-    if (config.provider === 'local') {
+    if (route.provider === 'local') {
         const { localLlmChat } = await import('./local-llm')
         return localLlmChat(mensagem, historico, streamId, contexto, conversa_id, anexos)
     }
+
+    const baseConfig = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
+
+    if (!baseConfig) {
+        throw new Error('Assistente IA não configurado.')
+    }
+
+    const config = buildRouteBackedIaConfig(baseConfig, route)
+    const apiKey = resolveProviderApiKey(config)
 
     if (config.provider === 'gemini') {
         if (!apiKey) throw new Error('API Key do Gemini não configurada.')
@@ -685,19 +706,23 @@ export async function iaEnviarMensagem(
     contexto?: IaContexto,
     conversa_id?: string,
     anexos?: IaAnexo[],
+    routeOptions?: IaRouteRuntimeOptions,
 ): Promise<{ resposta: string; acoes: ToolCall[] }> {
-    const config = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
+    const route = await resolveRuntimeRoute(routeOptions)
 
-    if (!config) {
-        throw new Error('Assistente IA não configurado.')
-    }
-
-    const apiKey = resolveProviderApiKey(config)
-
-    if (config.provider === 'local') {
+    if (route.provider === 'local') {
         const { localLlmChat } = await import('./local-llm')
         return localLlmChat(mensagem, historico, 'non-stream', contexto, conversa_id, anexos)
     }
+
+    const baseConfig = await queryOne<IaConfiguracao>('SELECT * FROM configuracao_ia LIMIT 1')
+
+    if (!baseConfig) {
+        throw new Error('Assistente IA não configurado.')
+    }
+
+    const config = buildRouteBackedIaConfig(baseConfig, route)
+    const apiKey = resolveProviderApiKey(config)
 
     if (config.provider === 'gemini') {
         if (!apiKey) {

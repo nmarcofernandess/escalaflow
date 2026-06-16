@@ -165,19 +165,22 @@ export async function listKnowledgeEnrichmentModelOptions(): Promise<KnowledgeEn
   ]
 }
 
-async function resolveAutoModel(config: KnowledgeEnrichmentConfig): Promise<KnowledgeEnrichmentConfig | null> {
-  const options = await listKnowledgeEnrichmentModelOptions()
-  const local = options.find((option) => option.provider === 'local' && option.available)
-  if (local) return { ...config, provider: 'local', modelo: local.modelo }
-
-  const iaConfig = await getIaConfig()
-  const activeCloud = options.find((option) => option.provider === iaConfig?.provider && option.provider !== 'local' && option.available)
-  if (activeCloud) return { ...config, provider: activeCloud.provider, modelo: activeCloud.modelo }
-
-  const anyCloud = options.find((option) => option.provider !== 'local' && option.available)
-  if (anyCloud) return { ...config, provider: anyCloud.provider, modelo: anyCloud.modelo }
-
-  return null
+// Modo `auto` do enrichment delega para a rota `rag_enrichment` (default `auto` →
+// local-first, equivalente à resolução anterior; mas agora o AiRoutingSection pode
+// fixar provider/modelo dessa tarefa). assertIaRouteReady já valida prontidão.
+// Mantém o contrato antigo: rota não-pronta → null (o caller decide pular o enrichment).
+async function resolveAutoModelViaRoute(config: KnowledgeEnrichmentConfig): Promise<KnowledgeEnrichmentConfig | null> {
+  try {
+    const { assertIaRouteReady } = await import('../ia/routing')
+    const route = await assertIaRouteReady('rag_enrichment', { validateLocal: true })
+    if (!route.provider || !route.model) return null
+    return { ...config, provider: route.provider, modelo: route.model }
+  } catch (err) {
+    // Rota não-pronta (token ausente, local não validado, etc.): preserva o contrato
+    // antigo (auto sem modelo → null → caller pula o enrichment com aviso). Logável.
+    if (process.env.DEBUG_ENRICH_ROUTE) console.error('[resolveAutoModelViaRoute]', err)
+    return null
+  }
 }
 
 function buildCloudConfig(base: IaConfiguracao, provider: 'gemini' | 'openrouter', modelo: string): IaConfiguracao {
@@ -200,12 +203,19 @@ export async function buildKnowledgeEnrichmentModel(
   configOverride?: KnowledgeEnrichmentConfig,
 ): Promise<EnrichmentModel | null> {
   const baseConfig = configOverride ?? await getKnowledgeEnrichmentConfig()
-  const resolvedConfig = baseConfig.provider === 'auto'
-    ? await resolveAutoModel(baseConfig)
-    : baseConfig
+
+  let resolvedConfig: KnowledgeEnrichmentConfig | null
+  if (baseConfig.provider === 'auto') {
+    // Auto: a rota já validou prontidão; não revalida contra a lista de opções
+    // (que só lista o modelo ativo por provider e rejeitaria overrides legítimos).
+    resolvedConfig = await resolveAutoModelViaRoute(baseConfig)
+  } else {
+    // Provider explícito escolhido no enrichment: valida contra as opções disponíveis.
+    await assertValidConcreteConfig(baseConfig)
+    resolvedConfig = baseConfig
+  }
 
   if (!resolvedConfig) return null
-  await assertValidConcreteConfig(resolvedConfig)
 
   if (resolvedConfig.provider === 'local') {
     const options = await listKnowledgeEnrichmentModelOptions()

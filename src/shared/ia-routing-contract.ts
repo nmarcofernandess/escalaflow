@@ -73,7 +73,7 @@ export const AI_ROUTE_TASK_LABELS: Record<AiRouteTask, string> = {
 }
 
 export const AI_ROUTE_MODE_LABELS: Record<AiRouteMode, string> = {
-  inherit: 'Usar chave mestra',
+  inherit: 'Seguir IA ativa',
   explicit: 'Escolher manualmente',
   auto: 'Escolher melhor disponível',
 }
@@ -88,10 +88,11 @@ export const AI_ROUTE_PROVIDER_MODEL_OPTIONS: Record<AiRouteProvider, Array<{ va
   local: [
     { value: 'gemma-4-e2b-it-q4', label: 'Gemma 4 E2B IT' },
   ],
+  // DEVE espelhar GEMINI_MODEL_IDS em src/main/ia/config.ts (isValidModelForProvider).
+  // Modelos fora dessa allow-list resolvem sempre 'unsupported_model'. Coberto por teste.
   gemini: [
+    { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
     { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
-    { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite (Preview)' },
   ],
   openrouter: [
     { value: 'openai/gpt-oss-20b:free', label: 'OpenAI gpt-oss 20B (free)' },

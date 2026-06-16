@@ -1,7 +1,18 @@
 /** @type {import('tailwindcss').Config} */
 export default {
     darkMode: ['class'],
-    content: ['./src/renderer/index.html', './src/renderer/src/**/*.{ts,tsx}'],
+    content: [
+        './src/renderer/index.html',
+        './src/renderer/src/**/*.{ts,tsx}',
+        // Streamdown (AI Elements) emite classes utilitárias Tailwind no markdown renderizado.
+        // No Tailwind v3 é preciso varrer o dist dele (equivalente ao `@source` do v4),
+        // senão essas classes são purgadas e o markdown do chat fica sem estilo.
+        './node_modules/streamdown/dist/*.js',
+        './node_modules/@streamdown/code/dist/*.js',
+        './node_modules/@streamdown/cjk/dist/*.js',
+        './node_modules/@streamdown/math/dist/*.js',
+        './node_modules/@streamdown/mermaid/dist/*.js',
+    ],
   theme: {
   	extend: {
   		borderRadius: {

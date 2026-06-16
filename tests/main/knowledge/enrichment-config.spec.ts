@@ -57,6 +57,10 @@ vi.mock('../../../src/main/ia/local-llm', () => ({
     },
     modelo_carregado: false,
   })),
+  // O enrichment `auto` agora delega para a rota `rag_enrichment`, e o engine de routing
+  // chama validateLocalModel quando o local não está usable. Não muda o status aqui:
+  // mantém o local "não validado" para o teste de fallback para a nuvem.
+  validateLocalModel: vi.fn(async () => {}),
 }))
 
 vi.mock('../../../src/main/knowledge/enrichment', () => ({

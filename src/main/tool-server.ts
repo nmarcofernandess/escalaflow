@@ -490,6 +490,8 @@ export function startToolServer(options: { port?: number; host?: string } = {}) 
           body.history ?? [],
           normalizeChatContext(body.context),
           body.conversation_id,
+          undefined,
+          { task: 'cli_chat' },
         )
 
         return json(res, {

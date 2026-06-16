@@ -1,15 +1,11 @@
 import { useRef, useState } from 'react'
-import { ArrowUp, Mic, Plus, Square } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { FlowPromptInput } from './ai/FlowPromptInput'
+import { FlowSpeechInput } from './ai/FlowSpeechInput'
 import { IaModelPill } from './IaModelPill'
 import { IaContextBadge } from './IaContextBadge'
 import { IaAnexoPreviewStrip } from './IaAnexoPreviewStrip'
 import { cn } from '@/lib/utils'
-import { uint8ToBase64 } from '@/lib/audio-wav'
-import { useAudioRecorder } from '@/hooks/useAudioRecorder'
-import { servicoStt } from '@/servicos/stt'
 import type { IaProviderId, IaAnexo } from '@shared/index'
 
 type ProviderOption = {
@@ -66,9 +62,7 @@ export function IaChatInput({
   supportsMultimodal, anexos, onAnexosChange,
 }: Props) {
   const [isDragging, setIsDragging] = useState(false)
-  const [transcribing, setTranscribing] = useState(false)
   const dragCounterRef = useRef(0)
-  const recorder = useAudioRecorder()
 
   // Validate + read file from renderer, then persist to disk via IPC
   const processFile = async (file: File): Promise<IaAnexo | null> => {
@@ -196,36 +190,9 @@ export function IaChatInput({
     }
   }
 
-  const handleMic = async () => {
-    try {
-      if (!recorder.recording) {
-        await recorder.start()
-        return
-      }
-
-      setTranscribing(true)
-      const wav = await recorder.stop()
-      const result = await servicoStt.transcribe({
-        wav_base64: uint8ToBase64(wav),
-        post_process: false,
-      })
-      const transcript = result.text.trim()
-      if (transcript) {
-        onChange(value.trim() ? `${value.trim()}\n${transcript}` : transcript)
-      }
-    } catch (err) {
-      recorder.cancel()
-      toast.error('Nao consegui transcrever o audio', {
-        description: err instanceof Error ? err.message : 'Verifique o microfone e o modelo de ditado local.',
-      })
-    } finally {
-      setTranscribing(false)
-    }
+  const handleTranscript = (transcript: string) => {
+    onChange(value.trim() ? `${value.trim()}\n${transcript}` : transcript)
   }
-
-  const canSend = !disabled && !transcribing && (value.trim().length > 0 || anexos.length > 0)
-  const inputDisabled = disabled || transcribing
-  const micDisabled = transcribing || (disabled && !recorder.recording)
 
   return (
     <div
@@ -235,63 +202,28 @@ export function IaChatInput({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      <div className={cn("rounded-xl border p-1 transition-colors", isDragging ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "bg-muted/30")}>
+      <div className={cn("rounded-xl transition-colors", isDragging && "ring-2 ring-primary/20")}>
         {/* Preview strip de anexos */}
         <IaAnexoPreviewStrip
           anexos={anexos}
           onRemover={(id) => onAnexosChange(anexos.filter(a => a.id !== id))}
         />
 
-        {/* Textarea sem borda */}
-        <Textarea
-          data-testid="ia-chat-input"
-          placeholder="Escreva sua mensagem..."
-          className="border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none min-h-[60px] text-sm"
+        <FlowPromptInput
           value={value}
-          disabled={inputDisabled}
-          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}
-          onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              if (canSend) onEnviar()
-            }
-          }}
+          onChange={onChange}
+          onEnviar={onEnviar}
+          disabled={disabled}
+          modelLabel={modeloLabel || `${provider}:${modelo}`}
+          canAttach={supportsMultimodal && Boolean(conversaId)}
+          onAttach={handleAttach}
+          hasAttachments={anexos.length > 0}
           onPaste={handlePaste}
+          speechControl={<FlowSpeechInput disabled={disabled} onTranscript={handleTranscript} />}
         />
 
-        {/* Toolbar */}
-        <div className="flex items-center gap-1.5 px-2 pb-1.5">
-          {/* Esquerda: attach */}
-          {supportsMultimodal && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 rounded-full"
-              onClick={handleAttach}
-              disabled={inputDisabled || !conversaId}
-            >
-              <Plus className="size-4" />
-            </Button>
-          )}
-
-          <Button
-            type="button"
-            variant={recorder.recording ? 'destructive' : 'ghost'}
-            size="icon"
-            className="size-7 rounded-full"
-            disabled={micDisabled}
-            onClick={() => { void handleMic() }}
-            aria-label={recorder.recording ? 'Parar gravacao' : 'Gravar audio'}
-            title={recorder.recording ? 'Parar gravacao' : 'Gravar audio'}
-          >
-            {recorder.recording ? <Square className="size-3.5" /> : <Mic className="size-4" />}
-          </Button>
-
-          <div className="flex-1" />
-
-          {/* Direita: context badge + modelo + send */}
-          <IaContextBadge tokens={tokensEstimados} limit={contextLength} />
-
+        {/* Linha inferior: modelo + contexto */}
+        <div className="mt-2 flex items-center justify-between gap-2 px-1">
           <IaModelPill
             provider={provider}
             providerOptions={providerOptions}
@@ -302,16 +234,7 @@ export function IaChatInput({
             onProviderChange={onProviderChange}
             onModeloChange={onModeloChange}
           />
-
-          <Button
-            data-testid="ia-chat-send"
-            size="icon"
-            className="size-8 rounded-full"
-            disabled={!canSend}
-            onClick={() => onEnviar()}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
+          <IaContextBadge tokens={tokensEstimados} limit={contextLength} />
         </div>
       </div>
     </div>

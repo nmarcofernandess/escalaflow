@@ -6,6 +6,7 @@ import type {
   KnowledgeEnrichmentConfig,
   KnowledgeEnrichmentModelOption,
 } from '@shared/types'
+import type { AiRouteResolution, AiRouteTask, AiRoutingConfig } from '@shared/index'
 
 export const servicoConhecimento = {
   stats: () =>
@@ -74,6 +75,19 @@ export const servicoConhecimento = {
 
   listarEnrichmentModels: () =>
     client['knowledge.enrichmentModels.list']() as Promise<KnowledgeEnrichmentModelOption[]>,
+
+  // AI routing: seleção de provider/modelo por tarefa (chat_ui, cli_chat, rag_*).
+  obterIaRouting: () =>
+    client['ia.routing.obter']() as Promise<AiRoutingConfig>,
+
+  salvarIaRouting: (config: AiRoutingConfig) =>
+    client['ia.routing.salvar'](config) as Promise<AiRoutingConfig>,
+
+  obterIaRouteStatus: (task: AiRouteTask, options: { validateLocal?: boolean } = {}) =>
+    client['ia.routing.status']({ task, validateLocal: options.validateLocal === true }) as Promise<AiRouteResolution>,
+
+  listarIaRouteStatus: () =>
+    client['ia.routing.statusAll']({ validateLocal: false }) as Promise<AiRouteResolution[]>,
 
   rebuildGraph: (origem: 'sistema' | 'usuario' = 'usuario') =>
     client['knowledge.rebuildGraph']({ origem }) as Promise<{ entities_count: number; relations_count: number; chunks_processados: number }>,
