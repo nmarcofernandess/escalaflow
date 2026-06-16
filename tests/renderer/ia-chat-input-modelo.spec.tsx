@@ -1,12 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 
-// IaModelPill e o seletor oficial de modelo (abaixo do input). Mockamos como
-// stub vazio para que qualquer ocorrencia do texto do modelo na tela so possa
-// vir de DENTRO do input (a Badge redundante que estamos removendo).
+// IaModelPill e o seletor oficial de modelo. Mockamos como stub com testid
+// estavel para provar ONDE ele e renderizado (dentro da barra do input) sem
+// depender da UI interna do Select real.
 vi.mock('../../src/renderer/src/componentes/IaModelPill', () => ({
   IaModelPill: () => <div data-testid="ia-model-pill" />,
 }))
@@ -53,15 +53,23 @@ async function renderInput(props?: Record<string, unknown>) {
   )
 }
 
-describe('IaChatInput — modelo nao aparece dentro do input', () => {
+describe('IaChatInput — seletor de modelo dentro da barra do input', () => {
   beforeEach(() => {
     ;(window as any).electron = { ipcRenderer: { invoke: vi.fn() } }
   })
 
-  it('nao renderiza o label do modelo dentro do input (so no IaModelPill abaixo)', async () => {
+  it('renderiza o seletor de modelo exatamente 1x (sem duplicacao)', async () => {
     await renderInput()
-    // Com o IaModelPill mockado, se o texto do modelo aparecer e porque a Badge
-    // redundante ainda esta dentro do input.
-    expect(screen.queryByText('Gemma 4 E2B IT')).toBeNull()
+    expect(screen.getAllByTestId('ia-model-pill')).toHaveLength(1)
+  })
+
+  it('renderiza o seletor de modelo DENTRO do form do input, junto do botao enviar', async () => {
+    await renderInput()
+    const textarea = screen.getByTestId('ia-chat-input')
+    const form = textarea.closest('form')
+    expect(form).not.toBeNull()
+    // Modelo e botao enviar coabitam o mesmo form (a barra unica do input).
+    expect(within(form as HTMLElement).getByTestId('ia-model-pill')).toBeInTheDocument()
+    expect(within(form as HTMLElement).getByTestId('ia-chat-send')).toBeInTheDocument()
   })
 })

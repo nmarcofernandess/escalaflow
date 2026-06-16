@@ -1,11 +1,13 @@
-import type { ClipboardEventHandler } from 'react'
+import type { ClipboardEventHandler, ReactNode } from 'react'
 import { Paperclip } from 'lucide-react'
 import {
   PromptInput,
   PromptInputBody,
   PromptInputButton,
+  PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
+  PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
 
 interface Props {
@@ -15,7 +17,11 @@ interface Props {
   disabled: boolean
   canAttach: boolean
   onAttach?: () => void
-  speechControl?: React.ReactNode
+  speechControl?: ReactNode
+  /** Seletor de modelo (renderizado na barra inferior, lado direito). */
+  modelControl?: ReactNode
+  /** Indicador de contexto (renderizado na barra inferior, antes do enviar). */
+  contextControl?: ReactNode
   /** Permite enviar quando ha anexos mesmo sem texto digitado. */
   hasAttachments?: boolean
   onPaste?: ClipboardEventHandler<HTMLTextAreaElement>
@@ -29,13 +35,12 @@ export function FlowPromptInput({
   canAttach,
   onAttach,
   speechControl,
+  modelControl,
+  contextControl,
   hasAttachments = false,
   onPaste,
 }: Props) {
   const canSend = !disabled && (value.trim().length > 0 || hasAttachments)
-  // Barra de acao discreta no topo (mic + anexo). So renderiza se houver algo a
-  // mostrar — o modelo agora vive apenas no IaModelPill, abaixo do input.
-  const hasActions = Boolean(speechControl) || canAttach
 
   return (
     <PromptInput
@@ -44,16 +49,7 @@ export function FlowPromptInput({
       }}
       className="rounded-md border bg-muted/30"
     >
-      {hasActions ? (
-        <div className="flex items-center justify-end gap-1 border-b px-3 py-2">
-          {speechControl}
-          {canAttach ? (
-            <PromptInputButton type="button" aria-label="Anexar arquivo" onClick={onAttach}>
-              <Paperclip className="size-4" />
-            </PromptInputButton>
-          ) : null}
-        </div>
-      ) : null}
+      {/* Textarea limpo no topo: largura cheia, placeholder a esquerda. */}
       <PromptInputBody>
         <PromptInputTextarea
           data-testid="ia-chat-input"
@@ -70,8 +66,24 @@ export function FlowPromptInput({
           placeholder="Escreva sua mensagem..."
           aria-label="Mensagem"
         />
-        <PromptInputSubmit data-testid="ia-chat-send" disabled={!canSend} aria-label="Enviar" />
       </PromptInputBody>
+
+      {/* Barra unica de controles: mic+anexo a esquerda, modelo+contexto+enviar a direita. */}
+      <PromptInputFooter>
+        <PromptInputTools>
+          {speechControl}
+          {canAttach ? (
+            <PromptInputButton type="button" aria-label="Anexar arquivo" onClick={onAttach}>
+              <Paperclip className="size-4" />
+            </PromptInputButton>
+          ) : null}
+        </PromptInputTools>
+        <PromptInputTools>
+          {modelControl}
+          {contextControl}
+          <PromptInputSubmit data-testid="ia-chat-send" disabled={!canSend} aria-label="Enviar" />
+        </PromptInputTools>
+      </PromptInputFooter>
     </PromptInput>
   )
 }

@@ -219,22 +219,20 @@ export function IaChatInput({
           hasAttachments={anexos.length > 0}
           onPaste={handlePaste}
           speechControl={<FlowSpeechInput disabled={disabled} onTranscript={handleTranscript} />}
+          modelControl={
+            <IaModelPill
+              provider={provider}
+              providerOptions={providerOptions}
+              modelo={modelo}
+              modeloLabel={modeloLabel}
+              modelOptions={modelOptions}
+              modelSelectDisabled={modelSelectDisabled}
+              onProviderChange={onProviderChange}
+              onModeloChange={onModeloChange}
+            />
+          }
+          contextControl={<IaContextBadge tokens={tokensEstimados} limit={contextLength} />}
         />
-
-        {/* Linha inferior: modelo + contexto */}
-        <div className="mt-2 flex items-center justify-between gap-2 px-1">
-          <IaModelPill
-            provider={provider}
-            providerOptions={providerOptions}
-            modelo={modelo}
-            modeloLabel={modeloLabel}
-            modelOptions={modelOptions}
-            modelSelectDisabled={modelSelectDisabled}
-            onProviderChange={onProviderChange}
-            onModeloChange={onModeloChange}
-          />
-          <IaContextBadge tokens={tokensEstimados} limit={contextLength} />
-        </div>
       </div>
     </div>
   )
