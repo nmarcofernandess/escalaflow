@@ -69,7 +69,10 @@ function getProviderToken(config: IaConfiguracao | null, provider: IaProviderId)
   const parsed = parseProviderConfigs(config.provider_configs_json)
   const providerToken = parsed[provider]?.token?.trim()
   if (providerToken) return providerToken
-  if (provider === 'gemini' && config.api_key?.trim()) return config.api_key.trim()
+  // Fallback para a api_key da linha ativa quando o provider pedido É o ativo — alinha
+  // com getRouteProviderToken (route-config). Antes cobria só gemini, o que perdia o
+  // token do OpenRouter salvo apenas em configuracao_ia.api_key (rota válida ficava sem token).
+  if (config.provider === provider && config.api_key?.trim()) return config.api_key.trim()
   return ''
 }
 

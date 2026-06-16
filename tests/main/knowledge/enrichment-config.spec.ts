@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const dbState = vi.hoisted(() => ({
-  configValue: undefined as unknown,
-  iaConfig: {
+const dbState = vi.hoisted(() => {
+  const makeIaConfig = () => ({
     id: 1,
     provider: 'openrouter',
     api_key: '',
@@ -16,10 +15,15 @@ const dbState = vi.hoisted(() => ({
     memoria_automatica: true,
     criado_em: new Date().toISOString(),
     atualizado_em: new Date().toISOString(),
-  },
-  localDownloaded: true,
-  localUsable: true,
-}))
+  })
+  return {
+    configValue: undefined as unknown,
+    iaConfig: makeIaConfig() as ReturnType<typeof makeIaConfig>,
+    makeIaConfig,
+    localDownloaded: true,
+    localUsable: true,
+  }
+})
 
 vi.mock('../../../src/main/db/query', () => ({
   queryOne: vi.fn(async (sql: string) => {
@@ -82,6 +86,7 @@ describe('knowledge enrichment config', () => {
     dbState.configValue = undefined
     dbState.localDownloaded = true
     dbState.localUsable = true
+    dbState.iaConfig = dbState.makeIaConfig()
   })
 
   it('returns automatic enrichment model selection by default', async () => {
@@ -196,5 +201,62 @@ describe('knowledge enrichment config', () => {
     })
 
     expect(model).toMatchObject({ provider: 'openrouter', modelo: 'openai/gpt-oss-20b:free' })
+  })
+
+  it('auto resolver herda o token do api_key legado quando o openrouter ativo nao tem token em provider_configs', async () => {
+    // Token salvo só na linha ativa (configuracao_ia.api_key), não em provider_configs.openrouter.token.
+    // Antes do fallback alinhado ao route-config, a rota válida ficava sem token.
+    dbState.localDownloaded = false // força a rota auto para a nuvem
+    dbState.iaConfig = {
+      ...dbState.makeIaConfig(),
+      provider: 'openrouter',
+      api_key: 'sk-or-legacy',
+      provider_configs_json: JSON.stringify({
+        openrouter: { modelo: 'openai/gpt-oss-20b:free' }, // sem token aqui
+        gemini: { token: '', modelo: 'gemini-3.5-flash' },
+        local: { modelo: 'gemma-4-e2b-it-q4' },
+      }),
+    }
+    const config = await import('../../../src/main/ia/config')
+    const { buildKnowledgeEnrichmentModel } = await import('../../../src/main/knowledge/enrichment-config')
+
+    const model = await buildKnowledgeEnrichmentModel({
+      auto_enrich_after_import: false,
+      provider: 'auto',
+      modelo: 'ignored',
+      force_all_default: false,
+    })
+
+    expect(model).toMatchObject({ provider: 'openrouter', modelo: 'openai/gpt-oss-20b:free' })
+    expect(config.buildModelFactory).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openrouter',
+      api_key: 'sk-or-legacy',
+    }))
+  })
+
+  it('auto resolver retorna null quando a rota rag_enrichment nao esta pronta (caller pula o enrichment)', async () => {
+    // Local indisponível + nenhum token cloud → rota não-pronta. Contrato EscalaFlow: null
+    // (o caller, ex. bulk-import, encerra o job sem enrichment). Diverge do throw do FlowKit.
+    dbState.localDownloaded = false
+    dbState.iaConfig = {
+      ...dbState.makeIaConfig(),
+      provider: 'openrouter',
+      api_key: '',
+      provider_configs_json: JSON.stringify({
+        openrouter: { token: '', modelo: 'openai/gpt-oss-20b:free' },
+        gemini: { token: '', modelo: 'gemini-3.5-flash' },
+        local: { modelo: 'gemma-4-e2b-it-q4' },
+      }),
+    }
+    const { buildKnowledgeEnrichmentModel } = await import('../../../src/main/knowledge/enrichment-config')
+
+    const model = await buildKnowledgeEnrichmentModel({
+      auto_enrich_after_import: false,
+      provider: 'auto',
+      modelo: 'ignored',
+      force_all_default: false,
+    })
+
+    expect(model).toBeNull()
   })
 })

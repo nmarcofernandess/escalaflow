@@ -287,7 +287,7 @@ function KnowledgeEnrichmentCard() {
           Enriquecimento do RAG
         </CardTitle>
         <CardDescription>
-          Escolha se importações em massa devem enriquecer chunks automaticamente e qual IA deve fazer isso.
+          Escolha se importações devem enriquecer chunks automaticamente e qual IA deve fazer isso.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

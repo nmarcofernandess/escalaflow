@@ -4530,17 +4530,21 @@ const knowledgeImportarCompleto = t.procedure
 
 async function autoEnrichAfterIngest(): Promise<void> {
   try {
-    const config = await queryOne('SELECT * FROM configuracao_ia LIMIT 1') as any
-    if (!config?.ativo || !config?.api_key) return // sem LLM configurada, skip silencioso
+    // Roteado por `rag_enrichment` (suporta IA local) e respeitando o toggle
+    // `auto_enrich_after_import` — mesmo contrato do bulk-import. Antes lia
+    // `configuracao_ia` direto e gateava por `api_key`, o que pulava o enrichment
+    // silenciosamente no default local (api_key vazio) e ignorava o toggle.
+    const { getKnowledgeEnrichmentConfig, buildKnowledgeEnrichmentModel } = await import('./knowledge/enrichment-config')
+    const { enrichAllChunksWithModel } = await import('./knowledge/enrichment')
+    const enrichmentConfig = await getKnowledgeEnrichmentConfig()
+    if (!enrichmentConfig.auto_enrich_after_import) return
 
-    const { buildModelFactory } = await import('./ia/config')
-    const factory = buildModelFactory(config)
-    if (!factory) return
+    const model = await buildKnowledgeEnrichmentModel(enrichmentConfig)
+    if (!model) return
 
-    const { enrichAllChunks } = await import('./knowledge/enrichment')
-    const result = await enrichAllChunks(factory.createModel, factory.modelo)
+    const result = await enrichAllChunksWithModel(model)
     if (result.chunks_enriquecidos > 0) {
-      console.log(`[auto-enrich] ${result.chunks_enriquecidos} chunks enriquecidos em background`)
+      console.log(`[auto-enrich] ${result.chunks_enriquecidos} chunks enriquecidos em background com ${result.provider}/${result.modelo}`)
     }
   } catch (err) {
     console.warn('[auto-enrich] falhou (non-blocking):', (err as Error).message)
@@ -4552,21 +4556,23 @@ async function autoEnrichAfterIngest(): Promise<void> {
 // =============================================================================
 
 const knowledgeEnrich = t.procedure
-  .input<{ sourceTipo?: string; forceAll?: boolean }>()
+  .input<{ sourceTipo?: string; bulkGroupId?: string; forceAll?: boolean }>()
   .action(async ({ input }) => {
-    const { enrichAllChunks } = await import('./knowledge/enrichment')
-    const { buildModelFactory } = await import('./ia/config')
+    // Roteado por `rag_enrichment` via buildKnowledgeEnrichmentModel — suporta IA
+    // local (o default de projeto pessoal). Antes usava requireCloudLlmFeature, que
+    // hard-bloqueava enrichment manual em local, contradizendo o Plano 1.
+    const { enrichAllChunksWithModel } = await import('./knowledge/enrichment')
+    const { getKnowledgeEnrichmentConfig, buildKnowledgeEnrichmentModel } = await import('./knowledge/enrichment-config')
 
-    const config = await requireCloudLlmFeature('Enriquecimento de chunks') as import('@shared/index').IaConfiguracao
+    const config = await getKnowledgeEnrichmentConfig()
+    const model = await buildKnowledgeEnrichmentModel(config)
+    if (!model) throw new Error('Nenhum modelo disponível para enriquecimento de chunks.')
 
-    const factory = buildModelFactory(config)
-    if (!factory) throw new Error('Provider cloud inválido para enriquecimento de chunks.')
-
-    const result = await enrichAllChunks(
-      factory.createModel,
-      factory.modelo,
-      { sourceTipo: input?.sourceTipo, forceAll: input?.forceAll },
-    )
+    const result = await enrichAllChunksWithModel(model, {
+      sourceTipo: input?.sourceTipo,
+      bulkGroupId: input?.bulkGroupId,
+      forceAll: input?.forceAll ?? config.force_all_default,
+    })
     return result
   })
 

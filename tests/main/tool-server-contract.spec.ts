@@ -217,6 +217,14 @@ describe('EscalaFlow tool server contract', () => {
 
     expect(res.status).toBe(200)
     expect(body.response).toBe('eco: Me conta uma piada de padeiro.')
+
+    // Prova do threading de rota: o endpoint /chat encaminha a tarefa `cli_chat` ao runtime
+    // (não `chat_ui`), pra que trocar a rota do CLI/Terminal não mude a do chat da UI e vice-versa.
+    const { iaEnviarMensagem } = await import('../../src/main/ia/cliente')
+    const calls = vi.mocked(iaEnviarMensagem).mock.calls
+    const last = calls[calls.length - 1]
+    expect(last[0]).toBe('Me conta uma piada de padeiro.')
+    expect(last[5]).toEqual({ task: 'cli_chat' })
   })
 
   it('rejects invalid RAG import payloads before starting a job', async () => {
