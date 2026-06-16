@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { APP_CONFIG } from '../config/app-config'
 import type { IaMensagem, IaContexto, IaAnexo, ToolCall, IaLocalStatus, IaStreamEvent } from '../../shared/types'
 import {
+  findLlamaServerBinary,
   getLocalLlamaServerStatus,
   localLlamaServerChat,
   localLlamaServerGenerateJson,
@@ -523,6 +524,7 @@ export function getLocalStatus(): IaLocalStatus {
     modelos,
     modelo_ativo: _loadedModelId ?? serverStatus.modelId ?? undefined,
     modelo_carregado: (!!_model && !!_context) || serverStatus.running,
+    server_binary_available: findLlamaServerBinary() !== null,
     ..._downloadInProgress ? {
       download_em_andamento: _downloadInProgress,
       download_progresso: _downloadState && _downloadState.total > 0 ? _downloadState.downloaded / _downloadState.total : undefined,

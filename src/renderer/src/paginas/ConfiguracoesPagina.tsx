@@ -24,6 +24,7 @@ import {
   Wifi,
   WifiOff,
   ChevronDown,
+  ChevronRight,
   Terminal,
   Copy,
   ClipboardCheck,
@@ -514,6 +515,8 @@ export function ConfiguracoesPagina() {
   const [localDownloading, setLocalDownloading] = useState<string | null>(null)
   const [localProgress, setLocalProgress] = useState<{ downloaded: number; total: number } | null>(null)
   const [localGpu, setLocalGpu] = useState<string>('...')
+  // true = binário llama-server do bundle existe; libera a oferta de IA local.
+  const [localServerBinaryAvailable, setLocalServerBinaryAvailable] = useState(false)
 
   const refreshLocalModels = async () => {
     try {
@@ -532,6 +535,7 @@ export function ConfiguracoesPagina() {
       }
       const status = await servicoIaLocal.status()
       setLocalGpu(status.gpu_detectada || 'cpu')
+      setLocalServerBinaryAvailable(status.server_binary_available === true)
     } catch { /* não fatal */ }
   }
 
@@ -1304,6 +1308,31 @@ export function ConfiguracoesPagina() {
             <CardDescription>Configure o provedor e modelo de IA para o chat do RH</CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Oferta destacada de IA local — só quando o binário do bundle existe
+                e ainda não há nenhuma IA pronta. Não baixa nada sozinho: leva o
+                usuário ao fluxo de download local (cards abaixo). */}
+            {!hasAnyProviderAvailable && localServerBinaryAvailable && iaProvider !== 'local' && (
+              <button
+                type="button"
+                data-testid="ia-local-offer"
+                onClick={() => {
+                  iaForm.setValue('provider', 'local', { shouldDirty: true })
+                  iaForm.setValue('modelo', IA_PROVIDER_MODELS.local[0].value, { shouldDirty: true })
+                }}
+                className="mb-6 flex w-full items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-left ring-1 ring-primary/30 transition-colors hover:bg-primary/10"
+              >
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Download className="size-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Baixar IA local (Gemma, ~3GB, offline)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Roda no seu computador, sem chave nem internet. Recomendado para começar com privacidade.
+                  </p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </button>
+            )}
             <Form {...iaForm}>
               <form className="flex flex-col gap-6" onSubmit={iaForm.handleSubmit(onSubmitIa)}>
                 <IaModelPill

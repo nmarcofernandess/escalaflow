@@ -1096,6 +1096,8 @@ export interface IaLocalStatus {
   }>
   modelo_ativo?: string
   modelo_carregado: boolean
+  /** true = binário llama-server do bundle/runtime encontrado (modelo local é executável neste host) */
+  server_binary_available?: boolean
   download_em_andamento?: string
   download_progresso?: number
   download_bytes_total?: number
