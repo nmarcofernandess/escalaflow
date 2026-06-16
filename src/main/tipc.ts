@@ -3532,7 +3532,7 @@ const iaLocalModels = t.procedure
 const iaLocalDownload = t.procedure
   .input<{ model_id: string }>()
   .action(async ({ input }) => {
-    const { downloadModel } = await import('./ia/local-llm')
+    const { downloadModel, validateLocalModel } = await import('./ia/local-llm')
     const modelId = input.model_id as import('./ia/local-llm').LocalModelId
     await downloadModel(modelId, (downloaded, total) => {
       const win = BrowserWindow.getAllWindows()[0]
@@ -3540,6 +3540,16 @@ const iaLocalDownload = t.procedure
         win.webContents.send('ia:local:download-progress', { model_id: modelId, downloaded, total })
       }
     })
+    // Auto-valida ao terminar o download: 1o boot sem clique manual em "Testar
+    // conexao". Best-effort — se a validacao falhar, o download em si teve
+    // sucesso, entao logamos e NAO derrubamos o resultado. (validateLocalModel
+    // ja grava o erro no estado do modelo antes de lançar, entao a readiness
+    // resolve como local_model_error e a UI orienta baixar de novo / trocar IA.)
+    try {
+      await validateLocalModel(modelId)
+    } catch (err) {
+      console.warn(`[LOCAL-LLM] Auto-validacao pos-download falhou para ${modelId}:`, err)
+    }
     return { sucesso: true }
   })
 
