@@ -18,6 +18,25 @@ Não usa browser em `localhost:5173` nem a CLI `ia:chat` como substituto do app:
 
 3. Testes que chamam o modelo são **ignorados** se não houver chave (`test.describe.skip` em [`ia-chat-tool-calls.spec.ts`](./ia-chat-tool-calls.spec.ts)); o smoke [`electron-smoke.spec.ts`](./electron-smoke.spec.ts) roda sempre.
 
+## Modo IA local (sem chave cloud)
+
+Alternativa à chave cloud: provar o chat com o **Gemma local** via `llama-server`.
+
+```bash
+ESCALAFLOW_E2E_LOCAL=1 \
+  ESCALAFLOW_LLAMA_SERVER_BIN=/caminho/para/llama-server \
+  ESCALAFLOW_LOCAL_MODELS_DIR="$HOME/Library/Application Support/EscalaFlow/models" \
+  npm run test:e2e:build
+```
+
+- `ESCALAFLOW_E2E_LOCAL=1` — liga o gate do `ia-chat-tool-calls.spec.ts` e faz o seed configurar `provider=local` + **validar** o modelo (sobe o llama-server + smoke → `usable`), no lugar do clique manual em "Testar conexão".
+- `ESCALAFLOW_LLAMA_SERVER_BIN` — `llama-server` recente que carrega `gemma4` (o `node-llama-cpp` empacotado **não** carrega). Baixe um build do llama.cpp (ex.: release `bin-macos-arm64`) e aponte aqui.
+- `ESCALAFLOW_LOCAL_MODELS_DIR` — dir do GGUF (o E2E usa `--user-data-dir` isolado, então precisa apontar pro dir real dos modelos).
+
+**Prova:** infra viva — app sobe, Gemma local responde, contexto RH (setor/folgas/escala) injeta e renderiza no AI Elements. **5/6 testes de contexto passam.**
+
+**Limitação honesta (não é bug da migração):** o Gemma E2B (modelo local padrão, 2B) é inconsistente — em perguntas ambíguas pode pedir "qual setor" mesmo com o setor no contexto, e não copia UUID exato via tool call (`salvar_memoria`). O contexto **está** injetado (provado pelos testes que passam); é capacidade do modelo 2B. Para gate de **qualidade** determinístico, use cloud (Gemini/OpenRouter) ou um modelo local maior.
+
 ## Comandos
 
 ```bash

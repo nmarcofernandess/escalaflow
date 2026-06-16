@@ -6,7 +6,9 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: './tests/e2e/global-setup.ts',
-  timeout: 180_000,
+  // IA local (Gemma E2B via llama-server) é mais lenta que a nuvem: o primeiro turno
+  // inclui boot do llama-server + carga do modelo. Sobe o teto por teste só nesse modo.
+  timeout: process.env.ESCALAFLOW_E2E_LOCAL ? 600_000 : 180_000,
   expect: { timeout: 45_000 },
   fullyParallel: false,
   workers: 1,

@@ -14,7 +14,11 @@ import {
   IA_WRITE_TOOL_NAMES,
 } from './helpers/ia-chat'
 
-const hasIaKey = Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim())
+const hasIaKey = Boolean(
+  process.env.GEMINI_API_KEY?.trim() ||
+  process.env.OPENROUTER_API_KEY?.trim() ||
+  process.env.ESCALAFLOW_E2E_LOCAL?.trim(),
+)
 
 /**
  * E2E real: chat embutido no Electron, IPC + preload, contexto de rota.

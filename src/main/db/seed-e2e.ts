@@ -214,9 +214,36 @@ export async function seedE2eData(): Promise<void> {
 
 /** Injeta chaves de API do ambiente no DB para o chat IA funcionar nos testes E2E. */
 async function applyE2eIaConfigFromEnv(): Promise<void> {
+  const local = process.env.ESCALAFLOW_E2E_LOCAL?.trim()
   const gemini = process.env.GEMINI_API_KEY?.trim()
   const openrouter = process.env.OPENROUTER_API_KEY?.trim()
-  if (!gemini && !openrouter) return
+  if (!gemini && !openrouter && !local) return
+
+  // IA local (Gemma via llama-server): prova viva da Fase A sem chave cloud.
+  // Cloud tem prioridade quando ambos presentes; local só entra sozinho.
+  if (local && !gemini && !openrouter) {
+    const localRow = await queryOne<{ id: number }>('SELECT id FROM configuracao_ia WHERE id = 1')
+    if (localRow) {
+      await execute(
+        `UPDATE configuracao_ia SET provider = 'local', api_key = '', modelo = 'gemma-4-e2b-it-q4', ativo = TRUE, atualizado_em = NOW() WHERE id = 1`,
+      )
+    } else {
+      await execute(
+        `INSERT INTO configuracao_ia (id, provider, api_key, modelo, provider_configs_json, ativo) VALUES (1, 'local', '', 'gemma-4-e2b-it-q4', '{}', TRUE)`,
+      )
+    }
+    // Valida o modelo local (sobe o llama-server + smoke → marca usable) para o chat
+    // ficar ready sem o clique manual em "Testar conexão" que um usuário real faria.
+    // A validação é em memória; só roda no E2E local (ESCALAFLOW_E2E_LOCAL).
+    try {
+      const { validateLocalModel } = await import('../ia/local-llm')
+      await validateLocalModel('gemma-4-e2b-it-q4')
+      console.log('[SEED-E2E] Modelo local validado (usable) para o chat IA.')
+    } catch (err) {
+      console.warn('[SEED-E2E] validação do modelo local falhou:', (err as Error).message)
+    }
+    return
+  }
 
   const row = await queryOne<{ id: number }>('SELECT id FROM configuracao_ia WHERE id = 1')
   if (gemini) {
