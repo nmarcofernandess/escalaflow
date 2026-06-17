@@ -20,7 +20,7 @@ App desktop offline para geração automática de escalas de trabalho em varejo,
 - Backup seletivo em ZIP compactado (cadastros, conhecimento, histórico de chat — com toggles)
 - Histórico de conversas IA persistente com compaction de sessões longas
 - Auto-update via GitHub Releases
-- Tour guiado de 14 passos para novos usuários
+- Tour guiado de 12 passos (engine canônica OnboardingTour + ramo RH)
 - Dark mode 100% funcional
 - 13 páginas, 90+ IPC handlers, 7 formulários com validação Zod
 - **100% offline** — sem login, sem internet, sem servidor
@@ -78,9 +78,22 @@ O banco PGlite (Postgres WASM) é criado automaticamente no primeiro run com see
 
 1. Acesse [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 2. Crie uma API Key (formato: `AIza...`)
-3. No app: **Configurações** → **Assistente IA** → cole a key, escolha o modelo → **Salvar**
+3. No primeiro boot, o **Setup** pede a chave — ou cole depois em **Configurações** → **Assistente IA** → **Salvar**
 
 > O tier gratuito do Gemini é suficiente para uso interno de RH.
+
+---
+
+## Testar builds sem assinatura (ad-hoc / dev)
+
+Builds locais e alguns de CI são **ad-hoc** (sem certificado Apple/Windows de produção).
+
+- **macOS (Gatekeeper)**: `xattr -dr com.apple.quarantine "/Applications/EscalaFlow.app"` (ou `-cr ... && open`) ou botão direito → Abrir na primeira vez. (Veja o `LEIA ANTES DE INSTALAR.txt` no DMG para o comando exato + alternativa via Ajustes do Sistema.)
+- **Windows (SmartScreen)**: "More info → Run anyway" ou instalar como admin.
+
+Consulte o guia completo: [docs/certificados.md](docs/certificados.md) (custos Apple $99/ano, OV/EV Windows + Azure Artifact Signing alt 2026, passos de notarização, entitlements já presentes no projeto, bypasses exatos).
+
+> Link também em docs/release.md.
 
 ---
 

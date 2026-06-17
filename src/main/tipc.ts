@@ -4953,6 +4953,41 @@ const terminalSessionsKill = t.procedure
   })
 
 // =============================================================================
+// CONFIG KV GENÉRICO (para onboarding, routing, terminal, knowledge etc)
+// =============================================================================
+
+const configGet = t.procedure
+  .input<{ key: string }>()
+  .action(async ({ input }) => {
+    return await queryOne<{ key: string; value: unknown }>(
+      'SELECT key, value FROM config WHERE key = $1',
+      input.key,
+    )
+  })
+
+const configSet = t.procedure
+  .input<{ key: string; value: unknown }>()
+  .action(async ({ input }) => {
+    await execute(
+      `INSERT INTO config (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = $2::jsonb`,
+      input.key,
+      input.value,
+    )
+    return { ok: true }
+  })
+
+const configEnvDetect = t.procedure
+  .input<{ vars: string[] }>()
+  .action(async ({ input }) => {
+    const result: Record<string, boolean> = {}
+    for (const v of input.vars) {
+      result[v] = Boolean(process.env[v]?.trim())
+    }
+    return result
+  })
+
+// =============================================================================
 // ROUTER
 // =============================================================================
 
@@ -5159,6 +5194,19 @@ export const router = {
   'terminal.sessions.write': terminalSessionsWrite,
   'terminal.sessions.resize': terminalSessionsResize,
   'terminal.sessions.kill': terminalSessionsKill,
+  // Config KV genérico (onboarding + outros)
+  'config.get': configGet,
+  'config.set': configSet,
+  'config.envDetect': configEnvDetect,
+  // App info (paridade FlowKit)
+  'app:version': t.procedure.action(async () => {
+    try {
+      const electron = require('electron') as { app?: { getVersion?: () => string } }
+      return electron.app?.getVersion?.() ?? '0.0.0'
+    } catch {
+      return '0.0.0'
+    }
+  }),
 }
 
 export type Router = typeof router

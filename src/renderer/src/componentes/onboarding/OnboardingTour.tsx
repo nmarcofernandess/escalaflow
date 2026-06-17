@@ -8,48 +8,42 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { TOUR_STORAGE_KEY } from '@/lib/tour-constants'
 
 // --- Types ---
-// DEPRECATED (onboarding-canonico 2026-06): motor legado substituído por OnboardingTour + SetupWizard
-// em componentes/onboarding/. Mantido apenas para referência/compat de strings de ID/evento em tour-constants.
-// Não é mais montado em App.tsx.
 
-export type ContentPosition = 'top' | 'bottom' | 'left' | 'right'
+export type TourContentPosition = 'top' | 'bottom' | 'left' | 'right'
 
 export interface TourStep {
+  /** id do elemento real na UI que o spotlight destaca. */
   targetId: string
-  position: ContentPosition
+  position: TourContentPosition
   content: ReactNode
+  /**
+   * Hook opcional disparado ao entrar no passo (ex.: navegar de rota antes de
+   * destacar). Os passos RH do EscalaFlow usam para navegar (Setores,
+   * Colaboradores, Configurações) antes de destacar o alvo.
+   */
   onEnter?: () => void
 }
 
-interface TourContextValue {
+interface OnboardingTourContextValue {
   isActive: boolean
   currentStep: number
   startTour: () => void
   stopTour: () => void
   nextStep: () => void
   prevStep: () => void
-  setSteps: (steps: TourStep[]) => void
 }
 
-const TourContext = createContext<TourContextValue | null>(null)
+const OnboardingTourContext = createContext<OnboardingTourContextValue | null>(null)
 
-export function useTour() {
-  const ctx = useContext(TourContext)
-  if (!ctx) throw new Error('useTour must be used within TourProvider')
+/** Hook de controle do tour. Lança se usado fora do provider. */
+export function useOnboardingTour() {
+  const ctx = useContext(OnboardingTourContext)
+  if (!ctx) {
+    throw new Error('useOnboardingTour must be used within OnboardingTourProvider')
+  }
   return ctx
 }
 
@@ -85,7 +79,7 @@ const VIEWPORT_PAD = 16
 
 function calculateCardStyle(
   rect: Rect,
-  position: ContentPosition,
+  position: TourContentPosition,
 ): React.CSSProperties {
   const vw = window.innerWidth
   const vh = window.innerHeight
@@ -123,7 +117,7 @@ function calculateCardStyle(
       break
   }
 
-  // Clamp
+  // Clamp para dentro da viewport.
   top = Math.max(VIEWPORT_PAD, Math.min(top, vh - CARD_MAX_HEIGHT - VIEWPORT_PAD))
   left = Math.max(VIEWPORT_PAD, Math.min(left, vw - CARD_WIDTH - VIEWPORT_PAD))
 
@@ -138,41 +132,41 @@ function calculateCardStyle(
 
 // --- Provider ---
 
-interface TourProviderProps {
+interface OnboardingTourProviderProps {
   children: ReactNode
+  /**
+   * Lista de passos do tour. Passada como prop (não via setSteps em effect):
+   * branding-agnóstica, sem primeiro render vazio, trivialmente testável e
+   * forkável — outro app pluga a própria lista.
+   */
+  steps: TourStep[]
+  /** Callback opcional ao encerrar (Pular/Concluir/clique no backdrop). */
   onComplete?: () => void
-  isTourCompleted?: boolean
 }
 
-export function TourProvider({
+/**
+ * Engine de tour spotlight genérica (sem branding hardcoded). On-demand: nunca
+ * auto-abre — só inicia via startTour(). Sem flag de conclusão (o gate de 1º
+ * boot é o onboarding_complete do Setup, não o tour).
+ */
+export function OnboardingTourProvider({
   children,
+  steps,
   onComplete,
-  isTourCompleted,
-}: TourProviderProps) {
-  const [steps, setSteps] = useState<TourStep[]>([])
+}: OnboardingTourProviderProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [isActive, setIsActive] = useState(false)
-  const [showWelcome, setShowWelcome] = useState(false)
   const [targetRect, setTargetRect] = useState<Rect | null>(null)
   const rafRef = useRef<number>(0)
-
-  // Show welcome dialog on first visit
-  useEffect(() => {
-    if (isTourCompleted === false) {
-      const timer = setTimeout(() => setShowWelcome(true), 600)
-      return () => clearTimeout(timer)
-    }
-  }, [isTourCompleted])
 
   const updateRect = useCallback(() => {
     if (!isActive || steps.length === 0) return
     const step = steps[currentStep]
     if (!step) return
-    const rect = getElementRect(step.targetId)
-    setTargetRect(rect)
+    setTargetRect(getElementRect(step.targetId))
   }, [isActive, steps, currentStep])
 
-  // Reposition on resize/scroll
+  // Reposiciona em resize/scroll.
   useEffect(() => {
     if (!isActive) return
 
@@ -190,7 +184,7 @@ export function TourProvider({
     }
   }, [isActive, updateRect])
 
-  // Run onEnter and recalc rect when step changes
+  // Roda onEnter (se houver) e recalcula o rect ao trocar de passo.
   useEffect(() => {
     if (!isActive || steps.length === 0) return
     const step = steps[currentStep]
@@ -198,12 +192,11 @@ export function TourProvider({
 
     if (step.onEnter) {
       step.onEnter()
-      // Wait for navigation/render then recalc
+      // Espera navegação/render e recalcula.
       const timer = setTimeout(updateRect, 150)
       return () => clearTimeout(timer)
-    } else {
-      updateRect()
     }
+    updateRect()
   }, [isActive, currentStep, steps, updateRect])
 
   const startTour = useCallback(() => {
@@ -215,7 +208,6 @@ export function TourProvider({
     setIsActive(false)
     setTargetRect(null)
     setCurrentStep(0)
-    localStorage.setItem(TOUR_STORAGE_KEY, 'true')
     onComplete?.()
   }, [onComplete])
 
@@ -241,7 +233,6 @@ export function TourProvider({
       stopTour,
       nextStep,
       prevStep,
-      setSteps,
     }),
     [isActive, currentStep, startTour, stopTour, nextStep, prevStep],
   )
@@ -250,62 +241,36 @@ export function TourProvider({
   const isLast = currentStep === steps.length - 1
 
   return (
-    <TourContext.Provider value={ctx}>
+    <OnboardingTourContext.Provider value={ctx}>
       {children}
 
-      {/* Welcome dialog */}
-      <AlertDialog open={showWelcome} onOpenChange={setShowWelcome}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Bem-vindo ao EscalaFlow!</AlertDialogTitle>
-            <AlertDialogDescription>
-              Quer fazer um tour rapido pelo sistema? Vai levar menos de 1
-              minuto e te mostra tudo que precisa saber.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setShowWelcome(false)
-                localStorage.setItem(TOUR_STORAGE_KEY, 'true')
-              }}
-            >
-              Agora nao
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setShowWelcome(false)
-                startTour()
-              }}
-            >
-              Iniciar Tour
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Overlay + Content */}
       {isActive && step && targetRect && (
+        // Sem role="dialog" de propósito: o E2E (app-flow/wizard-first-boot)
+        // seleciona o wizard por [role="dialog"]; um segundo dialog aqui criaria
+        // ambiguidade. O card usa aria-label só como hook de acessibilidade.
         <>
-          {/* Backdrop escuro */}
+          {/* Backdrop escuro — clicar encerra. */}
           <div
             className="fixed inset-0 z-[99] bg-black/50 transition-opacity"
             onClick={stopTour}
+            aria-hidden="true"
           />
 
-          {/* Highlight sobre o elemento */}
+          {/* Highlight sobre o elemento real. */}
           <div
-            className="fixed z-[100] rounded-md border-2 border-primary bg-primary/10 transition-all duration-200 pointer-events-none"
+            className="pointer-events-none fixed z-[100] rounded-md border-2 border-primary bg-primary/10 transition-all duration-200"
             style={{
               top: targetRect.top - 4,
               left: targetRect.left - 4,
               width: targetRect.width + 8,
               height: targetRect.height + 8,
             }}
+            aria-hidden="true"
           />
 
-          {/* Card de conteudo */}
+          {/* Card de conteúdo. */}
           <div
+            aria-label="Tour de onboarding"
             className="rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg"
             style={calculateCardStyle(targetRect, step.position)}
           >
@@ -315,30 +280,22 @@ export function TourProvider({
                 {currentStep + 1} de {steps.length}
               </span>
               <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={stopTour}
-                >
+                <Button variant="ghost" size="sm" onClick={stopTour}>
                   Pular
                 </Button>
                 {currentStep > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={prevStep}
-                  >
+                  <Button variant="outline" size="sm" onClick={prevStep}>
                     Anterior
                   </Button>
                 )}
                 <Button size="sm" onClick={nextStep}>
-                  {isLast ? 'Concluir' : 'Proximo'}
+                  {isLast ? 'Concluir' : 'Próximo'}
                 </Button>
               </div>
             </div>
           </div>
         </>
       )}
-    </TourContext.Provider>
+    </OnboardingTourContext.Provider>
   )
 }

@@ -1,21 +1,29 @@
-import { useEffect } from 'react'
-import { useTour, type TourStep } from './Tour'
+import { APP_NAME } from '@/lib/app-info'
 import { TOUR_STEP_IDS, TOUR_NAVIGATE_EVENT } from '@/lib/tour-constants'
+import type { TourStep } from './OnboardingTour'
 
-function navigateTo(path: string) {
-  window.dispatchEvent(
-    new CustomEvent(TOUR_NAVIGATE_EVENT, { detail: { path } }),
-  )
-}
+/**
+ * Re-export dos IDs (fonte canônica em tour-constants.ts para compat legado + centralização).
+ * Mantém imports existentes em AppSidebar.tsx que apontam para cá.
+ * Nenhuma duplicação de valores.
+ */
+export { TOUR_STEP_IDS }
 
-const tourSteps: TourStep[] = [
+/**
+ * Passos de ensino do EscalaFlow (ramo RH/CLT).
+ * Adaptados do TourSetup.tsx legado (12 passos) para a engine genérica OnboardingTour.
+ * Mantém a semântica original: fluxo recomendado Setores → Colaboradores → Escala, perfis individuais,
+ * feriados, IA, menu etc. onEnter para navegação onde aplicável (ex: Setores, Colaboradores).
+ * Usa o evento canônico para navegação (evita drift com listener em App.tsx).
+ */
+export const escalaflowTourSteps: TourStep[] = [
   // 1. Welcome
   {
     targetId: TOUR_STEP_IDS.SIDEBAR_HEADER,
     position: 'right',
     content: (
       <>
-        <h3 className="font-semibold">Bem-vindo ao EscalaFlow!</h3>
+        <h3 className="font-semibold">Bem-vindo ao {APP_NAME}!</h3>
         <p className="text-sm text-muted-foreground mt-1">
           Seu assistente para criar escalas de trabalho automaticamente.
           O sistema propoe a escala ideal — voce so ajusta se quiser.
@@ -46,7 +54,9 @@ const tourSteps: TourStep[] = [
   {
     targetId: TOUR_STEP_IDS.NAV_SETORES,
     position: 'right',
-    onEnter: () => navigateTo('/setores'),
+    onEnter: () => {
+      window.dispatchEvent(new CustomEvent(TOUR_NAVIGATE_EVENT, { detail: { path: '/setores' } }))
+    },
     content: (
       <>
         <h3 className="font-semibold">Setores</h3>
@@ -76,7 +86,9 @@ const tourSteps: TourStep[] = [
   {
     targetId: TOUR_STEP_IDS.NAV_COLABORADORES,
     position: 'right',
-    onEnter: () => navigateTo('/colaboradores'),
+    onEnter: () => {
+      window.dispatchEvent(new CustomEvent(TOUR_NAVIGATE_EVENT, { detail: { path: '/colaboradores' } }))
+    },
     content: (
       <>
         <h3 className="font-semibold">Colaboradores</h3>
@@ -107,11 +119,13 @@ const tourSteps: TourStep[] = [
       </>
     ),
   },
-  // 7. Hub de escalas (acesso avancado)
+  // 7. Hub de escalas (acesso avancado) — navega para configuracoes como no legado
   {
     targetId: TOUR_STEP_IDS.FOOTER_MENU,
     position: 'right',
-    onEnter: () => navigateTo('/configuracoes'),
+    onEnter: () => {
+      window.dispatchEvent(new CustomEvent(TOUR_NAVIGATE_EVENT, { detail: { path: '/configuracoes' } }))
+    },
     content: (
       <>
         <h3 className="font-semibold">Hub de Escalas</h3>
@@ -218,15 +232,3 @@ const tourSteps: TourStep[] = [
     ),
   },
 ]
-
-// DEPRECATED (onboarding-canonico): substituído pelo novo SetupWizard + engine genérica.
-// O TourSetup injetava os 12 passos via setSteps no provider antigo. Mantido só como histórico.
-export function TourSetup() {
-  const { setSteps } = useTour()
-
-  useEffect(() => {
-    setSteps(tourSteps)
-  }, [setSteps])
-
-  return null
-}

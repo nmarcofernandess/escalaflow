@@ -4,8 +4,13 @@ import { _electron } from 'playwright'
 import type { ElectronApplication, Page } from 'playwright'
 import { E2E_PGLITE_DIR, E2E_USER_DATA_DIR, pathToMainJs } from '../paths'
 
-/** Alinhado a `TOUR_STORAGE_KEY` em `src/renderer/src/lib/tour-constants.ts` */
+/**
+ * Legacy localStorage key (para o Tour.tsx deprecado).
+ * O gate canônico de onboarding agora é `config.onboarding_complete` no DB (via config.get/set).
+ * Mantemos a key antiga só para compat de E2E e código legado.
+ */
 const TOUR_COMPLETED_KEY = 'escalaflow-tour-completed'
+const ONBOARDING_COMPLETE_KEY = 'onboarding_complete'
 
 const require = createRequire(import.meta.url)
 
@@ -42,10 +47,23 @@ export async function firstWindowReady(app: ElectronApplication): Promise<Page> 
   const page = app.windows()[0] ?? (await app.waitForEvent('window', { timeout: 60_000 }))
   await page.waitForLoadState('domcontentloaded')
   await page.locator('#root').waitFor({ state: 'attached', timeout: 60_000 })
-  // Evita overlay do tour (z-50) bloqueando cliques nos testes
-  await page.evaluate((key) => {
-    localStorage.setItem(key, 'true')
-  }, TOUR_COMPLETED_KEY)
+  // Evita overlay do wizard/tour bloqueando cliques nos testes E2E.
+  // - localStorage para o Tour legado (compat).
+  // - config DB para o gate real do SetupWizard (onboarding_complete).
+  // Ambos são set antes do reload para E2E smoke não ver first-boot wizard.
+  await page.evaluate(async (keys) => {
+    const [legacyKey, dbKey] = keys
+    localStorage.setItem(legacyKey, 'true')
+    try {
+      // @ts-expect-error - preload expõe ipcRenderer no contexto do page
+      await window.electron.ipcRenderer.invoke('config.set', {
+        key: dbKey,
+        value: '"true"',
+      })
+    } catch {
+      // não fatal em E2E (db pode estar em estado parcial)
+    }
+  }, [TOUR_COMPLETED_KEY, ONBOARDING_COMPLETE_KEY])
   await page.reload()
   await page.waitForLoadState('domcontentloaded')
   await page.locator('#root').waitFor({ state: 'attached', timeout: 60_000 })

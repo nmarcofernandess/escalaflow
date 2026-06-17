@@ -5,10 +5,14 @@ import { useIaStore } from '@/store/iaStore'
 import { useAppDataStore } from '@/store/appDataStore'
 import { AppSidebar } from './componentes/AppSidebar'
 import { ErrorBoundary } from './componentes/ErrorBoundary'
-import { TourProvider } from './componentes/Tour'
-import { TourSetup } from './componentes/TourSetup'
 import { IaChatPanel } from './componentes/IaChatPanel'
-import { TOUR_NAVIGATE_EVENT, TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
+import {
+  OnboardingTourProvider,
+  useOnboardingTour,
+} from './componentes/onboarding/OnboardingTour'
+import { escalaflowTourSteps } from './componentes/onboarding/tour-steps'
+import SetupWizard from './componentes/onboarding/SetupWizard'
+import { TOUR_NAVIGATE_EVENT, TOUR_STEP_IDS } from '@/lib/tour-constants'
 import { Dashboard } from './paginas/Dashboard'
 import { SetorLista } from './paginas/SetorLista'
 import { SetorDetalhe } from './paginas/SetorDetalhe'
@@ -30,9 +34,7 @@ import { NaoEncontrado } from './paginas/NaoEncontrado'
 function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [tourCompleted, setTourCompleted] = useState(() =>
-    localStorage.getItem(TOUR_STORAGE_KEY) === 'true',
-  )
+  const [showWizard, setShowWizard] = useState(false)
   const { toggleAberto } = useIaStore()
   const initAppData = useAppDataStore((s) => s.init)
   const invalidate = useAppDataStore((s) => s.invalidate)
@@ -74,17 +76,27 @@ function AppLayout() {
     return () => window.removeEventListener(TOUR_NAVIGATE_EVENT, handler)
   }, [navigate])
 
-  const handleTourComplete = useCallback(() => {
-    setTourCompleted(true)
+  // Verifica onboarding no primeiro boot (gate no DB via config.get, não localStorage)
+  useEffect(() => {
+    window.electron.ipcRenderer
+      .invoke('config.get', { key: 'onboarding_complete' })
+      .then((result: { key: string; value: unknown } | null) => {
+        const v = result?.value
+        const isComplete = v === '"true"' || v === 'true' || v === true
+        if (!isComplete) {
+          setShowWizard(true)
+        }
+      })
+      .catch(() => setShowWizard(true))
   }, [])
 
   return (
     <SidebarProvider className="h-svh overflow-hidden">
-      <TourProvider
-        onComplete={handleTourComplete}
-        isTourCompleted={tourCompleted}
-      >
-        <AppSidebar />
+      {/* Tour é uma engine ISOLADA do Setup: on-demand, sem auto-abrir no boot
+          e sem flag de conclusão. O gate de 1º boot continua sendo só o
+          onboarding_complete do Setup. */}
+      <OnboardingTourProvider steps={escalaflowTourSteps}>
+        <AppSidebar onReopenSetup={() => setShowWizard(true)} />
         <SidebarInset className="h-full min-h-0 overflow-hidden">
           <div id={TOUR_STEP_IDS.CONTENT_AREA} className="flex min-h-0 flex-1">
             <main className="min-h-0 flex-1 min-w-0 overflow-auto">
@@ -95,9 +107,30 @@ function AppLayout() {
             {location.pathname !== '/ia' && <IaChatPanel />}
           </div>
         </SidebarInset>
-        <TourSetup />
-      </TourProvider>
+        {/* WizardComTour vive DENTRO do provider para poder chamar startTour
+            na emenda "Ver como funciona". showWizard segue no AppLayout. */}
+        {showWizard && (
+          <WizardComTour onClose={() => setShowWizard(false)} />
+        )}
+      </OnboardingTourProvider>
     </SidebarProvider>
+  )
+}
+
+/**
+ * Consumidor fino do provider: liga o Setup ao Tour. O botão "Ver como
+ * funciona" só dispara o tour DEPOIS de fechar o wizard (senão o tour abriria
+ * atrás do modal Radix, com a sidebar inerte).
+ */
+function WizardComTour({ onClose }: { onClose: () => void }) {
+  const { startTour } = useOnboardingTour()
+  return (
+    <SetupWizard
+      onComplete={onClose}
+      // SetupWizard já chama handleFinish (grava onboarding_complete + onClose)
+      // antes de disparar onStartTour — aqui só falta iniciar o tour.
+      onStartTour={startTour}
+    />
   )
 }
 

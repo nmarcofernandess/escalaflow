@@ -22,8 +22,10 @@ import {
   Loader2,
   RotateCcw,
   SquareTerminal,
+  Compass,
+  Sparkles,
 } from 'lucide-react'
-import logoIcon from '@/assets/logo.png'
+// logo handled via APP_ICON from app-info (reuses '@/assets/logo.png' internally)
 import {
   Sidebar,
   SidebarContent,
@@ -60,8 +62,9 @@ import { cn } from '@/lib/utils'
 import { empresaService } from '@/servicos/empresa'
 import { useRestorePreviewStore } from '@/store/restorePreviewStore'
 import { toast } from 'sonner'
-import { TOUR_STEP_IDS, TOUR_STORAGE_KEY } from '@/lib/tour-constants'
-import { useTour } from './Tour'
+import { APP_NAME, APP_DESCRIPTION, APP_ICON } from '@/lib/app-info'
+import { TOUR_STEP_IDS } from '@/componentes/onboarding/tour-steps'
+import { useOnboardingTour } from '@/componentes/onboarding/OnboardingTour'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { getTerminalIaAccess, TERMINAL_IA_PERSONA_STORAGE_KEY } from '@shared/index'
 
@@ -96,11 +99,16 @@ function extrairIniciais(nome: string): string {
     .join('')
 }
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  /** Reabre o modal de Setup (item "Setup" do menu da conta). */
+  onReopenSetup?: () => void
+}
+
+export function AppSidebar({ onReopenSetup }: AppSidebarProps = {}) {
   const { pathname } = useLocation()
   const { isMobile } = useSidebar()
   const { theme, setTheme } = useTheme()
-  const { startTour } = useTour()
+  const { startTour } = useOnboardingTour()
   const [empresaNome, setEmpresaNome] = useState('Empresa')
   const appVersion = useAppVersion()
   const { active: restorePreviewActive, snapshotLabel, aplicar, sair } = useRestorePreviewStore()
@@ -141,11 +149,11 @@ export function AppSidebar() {
       <SidebarHeader id={TOUR_STEP_IDS.SIDEBAR_HEADER} className="p-4 group-data-[collapsible=icon]:p-2">
         <Link to="/" className="flex items-center gap-2">
           <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary">
-            <img src={logoIcon} alt="EscalaFlow" className="size-8 object-contain" />
+            <APP_ICON className="size-8 object-contain" />
           </div>
           <div className="flex flex-col group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-              EscalaFlow
+              {APP_NAME}
             </span>
             <span className="text-xs text-sidebar-foreground/50">
               {appVersion ? `v${appVersion}` : ''}
@@ -162,12 +170,17 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {visibleMainNav.map((item) => {
+                // IA_TOGGLE vive no toggle real do chat (PageHeader). O item de
+                // nav '/ia' NÃO recebe id de tour: evita id duplicado (o passo 11
+                // aponta o toggle, não o link de navegação).
                 const tourId =
                   item.to === '/setores'
                     ? TOUR_STEP_IDS.NAV_SETORES
                     : item.to === '/colaboradores'
                       ? TOUR_STEP_IDS.NAV_COLABORADORES
-                      : undefined
+                      : item.to === '/escalas'
+                        ? TOUR_STEP_IDS.NAV_ESCALAS
+                        : undefined
                 return (
                   <SidebarMenuItem key={item.label} id={tourId}>
                     <SidebarMenuButton
@@ -377,14 +390,16 @@ export function AppSidebar() {
                     <span>Configuracoes</span>
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    localStorage.removeItem(TOUR_STORAGE_KEY)
-                    startTour()
-                  }}
-                >
-                  <HelpCircle />
-                  <span>Como Funciona?</span>
+                <DropdownMenuSeparator />
+                {onReopenSetup && (
+                  <DropdownMenuItem onSelect={() => onReopenSetup()}>
+                    <Sparkles />
+                    <span>Setup</span>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={() => startTour()}>
+                  <Compass />
+                  <span>Como funciona</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled className="flex flex-col items-start gap-0.5 opacity-70">
@@ -393,7 +408,7 @@ export function AppSidebar() {
                     <span>Sobre</span>
                   </div>
                   <span className="pl-6 text-xs text-muted-foreground">
-                    {appVersion ? `EscalaFlow v${appVersion} — Desktop` : 'EscalaFlow — Desktop'}
+                    {appVersion ? `${APP_NAME} v${appVersion} — Desktop` : `${APP_NAME} — Desktop`}
                   </span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
