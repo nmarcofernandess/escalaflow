@@ -11,6 +11,3 @@ export const TOUR_STEP_IDS = {
 } as const
 
 export const TOUR_NAVIGATE_EVENT = 'tour:navigate-page'
-export const TOUR_START_EVENT = 'tour:start'
-
-export const TOUR_STORAGE_KEY = 'escalaflow-tour-completed'

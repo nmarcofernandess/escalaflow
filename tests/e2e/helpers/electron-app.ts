@@ -4,12 +4,7 @@ import { _electron } from 'playwright'
 import type { ElectronApplication, Page } from 'playwright'
 import { E2E_PGLITE_DIR, E2E_USER_DATA_DIR, pathToMainJs } from '../paths'
 
-/**
- * Legacy localStorage key (para o Tour.tsx deprecado).
- * O gate canônico de onboarding agora é `config.onboarding_complete` no DB (via config.get/set).
- * Mantemos a key antiga só para compat de E2E e código legado.
- */
-const TOUR_COMPLETED_KEY = 'escalaflow-tour-completed'
+/** Gate canônico de onboarding: `config.onboarding_complete` no DB (via config.get/set). */
 const ONBOARDING_COMPLETE_KEY = 'onboarding_complete'
 
 const require = createRequire(import.meta.url)
@@ -47,13 +42,9 @@ export async function firstWindowReady(app: ElectronApplication): Promise<Page> 
   const page = app.windows()[0] ?? (await app.waitForEvent('window', { timeout: 60_000 }))
   await page.waitForLoadState('domcontentloaded')
   await page.locator('#root').waitFor({ state: 'attached', timeout: 60_000 })
-  // Evita overlay do wizard/tour bloqueando cliques nos testes E2E.
-  // - localStorage para o Tour legado (compat).
-  // - config DB para o gate real do SetupWizard (onboarding_complete).
-  // Ambos são set antes do reload para E2E smoke não ver first-boot wizard.
-  await page.evaluate(async (keys) => {
-    const [legacyKey, dbKey] = keys
-    localStorage.setItem(legacyKey, 'true')
+  // Marca onboarding como concluído (gate DB) antes do reload, para o smoke
+  // E2E não ver o wizard de 1º boot bloqueando cliques.
+  await page.evaluate(async (dbKey) => {
     try {
       // @ts-expect-error - preload expõe ipcRenderer no contexto do page
       await window.electron.ipcRenderer.invoke('config.set', {
@@ -63,7 +54,7 @@ export async function firstWindowReady(app: ElectronApplication): Promise<Page> 
     } catch {
       // não fatal em E2E (db pode estar em estado parcial)
     }
-  }, [TOUR_COMPLETED_KEY, ONBOARDING_COMPLETE_KEY])
+  }, ONBOARDING_COMPLETE_KEY)
   await page.reload()
   await page.waitForLoadState('domcontentloaded')
   await page.locator('#root').waitFor({ state: 'attached', timeout: 60_000 })

@@ -242,6 +242,8 @@ xattr -cr "/Applications/EscalaFlow.app" && open "/Applications/EscalaFlow.app"
 Se quiser, o usuário também pode tentar:
 - Ajustes do Sistema → Privacidade e Segurança → Abrir Mesmo Assim
 
+> Guia completo de assinatura, notarização e bypass (Mac + Windows): [certificados.md](certificados.md)
+
 ---
 
 ## Distribuição sem internet (offline total)
