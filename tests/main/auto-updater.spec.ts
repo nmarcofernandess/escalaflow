@@ -49,6 +49,55 @@ function harness(isDevelopment = false) {
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 describe('setupAutoUpdater', () => {
+  it('does not materialize electron-updater in development when no updater is injected', async () => {
+    vi.resetModules()
+
+    let materialized = 0
+
+    vi.doMock('electron-updater', () => ({
+      default: {
+        get autoUpdater() {
+          materialized += 1
+
+          return {
+            autoDownload: false,
+            autoInstallOnAppQuit: false,
+            checkForUpdates: vi.fn(async () => undefined),
+            quitAndInstall: vi.fn(),
+            on: vi.fn(),
+          }
+        },
+      },
+    }))
+
+    const { setupAutoUpdater: setupWithoutInjectedUpdater } = await import('../../src/main/auto-updater')
+    const handlers = new Map<string, (...args: unknown[]) => unknown>()
+    const ipcMain = {
+      handle: (channel: string, handler: (...args: unknown[]) => unknown) => {
+        handlers.set(channel, handler)
+      },
+    }
+
+    setupWithoutInjectedUpdater({
+      app: { getVersion: () => '1.12.1' },
+      ipcMain,
+      getMainWindow: () => null,
+      isDevelopment: true,
+    })
+
+    expect(materialized).toBe(0)
+    expect(handlers.has('app:version')).toBe(true)
+    expect(handlers.has('update:check')).toBe(true)
+    expect(handlers.has('update:install')).toBe(true)
+
+    await handlers.get('update:check')?.()
+
+    expect(materialized).toBe(0)
+
+    vi.doUnmock('electron-updater')
+    vi.resetModules()
+  })
+
   it('registers version and updater IPC handlers in development and production', async () => {
     const production = harness()
     const development = harness(true)

@@ -41,17 +41,19 @@ function send(
 }
 
 export function setupAutoUpdater(options: SetupAutoUpdaterOptions): void {
-  const updater = options.updater ?? getDefaultUpdater()
   const schedule = options.schedule ?? setTimeout
+  const resolveUpdater = () => options.updater ?? getDefaultUpdater()
 
   options.ipcMain.handle('app:version', () => options.app.getVersion())
   options.ipcMain.handle('update:check', () => {
     if (options.isDevelopment) return
-    return updater.checkForUpdates()
+    return resolveUpdater().checkForUpdates()
   })
-  options.ipcMain.handle('update:install', () => updater.quitAndInstall())
+  options.ipcMain.handle('update:install', () => resolveUpdater().quitAndInstall())
 
   if (options.isDevelopment) return
+
+  const updater = resolveUpdater()
 
   updater.autoDownload = true
   updater.autoInstallOnAppQuit = true
