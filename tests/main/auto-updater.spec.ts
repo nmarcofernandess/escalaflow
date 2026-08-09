@@ -94,6 +94,10 @@ describe('setupAutoUpdater', () => {
 
     expect(materialized).toBe(0)
 
+    await handlers.get('update:install')?.()
+
+    expect(materialized).toBe(0)
+
     vi.doUnmock('electron-updater')
     vi.resetModules()
   })

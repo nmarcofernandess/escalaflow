@@ -49,7 +49,10 @@ export function setupAutoUpdater(options: SetupAutoUpdaterOptions): void {
     if (options.isDevelopment) return
     return resolveUpdater().checkForUpdates()
   })
-  options.ipcMain.handle('update:install', () => resolveUpdater().quitAndInstall())
+  options.ipcMain.handle('update:install', () => {
+    if (options.isDevelopment) return
+    return resolveUpdater().quitAndInstall()
+  })
 
   if (options.isDevelopment) return
 
