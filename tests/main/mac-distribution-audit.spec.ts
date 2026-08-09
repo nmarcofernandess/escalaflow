@@ -119,6 +119,28 @@ sha512: abc123
     expect(() => findMacAssets(distDir, '1.12.1', 'arm64')).toThrow(/unexpected mac artifacts|stale mac artifacts|extra mac/i)
   })
 
+  it('rejects x64 and universal mac artifacts for the same product version', () => {
+    const distDir = makeTrackedTempDir('mac-audit-dist-arch-leak')
+    tempDirs.push(distDir)
+
+    for (const fileName of [
+      'EscalaFlow-1.12.1-arm64.dmg',
+      'EscalaFlow-1.12.1-arm64.dmg.blockmap',
+      'EscalaFlow-1.12.1-arm64.zip',
+      'EscalaFlow-1.12.1-arm64.zip.blockmap',
+      'signed-mac.yml',
+      'EscalaFlow-1.12.1-x64.zip',
+      'EscalaFlow-1.12.1-universal.dmg',
+      'EscalaFlow-Setup-1.12.1.exe',
+      'EscalaFlow-Setup-1.12.1.exe.blockmap',
+      'latest.yml',
+    ]) {
+      writeFile(path.join(distDir, fileName), 'artifact')
+    }
+
+    expect(() => findMacAssets(distDir, '1.12.1', 'arm64')).toThrow(/unexpected mac artifacts|x64|universal/i)
+  })
+
   it('skips symlink loops while inspecting Mach-O payloads', () => {
     const rootDir = makeTrackedTempDir('mac-audit-app')
     tempDirs.push(rootDir)
@@ -422,6 +444,91 @@ Timestamp=Aug 9, 2026 at 12:00:00
     expect(createdTempDirs).toHaveLength(2)
     expect(runCommand).toHaveBeenCalledWith('hdiutil', ['detach', createdTempDirs[1]])
     expect(fs.existsSync(createdTempDirs[1])).toBe(false)
+  })
+
+  it('still removes the zip temp dir when cleanup throws and preserves the primary verification failure', async () => {
+    const rootDir = makeTrackedTempDir('mac-audit-zip-cleanup-fails')
+    tempDirs.push(rootDir)
+
+    const appPath = makeApp(path.join(rootDir, 'packaged'))
+    const distDir = path.join(rootDir, 'dist')
+    fs.mkdirSync(distDir, { recursive: true })
+
+    const zipName = 'EscalaFlow-1.12.1-arm64.zip'
+    const zipSha512 = crypto.createHash('sha512').update('zip-bytes').digest('base64')
+
+    writeFile(path.join(distDir, zipName), 'zip-bytes')
+    writeFile(path.join(distDir, 'EscalaFlow-1.12.1-arm64.dmg'), 'dmg')
+    writeFile(path.join(distDir, 'EscalaFlow-1.12.1-arm64.dmg.blockmap'), 'dmg-blockmap')
+    writeFile(path.join(distDir, 'EscalaFlow-1.12.1-arm64.zip.blockmap'), 'zip-blockmap')
+    writeFile(path.join(distDir, 'signed-mac.yml'), makeSignedMacYml('1.12.1', zipName, zipSha512))
+
+    const createdTempDirs: string[] = []
+    const realFs = fs
+    const verifySignedAppFn = vi.fn(async ({ appPath: candidatePath }: { appPath: string }) => {
+      const zipTempDir = createdTempDirs[0] ?? ''
+
+      if (zipTempDir && candidatePath.startsWith(zipTempDir)) {
+        throw new Error('primary zip verification failure')
+      }
+
+      return { appPath: candidatePath, machORecords: [] }
+    })
+
+    const runCommand = vi.fn((command: string, args: string[]) => {
+      if (command === 'ditto' && args[0] === '-xk') {
+        makeApp(args[2])
+        return { stdout: '', stderr: '', combined: '' }
+      }
+
+      if (command === 'hdiutil' && args[0] === 'attach') {
+        const mountDir = args[args.indexOf('-mountpoint') + 1]
+        makeApp(mountDir)
+        writeFile(path.join(mountDir, 'LEIA ANTES DE INSTALAR.txt'), 'Abra normalmente. Se algo falhar, pare e fale com o suporte.')
+        return { stdout: '', stderr: '', combined: 'attached' }
+      }
+
+      if (command === 'hdiutil' && args[0] === 'detach') {
+        return { stdout: '', stderr: '', combined: 'detached' }
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`)
+    })
+
+    const fsAdapter = {
+      ...realFs,
+      rmSync: (targetPath: fs.PathLike, options?: fs.RmOptions) => {
+        realFs.rmSync(targetPath, options)
+
+        if (String(targetPath) === createdTempDirs[0]) {
+          throw new Error('zip cleanup failure')
+        }
+      },
+    }
+
+    await expect(
+      verifyMacDistribution(
+        {
+          appPath,
+          distDir,
+          teamId: TEAM_ID,
+          version: '1.12.1',
+          arch: 'arm64',
+          runCommand,
+          verifySignedAppFn,
+          createTempDir: (label: string) => {
+            const tempDir = path.join(rootDir, `temp-${label}-${createdTempDirs.length + 1}`)
+            createdTempDirs.push(tempDir)
+            fs.mkdirSync(tempDir, { recursive: true })
+            return tempDir
+          },
+        },
+        { fsAdapter },
+      ),
+    ).rejects.toThrow(/primary zip verification failure.*zip cleanup failure|zip cleanup failure.*primary zip verification failure/i)
+
+    expect(createdTempDirs).toHaveLength(1)
+    expect(fs.existsSync(createdTempDirs[0])).toBe(false)
   })
 
   it('accepts the top-level EscalaFlow.app even when nested helper apps exist inside it', async () => {

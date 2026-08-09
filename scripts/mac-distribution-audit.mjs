@@ -28,13 +28,7 @@ const DMG_BYPASS_MARKERS = [
   /Instalar-EscalaFlow\.command/i,
 ]
 
-const MAC_ARTIFACT_PATTERNS = [
-  /^EscalaFlow-.*-arm64\.dmg$/,
-  /^EscalaFlow-.*-arm64\.dmg\.blockmap$/,
-  /^EscalaFlow-.*-arm64\.zip$/,
-  /^EscalaFlow-.*-arm64\.zip\.blockmap$/,
-  /(?:^|-)mac\.yml$/,
-]
+const MAC_METADATA_PATTERN = /(?:^|-)mac\.yml$/
 
 function getFs(dependencies = {}) {
   return dependencies.fsAdapter ?? fs
@@ -101,16 +95,23 @@ function createDefaultTempDirFactory(dependencies = {}) {
   return (label) => fsAdapter.mkdtempSync(path.join(osAdapter.tmpdir(), `mac-distribution-audit-${label}-`))
 }
 
-function isMacArtifactEntry(entryName) {
-  return MAC_ARTIFACT_PATTERNS.some((pattern) => pattern.test(entryName))
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function listUnexpectedMacArtifacts(distDir, allowedEntries, dependencies = {}) {
+function isMacReleaseArtifactForVersion(entryName, version) {
+  const escapedVersion = escapeRegExp(version)
+  const productVersionPattern = new RegExp(`^EscalaFlow-${escapedVersion}-(.+)\\.(dmg|zip)(\\.blockmap)?$`)
+
+  return productVersionPattern.test(entryName) || MAC_METADATA_PATTERN.test(entryName)
+}
+
+function listUnexpectedMacArtifacts(distDir, version, allowedEntries, dependencies = {}) {
   const fsAdapter = getFs(dependencies)
   const disallowedEntries = []
 
   for (const entryName of fsAdapter.readdirSync(distDir)) {
-    if (!isMacArtifactEntry(entryName)) {
+    if (!isMacReleaseArtifactForVersion(entryName, version)) {
       continue
     }
 
@@ -301,7 +302,7 @@ export function findMacAssets(distDir, version, arch, dependencies = {}) {
     throw new Error(`latest-mac.yml is forbidden for signed macOS releases: ${assets.latestMacYml}`)
   }
 
-  const unexpectedMacArtifacts = listUnexpectedMacArtifacts(distDir, allowedEntries, dependencies)
+  const unexpectedMacArtifacts = listUnexpectedMacArtifacts(distDir, version, allowedEntries, dependencies)
   if (unexpectedMacArtifacts.length > 0) {
     throw new Error(`unexpected mac artifacts in ${distDir}: ${unexpectedMacArtifacts.join(', ')}`)
   }
@@ -471,6 +472,7 @@ export async function verifyMacDistribution(
 
   const zipTempDir = createTempDir('zip')
   let zippedAppReport
+  let zipPrimaryError = null
 
   try {
     runCommandImpl('ditto', ['-xk', assets.zip, zipTempDir])
@@ -479,8 +481,22 @@ export async function verifyMacDistribution(
       { appPath: zippedAppPath, distDir, teamId, version, arch, runCommand: runCommandImpl },
       dependencies,
     )
+  } catch (error) {
+    zipPrimaryError = error
   } finally {
-    fsAdapter.rmSync(zipTempDir, { recursive: true, force: true })
+    const cleanupErrors = []
+
+    try {
+      fsAdapter.rmSync(zipTempDir, { recursive: true, force: true })
+    } catch (error) {
+      cleanupErrors.push(error instanceof Error ? error : new Error(String(error)))
+    }
+
+    combineErrors(
+      zipPrimaryError instanceof Error ? zipPrimaryError : zipPrimaryError ? new Error(String(zipPrimaryError)) : null,
+      cleanupErrors,
+      'ZIP',
+    )
   }
 
   const dmgMountDir = createTempDir('dmg')
