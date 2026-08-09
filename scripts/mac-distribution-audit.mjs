@@ -28,6 +28,14 @@ const DMG_BYPASS_MARKERS = [
   /Instalar-EscalaFlow\.command/i,
 ]
 
+const MAC_ARTIFACT_PATTERNS = [
+  /^EscalaFlow-.*-arm64\.dmg$/,
+  /^EscalaFlow-.*-arm64\.dmg\.blockmap$/,
+  /^EscalaFlow-.*-arm64\.zip$/,
+  /^EscalaFlow-.*-arm64\.zip\.blockmap$/,
+  /(?:^|-)mac\.yml$/,
+]
+
 function getFs(dependencies = {}) {
   return dependencies.fsAdapter ?? fs
 }
@@ -91,6 +99,45 @@ function createDefaultTempDirFactory(dependencies = {}) {
   const osAdapter = getOs(dependencies)
 
   return (label) => fsAdapter.mkdtempSync(path.join(osAdapter.tmpdir(), `mac-distribution-audit-${label}-`))
+}
+
+function isMacArtifactEntry(entryName) {
+  return MAC_ARTIFACT_PATTERNS.some((pattern) => pattern.test(entryName))
+}
+
+function listUnexpectedMacArtifacts(distDir, allowedEntries, dependencies = {}) {
+  const fsAdapter = getFs(dependencies)
+  const disallowedEntries = []
+
+  for (const entryName of fsAdapter.readdirSync(distDir)) {
+    if (!isMacArtifactEntry(entryName)) {
+      continue
+    }
+
+    if (!allowedEntries.has(entryName)) {
+      disallowedEntries.push(entryName)
+    }
+  }
+
+  return disallowedEntries.sort()
+}
+
+function combineErrors(primaryError, cleanupErrors, contextLabel) {
+  if (cleanupErrors.length === 0) {
+    if (primaryError) {
+      throw primaryError
+    }
+
+    return
+  }
+
+  const cleanupMessage = cleanupErrors.map((error) => error.message).join('; ')
+
+  if (primaryError) {
+    throw new Error(`${primaryError.message}; ${contextLabel} cleanup failed: ${cleanupMessage}`, { cause: primaryError })
+  }
+
+  throw new Error(`${contextLabel} cleanup failed: ${cleanupMessage}`, { cause: cleanupErrors[0] })
 }
 
 function collectAppBundles(rootPath, dependencies = {}) {
@@ -238,6 +285,13 @@ export function findMacAssets(distDir, version, arch, dependencies = {}) {
     signedMacYml: pathAdapter.join(distDir, 'signed-mac.yml'),
     latestMacYml: pathAdapter.join(distDir, 'latest-mac.yml'),
   }
+  const allowedEntries = new Set([
+    `${artifactBase}.dmg`,
+    `${artifactBase}.dmg.blockmap`,
+    `${artifactBase}.zip`,
+    `${artifactBase}.zip.blockmap`,
+    'signed-mac.yml',
+  ])
 
   for (const assetName of REQUIRED_MAC_ASSET_NAMES) {
     ensureExists(assets[assetName], assetName, fsAdapter)
@@ -245,6 +299,11 @@ export function findMacAssets(distDir, version, arch, dependencies = {}) {
 
   if (fsAdapter.existsSync(assets.latestMacYml)) {
     throw new Error(`latest-mac.yml is forbidden for signed macOS releases: ${assets.latestMacYml}`)
+  }
+
+  const unexpectedMacArtifacts = listUnexpectedMacArtifacts(distDir, allowedEntries, dependencies)
+  if (unexpectedMacArtifacts.length > 0) {
+    throw new Error(`unexpected mac artifacts in ${distDir}: ${unexpectedMacArtifacts.join(', ')}`)
   }
 
   return assets
@@ -427,6 +486,7 @@ export async function verifyMacDistribution(
   const dmgMountDir = createTempDir('dmg')
   let dmgAttached = false
   let mountedAppReport
+  let dmgPrimaryError = null
 
   try {
     runCommandImpl('hdiutil', ['attach', assets.dmg, '-nobrowse', '-readonly', '-mountpoint', dmgMountDir])
@@ -439,12 +499,30 @@ export async function verifyMacDistribution(
       { appPath: mountedAppPath, distDir, teamId, version, arch, runCommand: runCommandImpl },
       dependencies,
     )
+  } catch (error) {
+    dmgPrimaryError = error
   } finally {
+    const cleanupErrors = []
+
     if (dmgAttached) {
-      runCommandImpl('hdiutil', ['detach', dmgMountDir])
+      try {
+        runCommandImpl('hdiutil', ['detach', dmgMountDir])
+      } catch (error) {
+        cleanupErrors.push(error instanceof Error ? error : new Error(String(error)))
+      }
     }
 
-    fsAdapter.rmSync(dmgMountDir, { recursive: true, force: true })
+    try {
+      fsAdapter.rmSync(dmgMountDir, { recursive: true, force: true })
+    } catch (error) {
+      cleanupErrors.push(error instanceof Error ? error : new Error(String(error)))
+    }
+
+    combineErrors(
+      dmgPrimaryError instanceof Error ? dmgPrimaryError : dmgPrimaryError ? new Error(String(dmgPrimaryError)) : null,
+      cleanupErrors,
+      'DMG',
+    )
   }
 
   return {
