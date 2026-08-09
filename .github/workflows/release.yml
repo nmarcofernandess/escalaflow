@@ -39,22 +39,134 @@ jobs:
       - name: Verify
         run: npm run ci:verify
 
-  build:
+  build-mac:
     needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            platform: mac
-            solver-bin: escalaflow-solver
-            mcp-bin: escalaflow-mcp
-          - os: windows-latest
-            platform: win
-            solver-bin: escalaflow-solver.exe
-            mcp-bin: escalaflow-mcp.exe
+    runs-on: macos-15
 
-    runs-on: ${{ matrix.os }}
+    steps:
+      # Majors em Node 24 — GitHub remove o runtime Node 20 dos runners em 2026
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify runner architecture
+        shell: bash
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build solver binary (PyInstaller)
+        run: |
+          pip install -r solver/requirements.txt
+          cd solver
+          pyinstaller escalaflow-solver.spec --distpath ../solver-bin/ --clean --noconfirm
+
+      - name: Verify solver binary
+        shell: bash
+        run: |
+          ls -la solver-bin/
+          file solver-bin/escalaflow-solver || true
+
+      - name: Build STT sidecar
+        shell: bash
+        run: |
+          cd stt
+          cargo build --release
+          mkdir -p ../stt-bin
+          cp target/release/escalaflow-stt ../stt-bin/escalaflow-stt
+
+      - name: Verify STT sidecar
+        shell: bash
+        run: |
+          ls -la stt-bin/
+          file stt-bin/escalaflow-stt || true
+
+      - name: Download bundled STT model
+        run: npm run stt:model
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install MCP server dependencies
+        run: cd mcp-server && bun install
+
+      - name: Build MCP binary
+        shell: bash
+        run: bun build --compile mcp-server/index.ts --outfile mcp-bin/escalaflow-mcp
+
+      - name: Verify MCP binary
+        shell: bash
+        run: |
+          ls -la mcp-bin/
+          file mcp-bin/escalaflow-mcp || true
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Prepare bundled llama-server binary
+        run: npm run llama:bin
+
+      - name: Build Electron app
+        run: npm run build
+
+      - name: Package signed and notarized macOS arm64
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          trap 'rm -f "$api_key_path"' EXIT
+          APPLE_API_KEY_PATH="$api_key_path" node -e "require('node:fs').writeFileSync(process.env.APPLE_API_KEY_PATH, Buffer.from(process.env.APPLE_API_KEY_BASE64, 'base64'), { mode: 0o600 })"
+          export APPLE_API_KEY="$api_key_path"
+          test -s "$APPLE_API_KEY"
+          xcrun notarytool history --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --output-format json >/dev/null
+          npx electron-builder --mac --arm64 --publish never
+          node scripts/verify-mac-distribution.mjs --app dist/mac-arm64/EscalaFlow.app --dist dist --team-id "$APPLE_TEAM_ID" --version "$(node -p "require('./package.json').version")" --arch arm64
+
+      - name: List dist output
+        shell: bash
+        run: ls -la dist/*.dmg dist/*.zip dist/*.blockmap dist/*.yml 2>/dev/null || ls -la dist/
+
+      - name: Enforce signed Mac metadata only
+        shell: bash
+        run: |
+          test -f dist/signed-mac.yml
+          if find dist -maxdepth 1 -name 'latest-mac.yml' -print -quit | grep -q .; then
+            echo 'unexpected latest-mac.yml in dist'
+            exit 1
+          fi
+
+      - name: Upload macOS release inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-mac
+          if-no-files-found: error
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
+            dist/signed-mac.yml
+
+  build-windows:
+    needs: verify
+    runs-on: windows-latest
 
     steps:
       # Majors em Node 24 — GitHub remove o runtime Node 20 dos runners em 2026
@@ -72,6 +184,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Build solver binary (PyInstaller)
         run: |
           pip install -r solver/requirements.txt
@@ -82,7 +197,7 @@ jobs:
         shell: bash
         run: |
           ls -la solver-bin/
-          file solver-bin/${{ matrix.solver-bin }} || true
+          file solver-bin/escalaflow-solver.exe || true
 
       - name: Build STT sidecar
         shell: bash
@@ -90,17 +205,13 @@ jobs:
           cd stt
           cargo build --release
           mkdir -p ../stt-bin
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cp target/release/escalaflow-stt.exe ../stt-bin/escalaflow-stt.exe
-          else
-            cp target/release/escalaflow-stt ../stt-bin/escalaflow-stt
-          fi
+          cp target/release/escalaflow-stt.exe ../stt-bin/escalaflow-stt.exe
 
       - name: Verify STT sidecar
         shell: bash
         run: |
           ls -la stt-bin/
-          file stt-bin/escalaflow-stt* || true
+          file stt-bin/escalaflow-stt.exe || true
 
       - name: Download bundled STT model
         run: npm run stt:model
@@ -113,19 +224,18 @@ jobs:
 
       - name: Build MCP binary
         shell: bash
-        run: bun build --compile mcp-server/index.ts --outfile mcp-bin/${{ matrix.mcp-bin }}
+        run: bun build --compile mcp-server/index.ts --outfile mcp-bin/escalaflow-mcp.exe
 
       - name: Verify MCP binary
         shell: bash
         run: |
           ls -la mcp-bin/
-          file mcp-bin/${{ matrix.mcp-bin }} || true
+          file mcp-bin/escalaflow-mcp.exe || true
 
       - name: Install Node dependencies
         run: npm ci
 
       - name: Fix platform-specific rollup binding (Windows)
-        if: runner.os == 'Windows'
         run: npm install @rollup/rollup-win32-x64-msvc --no-save
 
       - name: Prepare bundled llama-server binary
@@ -134,32 +244,45 @@ jobs:
       - name: Build Electron app
         run: npm run build
 
-      - name: Package (${{ matrix.platform }})
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+      - name: Package Windows
+        run: npx electron-builder --win --publish never
 
       - name: List dist output
         shell: bash
-        run: ls -la dist/*.dmg dist/*.exe dist/*.blockmap dist/*.yml 2>/dev/null || ls -la dist/
+        run: ls -la dist/*.exe dist/*.blockmap dist/*.yml 2>/dev/null || ls -la dist/
 
-      - name: Upload Mac DMG + ZIP
-        if: matrix.platform == 'mac'
-        uses: softprops/action-gh-release@v3
+      - name: Upload Windows release inputs
+        uses: actions/upload-artifact@v4
         with:
-          draft: true
-          files: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.blockmap
-            dist/latest-mac.yml
-
-      - name: Upload Windows installer
-        if: matrix.platform == 'win'
-        uses: softprops/action-gh-release@v3
-        with:
-          draft: true
-          files: |
+          name: release-windows
+          if-no-files-found: error
+          path: |
             dist/*.exe
             dist/*.blockmap
             dist/latest.yml
+
+  release-draft:
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify exact release inventory
+        run: node scripts/verify-release-assets.mjs release-assets
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          files: release-assets/*
