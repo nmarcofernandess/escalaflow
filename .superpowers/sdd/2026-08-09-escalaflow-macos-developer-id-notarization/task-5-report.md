@@ -152,3 +152,75 @@ Validei a documentação contra as superfícies já implementadas na branch:
 ## Commit
 
 - Commit message: `docs: define trusted macOS release runbook`
+
+## Fix round 1 — Important/P2 compliance
+
+### Objetivo
+
+Endurecer o gate de prova de instalação fresca no `docs/release.md` para impedir leitura permissiva de "bytes do release" obtidos por CLI/API, que pode perder a quarentena de origem do navegador.
+
+### TDD
+
+#### RED
+
+Primeiro ajustei `tests/main/release-docs-contract.spec.ts` com um contrato focado:
+
+- `docs/release.md` deve exigir `browser UI`
+- deve citar a `authenticated GitHub draft/public release page`
+- deve dizer que `CLI/API downloads are not sufficient`
+- deve exigir abertura `without any bypass`
+- não pode manter a frase permissiva `bytes baixados do release ou um Mac/perfil fresco`
+
+Comando:
+
+```bash
+npm run test -- tests/main/release-docs-contract.spec.ts
+```
+
+Resultado RED: 1 falha, exatamente porque o runbook ainda aceitava a formulação genérica anterior.
+
+#### GREEN
+
+Depois do RED, reescrevi apenas a seção `## Prova de Gatekeeper em download real` em `docs/release.md` para exigir:
+
+- download do DMG pelo browser UI
+- navegação pela página autenticada do draft/release no GitHub
+- preservação da quarentena de origem do navegador
+- rejeição explícita de `gh release download`, `curl`, API e bytes reaproveitados
+- instalação e abertura sem bypass
+
+### Evidência desta rodada
+
+```bash
+npm run test -- tests/main/release-docs-contract.spec.ts
+```
+
+Resultado: PASS (`3 tests`)
+
+```bash
+if rg -n 'xattr\b|codesign --remove-signature|Abrir Mesmo Assim|Open Anyway|Control-click|publish always' README.md docs/release.md docs/certificados.md resources/'LEIA ANTES DE INSTALAR.txt'; then
+  echo 'FAIL: docs surfaces still contain legacy bypass guidance' >&2
+  exit 1
+fi
+```
+
+Resultado: PASS
+
+```bash
+git diff --check
+```
+
+Resultado: PASS
+
+### Self-review
+
+- o gate agora exige prova com bytes baixados pelo navegador, não por CLI/API
+- a redação ficou explícita sobre draft/release page autenticada do GitHub
+- a abertura continua proibindo bypass
+- não toquei no README além do que já existia da rodada anterior
+- não toquei no scan amplo de `scripts/`
+
+### Deferred minors desta rodada
+
+1. P3 do README support wording: não tratado nesta rodada por pedido explícito.
+2. Broad internal scripts scan: não tratado nesta rodada por pedido explícito; continua fora do escopo desta correção focada.

@@ -146,7 +146,15 @@ gh release view vX.Y.Z --repo nmarcofernandess/escalaflow --json assets --jq '.a
 
 ## Prova de Gatekeeper em download real
 
-Build local em `dist/` não basta. A prova de confiança precisa usar bytes baixados do release ou um Mac/perfil fresco.
+Build local em `dist/` não basta. A prova de confiança precisa começar com o download do DMG pelo browser UI na authenticated GitHub draft/public release page, preservando a quarentena de origem do navegador.
+
+Para este gate de UX:
+
+- baixe o DMG clicando no asset na página do draft/release do GitHub
+- mantenha o fluxo no navegador, sem intermediários
+- CLI/API downloads are not sufficient
+- `gh release download`, `curl`, automações da API ou cópias locais pré-baixadas não valem como prova dessa etapa
+- instale e abra normally, without any bypass
 
 Registre:
 

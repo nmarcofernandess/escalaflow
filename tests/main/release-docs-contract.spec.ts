@@ -21,6 +21,14 @@ describe('release documentation contract', () => {
     expect(release).toContain('latest-mac.yml')
   })
 
+  it('requires browser-origin Gatekeeper proof instead of CLI-downloaded bytes', () => {
+    expect(release).toContain('browser UI')
+    expect(release).toContain('authenticated GitHub draft/public release page')
+    expect(release).toContain('CLI/API downloads are not sufficient')
+    expect(release).toContain('without any bypass')
+    expect(release).not.toContain('bytes baixados do release ou um Mac/perfil fresco')
+  })
+
   it('does not prescribe bypass or local direct publishing', () => {
     expect(surfaces).not.toMatch(
       /xattr\b|codesign --remove-signature|Abrir Mesmo Assim|Open Anyway|Control-click|bot[aã]o direito.*Abrir/i,
