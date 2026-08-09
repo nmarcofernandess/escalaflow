@@ -78,11 +78,29 @@ Esse verificador é recursivo: checa assinatura, Team ID, timestamp, entitlement
 
 ## Sequência obrigatória antes da tag
 
-1. implemente e valide na branch da tarefa
-2. abra PR e faça review
-3. faça merge no `main`
-4. confirme que o SHA mergeado é o SHA revisado
-5. só então crie a tag do release
+1. escolha a versão alvo antes do PR/tag
+2. rode um bump sem criar tag automática:
+
+```bash
+npm version <versao> --no-git-tag-version
+```
+
+3. confirme que `package.json` e `package-lock.json` convergiram para a mesma versão
+4. valide a versão materializada no projeto:
+
+```bash
+npm pkg get version
+```
+
+5. o valor acima precisa bater exatamente com o release pretendido
+   - para o bootstrap assinado: `1.12.1`
+   - para a prova do updater assinado: `1.12.2`
+6. não se cria tag enquanto a versão não bater entre `package.json`, `package-lock.json` e o nome da tag
+7. implemente e valide na branch da tarefa
+8. abra PR e faça review
+9. faça merge no `main`
+10. confirme que o SHA mergeado é o SHA revisado
+11. só então crie a tag do release
 
 Não use tag para testar código que ainda não passou pela revisão final.
 

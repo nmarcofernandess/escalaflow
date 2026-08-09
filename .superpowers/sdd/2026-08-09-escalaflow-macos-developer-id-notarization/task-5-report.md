@@ -224,3 +224,119 @@ Resultado: PASS
 
 1. P3 do README support wording: não tratado nesta rodada por pedido explícito.
 2. Broad internal scripts scan: não tratado nesta rodada por pedido explícito; continua fora do escopo desta correção focada.
+
+## Fix round 2 — version pre-tag + broad scan allowlist
+
+### Objetivo
+
+Corrigir dois pontos do quality review sem tocar nos outros tasks:
+
+1. explicitar no runbook o bump obrigatório de versão antes de PR/tag, com convergência entre `package.json`, `package-lock.json` e a tag;
+2. endurecer `tests/main/release-docs-contract.spec.ts` para varrer também `scripts/`, com allowlist explícita somente para os dois usos internos já aprovados.
+
+### TDD
+
+#### RED
+
+Ampliei o teste focado com dois contratos novos:
+
+- `docs/release.md` deve exigir `package.json`, `package-lock.json`, `npm version <versao> --no-git-tag-version`, `npm pkg get version`, exemplos `v1.12.1`/`v1.12.2` e a regra “não se cria tag enquanto a versão não bater”;
+- o scan de bypass passa a cobrir `scripts/`, permitindo somente:
+  - `scripts/fetch-llama-server.mjs` no contexto interno de preparação do sidecar;
+  - `scripts/mac-distribution-audit.mjs` no contexto interno de rejeição de DMG inseguro.
+
+Primeira execução RED:
+
+```bash
+npm run test -- tests/main/release-docs-contract.spec.ts
+```
+
+Resultado:
+
+- falha esperada por ausência de `package-lock.json`/convergência de versão no runbook;
+- ruído inicial da allowlist foi corrigido no próprio teste até o RED ficar concentrado só na ausência de documentação.
+
+#### GREEN
+
+Depois do RED:
+
+- atualizei `docs/release.md` na seção `## Sequência obrigatória antes da tag`;
+- incluí o comando seguro `npm version <versao> --no-git-tag-version`;
+- incluí a checagem `npm pkg get version`;
+- explicitei que `package.json`, `package-lock.json` e a tag precisam convergir;
+- deixei exemplos explícitos para `1.12.1` e `1.12.2`;
+- mantive o scan amplo no teste com allowlist exata por caminho e contexto.
+
+### Evidência desta rodada
+
+```bash
+npm run test -- tests/main/release-docs-contract.spec.ts
+```
+
+Resultado: PASS (`5 tests`)
+
+```bash
+node <<'NODE'
+const fs = require('node:fs')
+const path = require('node:path')
+const forbidden = [
+  /xattr\\b/i,
+  /codesign --remove-signature/i,
+  /Abrir Mesmo Assim/i,
+  /Open Anyway/i,
+  /Control-click/i,
+  /bot[aã]o direito.*Abrir/i,
+]
+const publicPaths = [
+  'README.md',
+  'docs/release.md',
+  'docs/certificados.md',
+  'resources/LEIA ANTES DE INSTALAR.txt',
+]
+for (const file of publicPaths) {
+  const text = fs.readFileSync(file, 'utf8')
+  for (const pattern of forbidden) {
+    if (pattern.test(text)) throw new Error(`forbidden token in public surface: ${file}`)
+  }
+}
+const allow = new Map([
+  ['scripts/fetch-llama-server.mjs', ["spawnSync('xattr'", 'remove quarantine', 'best-effort']],
+  ['scripts/mac-distribution-audit.mjs', ['DMG_BYPASS_MARKERS', 'Instalar-EscalaFlow\\\\.command', 'verifyMountedReadme', 'for (const marker of DMG_BYPASS_MARKERS)']],
+])
+function walk(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) return walk(full)
+    if (entry.isFile()) return [full]
+    return []
+  })
+}
+for (const file of walk('scripts')) {
+  const rel = file.split(path.sep).join(path.posix.sep)
+  const text = fs.readFileSync(file, 'utf8')
+  const hasForbidden = forbidden.some((pattern) => pattern.test(text))
+  if (!hasForbidden) continue
+  const markers = allow.get(rel)
+  if (!markers) throw new Error(`unexpected bypass token in script: ${rel}`)
+  for (const marker of markers) {
+    if (!text.includes(marker)) throw new Error(`allowlist context mismatch in ${rel}; missing ${marker}`)
+  }
+}
+NODE
+```
+
+Resultado: PASS
+
+```bash
+git diff --check
+```
+
+Resultado: PASS
+
+### Self-review
+
+- o runbook agora trava a convergência de versão antes do PR/tag;
+- a sequência pré-tag ficou explícita sobre não criar tag enquanto a versão não bater;
+- o teste deixou de ficar false-green para scripts inesperados com tokens de bypass;
+- não alterei `scripts/fetch-llama-server.mjs` nem `scripts/mac-distribution-audit.mjs`;
+- o P3 do README/checksum continua deferido nesta rodada, como solicitado.
