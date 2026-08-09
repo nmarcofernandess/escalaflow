@@ -37,14 +37,30 @@ asarUnpack:
 mac:
   icon: icon.icns
   category: public.app-category.business
-  identity: "-"
+  type: distribution
+  forceCodeSigning: true
+  hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  binaries:
+    - Contents/Resources/solver-bin/escalaflow-solver
+    - Contents/Resources/stt-bin/escalaflow-stt
+    - Contents/Resources/mcp-bin/escalaflow-mcp
+    - Contents/Resources/llama.cpp/darwin-arm64/llama-server
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
   artifactName: '${productName}-${version}-${arch}.${ext}'
-  notarize: false
+  notarize: true
+  publish:
+    provider: github
+    owner: nmarcofernandess
+    repo: escalaflow
+    channel: signed
 dmg:
   contents:
     - x: 130
