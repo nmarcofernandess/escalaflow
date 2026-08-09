@@ -46,6 +46,7 @@
     "solver:cli": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/solver-cli.ts",
     "preview:cli": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/.bin/tsx scripts/preview-cli.ts",
     "release:mac": "npm run solver:build && npm run stt:build && npm run stt:model && npm run llama:bin && npm run mcp:build && npm run build && electron-builder --mac --arm64 --publish never",
+    "verify:mac-distribution": "node scripts/verify-mac-distribution.mjs",
     "model:download": "tsx scripts/download-embedding-model.ts",
     "knowledge:seed": "tsx scripts/knowledge-seed.ts",
     "mcp:dev": "npx tsx mcp-server/index.ts",
