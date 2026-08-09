@@ -1,49 +1,103 @@
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
 
-function topLevelSection(text: string, name: string): string {
-  const lines = text.split('\n')
-  const start = lines.findIndex((line) => line === `${name}:`)
+const require = createRequire(import.meta.url)
+const yaml = require('js-yaml') as { load(source: string): unknown }
 
-  if (start < 0) throw new Error(`missing ${name} section`)
+interface BuilderTarget {
+  target: string
+  arch: string[]
+}
 
-  let end = start + 1
+interface PublishConfig {
+  provider: string
+  owner: string
+  repo: string
+  channel?: string
+}
 
-  while (end < lines.length && (lines[end].startsWith('  ') || lines[end].trim() === '')) end += 1
+interface PlatformConfig {
+  forceCodeSigning?: boolean
+  type?: string
+  hardenedRuntime?: boolean
+  identity?: string
+  entitlements?: string
+  entitlementsInherit?: string
+  binaries?: string[]
+  target?: BuilderTarget[]
+  notarize?: boolean
+  publish?: PublishConfig
+}
 
-  return lines.slice(start, end).join('\n')
+interface BuilderConfig {
+  forceCodeSigning?: boolean
+  mac?: PlatformConfig
+  publish?: PublishConfig
+  win?: {
+    target?: BuilderTarget[]
+    forceCodeSigning?: boolean
+  }
+}
+
+function readBuilderConfig(): BuilderConfig {
+  const parsed = yaml.load(fs.readFileSync('electron-builder.yml', 'utf8'))
+
+  if (!parsed || typeof parsed !== 'object') throw new Error('electron-builder.yml did not parse into an object')
+
+  return parsed as BuilderConfig
 }
 
 describe('macOS packaging trust contract', () => {
-  const config = fs.readFileSync('electron-builder.yml', 'utf8')
+  const config = readBuilderConfig()
   const entitlements = fs.readFileSync('build/entitlements.mac.plist', 'utf8')
-  const mac = topLevelSection(config, 'mac')
-  const publish = topLevelSection(config, 'publish')
+  const mac = config.mac
+  const publish = config.publish
+  const win = config.win
 
   it('requires signed and notarized arm64 targets only on macOS', () => {
-    expect(mac).toContain('forceCodeSigning: true')
-    expect(mac).toContain('type: distribution')
-    expect(mac).toContain('hardenedRuntime: true')
-    expect(mac).toContain('notarize: true')
-    expect(mac).not.toMatch(/identity:\s*["']?-["']?/)
-    expect(mac).toContain('target: dmg')
-    expect(mac).toContain('target: zip')
-    expect(mac.match(/- arm64/g)).toHaveLength(2)
-    expect(config).not.toMatch(/^forceCodeSigning:/m)
+    expect(mac).toBeDefined()
+    expect(mac?.forceCodeSigning).toBe(true)
+    expect(mac?.type).toBe('distribution')
+    expect(mac?.hardenedRuntime).toBe(true)
+    expect(mac?.notarize).toBe(true)
+    expect(mac?.identity).toBeUndefined()
+    expect(mac?.entitlements).toBe('build/entitlements.mac.plist')
+    expect(mac?.entitlementsInherit).toBe('build/entitlements.mac.plist')
+    expect(mac?.target).toEqual([
+      { target: 'dmg', arch: ['arm64'] },
+      { target: 'zip', arch: ['arm64'] },
+    ])
+    expect(config.forceCodeSigning).toBeUndefined()
   })
 
   it('declares every extensionless native sidecar', () => {
-    for (const path of [
+    expect(mac?.binaries).toEqual([
       'Contents/Resources/solver-bin/escalaflow-solver',
       'Contents/Resources/stt-bin/escalaflow-stt',
       'Contents/Resources/mcp-bin/escalaflow-mcp',
       'Contents/Resources/llama.cpp/darwin-arm64/llama-server',
-    ]) expect(mac).toContain(path)
+    ])
   })
 
   it('isolates signed Mac updates without moving Windows off latest', () => {
-    expect(mac).toContain('channel: signed')
-    expect(publish).not.toContain('channel:')
+    expect(mac?.publish).toEqual({
+      provider: 'github',
+      owner: 'nmarcofernandess',
+      repo: 'escalaflow',
+      channel: 'signed',
+    })
+    expect(publish).toEqual({
+      provider: 'github',
+      owner: 'nmarcofernandess',
+      repo: 'escalaflow',
+    })
+    expect(win).toEqual({
+      icon: 'icon.ico',
+      target: [{ target: 'nsis', arch: ['x64'] }],
+      artifactName: '${productName}-Setup-${version}.${ext}',
+    })
+    expect(win?.forceCodeSigning).toBeUndefined()
   })
 
   it('does not ship the debug entitlement', () => {
