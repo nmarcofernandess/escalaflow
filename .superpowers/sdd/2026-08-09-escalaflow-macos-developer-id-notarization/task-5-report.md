@@ -340,3 +340,137 @@ Resultado: PASS
 - o teste deixou de ficar false-green para scripts inesperados com tokens de bypass;
 - não alterei `scripts/fetch-llama-server.mjs` nem `scripts/mac-distribution-audit.mjs`;
 - o P3 do README/checksum continua deferido nesta rodada, como solicitado.
+
+## Fix round 3 — allowlist fail-closed por ocorrência e contexto
+
+### Objetivo
+
+Corrigir somente o P2 do quality review: a allowlist anterior verificava apenas se
+marcadores existiam em algum lugar do arquivo permitido. A nova regra compara todas
+as ocorrências proibidas encontradas, com token, match, linha, coluna e linha-fonte.
+
+### TDD
+
+#### RED
+
+Sem alterar os scripts internos, troquei primeiro os marcadores permissivos do teste
+por registros de ocorrência exatos. A implementação antiga ainda chamava
+`content.toContain(marker)`, portanto não conseguia satisfazer a nova expectativa.
+
+```bash
+npm run test -- tests/main/release-docs-contract.spec.ts
+```
+
+Resultado RED: 1 falha e 4 testes passando; a falha ocorreu no scanner antigo ao
+tentar comparar o registro exato da ocorrência de `xattr`.
+
+#### GREEN
+
+Depois do RED, mantive a allowlist limitada aos dois caminhos internos e implementei
+no próprio teste:
+
+- extração global de cada token proibido com `matchAll`, linha, coluna e linha completa;
+- comparação fechada (`toEqual`) entre as ocorrências reais e o conjunto esperado;
+- zero ocorrências permitido em cada README/docs/DMG readme público;
+- conjunto vazio obrigatório para qualquer script novo ou não allowlisted;
+- seis marcadores literais exatos do `mac-distribution-audit.mjs`;
+- uma única ocorrência exata do comando interno `xattr` do `fetch-llama-server.mjs`.
+
+A razão das exceções ficou documentada no teste: o primeiro uso prepara sidecar
+internamente antes da assinatura; o segundo são regexes internas para rejeitar DMG
+inseguro. Nenhum deles é instrução para usuário.
+
+### Evidência desta rodada
+
+```bash
+npm run test -- tests/main/release-docs-contract.spec.ts
+```
+
+Resultado: PASS (`5 tests`).
+
+Scan amplo independente, usando os mesmos padrões e o mesmo conjunto exato de
+ocorrências esperadas:
+
+```bash
+node <inline broad release-docs scan with exact occurrence allowlist>
+```
+
+Resultado: PASS (`14 scripts`, `4 public surfaces`).
+
+```bash
+git diff --check
+```
+
+Resultado: PASS.
+
+### Self-review
+
+- qualquer ocorrência extra, mesmo dentro dos dois arquivos allowlisted, agora falha;
+- qualquer token proibido em script novo ou em outro script agora falha;
+- qualquer ocorrência nas quatro superfícies públicas agora falha;
+- a allowlist não confia mais na presença de marcadores espalhados pelo arquivo;
+- não alterei `scripts/fetch-llama-server.mjs` nem `scripts/mac-distribution-audit.mjs`;
+- os P3 de README/checksum continuam explicitamente adiados.
+
+### Concerns
+
+Os registros incluem linha e contexto literal de propósito: uma mudança interna nesses
+dois scripts deve exigir revisão explícita da allowlist. Isso mantém o gate fail-closed.
+Nenhum segredo, credential Apple, tag, release ou arquivo das Tasks 1–4 foi tocado.
+
+### Commit
+
+- Commit: incluído no commit final desta rodada; SHA reportado no handoff.
+
+## Fix round 4 — validação final do P2 e commit
+
+### Causa raiz reproduzida
+
+No `HEAD 436c2d4`, a implementação anterior aceitava qualquer ocorrência
+adicional dentro dos dois caminhos allowlisted porque apenas verificava
+`content.toContain(marker)`. Uma reprodução em memória confirmou que inserir
+`// Open Anyway` em `fetch-llama-server.mjs` ou `// xattr` em
+`mac-distribution-audit.mjs` permanecia verde.
+
+A implementação atual compara o conjunto completo de ocorrências, incluindo
+token, match literal, linha, coluna e texto integral da linha. A mesma
+reprodução confirmou que ambas as injeções são rejeitadas.
+
+### Evidência final
+
+```bash
+npm run test -- tests/main/release-docs-contract.spec.ts
+```
+
+Resultado: PASS (`5 tests`).
+
+Scan amplo independente, com os mesmos padrões e a mesma allowlist de
+ocorrências exatas:
+
+```bash
+node --input-type=module - <<'NODE'
+# scanner inline: quatro superfícies públicas sem ocorrências; 14 scripts
+# comparados contra o conjunto exato esperado; demais scripts exigem conjunto vazio
+NODE
+```
+
+Resultado: PASS (`14 scripts` e `4 public surfaces checked`). O conjunto
+permitido permaneceu restrito a uma chamada `xattr` em
+`fetch-llama-server.mjs` e aos seis marcadores literais de
+`mac-distribution-audit.mjs`; qualquer ocorrência extra ou em outro script
+falhou no scanner.
+
+```bash
+git diff --check
+```
+
+Resultado: PASS.
+
+O diff de implementação permanece restrito a
+`tests/main/release-docs-contract.spec.ts`; o único arquivo adicional alterado
+é este relatório solicitado. README, checksum e os scripts das Tasks 1–4 não
+foram modificados nesta rodada.
+
+### Commit
+
+- Commit: incluído no commit final desta rodada; SHA reportado no handoff.

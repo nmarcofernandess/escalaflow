@@ -9,14 +9,57 @@ const PUBLIC_SURFACE_PATHS = [
   'resources/LEIA ANTES DE INSTALAR.txt',
 ]
 
-const FORBIDDEN_BYPASS_PATTERNS = [
-  /xattr\b/i,
-  /codesign --remove-signature/i,
-  /Abrir Mesmo Assim/i,
-  /Open Anyway/i,
-  /Control-click/i,
-  /bot[aã]o direito.*Abrir/i,
+type ForbiddenBypassPattern = {
+  token: string
+  regex: RegExp
+}
+
+type BypassOccurrence = {
+  token: string
+  match: string
+  line: number
+  column: number
+  lineText: string
+}
+
+const FORBIDDEN_BYPASS_PATTERNS: ForbiddenBypassPattern[] = [
+  { token: 'xattr', regex: /xattr\b/i },
+  // Match both user-facing text and the escaped regex literal in the internal auditor.
+  { token: 'codesign --remove-signature', regex: /codesign(?:\s+|\\s\+)--remove-signature/i },
+  { token: 'Abrir Mesmo Assim', regex: /Abrir Mesmo Assim/i },
+  { token: 'Open Anyway', regex: /Open Anyway/i },
+  // Match both the user-facing spelling and the auditor's optional-hyphen regex literal.
+  { token: 'Control-click', regex: /Control-(?:click|\?click)/i },
+  { token: 'botão direito.*Abrir', regex: /bot[aã]o direito.*Abrir/i },
+  { token: 'Instalar-EscalaFlow.command', regex: /Instalar-EscalaFlow(?:\.|\\\.)command/i },
+  { token: '--publish always', regex: /--publish always/i },
 ]
+
+function collectBypassOccurrences(content: string): BypassOccurrence[] {
+  const lines = content.split(/\r?\n/)
+  const occurrences: BypassOccurrence[] = []
+
+  for (const { token, regex } of FORBIDDEN_BYPASS_PATTERNS) {
+    const globalRegex = new RegExp(regex.source, `${regex.flags}g`)
+
+    for (const match of content.matchAll(globalRegex)) {
+      if (match.index === undefined) continue
+
+      const line = content.slice(0, match.index).split(/\r?\n/).length
+      const lineStart = content.lastIndexOf('\n', match.index - 1) + 1
+
+      occurrences.push({
+        token,
+        match: match[0],
+        line,
+        column: match.index - lineStart + 1,
+        lineText: lines[line - 1] ?? '',
+      })
+    }
+  }
+
+  return occurrences.sort((left, right) => left.line - right.line || left.column - right.column)
+}
 
 function walkFiles(rootDir: string): string[] {
   const files: string[] = []
@@ -37,9 +80,6 @@ function walkFiles(rootDir: string): string[] {
 
 describe('release documentation contract', () => {
   const release = fs.readFileSync('docs/release.md', 'utf8')
-  const surfaces = PUBLIC_SURFACE_PATHS
-    .map((path) => fs.readFileSync(path, 'utf8'))
-    .join('\n')
 
   it('documents Developer ID and the one-time legacy reinstall', () => {
     expect(release).toContain('Developer ID Application')
@@ -69,40 +109,62 @@ describe('release documentation contract', () => {
   })
 
   it('keeps bypass tokens out of public surfaces and any unexpected script', () => {
-    expect(surfaces).not.toMatch(
-      /xattr\b|codesign --remove-signature|Abrir Mesmo Assim|Open Anyway|Control-click|bot[aã]o direito.*Abrir/i,
-    )
+    for (const publicSurfacePath of PUBLIC_SURFACE_PATHS) {
+      const content = fs.readFileSync(publicSurfacePath, 'utf8')
+      expect(collectBypassOccurrences(content), publicSurfacePath).toEqual([])
+    }
 
-    // Explicit allowlist: these are internal implementation contexts, not user instructions.
-    const allowedScriptContexts = new Map([
+    // Fail-closed allowlist: fetch-llama-server uses one xattr command internally for
+    // best-effort sidecar preparation before signing; mac-distribution-audit keeps the
+    // six literal regex markers that reject unsafe DMG readmes. Neither is user guidance.
+    // Every other occurrence in any script, including an extra occurrence in an allowlisted
+    // file, is a contract failure.
+    const allowedScriptOccurrences = new Map<string, BypassOccurrence[]>([
       [
         'scripts/fetch-llama-server.mjs',
-        ["spawnSync('xattr'", 'remove quarantine', 'best-effort'],
+        [{
+          token: 'xattr',
+          line: 140,
+          column: 14,
+          match: 'xattr',
+          lineText: "  spawnSync('xattr', ['-dr', 'com.apple.quarantine', DEST_DIR], { stdio: 'ignore' })",
+        }],
       ],
       [
         'scripts/mac-distribution-audit.mjs',
-        ['DMG_BYPASS_MARKERS', 'Instalar-EscalaFlow\\.command', 'verifyMountedReadme', 'for (const marker of DMG_BYPASS_MARKERS)'],
+        [
+          { token: 'xattr', line: 23, column: 4, match: 'xattr', lineText: '  /xattr\\b/i,' },
+          {
+            token: 'codesign --remove-signature',
+            line: 24,
+            column: 4,
+            match: 'codesign\\s+--remove-signature',
+            lineText: '  /codesign\\s+--remove-signature/i,',
+          },
+          { token: 'Open Anyway', line: 25, column: 4, match: 'Open Anyway', lineText: '  /Open Anyway/i,' },
+          { token: 'Abrir Mesmo Assim', line: 26, column: 4, match: 'Abrir Mesmo Assim', lineText: '  /Abrir Mesmo Assim/i,' },
+          { token: 'Control-click', line: 27, column: 4, match: 'Control-?click', lineText: '  /Control-?click/i,' },
+          {
+            token: 'Instalar-EscalaFlow.command',
+            line: 28,
+            column: 4,
+            match: 'Instalar-EscalaFlow\\.command',
+            lineText: '  /Instalar-EscalaFlow\\.command/i,',
+          },
+        ],
       ],
     ])
+
+    for (const [allowlistedPath] of allowedScriptOccurrences) {
+      expect(fs.existsSync(allowlistedPath), allowlistedPath).toBe(true)
+    }
 
     for (const scriptPath of walkFiles('scripts')) {
       const normalized = scriptPath.split(path.sep).join(path.posix.sep)
       const content = fs.readFileSync(scriptPath, 'utf8')
-      const hasForbiddenToken = FORBIDDEN_BYPASS_PATTERNS.some((pattern) => pattern.test(content))
+      const expectedOccurrences = allowedScriptOccurrences.get(normalized) ?? []
 
-      if (!hasForbiddenToken) {
-        continue
-      }
-
-      const allowedContext = allowedScriptContexts.get(normalized)
-
-      if (!allowedContext) {
-        throw new Error(`unexpected bypass token in script: ${normalized}`)
-      }
-
-      for (const marker of allowedContext) {
-        expect(content).toContain(marker)
-      }
+      expect(collectBypassOccurrences(content), normalized).toEqual(expectedOccurrences)
     }
   })
 
