@@ -61,7 +61,11 @@ function addRequiredMachOFixtures(appPath: string): void {
   }
 }
 
-function makeSignedAppCommandMock(appPath: string, architectures: string): ReturnType<typeof vi.fn> {
+function makeSignedAppCommandMock(
+  appPath: string,
+  architectures: string,
+  failingNestedPath?: string,
+): ReturnType<typeof vi.fn> {
   const machOPaths = new Set(REQUIRED_MACH_O_PATHS.map((relativePath) => path.join(appPath, relativePath)))
   const result = (combined: string) => ({ stdout: '', stderr: '', combined })
 
@@ -69,6 +73,10 @@ function makeSignedAppCommandMock(appPath: string, architectures: string): Retur
     const subject = args.at(-1) ?? ''
 
     if (command === 'codesign' && args[0] === '--verify') {
+      if (args[1] === '--strict' && subject === failingNestedPath) {
+        throw new Error(`nested code signature invalid: ${subject}`)
+      }
+
       return result('')
     }
 
@@ -338,8 +346,59 @@ Timestamp=Aug 9, 2026 at 12:00:00
     expect(report.machORecords.map((record) => record.relativePath)).toEqual(
       expect.arrayContaining(REQUIRED_MACH_O_PATHS),
     )
+
+    const strictVerifyCalls = runCommand.mock.calls.filter(
+      ([command, args]) => command === 'codesign' && args[0] === '--verify',
+    )
+    expect(strictVerifyCalls).toHaveLength(REQUIRED_MACH_O_PATHS.length + 1)
+    expect(strictVerifyCalls[0]).toEqual([
+      'codesign',
+      ['--verify', '--deep', '--strict', '--verbose=2', appPath],
+    ])
+    expect(strictVerifyCalls.slice(1).map(([, args]) => args)).toEqual(
+      expect.arrayContaining(
+        REQUIRED_MACH_O_PATHS.map((relativePath) => [
+          '--verify',
+          '--strict',
+          '--verbose=2',
+          path.join(appPath, relativePath),
+        ]),
+      ),
+    )
+
+    const lipoCalls = runCommand.mock.calls.filter(([command]) => command === 'lipo')
+    expect(lipoCalls).toHaveLength(REQUIRED_MACH_O_PATHS.length)
+    expect(lipoCalls.map(([, args]) => args)).toEqual(
+      expect.arrayContaining(
+        REQUIRED_MACH_O_PATHS.map((relativePath) => [
+          '-archs',
+          path.join(appPath, relativePath),
+        ]),
+      ),
+    )
+
     expect(runCommand).toHaveBeenCalledWith('xcrun', ['stapler', 'validate', appPath])
     expect(runCommand).toHaveBeenCalledWith('spctl', ['--assess', '--verbose=4', '--type', 'exec', appPath])
+  })
+
+  it('rejects a required nested Mach-O when strict codesign verification fails', () => {
+    const rootDir = makeTrackedTempDir('mac-audit-signed-app-nested-failure')
+    tempDirs.push(rootDir)
+
+    const appPath = makeApp(rootDir)
+    addRequiredMachOFixtures(appPath)
+    const failingNestedPath = path.join(appPath, REQUIRED_MACH_O_PATHS[0])
+    const runCommand = makeSignedAppCommandMock(appPath, 'arm64', failingNestedPath)
+
+    expect(() =>
+      verifySignedApp({
+        appPath,
+        teamId: TEAM_ID,
+        version: '1.12.1',
+        arch: 'arm64',
+        runCommand,
+      }),
+    ).toThrow(/invalid code signature/)
   })
 
   it('rejects debug entitlement on the outer app', () => {
@@ -678,6 +737,7 @@ Timestamp=Aug 9, 2026 at 12:00:00
     writeFile(path.join(distDir, 'EscalaFlow-1.12.1-arm64.zip.blockmap'), 'zip-blockmap')
     writeFile(path.join(distDir, 'signed-mac.yml'), makeSignedMacYml('1.12.1', zipName, zipSha512))
 
+    const createdTempDirs: string[] = []
     const verifySignedAppFn = vi.fn(async ({ appPath: candidatePath }: { appPath: string }) => ({
       appPath: candidatePath,
       machORecords: [],
@@ -713,6 +773,12 @@ Timestamp=Aug 9, 2026 at 12:00:00
       arch: 'arm64',
       runCommand,
       verifySignedAppFn,
+      createTempDir: (label: string) => {
+        const tempDir = path.join(rootDir, `temp-${label}-${createdTempDirs.length + 1}`)
+        createdTempDirs.push(tempDir)
+        fs.mkdirSync(tempDir, { recursive: true })
+        return tempDir
+      },
     })
 
     expect(summary.artifactNames).toMatchObject({
@@ -720,7 +786,31 @@ Timestamp=Aug 9, 2026 at 12:00:00
       zip: 'EscalaFlow-1.12.1-arm64.zip',
       signedMacYml: 'signed-mac.yml',
     })
+
+    expect(createdTempDirs).toHaveLength(2)
     expect(verifySignedAppFn).toHaveBeenCalledTimes(3)
-    expect(verifySignedAppFn.mock.calls.map(([call]) => call.appPath.endsWith('EscalaFlow.app'))).toEqual([true, true, true])
+    expect(verifySignedAppFn.mock.calls.map(([call]) => call.appPath)).toEqual([
+      appPath,
+      path.join(createdTempDirs[0], 'EscalaFlow.app'),
+      path.join(createdTempDirs[1], 'EscalaFlow.app'),
+    ])
+    expect(runCommand.mock.calls).toEqual([
+      [
+        'ditto',
+        ['-xk', path.join(distDir, zipName), createdTempDirs[0]],
+      ],
+      [
+        'hdiutil',
+        [
+          'attach',
+          path.join(distDir, 'EscalaFlow-1.12.1-arm64.dmg'),
+          '-nobrowse',
+          '-readonly',
+          '-mountpoint',
+          createdTempDirs[1],
+        ],
+      ],
+      ['hdiutil', ['detach', createdTempDirs[1]]],
+    ])
   })
 })

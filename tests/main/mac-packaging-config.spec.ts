@@ -108,7 +108,13 @@ describe('macOS packaging trust contract', () => {
       projectDir,
       'node_modules/onnxruntime-node/bin/napi-v3/darwin/x64/onnxruntime_binding.node',
     )
+    const darwinDir = path.dirname(path.dirname(arm64Binding))
+    const arm64Dir = path.dirname(arm64Binding)
+    const x64Dir = path.dirname(x64Binding)
 
+    expect(fs.existsSync(darwinDir)).toBe(true)
+    expect(fs.existsSync(arm64Dir)).toBe(true)
+    expect(fs.existsSync(x64Dir)).toBe(true)
     expect(fs.existsSync(arm64Binding)).toBe(true)
     expect(fs.existsSync(x64Binding)).toBe(true)
 
@@ -127,6 +133,10 @@ describe('macOS packaging trust contract', () => {
     )
     const filter = matcher.createFilter()
 
+    expect(filter(darwinDir, fs.statSync(darwinDir))).toBe(true)
+    expect(filter(arm64Dir, fs.statSync(arm64Dir))).toBe(true)
+    // The installed FileMatcher applies the `${/*}` exclusion to the x64 directory itself.
+    expect(filter(x64Dir, fs.statSync(x64Dir))).toBe(false)
     expect(filter(arm64Binding, fs.statSync(arm64Binding))).toBe(true)
     expect(filter(x64Binding, fs.statSync(x64Binding))).toBe(false)
 
@@ -141,6 +151,9 @@ describe('macOS packaging trust contract', () => {
     expect(nonMacMatcher.isEmpty()).toBe(true)
     const nonMacFilter = nonMacMatcher.isEmpty() ? () => true : nonMacMatcher.createFilter()
 
+    expect(nonMacFilter(darwinDir, fs.statSync(darwinDir))).toBe(true)
+    expect(nonMacFilter(arm64Dir, fs.statSync(arm64Dir))).toBe(true)
+    expect(nonMacFilter(x64Dir, fs.statSync(x64Dir))).toBe(true)
     expect(nonMacFilter(arm64Binding, fs.statSync(arm64Binding))).toBe(true)
     expect(nonMacFilter(x64Binding, fs.statSync(x64Binding))).toBe(true)
   })
