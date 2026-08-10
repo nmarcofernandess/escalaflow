@@ -156,7 +156,9 @@ async function sleep(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function waitForHealth(state: RuntimeState, timeoutMs = 90_000): Promise<void> {
+export const LLAMA_SERVER_HEALTH_TIMEOUT_MS = 5 * 60_000
+
+export async function waitForHealth(state: RuntimeState, timeoutMs = LLAMA_SERVER_HEALTH_TIMEOUT_MS): Promise<void> {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
     if (state.process.exitCode !== null) {
@@ -233,8 +235,13 @@ async function startRuntime(modelId: string, modelPath: string): Promise<Runtime
     })
 
     runtimeState = state
-    await Promise.race([waitForHealth(state), spawnError])
-    return state
+    try {
+      await Promise.race([waitForHealth(state), spawnError])
+      return state
+    } catch (error) {
+      if (runtimeState === state) await stopLocalLlamaServer()
+      throw error
+    }
   })()
 
   try {
