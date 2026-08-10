@@ -39,6 +39,13 @@ function send(
   contents.send(channel, payload)
 }
 
+function checkForUpdatesSafely(updater: UpdaterLike): void {
+  void updater.checkForUpdates().catch((value) => {
+    const message = value instanceof Error ? value.message : String(value)
+    updaterLog('Check failed:', message)
+  })
+}
+
 export function setupAutoUpdater(options: SetupAutoUpdaterOptions): void {
   const schedule = options.schedule ?? setTimeout
   const resolveUpdater = () => options.updater ?? getDefaultUpdater()
@@ -72,6 +79,6 @@ export function setupAutoUpdater(options: SetupAutoUpdaterOptions): void {
   })
 
   schedule(() => {
-    void updater.checkForUpdates()
+    checkForUpdatesSafely(updater)
   }, 5_000)
 }

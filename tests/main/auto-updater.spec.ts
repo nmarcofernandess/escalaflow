@@ -144,6 +144,20 @@ describe('setupAutoUpdater', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
   })
 
+  it('handles a rejected scheduled check without an unhandled promise', async () => {
+    const { schedule, updater } = harness()
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    updater.checkForUpdates.mockRejectedValueOnce(new Error('metadata unavailable'))
+
+    const scheduledCheck = schedule.mock.calls[0]?.[0]
+    expect(scheduledCheck).toBeTypeOf('function')
+    await scheduledCheck?.()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(logSpy).toHaveBeenCalledWith('[AUTO-UPDATER]', 'Check failed:', 'metadata unavailable')
+    logSpy.mockRestore()
+  })
+
   it('installs only through quitAndInstall', () => {
     const { handlers, updater } = harness()
     handlers.get('update:install')?.()
