@@ -42,6 +42,8 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  files:
+    - '!node_modules/onnxruntime-node/bin/napi-v3/darwin/x64${/*}'
   binaries:
     - Contents/Resources/solver-bin/escalaflow-solver
     - Contents/Resources/stt-bin/escalaflow-stt

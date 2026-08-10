@@ -18,6 +18,7 @@ interface PublishConfig {
 }
 
 interface PlatformConfig {
+  files?: string[]
   forceCodeSigning?: boolean
   type?: string
   hardenedRuntime?: boolean
@@ -78,6 +79,15 @@ describe('macOS packaging trust contract', () => {
       'Contents/Resources/mcp-bin/escalaflow-mcp',
       'Contents/Resources/llama.cpp/darwin-arm64/llama-server',
     ])
+  })
+
+  it('prunes only the unused ONNX Darwin x64 native subtree', () => {
+    expect(mac?.files).toEqual([
+      '!node_modules/onnxruntime-node/bin/napi-v3/darwin/x64${/*}',
+    ])
+    expect(mac?.files).not.toContain(
+      '!node_modules/onnxruntime-node/bin/napi-v3/darwin/arm64${/*}',
+    )
   })
 
   it('isolates signed Mac updates without moving Windows off latest', () => {
