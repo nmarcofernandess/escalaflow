@@ -108,7 +108,6 @@ async function bootstrap(): Promise<void> {
     registerIpcMain(router)
     createWindow(app, BrowserWindow, shell)
     setupAutoUpdater({
-      app,
       ipcMain,
       getMainWindow: () => mainWindow,
       isDevelopment: Boolean(process.env.ELECTRON_RENDERER_URL),

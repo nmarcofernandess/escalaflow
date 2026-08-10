@@ -1,4 +1,4 @@
-import type { App, BrowserWindow, IpcMain } from 'electron'
+import type { BrowserWindow, IpcMain } from 'electron'
 import pkg from 'electron-updater'
 
 export interface UpdaterLike {
@@ -10,7 +10,6 @@ export interface UpdaterLike {
 }
 
 export interface SetupAutoUpdaterOptions {
-  app: Pick<App, 'getVersion'>
   ipcMain: Pick<IpcMain, 'handle'>
   getMainWindow: () => BrowserWindow | null
   isDevelopment: boolean
@@ -44,7 +43,8 @@ export function setupAutoUpdater(options: SetupAutoUpdaterOptions): void {
   const schedule = options.schedule ?? setTimeout
   const resolveUpdater = () => options.updater ?? getDefaultUpdater()
 
-  options.ipcMain.handle('app:version', () => options.app.getVersion())
+  // `app:version` belongs to the tipc router. Keeping version ownership there
+  // avoids Electron's one-handler-per-channel collision during boot.
   options.ipcMain.handle('update:check', () => {
     if (options.isDevelopment) return
     return resolveUpdater().checkForUpdates()

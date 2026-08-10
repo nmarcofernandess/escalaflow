@@ -35,7 +35,6 @@ function harness(isDevelopment = false) {
   const window = { webContents: { send } } as unknown as BrowserWindow
 
   setupAutoUpdater({
-    app: { getVersion: () => '1.12.1' },
     ipcMain,
     getMainWindow: () => window,
     isDevelopment,
@@ -79,14 +78,12 @@ describe('setupAutoUpdater', () => {
     }
 
     setupWithoutInjectedUpdater({
-      app: { getVersion: () => '1.12.1' },
       ipcMain,
       getMainWindow: () => null,
       isDevelopment: true,
     })
 
     expect(materialized).toBe(0)
-    expect(handlers.has('app:version')).toBe(true)
     expect(handlers.has('update:check')).toBe(true)
     expect(handlers.has('update:install')).toBe(true)
 
@@ -102,12 +99,12 @@ describe('setupAutoUpdater', () => {
     vi.resetModules()
   })
 
-  it('registers version and updater IPC handlers in development and production', async () => {
+  it('registers only updater IPC handlers in development and production', async () => {
     const production = harness()
     const development = harness(true)
 
-    expect(await production.handlers.get('app:version')?.()).toBe('1.12.1')
-    expect(await development.handlers.get('app:version')?.()).toBe('1.12.1')
+    expect(production.handlers.has('app:version')).toBe(false)
+    expect(development.handlers.has('app:version')).toBe(false)
     expect(production.handlers.has('update:check')).toBe(true)
     expect(production.handlers.has('update:install')).toBe(true)
     expect(development.handlers.has('update:check')).toBe(true)
