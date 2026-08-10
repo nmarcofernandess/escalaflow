@@ -2,6 +2,8 @@
 
 Este documento descreve a cadeia confiável de distribuição do EscalaFlow. Ele não é um manual de bypass.
 
+O panorama completo da distribuição Apple, incluindo o updater e o caminho separado para a Mac App Store, está em [`DISTRIBUICAO-MACOS-APPLE.md`](DISTRIBUICAO-MACOS-APPLE.md). Aqui ficam os contratos de credenciais, entitlements e assinatura por plataforma.
+
 ## Estado atual do produto
 
 Para macOS, a superfície oficial de distribuição direta passa a ser:
@@ -26,6 +28,8 @@ Para distribuir sem alertas de confiança em releases oficiais:
 5. artefato auditado com o Team ID esperado
 
 `Developer ID Installer` só entra se existir PKG. Não é o caso atual.
+
+Os certificados da Mac App Store são outra família. Uma futura variante `mas` precisará de Apple Distribution/Mac App Distribution, Mac Installer Distribution e provisioning profile; o `Developer ID Application` atual continua pertencendo à distribuição direta fora da loja.
 
 ## Entitlements desta fase
 

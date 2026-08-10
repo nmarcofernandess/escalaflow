@@ -2,6 +2,8 @@
 
 Este runbook cobre apenas a cadeia oficial de distribuição direta do EscalaFlow no GitHub.
 
+Para a explicação conceitual, benefícios, limites e diferença em relação à Mac App Store, consulte [`DISTRIBUICAO-MACOS-APPLE.md`](DISTRIBUICAO-MACOS-APPLE.md). Este arquivo permanece como o procedimento operacional por release.
+
 - macOS: `Developer ID Application` + Hardened Runtime + notarização + ticket stapled
 - Windows: release atual continua no canal padrão `latest.yml`
 - publicação: um único draft por tag, validado antes de ficar público
@@ -123,6 +125,12 @@ Contratos importantes:
 - `build-windows` continua produzindo `latest.yml`
 - `release-draft` roda uma única vez e publica um draft com inventário exato
 
+### Apple participa de todo release macOS
+
+Cada versão produz bytes novos e precisa de uma nova assinatura e submissão ao serviço de notarização. O GitHub Actions automatiza essa conversa usando as credenciais Apple: ele não certifica nem substitui a Apple.
+
+Não é necessário entrar no portal a cada tag. O job `build-mac` assina, envia o build à Apple, anexa o ticket e roda a auditoria. Se qualquer etapa falhar, `release-draft` não executa. Essa notarização automatizada não é App Review e não publica o aplicativo na Mac App Store.
+
 ## Inventário público exato
 
 Todo release público aprovado deve conter exatamente estes oito assets:
@@ -207,6 +215,8 @@ DMG instalado v1.12.1 -> auto-update assinado -> v1.12.2
 ```
 
 `v1.12.2` deve ser um release mínimo, preferencialmente só de versão/notas, para provar a cadeia sem misturar defeitos novos.
+
+Essa prova foi concluída em cópia isolada e está registrada em [`prova-release-macos-v1.12.1-v1.12.2.md`](prova-release-macos-v1.12.1-v1.12.2.md).
 
 ## Regras de canal de atualização
 

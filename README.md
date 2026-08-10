@@ -1,6 +1,6 @@
 # EscalaFlow
 
-App desktop offline para geração automática de escalas de trabalho em varejo, com motor de compliance CLT/CCT e assistente IA integrado para gestores de RH não técnicos.
+App desktop offline-first para geração automática de escalas de trabalho em varejo, com motor de compliance CLT/CCT e assistente IA integrado para gestores de RH não técnicos.
 
 ---
 
@@ -23,7 +23,7 @@ App desktop offline para geração automática de escalas de trabalho em varejo,
 - Tour guiado de 12 passos (engine canônica OnboardingTour + ramo RH)
 - Dark mode 100% funcional
 - 13 páginas, 90+ IPC handlers, 7 formulários com validação Zod
-- **100% offline** — sem login, sem internet, sem servidor
+- **Núcleo offline** — cadastro, banco e geração de escalas funcionam sem login ou servidor; IA cloud, downloads de modelos e atualização exigem internet
 
 ---
 
@@ -96,7 +96,7 @@ Se o macOS acusar corrupção, desenvolvedor não identificado ou falha de confi
 
 Builds locais continuam servindo para desenvolvimento interno, mas não são a superfície de instalação do usuário final.
 
-Consulte o detalhe operacional em [docs/release.md](docs/release.md) e o contexto de assinatura em [docs/certificados.md](docs/certificados.md).
+Para entender o que a Apple valida, como o updater permanece assinado e o que ainda falta para a Mac App Store, leia [docs/DISTRIBUICAO-MACOS-APPLE.md](docs/DISTRIBUICAO-MACOS-APPLE.md). O ritual operacional fica em [docs/release.md](docs/release.md), e credenciais/Windows em [docs/certificados.md](docs/certificados.md).
 
 ---
 
@@ -143,7 +143,8 @@ npm run db:reset         # deleta e recria banco (usar só quando explicitamente
 # (futuros scripts db:seed* devem ser sempre opt-in e nunca acoplados a dev/CLI)
 
 # Distribuição (local)
-npm run dist:mac         # gera .dmg (macOS)
+npm run release:mac      # candidate Mac completo, assinado/notarizado, sem upload
+npm run dist:mac         # packaging auxiliar; requer out/sidecars já preparados
 npm run dist:win         # gera .exe installer (Windows)
 npm run dist:linux       # gera .AppImage (Linux)
 ```
@@ -224,35 +225,46 @@ Esse teste e mais lento que o smoke (`~3 min` no ambiente local), entao ele exis
 
 ## CI/CD — Releases Automatizados
 
-O projeto usa **GitHub Actions** para build cross-platform. Cada push de tag `v*` dispara builds paralelos no macOS e Windows.
+O projeto usa **GitHub Actions** para build cross-platform. Cada push de tag `v*` dispara builds paralelos no macOS e Windows e cria um único draft.
 
 ### Como lançar uma versão
 
 ```bash
-# 1. Bump version em package.json
-# 2. Commit + tag + push
-git add package.json && git commit -m "chore: bump v1.2.1"
-git tag v1.2.1 && git push && git push --tags
+# 1. Bump sem tag automática; package.json e package-lock.json devem convergir
+npm version 1.2.1 --no-git-tag-version
+npm pkg get version
 
-# 3. Esperar ~15 min (GitHub Actions compila Mac + Windows)
-# 4. Verificar assets no draft e publicar manualmente
+# 2. Commit + revisão/merge antes da tag
+git add package.json package-lock.json
+git commit -m "chore: bump version to v1.2.1"
+# abrir/revisar/mergear a PR e confirmar o SHA em main
+
+# 3. Criar a tag no SHA revisado
+git tag v1.2.1
+git push origin v1.2.1
+
+# 4. Esperar o workflow; verificar os oito assets no draft e publicar manualmente
 ```
+
+O procedimento completo e as regras de recuperação estão em [docs/release.md](docs/release.md).
 
 ### O que acontece no CI
 
 ```
 Tag v* pushada → GitHub Actions
-  ├─ macOS runner:  Python 3.12 → PyInstaller → solver nativo → DMG
+  ├─ macOS arm64: sidecars nativos → Developer ID → notarização → auditoria → DMG/ZIP
   └─ Windows runner: Python 3.12 → PyInstaller → solver.exe nativo → NSIS installer
        ↓
-  Draft Release com artefatos prontos para verificacao
+  Inventário exato → Draft Release com artefatos prontos para verificação
 ```
 
 O solver Python é compilado **nativamente em cada OS** — sem cross-compilation, sem binários incompatíveis.
 
+Todo novo build macOS é assinado e submetido novamente à Apple pelo CI. O GitHub automatiza esse processo, mas a aceitação da notarização vem da Apple.
+
 ### Auto-Update
 
-O app verifica atualizações ao iniciar (5s delay). Se há versão nova, baixa em background e mostra botão "Reiniciar e Instalar" nas Configurações.
+O app verifica atualizações ao iniciar (5s delay). Se há versão nova, baixa em background e mostra botão "Reiniciar e Instalar" nas Configurações. Mac usa `signed-mac.yml`; Windows usa `latest.yml`.
 
 ---
 
@@ -417,6 +429,8 @@ O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui 
 
 | Arquivo | Conteúdo |
 |---------|----------|
+| `docs/README.md` | Índice e hierarquia das fontes de documentação |
+| `docs/DISTRIBUICAO-MACOS-APPLE.md` | Panorama canônico da assinatura Apple, auto-update e caminho para a Mac App Store |
 | `.claude/CLAUDE.md` | Instruções para Claude Code |
 | `docs/motor-regras.md` | RFC canônico do motor (20 HARD, SOFT, antipatterns) |
 | `docs/motor-spec.md` | Rascunho histórico do Motor v3; use `motor-regras.md` como fonte atual |

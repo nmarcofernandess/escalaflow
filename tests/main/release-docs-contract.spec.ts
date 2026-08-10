@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest'
 
 const PUBLIC_SURFACE_PATHS = [
   'README.md',
+  'docs/README.md',
+  'docs/DISTRIBUICAO-MACOS-APPLE.md',
+  'docs/prova-release-macos-v1.12.1-v1.12.2.md',
   'docs/release.md',
   'docs/certificados.md',
   'resources/LEIA ANTES DE INSTALAR.txt',
@@ -80,6 +83,19 @@ function walkFiles(rootDir: string): string[] {
 
 describe('release documentation contract', () => {
   const release = fs.readFileSync('docs/release.md', 'utf8')
+  const appleDistribution = fs.readFileSync('docs/DISTRIBUICAO-MACOS-APPLE.md', 'utf8')
+
+  it('keeps one canonical explanation of Apple distribution and the MAS boundary', () => {
+    expect(appleDistribution).toContain('v1.12.1')
+    expect(appleDistribution).toContain('v1.12.2')
+    expect(appleDistribution).toContain('todo novo build macOS')
+    expect(appleDistribution).toContain('GitHub não “dá o certificado da Apple”')
+    expect(appleDistribution).toContain('não é o App Review')
+    expect(appleDistribution).toContain('process.mas')
+    expect(appleDistribution).toContain('electron-builder --mac mas')
+    expect(appleDistribution).toContain('App Sandbox obrigatório')
+    expect(appleDistribution).toContain('Paid Apps Agreement')
+  })
 
   it('documents Developer ID and the one-time legacy reinstall', () => {
     expect(release).toContain('Developer ID Application')
