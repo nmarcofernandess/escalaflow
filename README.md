@@ -84,16 +84,19 @@ O banco PGlite (Postgres WASM) é criado automaticamente no primeiro run com see
 
 ---
 
-## Testar builds sem assinatura (ad-hoc / dev)
+## Distribuição confiável no macOS
 
-Builds locais e alguns de CI são **ad-hoc** (sem certificado Apple/Windows de produção).
+O caminho oficial de instalação do EscalaFlow no macOS é o release assinado com `Developer ID Application`, notarizado e entregue por DMG.
 
-- **macOS (Gatekeeper)**: `xattr -dr com.apple.quarantine "/Applications/EscalaFlow.app"` (ou `-cr ... && open`) ou botão direito → Abrir na primeira vez. (Veja o `LEIA ANTES DE INSTALAR.txt` no DMG para o comando exato + alternativa via Ajustes do Sistema.)
-- **Windows (SmartScreen)**: "More info → Run anyway" ou instalar como admin.
+- Abra o `.dmg` oficial do release
+- Arraste o EscalaFlow para `Applications`
+- Abra o app normalmente
 
-Consulte o guia completo: [docs/certificados.md](docs/certificados.md) (custos Apple $99/ano, OV/EV Windows + Azure Artifact Signing alt 2026, passos de notarização, entitlements já presentes no projeto, bypasses exatos).
+Se o macOS acusar corrupção, desenvolvedor não identificado ou falha de confiança em um release oficial, pare a instalação, confira a origem do download e o checksum do asset e trate como incidente de distribuição. O produto não usa limpeza manual de quarentena nem override do Gatekeeper como caminho suportado.
 
-> Link também em docs/release.md.
+Builds locais continuam servindo para desenvolvimento interno, mas não são a superfície de instalação do usuário final.
+
+Consulte o detalhe operacional em [docs/release.md](docs/release.md) e o contexto de assinatura em [docs/certificados.md](docs/certificados.md).
 
 ---
 
@@ -406,7 +409,7 @@ O import aceita `.zip` (novo) e `.json` (legado). Ao restaurar, **só substitui 
 - **Typecheck falha:** `npm run typecheck` mostra erros separados por node e web
 - **Motor demora:** o solver para sozinho quando a cobertura estabiliza (30s sem melhora — patience com watchdog de platô); o teto absoluto é 1h e a geração pode ser cancelada pela UI. Demora longa geralmente indica cenário muito apertado (demanda alta vs. equipe pequena)
 - **Dark mode quebrado:** Cores usam tokens semânticos de `cores.ts`. Se adicionou cor nova, inclua `dark:` variant
-- **Mac "corrompido"/Gatekeeper:** Abra o `LEIA ANTES DE INSTALAR.txt` dentro do `.dmg` e rode o comando indicado no Terminal
+- **Mac bloqueou um release oficial:** pare, confira o asset oficial baixado, valide checksum/versão e trate como falha de distribuição; o `LEIA ANTES DE INSTALAR.txt` do DMG não orienta bypass manual
 
 ---
 

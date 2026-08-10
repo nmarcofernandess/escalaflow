@@ -1,284 +1,265 @@
-# Como Fazer um Release do EscalaFlow
+# Como fazer um release confiável do EscalaFlow
 
-> Guia completo: do zero ao `.dmg` nas mãos dos usuários com auto-update funcionando.
+Este runbook cobre apenas a cadeia oficial de distribuição direta do EscalaFlow no GitHub.
 
----
+- macOS: `Developer ID Application` + Hardened Runtime + notarização + ticket stapled
+- Windows: release atual continua no canal padrão `latest.yml`
+- publicação: um único draft por tag, validado antes de ficar público
 
-## Como funciona o sistema de atualização
+## Fronteira de migração que não pode ser quebrada
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   FLUXO DE UPDATE                   │
-│                                                     │
-│  Dev faz release no GitHub                           │
-│        ↓                                            │
-│  GitHub hospeda os arquivos (.dmg, .exe, .yml)      │
-│        ↓                                            │
-│  App abre no computador do usuário                  │
-│        ↓                                            │
-│  App checa GitHub (após 5 segundos)                 │
-│        ↓                                            │
-│  Lê latest-mac.yml / latest.yml do release          │
-│        ↓                                            │
-│  "Tem versão nova?" ──────── Não → fica quieto      │
-│        ↓ Sim                                        │
-│  Baixa em background silenciosamente                │
-│        ↓                                            │
-│  Card "Atualizações" (em Configurações) acende      │
-│        ↓                                            │
-│  Usuário clica "Reiniciar e instalar"               │
-│        ↓                                            │
-│  App reinicia com a versão nova instalada           │
-└─────────────────────────────────────────────────────┘
-```
+O `v1.12.0` público ainda usa um updater antigo que baixa ZIP, limpa quarentena e remove assinatura antes do relaunch. Por isso:
 
-O usuário **não precisa fazer nada** — o sistema faz o download sozinho. Só clicar um botão no final.
+- `v1.12.0 -> v1.12.1` não é uma migração confiável por auto-update
+- todo usuário já instalado no `v1.12.0` precisa fazer uma reinstalação única via DMG assinado `v1.12.1`
+- releases macOS `v1.12.1+` publicam `signed-mac.yml`
+- releases macOS `v1.12.1+` não podem publicar `latest-mac.yml`
+- o updater padrão só é aceito depois da prova assinada `v1.12.1 → v1.12.2`
 
----
+Resumo operacional:
 
-## Peças que fazem isso funcionar
+| Etapa | Caminho aceito |
+|---|---|
+| legado | `v1.12.0` fica congelado e nunca vira prova verde |
+| bootstrap confiável | usuário baixa DMG `v1.12.1`, arrasta para Applications e abre normalmente |
+| updater confiável | app instalado por DMG `v1.12.1` recebe `v1.12.2` pelo canal `signed-mac.yml` |
 
-| Peça | Onde | O que faz |
-|------|------|-----------|
-| `electron-updater` | `package.json` (dep) | Biblioteca que gerencia o fluxo de update |
-| `setupAutoUpdater()` | `src/main/index.ts` | Lógica do main process: checa, baixa, instala |
-| Card "Atualizações" | `ConfiguracoesPagina.tsx` | UI que mostra status e botão de instalar |
-| `publish` no builder | `electron-builder.yml` | Diz pra onde publicar (GitHub: nmarcofernandess/escalaflow) |
-| **`latest-mac.yml`** | GitHub Release | **CRITICO** — arquivo que o app lê pra saber a versão mais recente (Mac) |
-| **`latest.yml`** | GitHub Release | **CRITICO** — idem para Windows |
+## Pré-requisitos de assinatura e notarização
 
-### O que quebra sem os YAMLs
+Antes de iniciar tag ou release:
 
-Sem `latest-mac.yml` / `latest.yml` no release, o `electron-updater`:
-- Retorna erro ao verificar atualizações
-- Nunca detecta versão nova
-- Mostra "Erro ao verificar atualizações" na UI
+1. certificado `Developer ID Application` disponível
+2. chave `.p12` guardada fora do repositório
+3. chave `.p8` do notary guardada fora do repositório
+4. operador marcou `precondicoes Apple prontas`
+5. a branch já passou por PR/merge antes da tag
 
-**Esses arquivos são gerados automaticamente pelo `electron-builder`** durante o build. Se fizer upload manual dos assets (.dmg/.exe), precisa gerar e subir os YAMLs também.
+### Segredos e variável obrigatórios
 
----
+| Nome | Tipo | Uso |
+|---|---|---|
+| `MAC_CSC_LINK` | secret | base64 do `.p12` |
+| `MAC_CSC_KEY_PASSWORD` | secret | senha do `.p12` |
+| `APPLE_API_KEY_BASE64` | secret | base64 do conteúdo `.p8` |
+| `APPLE_API_KEY_ID` | secret | Key ID do App Store Connect |
+| `APPLE_API_ISSUER` | secret | Issuer UUID |
+| `APPLE_TEAM_ID` | variable | Team ID esperado pelo auditor |
 
-## Ritual de Release
+Aviso crítico: em `electron-builder 25.1.8`, `APPLE_API_KEY` não recebe base64. Ele precisa apontar para o caminho local do `.p8` já decodificado no runner. O workflow decodifica `APPLE_API_KEY_BASE64`, grava um arquivo temporário com `0600` e exporta `APPLE_API_KEY` como path.
 
-### Passo 1 — Bump version no `package.json`
+## Build local seguro
+
+O build local aceito para validação do pipeline é:
 
 ```bash
-# Verificar versão atual
-grep '"version"' package.json
-
-# Editar para a nova versão
+npm run release:mac
 ```
 
-Regra de versionamento:
-- `1.0.0 → 1.0.1` — bugfix
-- `1.0.0 → 1.1.0` — feature nova
-- `1.0.0 → 2.0.0` — breaking change / redesign grande
+Esse script precisa permanecer no modo seguro:
 
-### Passo 2 — Commit, tag e push
+- compila solver, STT, MCP e `llama:bin`
+- roda `npm run build`
+- executa `electron-builder --mac --arm64 --publish never`
+
+`--publish never` é obrigatório. Publicação local direta não faz parte do fluxo aprovado.
+
+Depois do build, valide o artefato:
 
 ```bash
-git add package.json
-git commit -m "chore: bump vX.Y.Z"
-git tag vX.Y.Z
-git push && git push --tags
+node scripts/verify-mac-distribution.mjs \
+  --app dist/mac-arm64/EscalaFlow.app \
+  --dist dist \
+  --team-id "$APPLE_TEAM_ID" \
+  --version "$(node -p "require('./package.json').version")" \
+  --arch arm64
 ```
 
-**A versão no package.json DEVE ser identica a tag** (sem o `v` prefix).
+Esse verificador é recursivo: checa assinatura, Team ID, timestamp, entitlements, stapling, `spctl`, cópia do ZIP, cópia montada do DMG, manifesto `signed-mac.yml` e ausência de `latest-mac.yml`.
 
-### Passo 3 — Build e upload
+## Sequência obrigatória antes da tag
 
-**Opção A: CI automático (recomendado)**
-
-O push da tag dispara `.github/workflows/release.yml` que builda Mac + Windows em paralelo e faz upload como draft. O release so vira publico depois da verificacao manual dos assets.
+1. escolha a versão alvo antes do PR/tag
+2. rode um bump sem criar tag automática:
 
 ```bash
-# Acompanhar o CI
-gh run watch --repo nmarcofernandess/escalaflow
+npm version <versao> --no-git-tag-version
 ```
 
-**Opção B: Local (Mac only)**
+3. confirme que `package.json` e `package-lock.json` convergiram para a mesma versão
+4. valide a versão materializada no projeto:
 
 ```bash
-# O script local tambem gera solver, sidecar STT, modelo STT, MCP e build Electron.
-GH_TOKEN=$(gh auth token) npm run release:mac
+npm pkg get version
 ```
 
-### Passo 4 — Verificação OBRIGATORIA antes de publicar
+5. o valor acima precisa bater exatamente com o release pretendido
+   - para o bootstrap assinado: `1.12.1`
+   - para a prova do updater assinado: `1.12.2`
+6. não se cria tag enquanto a versão não bater entre `package.json`, `package-lock.json` e o nome da tag
+7. implemente e valide na branch da tarefa
+8. abra PR e faça review
+9. faça merge no `main`
+10. confirme que o SHA mergeado é o SHA revisado
+11. só então crie a tag do release
 
-Antes de clicar "Publish release", verificar:
+Não use tag para testar código que ainda não passou pela revisão final.
+
+## Pipeline oficial de release
+
+O workflow `.github/workflows/release.yml` executa três estágios:
+
+```text
+verify
+  ├─ build-mac (macos-15, arm64, assinatura + notarização + auditoria)
+  ├─ build-windows (build Windows isolado, sem material Apple)
+  └─ release-draft (baixa artefatos internos e cria um único draft)
+```
+
+Contratos importantes:
+
+- `build-mac` usa `--mac --arm64 --publish never`
+- `build-mac` decodifica `APPLE_API_KEY_BASE64` para um `.p8` temporário
+- `build-mac` falha se `latest-mac.yml` aparecer
+- `build-windows` continua produzindo `latest.yml`
+- `release-draft` roda uma única vez e publica um draft com inventário exato
+
+## Inventário público exato
+
+Todo release público aprovado deve conter exatamente estes oito assets:
+
+| Asset | Obrigatório |
+|---|---|
+| `EscalaFlow-<versão>-arm64.dmg` | sim |
+| `EscalaFlow-<versão>-arm64.dmg.blockmap` | sim |
+| `EscalaFlow-<versão>-arm64.zip` | sim |
+| `EscalaFlow-<versão>-arm64.zip.blockmap` | sim |
+| `signed-mac.yml` | sim |
+| `EscalaFlow-Setup-<versão>.exe` | sim |
+| `EscalaFlow-Setup-<versão>.exe.blockmap` | sim |
+| `latest.yml` | sim |
+
+E estes itens são proibidos no release macOS confiável:
+
+- `latest-mac.yml`
+- logs de CI
+- credenciais
+- artefatos provisórios
+
+## Gate humano antes de publicar
+
+Antes de clicar em Publish:
+
+1. confira o draft
+2. confira o inventário de assets
+3. confirme que `signed-mac.yml` existe
+4. confirme que `latest-mac.yml` não existe
+5. confirme que o release Windows manteve `latest.yml`
+6. confirme que o verificador macOS passou no SHA da tag
+
+Use uma checagem simples de assets:
 
 ```bash
-# Listar assets do release
 gh release view vX.Y.Z --repo nmarcofernandess/escalaflow --json assets --jq '.assets[].name'
 ```
 
-**Checklist de assets:**
+## Prova de Gatekeeper em download real
 
-| Asset | Mac | Windows | Obrigatorio |
-|-------|-----|---------|-------------|
-| `EscalaFlow-X.Y.Z-arm64.dmg` | Sim | -- | Sim (Mac) |
-| `EscalaFlow-Setup-X.Y.Z.exe` | -- | Sim | Sim (Win) |
-| **`latest-mac.yml`** | Sim | -- | **SIM — auto-updater Mac** |
-| **`latest.yml`** | -- | Sim | **SIM — auto-updater Win** |
-| `*.blockmap` | Sim | Sim | Opcional (delta updates) |
+Build local em `dist/` não basta. A prova de confiança precisa começar com o download do DMG pelo browser UI na authenticated GitHub draft/public release page, preservando a quarentena de origem do navegador.
 
-**Se `latest-mac.yml` ou `latest.yml` estiver faltando, o auto-update NÃO FUNCIONA.**
+Para este gate de UX:
 
-### Passo 5 — Publicar
+- baixe o DMG clicando no asset na página do draft/release do GitHub
+- mantenha o fluxo no navegador, sem intermediários
+- CLI/API downloads are not sufficient
+- `gh release download`, `curl`, automações da API ou cópias locais pré-baixadas não valem como prova dessa etapa
+- instale e abra normally, without any bypass
+
+Registre:
+
+- URL do release
+- SHA256 do asset baixado
+- modelo do Mac e versão do macOS
+- resultado da primeira abertura normal
+- saída de `spctl`, `codesign` e `stapler` para `/Applications/EscalaFlow.app`
+
+Se Gatekeeper acusar corrupção, app não identificado ou falha de confiança em um release oficial, pare. Verifique URL oficial, checksum e assinatura, preserve a evidência e trate como incidente de distribuição. A recuperação normal não é mandar usuário limpar quarentena, reescrever bytes nem substituir assets públicos.
+
+## Migração única do legado
+
+### Usuário saindo de `v1.12.0`
+
+A mensagem obrigatória é:
+
+1. fechar o EscalaFlow antigo
+2. baixar o DMG oficial `v1.12.1`
+3. arrastar o app para Applications e substituir o anterior
+4. abrir normalmente
+5. confirmar `1.12.1` em Configurações
+
+Essa reinstalação única existe porque o updater legado não é confiável para preservar assinatura.
+
+### Prova do updater novo
+
+A aceitação do updater só acontece com:
+
+```text
+DMG instalado v1.12.1 -> auto-update assinado -> v1.12.2
+```
+
+`v1.12.2` deve ser um release mínimo, preferencialmente só de versão/notas, para provar a cadeia sem misturar defeitos novos.
+
+## Regras de canal de atualização
+
+O contrato macOS agora é isolado:
+
+- Mac usa `signed-mac.yml`
+- Windows usa `latest.yml`
+- `latest-mac.yml` fica proibido em `v1.12.1+`
+
+Consequência esperada: `v1.12.0` pode mostrar erro ao checar update, mas não deve descobrir um release novo e entrar no fluxo destrutivo antigo.
+
+## Falha e recuperação
+
+Se algo der errado:
+
+| Situação | Ação correta |
+|---|---|
+| falha de assinatura/notarização antes da publicação | corrigir, rebuildar e refazer o draft |
+| asset incorreto ainda em draft | corrigir antes de publicar |
+| bytes públicos já consumidos | preservar evidência e lançar nova patch version |
+| falha em `v1.12.1 → v1.12.2` após publicar | preservar `v1.12.2` e corrigir em `v1.12.3` |
+| suspeita de vazamento de segredo | revogar, rotacionar e rebuildar |
+
+Não trate apagar tag, sobrescrever asset ou reescrever release público como recovery normal.
+
+## Rotação de credenciais
+
+Rotacione quando:
+
+- o certificado expirar
+- a API key for recriada
+- houver suspeita de vazamento
+- um operador perder controle do cofre
+
+Fluxo:
+
+1. revogar no portal correto
+2. atualizar secrets/variables no GitHub
+3. validar `notarytool history`
+4. gerar novo candidate build
+5. repetir auditoria e prova humana
+
+## Comandos rápidos permitidos
 
 ```bash
-# Via CLI
-gh release edit vX.Y.Z --repo nmarcofernandess/escalaflow --draft=false
-
-# Ou via browser
-# https://github.com/nmarcofernandess/escalaflow/releases
-```
-
-### Passo 6 — Validar
-
-```bash
-# Confirmar que é o "Latest"
-gh release list --repo nmarcofernandess/escalaflow --limit 3
-
-# Baixar e verificar o YAML
-gh release download vX.Y.Z --repo nmarcofernandess/escalaflow --pattern 'latest-mac.yml' --output -
-```
-
----
-
-## Recuperação: YAML faltando em release já publicado
-
-Se publicou um release sem os YAMLs (como aconteceu com v1.2.0):
-
-```bash
-# 1. Baixar os assets
-mkdir /tmp/fix-release && cd /tmp/fix-release
-gh release download vX.Y.Z --repo nmarcofernandess/escalaflow
-
-# 2. Calcular SHA512
-SHA=$(shasum -a 512 EscalaFlow-X.Y.Z-arm64.dmg | awk '{print $1}' | xxd -r -p | base64)
-SIZE=$(stat -f%z EscalaFlow-X.Y.Z-arm64.dmg)  # macOS
-# SIZE=$(stat --printf="%s" arquivo)            # Linux
-
-# 3. Criar latest-mac.yml
-cat > latest-mac.yml << YAML
-version: X.Y.Z
-files:
-  - url: EscalaFlow-X.Y.Z-arm64.dmg
-    sha512: $SHA
-    size: $SIZE
-path: EscalaFlow-X.Y.Z-arm64.dmg
-sha512: $SHA
-releaseDate: '2026-01-01T00:00:00.000Z'
-YAML
-
-# 4. Upload
-gh release upload vX.Y.Z latest-mac.yml --repo nmarcofernandess/escalaflow --clobber
-
-# 5. Limpar
-rm -rf /tmp/fix-release
-```
-
----
-
-## CI/CD (GitHub Actions)
-
-O workflow `.github/workflows/release.yml` builda Mac + Windows automaticamente ao pushar uma tag `v*`.
-
-**Trigger:** `git push --tags` com tag `v*`
-**Output:** Draft release com todos os assets (DMG, EXE, YAMLs, blockmaps)
-
-### Se o CI falhar
-
-Problemas comuns:
-- **rollup-win32-x64-msvc**: `npm ci` no Windows as vezes falha com deps nativas. Fix: adicionar `npm install @rollup/rollup-win32-x64-msvc` como step separado
-- **solver build**: Python/PyInstaller precisa estar configurado corretamente no runner
-- **timeout**: build leva ~10-15min, timeout padrão do Actions é 6h (OK)
-
-Se o CI falhar, o release fica como draft incompleto ou nao recebe todos os assets. Opcoes:
-1. Corrigir o CI e re-triggerar com nova tag
-2. Build local e upload manual (nao esquecer os YAMLs!)
-
----
-
-## Arquivos gerados em `dist/`
-
-```
-dist/
-├── EscalaFlow-X.Y.Z-arm64.dmg         <- Instalador Mac
-├── EscalaFlow-X.Y.Z-arm64.dmg.blockmap
-├── EscalaFlow-Setup-X.Y.Z.exe         <- Instalador Windows
-├── EscalaFlow-Setup-X.Y.Z.exe.blockmap
-├── latest-mac.yml                      <- AUTO-UPDATER MAC (obrigatorio)
-└── latest.yml                          <- AUTO-UPDATER WIN (obrigatorio)
-```
-
----
-
-## Primeiro acesso (instalação do zero)
-
-Para quem ainda não tem o app instalado, envie o link direto:
-
-```
-https://github.com/nmarcofernandess/escalaflow/releases/latest/download/EscalaFlow-X.Y.Z-arm64.dmg
-```
-
-**Aviso do macOS** — Como o app não tem assinatura Apple Developer:
-
-```
-"EscalaFlow" não pode ser aberto porque é de um desenvolvedor não identificado.
-```
-
-**Solução para o usuário:**
-1. Abrir o `.dmg`
-2. Ler o arquivo `LEIA ANTES DE INSTALAR.txt` que vem dentro dele
-3. Arrastar o EscalaFlow para `Aplicativos`
-4. Abrir o Terminal e rodar:
-
-```bash
-xattr -cr "/Applications/EscalaFlow.app" && open "/Applications/EscalaFlow.app"
-```
-
-Se quiser, o usuário também pode tentar:
-- Ajustes do Sistema → Privacidade e Segurança → Abrir Mesmo Assim
-
-> Guia completo de assinatura, notarização e bypass (Mac + Windows): [certificados.md](certificados.md)
-
----
-
-## Distribuição sem internet (offline total)
-
-Copie o `.dmg` num pendrive e instale manualmente. O app funciona 100% offline — o auto-update simplesmente não vai funcionar, mas tudo mais sim.
-
----
-
-## Comandos rápidos de referência
-
-```bash
-# Conferir versão atual
-grep '"version"' package.json
-
-# Build Mac + upload GitHub
-GH_TOKEN=$(gh auth token) npm run release:mac
-
-# Ver releases publicados
-gh release list --repo nmarcofernandess/escalaflow
-
-# Verificar assets de um release
+# validar inventário do draft
 gh release view vX.Y.Z --repo nmarcofernandess/escalaflow --json assets --jq '.assets[].name'
 
-# Upload manual de arquivo para release existente
-gh release upload vX.Y.Z dist/arquivo.dmg --repo nmarcofernandess/escalaflow --clobber
-
-# Publicar draft
-gh release edit vX.Y.Z --repo nmarcofernandess/escalaflow --draft=false
-
-# Deletar release (se errou)
-gh release delete vX.Y.Z --repo nmarcofernandess/escalaflow
-
-# Deletar tag
-git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z
-
-# Acompanhar CI
+# acompanhar o workflow
 gh run watch --repo nmarcofernandess/escalaflow
+
+# build local seguro
+npm run release:mac
 ```
+
+Qualquer correção depois de bytes públicos consumidos deve sair como nova versão patch.

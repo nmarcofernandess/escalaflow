@@ -108,3 +108,38 @@ describe('llama-server resolver — bundled candidate (contract lock)', () => {
     expect(logSpy).toHaveBeenCalledWith(`[llama-server] binário resolvido: ${expected}`)
   })
 })
+
+describe('llama-server startup budget', () => {
+  it('waits beyond 90 seconds for a slow GGUF health transition', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const runtime = await import('../../../src/main/ia/llama-server-runtime')
+      const startedAt = Date.now()
+      const fetchMock = vi.fn(async () => {
+        if (Date.now() - startedAt < 120_000) {
+          return { ok: false, status: 503 } as Response
+        }
+        return { ok: true } as Response
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      let settled = false
+      const waitPromise = runtime.waitForHealth({ process: { exitCode: null } } as never).then(() => {
+        settled = true
+      })
+
+      await vi.advanceTimersByTimeAsync(90_000)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      await waitPromise
+
+      expect(settled).toBe(true)
+      expect(fetchMock).toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
+  })
+})
