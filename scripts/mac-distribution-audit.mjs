@@ -264,8 +264,16 @@ export function verifyMachORecords(records, expected) {
       throw new Error(`unexpected TeamIdentifier ${record.teamId}: ${record.path}`)
     }
 
-    if (!record.architectures.includes(expected.arch)) {
+    const architectures = new Set(record.architectures)
+
+    if (!architectures.has(expected.arch)) {
       throw new Error(`missing ${expected.arch}: ${record.path}`)
+    }
+
+    if (architectures.size !== 1) {
+      throw new Error(
+        `unexpected architecture set [${[...architectures].join(', ')}], expected exactly [${expected.arch}]: ${record.path}`,
+      )
     }
 
     if (!record.timestamp) {

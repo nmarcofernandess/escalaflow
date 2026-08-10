@@ -1,9 +1,15 @@
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const yaml = require('js-yaml') as { load(source: string): unknown }
+const { getNodeModuleFileMatcher } = require('app-builder-lib/out/fileMatcher') as {
+  getNodeModuleFileMatcher: (...args: unknown[]) => {
+    createFilter: () => (filePath: string, stats: fs.Stats) => boolean
+  }
+}
 
 interface BuilderTarget {
   target: string
@@ -88,6 +94,35 @@ describe('macOS packaging trust contract', () => {
     expect(mac?.files).not.toContain(
       '!node_modules/onnxruntime-node/bin/napi-v3/darwin/arm64${/*}',
     )
+  })
+
+  it('applies the installed electron-builder matcher to real ONNX Darwin bindings', () => {
+    const projectDir = path.resolve('.')
+    const arm64Binding = path.join(
+      projectDir,
+      'node_modules/onnxruntime-node/bin/napi-v3/darwin/arm64/onnxruntime_binding.node',
+    )
+    const x64Binding = path.join(
+      projectDir,
+      'node_modules/onnxruntime-node/bin/napi-v3/darwin/x64/onnxruntime_binding.node',
+    )
+
+    expect(fs.existsSync(arm64Binding)).toBe(true)
+    expect(fs.existsSync(x64Binding)).toBe(true)
+
+    // Mirrors PlatformPackager.createGetFileMatchersOptions' { "/*": "{,/**/*}" } expansion.
+    const macroExpander = (value: string): string => value.replace(/\$\{\/\*\}/g, '{,/**/*}')
+    const matcher = getNodeModuleFileMatcher(
+      projectDir,
+      path.join(projectDir, 'dist', 'app'),
+      macroExpander,
+      {},
+      { config: { files: mac?.files }, debugLogger: { isEnabled: false } },
+    )
+    const filter = matcher.createFilter()
+
+    expect(filter(arm64Binding, fs.statSync(arm64Binding))).toBe(true)
+    expect(filter(x64Binding, fs.statSync(x64Binding))).toBe(false)
   })
 
   it('isolates signed Mac updates without moving Windows off latest', () => {

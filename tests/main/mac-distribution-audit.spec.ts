@@ -214,6 +214,23 @@ Timestamp=Aug 9, 2026 at 12:00:00
     ).toThrow(/WRONGTEAM/)
   })
 
+  it('rejects a correctly signed universal nested binary for an arm64-only release', () => {
+    expect(() =>
+      verifyMachORecords(
+        [
+          {
+            path: '/app/solver',
+            architectures: ['arm64', 'x86_64'],
+            teamId: TEAM_ID,
+            timestamp: 'Aug 9, 2026 at 12:00:00',
+            valid: true,
+          },
+        ],
+        { teamId: TEAM_ID, arch: 'arm64' },
+      ),
+    ).toThrow(/unexpected architecture set.*x86_64/i)
+  })
+
   it('rejects debug entitlement on the outer app', () => {
     expect(() =>
       verifySignatureMetadata(
