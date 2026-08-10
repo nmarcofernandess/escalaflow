@@ -9,10 +9,17 @@ import {
   parseMacUpdateYml,
   verifyMacDistribution,
   verifyMachORecords,
+  verifySignedApp,
   verifySignatureMetadata,
 } from '../../scripts/mac-distribution-audit.mjs'
 
 const TEAM_ID = 'TEAM123456'
+const REQUIRED_MACH_O_PATHS = [
+  'Contents/Resources/solver-bin/escalaflow-solver',
+  'Contents/Resources/stt-bin/escalaflow-stt',
+  'Contents/Resources/mcp-bin/escalaflow-mcp',
+  'Contents/Resources/llama.cpp/darwin-arm64/llama-server',
+]
 
 function writeFile(filePath: string, content = ''): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -46,6 +53,54 @@ channel: signed
   )
 
   return appPath
+}
+
+function addRequiredMachOFixtures(appPath: string): void {
+  for (const relativePath of REQUIRED_MACH_O_PATHS) {
+    writeFile(path.join(appPath, relativePath), 'mach-o fixture')
+  }
+}
+
+function makeSignedAppCommandMock(appPath: string, architectures: string): ReturnType<typeof vi.fn> {
+  const machOPaths = new Set(REQUIRED_MACH_O_PATHS.map((relativePath) => path.join(appPath, relativePath)))
+  const result = (combined: string) => ({ stdout: '', stderr: '', combined })
+
+  return vi.fn((command: string, args: string[]) => {
+    const subject = args.at(-1) ?? ''
+
+    if (command === 'codesign' && args[0] === '--verify') {
+      return result('')
+    }
+
+    if (command === 'codesign' && args[0] === '-dvvv') {
+      return result(`Authority=Developer ID Application: EscalaFlow (${TEAM_ID})
+TeamIdentifier=${TEAM_ID}
+Timestamp=Aug 9, 2026 at 12:00:00
+`)
+    }
+
+    if (command === 'codesign' && args[0] === '-d' && args[1] === '--entitlements') {
+      return result('<plist></plist>')
+    }
+
+    if (command === 'xcrun' && args[0] === 'stapler') {
+      return result('The staple and validate action worked!')
+    }
+
+    if (command === 'spctl') {
+      return result('source=Notarized Developer ID')
+    }
+
+    if (command === 'file') {
+      return result(machOPaths.has(subject) ? 'Mach-O 64-bit executable arm64' : 'ASCII text')
+    }
+
+    if (command === 'lipo') {
+      return result(architectures)
+    }
+
+    throw new Error(`unexpected command: ${command} ${args.join(' ')}`)
+  })
 }
 
 function addNestedHelperApp(appPath: string): void {
@@ -229,6 +284,62 @@ Timestamp=Aug 9, 2026 at 12:00:00
         { teamId: TEAM_ID, arch: 'arm64' },
       ),
     ).toThrow(/unexpected architecture set.*x86_64/i)
+  })
+
+  it('rejects a universal nested Mach-O through verifySignedApp', () => {
+    const rootDir = makeTrackedTempDir('mac-audit-signed-app-universal')
+    tempDirs.push(rootDir)
+
+    const appPath = makeApp(rootDir)
+    addRequiredMachOFixtures(appPath)
+    const runCommand = makeSignedAppCommandMock(appPath, 'arm64 x86_64')
+
+    expect(() =>
+      verifySignedApp({
+        appPath,
+        teamId: TEAM_ID,
+        version: '1.12.1',
+        arch: 'arm64',
+        runCommand,
+      }),
+    ).toThrow(/unexpected architecture set.*x86_64/i)
+  })
+
+  it('accepts an arm64-only nested Mach-O through verifySignedApp', () => {
+    const rootDir = makeTrackedTempDir('mac-audit-signed-app-arm64')
+    tempDirs.push(rootDir)
+
+    const appPath = makeApp(rootDir)
+    addRequiredMachOFixtures(appPath)
+    const runCommand = makeSignedAppCommandMock(appPath, 'arm64')
+
+    const report = verifySignedApp({
+      appPath,
+      teamId: TEAM_ID,
+      version: '1.12.1',
+      arch: 'arm64',
+      runCommand,
+    })
+
+    expect(report).toMatchObject({
+      appPath,
+      version: '1.12.1',
+      arch: 'arm64',
+      teamId: TEAM_ID,
+      gateStatuses: {
+        codesignDeepStrict: 'passed',
+        staplerValidate: 'passed',
+        spctlNotarizedDeveloperId: 'passed',
+        nestedMachOInventory: 'passed',
+        nestedMachOSignatures: 'passed',
+      },
+    })
+    expect(report.machORecords).toHaveLength(REQUIRED_MACH_O_PATHS.length)
+    expect(report.machORecords.map((record) => record.relativePath)).toEqual(
+      expect.arrayContaining(REQUIRED_MACH_O_PATHS),
+    )
+    expect(runCommand).toHaveBeenCalledWith('xcrun', ['stapler', 'validate', appPath])
+    expect(runCommand).toHaveBeenCalledWith('spctl', ['--assess', '--verbose=4', '--type', 'exec', appPath])
   })
 
   it('rejects debug entitlement on the outer app', () => {

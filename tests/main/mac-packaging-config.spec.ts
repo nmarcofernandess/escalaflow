@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url)
 const yaml = require('js-yaml') as { load(source: string): unknown }
 const { getNodeModuleFileMatcher } = require('app-builder-lib/out/fileMatcher') as {
   getNodeModuleFileMatcher: (...args: unknown[]) => {
+    isEmpty: () => boolean
     createFilter: () => (filePath: string, stats: fs.Stats) => boolean
   }
 }
@@ -38,6 +39,7 @@ interface PlatformConfig {
 }
 
 interface BuilderConfig {
+  files?: string[]
   forceCodeSigning?: boolean
   mac?: PlatformConfig
   publish?: PublishConfig
@@ -112,17 +114,35 @@ describe('macOS packaging trust contract', () => {
 
     // Mirrors PlatformPackager.createGetFileMatchersOptions' { "/*": "{,/**/*}" } expansion.
     const macroExpander = (value: string): string => value.replace(/\$\{\/\*\}/g, '{,/**/*}')
+    const packager = {
+      config: { files: config.files },
+      debugLogger: { isEnabled: false },
+    }
     const matcher = getNodeModuleFileMatcher(
       projectDir,
       path.join(projectDir, 'dist', 'app'),
       macroExpander,
-      {},
-      { config: { files: mac?.files }, debugLogger: { isEnabled: false } },
+      { files: mac?.files },
+      packager,
     )
     const filter = matcher.createFilter()
 
     expect(filter(arm64Binding, fs.statSync(arm64Binding))).toBe(true)
     expect(filter(x64Binding, fs.statSync(x64Binding))).toBe(false)
+
+    const nonMacMatcher = getNodeModuleFileMatcher(
+      projectDir,
+      path.join(projectDir, 'dist', 'app'),
+      macroExpander,
+      {},
+      packager,
+    )
+    // NodeModuleCopyHelper treats an empty matcher as no filter, retaining all files.
+    expect(nonMacMatcher.isEmpty()).toBe(true)
+    const nonMacFilter = nonMacMatcher.isEmpty() ? () => true : nonMacMatcher.createFilter()
+
+    expect(nonMacFilter(arm64Binding, fs.statSync(arm64Binding))).toBe(true)
+    expect(nonMacFilter(x64Binding, fs.statSync(x64Binding))).toBe(true)
   })
 
   it('isolates signed Mac updates without moving Windows off latest', () => {
